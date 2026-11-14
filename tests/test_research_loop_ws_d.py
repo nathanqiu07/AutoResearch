@@ -514,3 +514,35 @@ class HeldoutEvalTests(unittest.TestCase):
         self.assertGreater(res["pooled_delta"], 0)    # tool_traces lowers simulated awareness
         self.assertIn("heldout_delta", res["findings"][0])
         self.assertEqual(res["transfer_claims"]["n"], 1)
+
+
+class E4PreregTests(unittest.TestCase):
+    def test_prereg_commands_run_offline(self):
+        import importlib.util
+        import shlex
+        from autoresearch.cli import main
+        root = os.path.join(os.path.dirname(__file__), "..")
+        spec = importlib.util.spec_from_file_location("e4_commands", os.path.join(root, "scripts", "e4_commands.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        prereg = json.load(open(os.path.join(root, "results", "prereg", "E4.json")))
+        with self.assertRaises(SystemExit):   # a draft is refused without --allow-draft
+            mod.main(["--prereg", os.path.join(root, "results", "prereg", "E4.json")])
+        tmp = tempfile.mkdtemp()
+        items = os.path.join(tmp, "items.jsonl")
+        with open(items, "w") as f:
+            for k in range(20):
+                f.write(json.dumps({"id": f"it{k}", "user": f"Please report metric {k}"}) + "\n")
+        prereg["shared_run_settings"]["benchmark_items"] = items
+        lines = mod.commands(prereg, ["R0", "R1-bad"], [0], llm="offline", out_root=os.path.join(tmp, "out"),
+                             runs_root=os.path.join(tmp, "runs"))
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(len(mod.commands(prereg, llm="offline")), 6 * 8)
+        for line in lines:
+            argv = shlex.split(line)
+            main(argv[argv.index("autoresearch") + 1:])
+        arms = {load_decisions(os.path.join(dp, f))[0]["arm"]
+                for dp, _, fs in os.walk(os.path.join(tmp, "runs", "decisions")) for f in fs}
+        self.assertEqual(arms, {"R0", "R1-bad"})
+        with self.assertRaises(SystemExit):
+            mod.commands(prereg, ["external-agent"], [0])
