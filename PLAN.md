@@ -441,7 +441,7 @@ Every costly run needs the user's approval first (AGENTS.md rule 5), is announce
 |---|---|---|---|---|
 | **A: User models** | Find the best way to turn someone's past choices into a model that predicts their next ones | the selected method + E1 | `autoresearch/taste/` | Gio (suggested: spec 3 is about exactly this) |
 | **B: Taste tracks and data** | Get the data for the two people whose taste we use, and test the method on them | Track P and Track S datasets + E2 | `data/researchers/`, `taste/scrape.py`, `integrations/exa.py` | **[decide]** |
-| **C: Measurement** | A trustworthy score for "does the model think this is a test, and does the test still work" | the scorer, calibration, E3a, E3b, E6 | `research/measure.py`, `benchmarks.py`, `corpus.py`, new `harness/` | Nathan built scorer v2 (§16); next tasks offered to David |
+| **C: Measurement** | A trustworthy score for "does the model think this is a test, and does the test still work" | the scorer, calibration, E3a, E3b, E6 | `research/measure.py`, `benchmarks.py`, `corpus.py`, new `harness/` | **Nathan** (built scorer v2, §16) |
 | **D: Research loop** | The agent that rewrites environments, with taste used at each decision | R0 and R1 arms + E4, E4b | `research/loop.py`, `ideas.py`, new `decisions.py`, `advisor.py`, `claims.py` | **[decide]** |
 | **E: Market, infrastructure, demo** | Spend the budget well, run everything in parallel, and show the results | market + E5 + runners, charts, demo | new `research/market.py`, `modal_app.py`, `swarm.py`, `integrations/`, `scripts/` | **[decide]** |
 
@@ -592,7 +592,7 @@ and `cohen_kappa`.
 **Cost.** The calibration gate is about $30–80. Modal GPUs depend on model size **[decide]**.
 **Done when.** The calibration gate passes and is committed, the minimal-cue and Petri v2 baselines are reproduced on dev, and both measurers pass offline tests.
 
-**Board tasks:** claim `api-target`, `topic-matched-corpus` and `behavior-gap-probe`. Add `evalawarebench-converter`, `evaldetect-probes`, `calibration-gate`, `models-config`, `modal-vllm-target`, `petri-harness`, `petri-measurer`, `modal-sandbox-tools`.
+**Board tasks (owner Nathan, added 2026-11-14):** claim `api-target`, `topic-matched-corpus` and `behavior-gap-probe`. Added `evalawarebench-converter`, `evaldetect-probes`, `calibration-gate`, `models-config`, `modal-vllm-target`, `petri-harness`, `petri-measurer`, `modal-sandbox-tools`.
 
 ---
 
@@ -834,7 +834,7 @@ summaries. Check them against the repos in P0 before relying on them.*
 - A self-report now costs 3 calls instead of 1, so an online sample takes **7 calls** instead of 5.
 - The discriminator no longer counts an unparseable answer as 0.5. It drops A3 for that sample instead.
 
-**Next tasks, in order (David: these are ready to claim):**
+**Next tasks:** superseded by §12.3 (WS C, owner Nathan); kept here for the short version.
 
 1. **Get the real EvalAwareBench items.** Download a small sample (ask first, see §4.3), check the schema, and write a converter to the JSONL format in `benchmarks.py`. Then run one minimal-cue item through `--benchmark-items` as a smoke test (needs approval: paid).
 2. **Replace the placeholder probe questions** with EvalDetectBench's calibrated per-model sets: `freeze-lasr/aware_bench`, exported as `{"<backend>:<model>": [templates with {transcript}]}`.
