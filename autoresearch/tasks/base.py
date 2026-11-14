@@ -12,6 +12,7 @@ silently drifting into optimising a proxy.
 """
 from __future__ import annotations
 
+import hashlib
 import math
 import random
 from dataclasses import dataclass, field
@@ -140,7 +141,8 @@ class EnvironmentDesignTask(Task):
                 {"environment": gen[:2000], "response": response[:1000]})
 
     def evaluate(self, config, llm, n_samples=8, seed=0):
-        rng = random.Random(hash((self.name, tuple(sorted(config.items())), seed)) & 0xFFFFFFFF)
+        key = f"{self.name}|{sorted(config.items())}|{seed}".encode()
+        rng = random.Random(int(hashlib.sha256(key).hexdigest()[:16], 16))
         p_evals, vals, samples = [], [], []
         for _ in range(n_samples):
             env = self.render(config, rng)
