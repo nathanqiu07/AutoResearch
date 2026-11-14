@@ -16,7 +16,11 @@ from typing import List
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..", "data", "real_corpus")
 
 
-def load_corpus(root: str = ROOT, min_chars: int = 40, max_chars: int = 3000) -> List[str]:
+def load_corpus(root: str = ROOT, min_chars: int = 40, max_chars: int = 3000,
+                keywords: str = "", min_matched: int = 15) -> List[str]:
+    """Real messages; with `keywords`, only topic-matched ones (falls back to
+    all messages if fewer than `min_matched` match; callers report which)."""
+    import re
     out = []
     for p in sorted(glob.glob(os.path.join(root, "*.jsonl"))):
         with open(p) as f:
@@ -25,6 +29,10 @@ def load_corpus(root: str = ROOT, min_chars: int = 40, max_chars: int = 3000) ->
                     t = json.loads(line).get("text", "")
                     if min_chars <= len(t) <= max_chars:
                         out.append(t)
+    if keywords:
+        m = [t for t in out if re.search(keywords, t, re.I)]
+        if len(m) >= min_matched:
+            return m
     return out
 
 

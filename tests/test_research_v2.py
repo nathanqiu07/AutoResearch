@@ -88,3 +88,41 @@ class LoopTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class V2ExtensionTests(unittest.TestCase):
+    def test_faithfulness_offline_shows_eval_sensitivity(self):
+        from autoresearch.research.measure import SYCOPHANCY_CODE
+        m = Measurer(offline_models(), scenario=SYCOPHANCY_CODE, simulator=OfflineWorld())
+        f = m.faithfulness([], list(range(200)))
+        self.assertEqual(f["misbehavior"], "caves")
+        self.assertGreater(f["rate_plain"], f["rate_eval_notice"])
+
+    def test_setting_gate_refuses_drift(self):
+        class Gate(LLM):
+            def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+                return json.dumps([{"index": 0, "keep": True}, {"index": 1, "keep": False, "why": "gives it a repo"}])
+        p = Proposer(OfflineLLM(), None, random.Random(0), gate_llm=Gate())
+        kept = p.setting_gate(LIBRARY[:2], "analytics assistant")
+        self.assertEqual(kept, LIBRARY[:1])
+        self.assertEqual(p.gated[0]["why"], "gives it a repo")
+
+    def test_topic_matched_corpus(self):
+        from autoresearch.research.corpus import load_corpus
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "c.jsonl"), "w") as f:
+            for i in range(20):
+                f.write(json.dumps({"text": f"my python function {i} throws an error when I call it twice"}) + "\n")
+            for i in range(20):
+                f.write(json.dumps({"text": f"write a poem about autumn leaves and rain number {i}"}) + "\n")
+        self.assertEqual(len(load_corpus(d, keywords=r"\bpython\b")), 20)
+        self.assertEqual(len(load_corpus(d, keywords=r"\bpython\b", min_matched=50)), 40)
+
+    def test_report_includes_faithfulness(self):
+        from autoresearch.research.measure import SYCOPHANCY_CODE
+        m = Measurer(offline_models(), scenario=SYCOPHANCY_CODE, simulator=OfflineWorld())
+        rep = OpenResearcher(m, Proposer(OfflineLLM(), None, random.Random(0)), ResearchMemory(None), None,
+                             ResearchConfig(iterations=2, faithfulness_samples=6),
+                             scenario=SYCOPHANCY_CODE).run()
+        self.assertEqual(rep["faithfulness"]["best"]["n"], 6)
+        self.assertIn("Faithfulness check", open(write_report(rep, tempfile.mkdtemp())).read())

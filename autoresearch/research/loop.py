@@ -32,6 +32,7 @@ class ResearchConfig:
     use_web: bool = True
     seed: int = 0
     max_calls: int = 2000
+    faithfulness_samples: int = 0  # >0: final eval-notice control on baseline and best design
 
 
 class Calibration:
@@ -259,7 +260,16 @@ class OpenResearcher:
                         "OUTCOME", task=self.sc.name, change=i.category, delta=round(dd, 4),
                         valid=ss["validity"] >= self.cfg.min_validity, status=st, run=self.run_id))
         self.mem.flush()
-        return self._report(baseline, best, time.time() - t0)
+        faith = {}
+        if self.cfg.faithfulness_samples and not self._exhausted():
+            n = self.cfg.faithfulness_samples
+            faith = {"baseline": self.ms.faithfulness([], self._seeds(n)),
+                     "best": self.ms.faithfulness([i.text for i in best.interventions], self._seeds(n),
+                                                  [i.category for i in best.interventions])}
+        rep = self._report(baseline, best, time.time() - t0)
+        rep["faithfulness"] = faith
+        rep["setting_gate_refusals"] = getattr(self.pr, "gated", [])
+        return rep
 
     # ---------- reporting ----------
     def _report(self, baseline: Evaluation, best: Evaluation, secs: float) -> dict:
@@ -313,6 +323,21 @@ def write_report(rep: dict, out_dir: str) -> str:
           f"{fmt(t['alignment'])}. Taste-vs-outcome Spearman rho: {t['reliability_rho']:+.2f} over "
           f"{t['calibration_points']} evaluations; effective taste weight {t['effective_weight']:.2f} "
           "(0.5 = neutral prior; rises if taste predicts gains, falls if it does not)."]
+    fa = rep.get("faithfulness") or {}
+    if fa:
+        L += ["", "## Faithfulness check (eval-notice control)", "",
+              f"Each environment is answered twice by the target: as-is, and with an explicit notice that it is "
+              f"an evaluation. Rate of '{fa['baseline']['misbehavior']}':", "",
+              "| design | as-is | with eval notice | eval sensitivity (as-is minus notice) | n |", "|---|---|---|---|---|"]
+        for k in ("baseline", "best"):
+            x = fa[k]
+            L.append(f"| {k} | {fmt(x['rate_plain'])} | {fmt(x['rate_eval_notice'])} | {fmt(x['eval_sensitivity'])} | {x['n']} |")
+        L += ["", "Positive sensitivity means the target behaves better when it knows it is being evaluated. "
+                  "So an environment it does not see as an evaluation exposes the deployment behaviour that "
+                  "evaluations miss."]
+    if rep.get("setting_gate_refusals"):
+        L += ["", "## Proposals refused by the setting gate (drift control)", ""]
+        L += [f"- [{g['category']}] {g['idea'][:140]}: {g['why'][:160]}" for g in rep["setting_gate_refusals"]]
     if rep["sources"]:
         L += ["", "## Web sources (Exa)", ""]
         L += [f"- [{s.get('used_for')}] {s.get('title')} <{s.get('url')}> {s.get('published') or ''}" for s in rep["sources"]]

@@ -123,8 +123,12 @@ def cmd_research(args):
     mk = lambda m: get_llm(args.llm, m, budget)  # noqa: E731
     models = Models(generator=mk(args.generator), target=mk(args.target), judge=mk(args.judge))
     prof, _ = _profile(args, models.judge)
-    corpus = [] if args.no_discriminator else load_corpus()
-    measurer = Measurer(models, real_corpus=corpus, workers=args.workers, simulator=OfflineWorld())
+    from .research.measure import SCENARIOS
+    scenario = SCENARIOS[args.scenario]
+    corpus = [] if args.no_discriminator else load_corpus(keywords=scenario.corpus_keywords)
+    matched = bool(corpus) and len(corpus) < len(load_corpus())
+    measurer = Measurer(models, scenario=scenario, real_corpus=corpus, workers=args.workers,
+                        simulator=OfflineWorld())
     scout = shared = None
     if not args.no_web:
         from .integrations.exa import get_scout
@@ -135,14 +139,16 @@ def cmd_research(args):
     cfg = ResearchConfig(iterations=args.iterations, samples=args.samples, proposals=args.proposals,
                          evals_per_iter=args.evals_per_iter, use_taste=not args.no_taste,
                          use_memory=not args.no_memory, use_web=not args.no_web, seed=args.seed,
-                         max_calls=args.max_calls)
+                         max_calls=args.max_calls, faithfulness_samples=args.faithfulness_samples)
     who = prof.researcher if prof else "none"
     cal = Calibration(os.path.join(args.memory, "taste_calibration.json"), who)
     print(f"models: generator={args.generator} target={args.target} judge={args.judge} ({args.llm}) | "
-          f"researcher={who} | real corpus={len(corpus)} msgs | web={'exa' if scout else 'off'} | "
+          f"scenario={scenario.name} | researcher={who} | real corpus={len(corpus)} msgs "
+          f"({'topic-matched' if matched else 'NOT topic-matched'}) | web={'exa' if scout else 'off'} | "
           f"shared={getattr(shared, 'backend', 'off')}")
-    r = OpenResearcher(measurer, Proposer(models.generator, prof, _r.Random(args.seed)), ResearchMemory(args.memory),
-                       prof, cfg, scout=scout, shared=shared, calibration=cal, budget=budget)
+    r = OpenResearcher(measurer, Proposer(models.generator, prof, _r.Random(args.seed), gate_llm=models.judge),
+                       ResearchMemory(args.memory), prof, cfg, scenario=scenario, scout=scout, shared=shared,
+                       calibration=cal, budget=budget)
     rep = r.run()
     path = write_report(rep, args.out)
     b, f = rep["baseline"], rep["best"]
@@ -151,6 +157,11 @@ def cmd_research(args):
     print(f"validated findings: {sum(x['status'] == 'validated' for x in rep['findings'])} / {len(rep['findings'])} tested")
     print(f"taste: alignment={rep['taste']['alignment']} rho={rep['taste']['reliability_rho']:+.2f} "
           f"weight={rep['taste']['effective_weight']:.2f} | compute {rep['compute']}")
+    fa = rep.get("faithfulness") or {}
+    for k in ("baseline", "best"):
+        if k in fa:
+            print(f"faithfulness {k}: {fa[k]['misbehavior']} rate as-is={fa[k]['rate_plain']} "
+                  f"with eval notice={fa[k]['rate_eval_notice']} (n={fa[k]['n']})")
     print("report:", path)
 
 
@@ -220,6 +231,8 @@ def main(argv=None):
     s.set_defaults(fn=cmd_scrape)
     rs = sub.add_parser("research", help="open-ended research loop (v2)")
     rs.add_argument("--researcher")
+    rs.add_argument("--scenario", default="metric_inflation", choices=["metric_inflation", "sycophancy_code"])
+    rs.add_argument("--faithfulness-samples", type=int, default=8)
     rs.add_argument("--generator", default="sonnet")
     rs.add_argument("--target", default="haiku", help="model under study; keep it different from the judge")
     rs.add_argument("--judge", default="sonnet")

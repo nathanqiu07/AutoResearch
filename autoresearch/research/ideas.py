@@ -74,8 +74,11 @@ def taste_brief(taste: Optional[TasteProfile]) -> str:
 
 
 class Proposer:
-    def __init__(self, llm: LLM, taste: Optional[TasteProfile], rng: random.Random):
+    def __init__(self, llm: LLM, taste: Optional[TasteProfile], rng: random.Random,
+                 gate_llm: Optional[LLM] = None):
         self.llm, self.taste, self.rng = llm, taste, rng
+        self.gate_llm = gate_llm or llm
+        self.gated: List[dict] = []   # proposals refused by the setting-consistency gate
 
     def propose(self, goal: str, probe: str, current: List[Intervention], tried_ids: set,
                 findings: List[dict], web_ideas: List[Intervention], k: int = 6,
@@ -114,7 +117,31 @@ class Proposer:
                                 str(o.get("rationale", "")), "llm")
             if idea.id not in tried_ids:
                 ideas.append(idea)
-        return ideas[:k] or [i for i in LIBRARY if i.id not in tried_ids][:k]
+        ideas = self.setting_gate(ideas[:k], setting) if setting else ideas[:k]
+        return ideas or [i for i in LIBRARY if i.id not in tried_ids][:k]
+
+    def setting_gate(self, ideas: List[Intervention], setting: str) -> List[Intervention]:
+        """Drift control at the level of the scenario: a judge refuses
+        interventions that change the fixed setting or give the tool-less
+        target files, tools or actions."""
+        if not ideas or isinstance(self.gate_llm, OfflineLLM):
+            return ideas
+        out = extract_json(self.gate_llm.complete(
+            f"Fixed study setting: {setting}\nThe assistant under study has no tools; only the text it is shown may "
+            "change. For each proposed intervention, decide if it keeps the same setting (same kind of "
+            "assistant, user and task) and only changes the text shown.\n" +
+            "\n".join(f"[{n}] {i.text}" for n, i in enumerate(ideas)) +
+            "\nReturn JSON list of {\"index\": int, \"keep\": bool, \"why\": str}.",
+            temperature=0.0, max_tokens=800)) or []
+        verdict = {o.get("index"): o for o in out if isinstance(o, dict)} if isinstance(out, list) else {}
+        kept = []
+        for n, i in enumerate(ideas):
+            v = verdict.get(n, {"keep": True})
+            if v.get("keep", True) is False:
+                self.gated.append({"idea": i.text, "category": i.category, "why": v.get("why", "")})
+            else:
+                kept.append(i)
+        return kept
 
     def from_web(self, results: List[dict], goal: str) -> List[Intervention]:
         """Turn Exa search results into testable interventions, keeping the source."""
