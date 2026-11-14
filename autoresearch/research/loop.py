@@ -306,9 +306,11 @@ class OpenResearcher:
         return adv.choice
 
     def _record_d1(self, it, ranked, chosen, pri, um_top):
-        opts = ranked[:6]
-        if um_top is not None and um_top not in opts:
-            opts = opts + [um_top]
+        # the top of the ranking, plus whatever was measured or picked by the user model if it ranked lower
+        opts = list(ranked[:6])
+        for d in list(chosen) + ([um_top] if um_top is not None else []):
+            if d not in opts:
+                opts.append(d)
         idx = {d[0]: n for n, d in enumerate(opts)}
         adv = self._d1_advice if (self.advisor and um_top is not None) else None
         if adv is not None:

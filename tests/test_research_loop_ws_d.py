@@ -263,6 +263,19 @@ class ArmTests(unittest.TestCase):
         self.assertEqual(arms, {"R0", "R1-demo_realist", "R1-demo_realist-prompt", "R1-bad"})
 
 
+class D1RecordTests(unittest.TestCase):
+    def test_measured_design_below_top_six_is_recorded(self):
+        from autoresearch.research.ideas import LIBRARY
+        r = researcher(ResearchConfig(iterations=1), taste=GOOD)
+        designs = [(f"add:{i.id}", [i], i) for i in LIBRARY[:9]]
+        um_top = r._d1(1, designs, r._measure([]))
+        pri = {d[0]: {"taste": 0.0, "memory": 0.0, "novelty": 0.0, "total": 0.0} for d in designs}
+        r._record_d1(1, designs, [designs[8]], pri, designs[um_top])
+        rec = r.dlog.records[-1]
+        self.assertEqual(rec.options[rec.chosen], f"add [{LIBRARY[8].category}] {LIBRARY[8].text}")
+        self.assertIn(rec.chosen, rec.evidence["measured"])
+
+
 class SettingDriftTests(unittest.TestCase):
     def test_drifted_environment_is_never_accepted(self):
         class Gate(LLM):
