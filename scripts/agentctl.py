@@ -35,6 +35,8 @@ import uuid
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 A = os.path.join(ROOT, ".agents")
+# git runs in the repo containing the coordination dir (overridable for tests)
+GIT_ROOT = os.environ.get("AGENTCTL_GIT_ROOT", ROOT)
 STALE_HOURS = 2.0
 
 
@@ -58,7 +60,19 @@ class Ctl:
     def __init__(self, root=A, use_git=True):
         self.root, self.use_git = root, use_git
         for d in ("tasks", "claims", "messages", "locks", "agents"):
-            os.makedirs(os.path.join(root, d), exist_ok=True)
+            self._ensure(d)
+
+    def _ensure(self, d):
+        """git drops empty directories, so (re)create them with a .gitkeep."""
+        path = os.path.join(self.root, d)
+        os.makedirs(path, exist_ok=True)
+        keep = os.path.join(path, ".gitkeep")
+        if not os.path.exists(keep):
+            open(keep, "w").close()
+        return path
+
+    def _ls(self, d):
+        return sorted(f for f in os.listdir(self._ensure(d)) if f.endswith(".json"))
 
     # ---------- identity ----------
     def me(self):
@@ -80,7 +94,7 @@ class Ctl:
 
     # ---------- git ----------
     def _git(self, *args, check=True):
-        return subprocess.run(["git", "-C", ROOT, *args], capture_output=True, text=True, check=check)
+        return subprocess.run(["git", "-C", GIT_ROOT, *args], capture_output=True, text=True, check=check)
 
     def sync(self):
         if not self.use_git:
@@ -90,13 +104,14 @@ class Ctl:
             print("sync failed; resolve manually:\n" + r.stderr.strip(), file=sys.stderr)
 
     def _commit(self, msg, rel_paths, push=True):
-        if not self.use_git:
+        """Stage everything under .agents/ (adds and deletions; local-only files
+        are gitignored) and commit only that directory."""
+        if not self.use_git or not rel_paths:
             return True
-        paths = [os.path.join(self.root, p) for p in rel_paths]
-        self._git("add", "--", *paths)
-        if self._git("diff", "--cached", "--quiet", check=False).returncode == 0:
+        self._git("add", "-A", "--", self.root)
+        if self._git("diff", "--cached", "--quiet", "--", self.root, check=False).returncode == 0:
             return True
-        self._git("commit", "-m", f"[agents] {msg}", "--", *paths)
+        self._git("commit", "-m", f"[agents] {msg}", "--", self.root)
         if not push:
             return True
         for _ in range(3):
@@ -136,15 +151,14 @@ class Ctl:
 
     def tasks(self, status=None):
         out = []
-        for f in sorted(os.listdir(self._path("tasks"))):
-            if f.endswith(".json"):
-                t = self._read_json(f"tasks/{f}")
-                c = self._read_json(f"claims/{t['slug']}.json")
-                t["owner"] = c["agent"] if c and not self._stale(c) else None
-                if t["status"] == "open" and t["owner"]:
-                    t["status"] = "claimed"
-                if status is None or t["status"] == status:
-                    out.append(t)
+        for f in self._ls("tasks"):
+            t = self._read_json(f"tasks/{f}")
+            c = self._read_json(f"claims/{t['slug']}.json")
+            t["owner"] = c["agent"] if c and not self._stale(c) else None
+            if t["status"] == "open" and t["owner"]:
+                t["status"] = "claimed"
+            if status is None or t["status"] == status:
+                out.append(t)
         return out
 
     def claim(self, slug):
@@ -181,8 +195,6 @@ class Ctl:
             t.update(status="done", summary=summary, done_by=me, done=iso())
             self._write_json(f"tasks/{slug}.json", t)
             rels.append(f"tasks/{slug}.json")
-        if self.use_git and c:
-            self._git("rm", "--cached", "-q", "--ignore-unmatch", self._path(f"claims/{slug}.json"), check=False)
         self._commit(f"{me} {'finished' if done else 'released'} {slug}", rels)
 
     # ---------- locks (path areas) ----------
@@ -192,11 +204,10 @@ class Ctl:
 
     def locks(self):
         out = []
-        for f in sorted(os.listdir(self._path("locks"))):
-            if f.endswith(".json"):
-                l = self._read_json(f"locks/{f}")
-                l["stale"] = self._stale(l)
-                out.append(l)
+        for f in self._ls("locks"):
+            l = self._read_json(f"locks/{f}")
+            l["stale"] = self._stale(l)
+            out.append(l)
         return out
 
     def conflicting_lock(self, path, me):
@@ -230,16 +241,14 @@ class Ctl:
             if l and l["agent"] == me:
                 os.remove(self._path(rel))
                 rels.append(rel)
-                if self.use_git:
-                    self._git("rm", "--cached", "-q", "--ignore-unmatch", self._path(rel), check=False)
         self._commit(f"{me} unlocks {' '.join(paths)}", rels)
 
     def heartbeat(self):
         me, rels = self.me(), []
         for d in ("claims", "locks"):
-            for f in os.listdir(self._path(d)):
+            for f in self._ls(d):
                 rel = f"{d}/{f}"
-                rec = self._read_json(rel) if f.endswith(".json") else None
+                rec = self._read_json(rel)
                 if rec and rec.get("agent") == me:
                     rec["heartbeat"] = iso()
                     self._write_json(rel, rec)
@@ -266,9 +275,7 @@ class Ctl:
         read_p = self._path(f".read-{me}")
         seen = set(open(read_p).read().split()) if os.path.exists(read_p) else set()
         out = []
-        for f in sorted(os.listdir(self._path("messages"))):
-            if not f.endswith(".json"):
-                continue
+        for f in self._ls("messages"):
             m = self._read_json(f"messages/{f}")
             if m["to"] in ("all", me) and m["from"] != me and (include_read or m["id"] not in seen):
                 out.append(m)
@@ -311,6 +318,7 @@ def main(argv=None):
     elif a.cmd == "task" and a.tcmd == "add":
         print("added", ctl.task_add(a.slug, a.title, a.body, a.area))
     elif a.cmd == "task":
+        ctl.sync()
         for x in ctl.tasks(a.status):
             print(f"[{x['status']:<7}] {x['slug']:<32} {x['title']}" + (f"  (owner: {x['owner']})" if x["owner"] else ""))
     elif a.cmd == "claim":
@@ -326,6 +334,7 @@ def main(argv=None):
     elif a.cmd == "post":
         print("sent", ctl.post(a.subject, a.body, a.to, a.task))
     elif a.cmd == "inbox":
+        ctl.sync()
         ms = ctl.messages(include_read=a.all)
         for m in ms:
             print(f"--- {m['sent']} from {m['from']} to {m['to']}" + (f" [task {m['task']}]" if m["task"] else ""))
