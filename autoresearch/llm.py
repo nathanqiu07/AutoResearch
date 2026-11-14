@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
 import time
 import urllib.request
 from dataclasses import dataclass, field
@@ -91,6 +92,33 @@ class AnthropicLLM(LLM):
         return "".join(b.get("text", "") for b in data.get("content", []))
 
 
+class ClaudeCLILLM(LLM):
+    """Uses the locally signed-in `claude` CLI (`claude -p`), so real models can
+    be used with the account's existing login and no API key in this process."""
+    name = "claude-cli"
+
+    def __init__(self, model: str = "claude-sonnet-5-5", budget: Optional[Budget] = None,
+                 binary: str = "claude", timeout: float = 300.0):
+        super().__init__(budget)
+        self.model, self.binary, self.timeout = model, binary, timeout
+
+    def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+        cmd = [self.binary, "-p", "--model", self.model, "--output-format", "json"]
+        if system:
+            cmd += ["--system-prompt", system]
+        proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
+                              timeout=self.timeout)
+        if proc.returncode != 0:
+            raise RuntimeError(f"claude CLI failed: {(proc.stderr or proc.stdout).strip()[:300]}")
+        data = json.loads(proc.stdout)
+        if data.get("is_error"):
+            raise RuntimeError(f"claude CLI error: {str(data.get('result'))[:300]}")
+        usage = data.get("usage", {})
+        self.budget.charge(usage.get("input_tokens", _approx_tokens(prompt)),
+                           usage.get("output_tokens", 0))
+        return data.get("result", "")
+
+
 class OfflineLLM(LLM):
     """Deterministic pseudo-LLM. Returns a hash-seeded choice among any
     options listed in the prompt as lines starting with '- ', otherwise
@@ -110,6 +138,8 @@ def get_llm(kind: str = "auto", model: str = "claude-sonnet-5-5",
             budget: Optional[Budget] = None) -> LLM:
     if kind == "offline" or (kind == "auto" and not os.environ.get("ANTHROPIC_API_KEY")):
         return OfflineLLM(budget)
+    if kind == "claude-cli":
+        return ClaudeCLILLM(model=model, budget=budget)
     return AnthropicLLM(model=model, budget=budget)
 
 

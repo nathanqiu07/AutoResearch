@@ -6,7 +6,8 @@ Benchmark task: **design synthetic environments that minimise eval-awareness** w
 still faithfully testing the behaviour they exist to measure.
 
 Pure standard-library Python (3.9+). Runs fully offline; set `ANTHROPIC_API_KEY`
-to use real models (`--llm anthropic --model claude-sonnet-5-5`).
+to use real models (`--llm anthropic --model claude-sonnet-5-5`), or use `--llm claude-cli`
+to run through a signed-in `claude` CLI with no API key in the process.
 
 ## Quick start
 
@@ -123,5 +124,6 @@ Findings (directionally consistent across the three tasks):
 
 **Caveats.** These numbers come from the offline simulator and synthetic researchers with
 known hidden weights. They validate the machinery and the ablation protocol, not real
-eval-awareness. To measure real models, run `benchmark --llm anthropic` with your own API
-key. Online-mode code paths are implemented but have not been run in this repo.
+eval-awareness. To measure real models, run `benchmark --llm anthropic` (your API key) or
+`--llm claude-cli` (your CLI login). Online-mode paths are covered by tests with a
+scripted model (`tests/test_online_paths.py`) but have not yet been run against a live model.

@@ -117,7 +117,7 @@ def cmd_label(args):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="autoresearch")
-    p.add_argument("--llm", default="auto", choices=["auto", "offline", "anthropic"])
+    p.add_argument("--llm", default="auto", choices=["auto", "offline", "anthropic", "claude-cli"])
     p.add_argument("--model", default="claude-sonnet-5-5")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("researchers").set_defaults(fn=cmd_researchers)

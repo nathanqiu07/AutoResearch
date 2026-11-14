@@ -5,7 +5,7 @@ import json
 import unittest
 from unittest import mock
 
-from autoresearch.llm import AnthropicLLM, Budget, LLM
+from autoresearch.llm import AnthropicLLM, Budget, ClaudeCLILLM, LLM
 from autoresearch.loop import LoopConfig, Researcher
 from autoresearch.memory import ResearchMemory
 from autoresearch.taste.extract import profile_from_texts
@@ -74,6 +74,18 @@ class OnlinePathTests(unittest.TestCase):
         self.assertEqual(sent["body"]["model"], "claude-sonnet-5-5")
         self.assertEqual(sent["body"]["system"], "sys")
         self.assertEqual(llm.budget.input_tokens, 5)
+
+    def test_claude_cli_backend(self):
+        out = json.dumps({"result": "pong", "is_error": False,
+                          "usage": {"input_tokens": 7, "output_tokens": 1}})
+        done = mock.Mock(returncode=0, stdout=out, stderr="")
+        with mock.patch("subprocess.run", return_value=done) as run:
+            llm = ClaudeCLILLM(model="claude-sonnet-5-5")
+            self.assertEqual(llm.complete("ping", system="s"), "pong")
+        cmd = run.call_args[0][0]
+        self.assertIn("--system-prompt", cmd)
+        self.assertEqual(run.call_args[1]["input"], "ping")
+        self.assertEqual(llm.budget.input_tokens, 7)
 
 
 if __name__ == "__main__":
