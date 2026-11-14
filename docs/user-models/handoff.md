@@ -16,8 +16,12 @@ Arena contains 1,338 choices from 131 people: 42 development users and 89 final
 test users. Development users have 260 history, 97 validation and 183 target
 choices. These counts describe the data; they are not model results.
 
-PRISM's first download stopped on HTTP 429 after caching 3,100 complete rows. A
-paced retry is pending. No partial PRISM manifest was accepted.
+PRISM's row service hit HTTP 429 after 6,969 cached rows. Canonical Parquet files
+at upstream revision `a03cab5122c397f1307ed092423a05732cc2aa93` then supplied all
+16,705 rows from 723 users. All cached rows matched. Validation found 12 duplicate
+content pairs (nine duplicate IDs), all agreeing in labels and staying within
+partitions. No PRISM manifest was accepted. Gio is choosing whether to deduplicate
+with an explicit removal record or keep Arena as the only dataset for now.
 
 ## Choices and their reasons
 
@@ -41,10 +45,15 @@ handling and split protection. A tiny Codex CLI synthetic call succeeded; earlie
 failed attempts were retained locally. No real preference accuracy or winning
 method has been established. Final test users have not been evaluated.
 
-Gio redeemed OpenAI credits in his Personal organization. No API key was present
-in the checked process environment. API access, the exact model and the pilot's
-spend cap must be confirmed before a live comparison. Do not infer the remaining
-credit balance from redemption alone.
+Gio redeemed OpenAI credits in his Personal organization and approved up to $1
+for ten development predictions using `gpt-6-luna`. No API key was present in the
+checked process environment. The direct Responses adapter is pushed in `816d064`;
+the combined suite passed 175 tests after syncing teammates' changes. It makes no
+retries, reserves conservative cost before requests and preserves failed holds in
+the report. A pilot checkout is pinned to that commit under ignored
+`runs/taste-pilot-worktree`. The local `runs/taste-openai-pilot.command` prompts for
+the key without echo and writes `runs/fidelity/openai-dev-01/report.json`. No live
+API call has run. Do not infer the remaining credit balance from redemption alone.
 
 The first proposed live check is ten development predictions, M0 versus M1, for
 one Arena user. Question: can both methods make valid, auditable predictions on

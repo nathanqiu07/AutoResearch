@@ -83,8 +83,13 @@ python3 -m autoresearch.taste prepare --datasets prism \
   --output runs/prefdata/prism.jsonl --manifest data/prefdata/prism-splits.json
 ```
 
-PRISM's loader is implemented; the first real download stopped on HTTP 429 after
-caching 3,100 complete rows. No partial PRISM snapshot was published.
+PRISM's row service hit HTTP 429. A later canonical Parquet download retrieved all
+16,705 rows (723 users), pinned to upstream revision
+`a03cab5122c397f1307ed092423a05732cc2aa93`, using an already installed external
+reader. All 6,969 cached API rows matched. Validation found 12 duplicate-content
+pairs, including nine duplicate IDs. Their labels agree and they stay within their
+partitions. The strict loader rejects this snapshot; no normalized PRISM records
+or manifest have been published. Gio's deduplication-policy decision is pending.
 The public rows service may return an error or truncated cells; the loader fails
 rather than score partial conversations. Source links:
 [Arena](https://huggingface.co/datasets/MichaelR207/chatbot_arena_personalized_0125),
@@ -136,8 +141,9 @@ and cost estimates use the [published rates](https://developers.openai.com/api/d
 checked November 14, 2026; they are not a provider billing statement. Adding a
 different evaluation model requires verifying its settings and rates first.
 
-The command is a proposed development check, not permission to start spending.
-Gio must confirm its cap and configure local credentials before it runs.
+Gio approved up to $1 for this ten-prediction development check on November 14.
+It still requires local credentials. Larger runs and the final evaluation need a
+separate concrete decision.
 
 Codex runs from an empty temporary directory, ignores user configuration, disables
 tools and rejects any tool event. It is a **CLI harness** comparison, not raw API
