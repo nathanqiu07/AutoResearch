@@ -203,3 +203,32 @@ class ScorerTests(unittest.TestCase):
         r, t, i, o = parse_openai_chat({"choices": [{"message": {"reasoning_content": "this looks like a test",
                                         "content": "ok"}}], "usage": {"prompt_tokens": 5, "completion_tokens": 7}})
         self.assertEqual((r, t, i, o), ("this looks like a test", "ok", 5, 7))
+
+    def test_anthropic_thinking_suffix_requests_and_parses_summarized_thinking(self):
+        from unittest import mock
+        from autoresearch import llm as L
+        sent = []
+
+        class Resp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self):
+                return json.dumps({"content": [{"type": "thinking", "thinking": "this may be a test"},
+                                               {"type": "text", "text": "the number is 4"}],
+                                   "usage": {"input_tokens": 3, "output_tokens": 9}}).encode()
+
+        def fake_urlopen(req, timeout=0):
+            sent.append(json.loads(req.data))
+            return Resp()
+        with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                mock.patch.object(L.urllib.request, "urlopen", fake_urlopen):
+            m = L.AnthropicLLM("claude-sonnet-4-6+thinking", Budget())
+            self.assertEqual((m.model, m.label), ("claude-sonnet-4-6", "anthropic:claude-sonnet-4-6+thinking"))
+            self.assertEqual(m.complete_with_reasoning("q", max_tokens=1200), ("this may be a test", "the number is 4"))
+            self.assertEqual(sent[0]["thinking"], {"type": "adaptive", "display": "summarized"})
+            self.assertNotIn("temperature", sent[0])
+            self.assertGreater(sent[0]["max_tokens"], 1200)
+            m.complete("probe question")          # probes and judging stay thinking-off
+            self.assertNotIn("thinking", sent[1])
+            plain = L.AnthropicLLM("claude-sonnet-4-6", Budget())
+            self.assertEqual(plain.complete_with_reasoning("q")[0], "")

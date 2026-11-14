@@ -129,28 +129,38 @@ class OpenAICompatLLM(LLM):
 
 
 class AnthropicLLM(LLM):
+    """Messages API over stdlib HTTP. A model id ending in "+thinking" (e.g.
+    "claude-sonnet-4-6+thinking") turns on adaptive thinking for
+    `complete_with_reasoning`, which is what the target's reply goes through.
+    The API returns a SUMMARY of the model's thinking, never the raw chain of
+    thought, so awareness read from it (A1) is a lower bound: the summary can
+    drop a remark the raw reasoning made. Plain `complete` stays thinking-off
+    (cheaper; used for probe questions and judging)."""
     name = "anthropic"
     URL = "https://api.anthropic.com/v1/messages"
+    THINKING_SUFFIX = "+thinking"
+    THINKING_HEADROOM = 8000   # thinking tokens count against max_tokens
 
     def __init__(self, model: str = "claude-sonnet-5-5", budget: Optional[Budget] = None):
         super().__init__(budget)
-        self.model = model
+        self.thinking = model.endswith(self.THINKING_SUFFIX)
+        self.model = model[:-len(self.THINKING_SUFFIX)] if self.thinking else model
         self.key = os.environ.get("ANTHROPIC_API_KEY")
         if not self.key:
             raise RuntimeError("ANTHROPIC_API_KEY is not set")
 
-    def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
-        body = {"model": self.model, "max_tokens": max_tokens, "temperature": temperature,
-                "messages": [{"role": "user", "content": prompt}]}
-        if system:
-            body["system"] = system
+    @property
+    def label(self) -> str:
+        return f"{self.name}:{self.model}{self.THINKING_SUFFIX if self.thinking else ''}"
+
+    def _post(self, body: dict) -> dict:
         req = urllib.request.Request(
             self.URL, data=json.dumps(body).encode(),
             headers={"x-api-key": self.key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"})
         for attempt in range(4):
             try:
-                with urllib.request.urlopen(req, timeout=120) as r:
+                with urllib.request.urlopen(req, timeout=300 if "thinking" in body else 120) as r:
                     data = json.loads(r.read())
                 break
             except Exception:
@@ -159,7 +169,32 @@ class AnthropicLLM(LLM):
                 time.sleep(2 ** attempt)
         usage = data.get("usage", {})
         self.budget.charge(usage.get("input_tokens", 0), usage.get("output_tokens", 0))
-        return "".join(b.get("text", "") for b in data.get("content", []))
+        return data
+
+    def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+        body = {"model": self.model, "max_tokens": max_tokens, "temperature": temperature,
+                "messages": [{"role": "user", "content": prompt}]}
+        if system:
+            body["system"] = system
+        return "".join(b.get("text", "") for b in self._post(body).get("content", []))
+
+    def complete_with_reasoning(self, prompt, system="", max_tokens=1024, temperature=0.7):
+        if not self.thinking:
+            return "", self.complete(prompt, system=system, max_tokens=max_tokens, temperature=temperature)
+        # no temperature: sampling parameters are restricted while thinking is on
+        body = {"model": self.model, "max_tokens": max_tokens + self.THINKING_HEADROOM,
+                "thinking": {"type": "adaptive", "display": "summarized"},
+                "messages": [{"role": "user", "content": prompt}]}
+        if system:
+            body["system"] = system
+        return parse_anthropic_thinking(self._post(body))
+
+
+def parse_anthropic_thinking(data: dict):
+    """(summarized thinking, final text) from a Messages API response."""
+    blocks = data.get("content", [])
+    reasoning = "\n".join(b.get("thinking", "") for b in blocks if b.get("type") == "thinking" and b.get("thinking"))
+    return reasoning, "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
 
 
 class ClaudeCLILLM(LLM):
