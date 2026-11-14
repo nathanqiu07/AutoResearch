@@ -18,10 +18,17 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
+class BudgetExceeded(RuntimeError):
+    pass
+
+
 @dataclass
 class Budget:
     max_calls: int = 10_000
     max_seconds: float = 3600.0
+    # Per Budget (one run, or one swarm cell), not a lifetime total. Only backends
+    # that report cost count toward it; today that is ClaudeCLILLM alone.
+    max_cost_usd: float = 25.0
     calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -41,7 +48,14 @@ class Budget:
         return time.time() - self.started
 
     def exhausted(self) -> bool:
-        return self.calls >= self.max_calls or self.elapsed >= self.max_seconds
+        return (self.calls >= self.max_calls or self.elapsed >= self.max_seconds
+                or self.cost_usd >= self.max_cost_usd)
+
+    def check_spend(self) -> None:
+        """Called before every paid request, so the cap holds even in loops
+        that only watch the call count."""
+        if self.cost_usd >= self.max_cost_usd:
+            raise BudgetExceeded(f"spend cap reached: ${self.cost_usd:.2f} of ${self.max_cost_usd:.2f}")
 
     def summary(self) -> dict:
         return {"calls": self.calls, "input_tokens": self.input_tokens,
@@ -102,6 +116,7 @@ class OpenAICompatLLM(LLM):
         self.key = os.environ.get("OPENAI_COMPAT_API_KEY", "")
 
     def _call(self, prompt, system, max_tokens, temperature):
+        self.budget.check_spend()
         messages = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
         body = {"model": self.model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
         headers = {"content-type": "application/json"}
@@ -172,6 +187,7 @@ class AnthropicLLM(LLM):
         return data
 
     def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+        self.budget.check_spend()
         body = {"model": self.model, "max_tokens": max_tokens, "temperature": temperature,
                 "messages": [{"role": "user", "content": prompt}]}
         if system:
@@ -215,6 +231,7 @@ class ClaudeCLILLM(LLM):
 
     def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
         import tempfile
+        self.budget.check_spend()
         cmd = [self.binary, "-p", "--model", self.model, "--output-format", "json",
                "--tools", "", "--strict-mcp-config", "--setting-sources", "",
                "--system-prompt", system or self.DEFAULT_SYSTEM]

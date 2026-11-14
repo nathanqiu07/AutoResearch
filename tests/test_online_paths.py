@@ -5,7 +5,7 @@ import json
 import unittest
 from unittest import mock
 
-from autoresearch.llm import AnthropicLLM, Budget, ClaudeCLILLM, LLM
+from autoresearch.llm import AnthropicLLM, Budget, BudgetExceeded, ClaudeCLILLM, LLM
 from autoresearch.loop import LoopConfig, Researcher
 from autoresearch.memory import ResearchMemory
 from autoresearch.taste.extract import profile_from_texts
@@ -88,6 +88,19 @@ class OnlinePathTests(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--setting-sources") + 1], "")
         self.assertEqual(run.call_args[1]["input"], "ping")
         self.assertEqual(llm.budget.input_tokens, 7)
+
+    def test_claude_cli_refuses_calls_once_cost_cap_is_reached(self):
+        out = json.dumps({"result": "pong", "is_error": False, "total_cost_usd": 0.06,
+                          "usage": {"input_tokens": 7, "output_tokens": 1}})
+        done = mock.Mock(returncode=0, stdout=out, stderr="")
+        with mock.patch("subprocess.run", return_value=done) as run:
+            llm = ClaudeCLILLM(model="claude-sonnet-5-5", budget=Budget(max_cost_usd=0.10))
+            llm.complete("ping")
+            llm.complete("ping")
+            with self.assertRaises(BudgetExceeded):
+                llm.complete("ping")
+        self.assertEqual(run.call_count, 2)
+        self.assertTrue(llm.budget.exhausted())
 
 
 if __name__ == "__main__":
