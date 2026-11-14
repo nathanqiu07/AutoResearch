@@ -245,7 +245,8 @@ class OpenResearcher:
         return self.cfg.use_memory and self.mem.evidence(k) >= 2 and self.mem.credence(k) < 0.3
 
     def _exhausted(self):
-        return self.budget is not None and self.budget.calls >= self.cfg.max_calls
+        # the loop's own call cap, or any Budget limit (calls, seconds, spend cap): stop cleanly and still report
+        return self.budget is not None and (self.budget.calls >= self.cfg.max_calls or self.budget.exhausted())
 
     def _set_grounding(self, docs):
         if self.pool:

@@ -546,3 +546,15 @@ class E4PreregTests(unittest.TestCase):
         self.assertEqual(arms, {"R0", "R1-bad"})
         with self.assertRaises(SystemExit):
             mod.commands(prereg, ["external-agent"], [0])
+
+
+class SpendCapTests(unittest.TestCase):
+    def test_loop_stops_cleanly_when_budget_is_exhausted(self):
+        from autoresearch.llm import Budget
+        b = Budget(max_calls=10**6, max_cost_usd=0.0)   # already at the cap
+        r = OpenResearcher(Measurer(offline_models(), simulator=OfflineWorld()),
+                           Proposer(OfflineLLM(), None, random.Random(0)), ResearchMemory(None), None,
+                           ResearchConfig(iterations=5), budget=b)
+        rep = r.run()
+        self.assertTrue(any(e.get("event") == "budget_exhausted" for e in rep["log"]))
+        self.assertEqual(rep["findings"], [])

@@ -202,7 +202,8 @@ def cmd_research(args):
         raise SystemExit("--items-per-iter needs --benchmark-items")
     if args.setting == "agentic" and (args.benchmark_items or args.items_per_iter):
         raise SystemExit("--setting agentic uses Petri seeds, not --benchmark-items/--items-per-iter")
-    budget = Budget(max_calls=args.max_calls, max_seconds=args.max_seconds)
+    budget = Budget(max_calls=args.max_calls, max_seconds=args.max_seconds,
+                    **({'max_cost_usd': args.max_cost} if args.max_cost is not None else {}))
     models = _build_models(args, budget)
     prof = None
     if slug and args.taste_mode == "model":
@@ -349,6 +350,8 @@ def _add_model_args(sp, mode_default: str, max_calls: int):
     sp.add_argument("--probe-questions", help="JSON of A2 probe questions (e.g. exported EvalDetectBench sets)")
     sp.add_argument("--workers", type=int, default=4)
     sp.add_argument("--max-calls", type=int, default=max_calls)
+    sp.add_argument("--max-cost", type=float, default=None,
+                    help="spend cap in USD for this command (default: the Budget default)")
     sp.add_argument("--max-seconds", type=float, default=7200)
 
 
@@ -370,7 +373,8 @@ def cmd_evaluate_design(args):
     from .research.multi import ItemPool
     with open(args.report) as f:
         rep = json.load(f)
-    budget = Budget(max_calls=args.max_calls, max_seconds=args.max_seconds)
+    budget = Budget(max_calls=args.max_calls, max_seconds=args.max_seconds,
+                    **({'max_cost_usd': args.max_cost} if args.max_cost is not None else {}))
     models = _build_models(args, budget)
     probes = load_probe_questions(args.probe_questions) if args.probe_questions else None
     if args.benchmark_items:
