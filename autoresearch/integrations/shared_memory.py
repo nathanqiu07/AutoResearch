@@ -24,6 +24,10 @@ from typing import Dict, List, Optional
 
 from .http import post_json
 
+# OUTCOME/EVIDENCE/METHOD/INSIGHT/ASSUMPTION: loop agents; DECISION: research/decisions.py;
+# BID/SETTLE: research/market.py; LABEL/DISAGREE: human labels and taste overrides (living user model).
+FACT_KINDS = ("OUTCOME", "EVIDENCE", "METHOD", "INSIGHT", "ASSUMPTION", "DECISION", "BID", "SETTLE",
+              "LABEL", "DISAGREE")
 FACT_RE = re.compile(r"(\w+)=(\"[^\"]*\"|\S+)")
 
 
@@ -36,7 +40,7 @@ def format_fact(kind: str, **kv) -> str:
 
 
 def parse_fact(text: str) -> Optional[Dict[str, str]]:
-    m = re.search(r"\b(OUTCOME|EVIDENCE|METHOD|INSIGHT|ASSUMPTION)\b(.*)", text)
+    m = re.search(r"\b(" + "|".join(FACT_KINDS) + r")\b(.*)", text)
     if not m:
         return None
     d = {"kind": m.group(1)}
