@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from ..llm import LLM
-from .choices import fit_choice_model, load_choices, prediction_accuracy, split
+from .choices import fit_choice_model_cv, load_choices, prediction_accuracy, split
 from .extract import profile_from_texts
 from .profile import TasteProfile
 
@@ -42,7 +42,7 @@ class Researcher:
         prior = profile_from_texts(self.slug, docs, llm) if docs else None
         train, test = split(self.choices(), 1 - holdout, seed) if holdout else (self.choices(), [])
         if use_choices and train:
-            prof = fit_choice_model(train, self.slug, prior)
+            prof = fit_choice_model_cv(train, self.slug, prior)
         else:
             prof = prior or TasteProfile(self.slug)
         return prof, test

@@ -60,3 +60,24 @@ def split(choices: List[dict], frac: float = 0.7, seed: int = 0):
     random.Random(seed).shuffle(c)
     k = int(len(c) * frac)
     return c[:k], c[k:]
+
+
+def fit_choice_model_cv(choices: List[dict], name: str, prior: Optional[TasteProfile] = None,
+                        l2_grid=(0.01, 0.1, 0.5, 2.0), folds: int = 4) -> TasteProfile:
+    """Choose prior strength by k-fold CV, so text taste is trusted only as
+    far as it predicts this person's actual decisions."""
+    if prior is None or len(choices) < 2 * folds:
+        return fit_choice_model(choices, name, prior)
+    best_l2, best_acc = l2_grid[0], -1.0
+    for l2 in l2_grid:
+        accs = []
+        for k in range(folds):
+            test = choices[k::folds]
+            train = [c for i, c in enumerate(choices) if i % folds != k]
+            accs.append(prediction_accuracy(fit_choice_model(train, name, prior, l2=l2), test))
+        acc = sum(accs) / folds
+        if acc > best_acc:
+            best_l2, best_acc = l2, acc
+    prof = fit_choice_model(choices, name, prior, l2=best_l2)
+    prof.sources["prior_l2"] = best_l2
+    return prof
