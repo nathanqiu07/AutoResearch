@@ -143,7 +143,7 @@ and judge: 1 seed, 4 iterations, 2 samples per evaluation. Full logs are in `res
   before the drift gate treats an assumption as refuted.
 * With n=1 and 2 samples per score, this run is a working end-to-end check of the live
   pipeline, not evidence for or against any ablation. A meaningful live comparison needs
-  more seeds and samples (roughly $0.10 per evaluation sample at these settings).
+  more seeds and samples (roughly $0.05 per evaluation sample at these settings, including proposer and judge overhead).
 
 Run it yourself (uses your `claude` login; calls are isolated with no tools, no settings or
 CLAUDE.md, and the CLI system prompt replaced):
