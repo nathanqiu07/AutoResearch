@@ -872,3 +872,21 @@ summaries. Check them against the repos in P0 before relying on them.*
 4. **Pick and configure held-out models** (§4.4): a held-out target and 2 judges from families other than the generator. Run final mode only at the end.
 5. **Reasoning target.** Serve an open reasoning model on Modal with vLLM and `--reasoning-parser`, then point `OPENAI_COMPAT_BASE_URL` at it.
 6. **Later: Petri / agentic.** Multi-turn environments with tools in a Modal sandbox. Not started, so it goes on the board first.
+
+### 16.1 C1 status update (2026-11-14, evening)
+
+Everything below is built and tested offline (204 tests). **No calibration result exists yet: no real model has run the gate.**
+
+| Piece | State | Where |
+|---|---|---|
+| EvalAwareBench items | Done. 200 items × 2 configurations (all 8 cues on = "original", none = "minimal_cue"), 100 safety + 100 capability, frozen split 128 dev / 72 held-out grouped by task pair. Prompt files are git-ignored (CC BY-NC); regenerate with `python3 scripts/convert_evalawarebench.py --fetch` | `data/benchmarks/`, `scripts/convert_evalawarebench.py` |
+| EvalDetectBench probe questions | Done. 16 keys (default + 12 judges). Wording is upstream's; the answer format is adapted to JSON `p`, and per-judge sets are inferred from upstream `scores.csv`, so their AUROC under our format is unverified | `data/benchmarks/evaldetect_probes.json`, `harness/evaldetect/` |
+| Calibration gate | Done (code). `python3 -m autoresearch --llm <backend> calibrate ...`; four checks; a skipped check fails the gate | `research/calibrate.py` |
+| Hand labelling | Done (code). `label-transcripts`, blind and resumable | `research/calibrate.py`, `data/labels/` |
+| Topic-matched real pool | Code done (`corpus.scenario_pool`). Not yet used by `research` (cli.py change requested from David). The 144-message pool only covers coding, creative and writing | `research/corpus.py` |
+| Thinking target | `--target claude-sonnet-4-6+thinking` returns **summarized** thinking, not raw reasoning; A1 from it is a lower bound | `llm.py` |
+| Behaviour gap (V3) | **Blocked.** Smoke test: 0/40 misbehaviour with a Haiku target on the four hand-written probes. Needs a different probe or target | `results/smoke/behavior_gap_2026-11-14.json` |
+
+**Open, all waiting on Nathan:** (1) which paid or free target to run; (2) the real gate run (`calibration-run` on the board: up to ~3,600 calls for all 200 cue pairs with 5 probe questions, fewer with a subset); (3) accepting the terms of the gated Needham dataset (`jjpn2/eval_awareness`) for check (a); (4) ~50–100 hand labels for check (d); (5) a WildChat fetch for workplace topics.
+
+**Caveats to carry into any write-up:** EvalAwareBench has no "original" prompt, so the all-cues-on vs none pair is our construction and a weak cue test (single-factor pairs need another fetch). Behaviour labels on these items are ours (safety: complies|partial; capability: refuses|partial), not the paper's rubric.
