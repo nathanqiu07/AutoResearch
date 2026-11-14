@@ -110,3 +110,54 @@ def load_records(path):
                 d["choice"] = Choice(**d["choice"])
                 records.append(PreferenceRecord(**d))
     return records
+
+
+def download_dataset(dataset, cache_root, seed=0, fetch=None):
+    """Fetch public rows with page caching; refuse truncated or incomplete records.
+
+    The older corpus helper discards row truncation metadata and stops by row count;
+    preference evaluation needs complete conversations and both partition levels.
+    No final labels are sent to a model by this loader.
+    """
+    import urllib.parse
+    import urllib.request
+    if dataset not in DATASETS:
+        raise ValueError("unknown preference dataset")
+    root = Path(cache_root) / dataset
+    root.mkdir(parents=True, exist_ok=True)
+
+    def network(endpoint, params):
+        url = "https://datasets-server.huggingface.co/" + endpoint + "?" + urllib.parse.urlencode(params)
+        with urllib.request.urlopen(url, timeout=60) as response:
+            return json.load(response)
+
+    def get(endpoint, params):
+        path = root / (digest([endpoint, params]) + ".json")
+        if path.exists():
+            return json.loads(path.read_text())
+        data = (fetch or network)(endpoint, params)
+        with path.open("x") as f:
+            json.dump(data, f)
+        return data
+
+    splits = get("splits", {"dataset": DATASETS[dataset]})["splits"]
+    records = []
+    for split in splits:
+        offset, total = 0, None
+        while total is None or offset < total:
+            page = get("rows", {"dataset": DATASETS[dataset], "config": split["config"],
+                                "split": split["split"], "offset": offset, "length": 100})
+            if total is not None and total != page["num_rows_total"]:
+                raise ValueError("dataset row count changed during download")
+            total = page["num_rows_total"]
+            if not page["rows"] and offset < total:
+                raise ValueError("incomplete preference dataset page")
+            for entry in page["rows"]:
+                if entry.get("truncated_cells"):
+                    raise ValueError("truncated preference row; cannot evaluate faithfully")
+                records.append(normalize_row(entry["row"], dataset, split["split"], seed))
+            offset += len(page["rows"])
+    if not records:
+        raise ValueError("empty preference dataset")
+    build_manifest(records, seed)  # validate before the caller persists any split
+    return records

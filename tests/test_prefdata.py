@@ -72,3 +72,22 @@ class PreferenceDataTests(unittest.TestCase):
             write(path, m)
             with self.assertRaises(ValueError):
                 write(path, build(records[:2]))
+
+    def test_download_preserves_partitions_and_rejects_truncated_pages(self):
+        from autoresearch.taste.prefdata import download_dataset
+        def fetch(endpoint, params):
+            if endpoint == "splits":
+                return {"splits": [{"config": "default", "split": "train"}]}
+            return {"rows": [{"row": row(), "truncated_cells": []}], "num_rows_total": 1}
+        with tempfile.TemporaryDirectory() as d:
+            records = download_dataset("arena", d, fetch=fetch)
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0].choice_split, "history")
+        def truncated(endpoint, params):
+            result = fetch(endpoint, params)
+            if endpoint == "rows":
+                result["rows"][0]["truncated_cells"] = ["context"]
+            return result
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(ValueError):
+                download_dataset("arena", d, fetch=truncated)
