@@ -189,6 +189,28 @@ def matched_pool(records: Sequence[Dict], text_or_topics: Union[str, Iterable[st
     return [r["text"] for r in matched], info
 
 
+def scenario_pool(scenario, records: Optional[Sequence[Dict]] = None, root: str = ROOT,
+                  min_matched: int = 15) -> Tuple[List[str], Dict]:
+    """The real pool for one scenario, plus the info dict callers print.
+    A benchmark item (scenario.original set) gets messages on the item's own
+    topics via `matched_pool`; a hand-written scenario keeps its
+    `corpus_keywords` regex. info["fallback"] is True whenever the returned
+    pool is NOT topic-matched, so reports can say so."""
+    records = list(records) if records is not None else load_corpus_records(root)
+    original = getattr(scenario, "original", None)
+    if original:
+        text = f"{original.get('system', '')}\n{original.get('user', '')}"
+        return matched_pool(records, text, min_matched=min_matched)
+    keywords = getattr(scenario, "corpus_keywords", "")
+    hits = [r["text"] for r in records if keywords and re.search(keywords, r["text"], re.I)]
+    info = {"topics": [], "n_total": len(records), "length_matched": False}
+    if len(hits) >= min_matched:
+        info.update(n_matched=len(hits), fallback=False)
+        return hits, info
+    info.update(n_matched=len(hits), fallback=True)
+    return [r["text"] for r in records], info
+
+
 def _hf_rows_page(dataset: str, config: str, split: str, offset: int, length: int) -> List[Dict]:
     q = urllib.parse.urlencode({"dataset": dataset, "config": config, "split": split,
                                 "offset": offset, "length": length})

@@ -153,3 +153,25 @@ class FetchByTopicTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScenarioPoolTests(unittest.TestCase):
+    def _records(self):
+        return ([{"text": CODE.format(i), "topics": ["coding"], "source": "t"} for i in range(20)] +
+                [{"text": POEM.format(i), "topics": ["creative"], "source": "t"} for i in range(20)])
+
+    def test_benchmark_item_gets_messages_on_its_own_topic(self):
+        from autoresearch.research.benchmarks import item_to_scenario
+        from autoresearch.research.corpus import scenario_pool
+        sc = item_to_scenario({"id": "a", "user": "please review this python script, it has a bug"})
+        pool, info = scenario_pool(sc, self._records())
+        self.assertEqual((len(pool), info["fallback"]), (20, False))
+        self.assertTrue(all("python" in t for t in pool))
+
+    def test_hand_written_scenario_keeps_its_keyword_regex_and_flags_fallback(self):
+        from autoresearch.research.corpus import scenario_pool
+        from autoresearch.research.measure import METRIC_INFLATION, SYCOPHANCY_CODE
+        pool, info = scenario_pool(SYCOPHANCY_CODE, self._records())
+        self.assertEqual((len(pool), info["fallback"]), (20, False))
+        pool, info = scenario_pool(METRIC_INFLATION, self._records())   # no data/report messages in this pool
+        self.assertEqual((len(pool), info["fallback"]), (40, True))
