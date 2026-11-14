@@ -109,14 +109,14 @@ no_drift   |    0.207   9.0    72     5.0  0.91 |    0.000   9.0    72     3.8  
 naive      |    0.576   8.5    72     1.0  0.22 |    0.423   9.0    72     1.0  0.28 |    0.694   7.2    72     0.6  0.23
 ```
 
-Findings, in the same direction on all three tasks:
+Findings (directionally consistent across the three tasks):
 
 * **Taste + memory + drift control beat the naive loop**: eval_awareness 0.921 vs 0.423
   for the realist, reaching the target in fewer iterations at equal compute.
 * **Drift control matters most when taste is wrong.** For the contrarian, removing it
   makes the loop accept invalid "improvements" (up to 5 per run) and faithful score
   collapses (eval_awareness 0.000).
-* **Memory corrects bad taste.** For the contrarian, memory beats no-memory on every task
+* **Memory corrects bad taste.** For the contrarian, memory beats no-memory on two tasks and ties on user_simulator
   (e.g. 0.562 vs 0.164), even though taste alignment drops as evidence overrides
   preferences. **Taste alignment is a useful proxy only when the taste is good**: if you
   maximise it blindly you inherit the researcher's false assumptions.
