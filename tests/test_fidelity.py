@@ -112,3 +112,21 @@ class FidelityTests(unittest.TestCase):
             self.assertNotIn("arena:sealed", registration["user_ids"])
             with self.assertRaises(ValueError):
                 run_search(records(), p / "split.json", configs * 9, ColorOracle(), p / "bad", "arena")
+
+    def test_incomplete_search_cannot_select_an_early_budget_survivor(self):
+        from scripts.schema_search import run_search
+        from tests.test_taste_methods import ColorOracle
+        rows = [r for r in records() if r.choice.user_id == "arena:one" and r.choice_split == "test"]
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d)
+            write_manifest(p / "split.json", build_manifest(rows))
+            configs = [{"id": name, "method": "m5", "config": {}} for name in ("first", "second")]
+            llm = ColorOracle()
+            llm.budget.max_calls = 1
+            summary = run_search(rows, p / "split.json", configs, llm,
+                                 p / "search", "arena", max_calls=1)
+            self.assertEqual(summary["trials"][0]["failures"], 0)
+            self.assertEqual(summary["trials"][1]["failures"], 1)
+            self.assertIsNone(summary["selected_config_id"])
+            self.assertEqual(summary["status"], "incomplete")
+            self.assertEqual(json.loads((p / "search" / "search.json").read_text()), summary)

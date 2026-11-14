@@ -32,12 +32,12 @@ Interfaces: `Choice(user_id,context,a_text,b_text,chosen,...)`;
 Adapter: `normalize_row(row,dataset,outer_split,seed) -> PreferenceRecord`;
 `build_manifest(records,seed) -> dict`, `write_manifest(path,manifest)`.
 
-- [ ] Write tests for no-history isolation, seeded raw history, invalid probabilities,
+- [x] Write tests for no-history isolation, seeded raw history, invalid probabilities,
   multi-option prediction, fit-user/overlap checks, source metadata stripping,
   deterministic A/B mapping, user/group partitions and immutable manifests.
-- [ ] Run tests and confirm missing behavior fails.
-- [ ] Implement contract, adapter and baselines. Download/pin public dataset only.
-- [ ] Run targeted tests and full suite; inspect manifest counts; commit/push.
+- [x] Run tests and confirm missing behavior fails.
+- [x] Implement contract, adapter and baselines. Download/pin public dataset only.
+- [x] Run targeted tests and full suite; inspect manifest counts; commit/push.
 
 ### Task 2: Fidelity runner and module CLI
 
@@ -45,30 +45,30 @@ Files: `taste/fidelity.py`, `taste/__main__.py`, `tests/test_fidelity.py`.
 Interfaces: runner consumes records, manifest and model factories; emits per-case
 predictions, per-user summaries, artifacts, failures, costs and paired comparisons.
 
-- [ ] Test dev-user isolation, error accounting, report statistics, single final
+- [x] Test dev-user isolation, error accounting, report statistics, single final
   marker across output paths and no final predictions without explicit launch.
-- [ ] Observe failure, implement runner and CLI, verify with scripted models.
-- [ ] Run full suite; commit/push. Explain runnable baseline workflow to Gio.
+- [x] Observe failure, implement runner and CLI, verify with scripted models.
+- [x] Run full suite; commit/push. Explain runnable baseline workflow to Gio.
 
 ### Task 3: Bounded M2–M6
 
 Files: `taste/methods/m2_synthesizeme.py` through `m6_verified.py` and shared utilities;
 tests: `tests/test_taste_methods.py`.
 
-- [ ] Test useful-rule selection, duplicate clustering, label-blind feature mapping,
+- [x] Test useful-rule selection, duplicate clustering, label-blind feature mapping,
   retrieval ordering, validation filtering, empty histories and bounded call counts.
-- [ ] Implement each core-stage adaptation with source/adaptation metadata.
-- [ ] Keep export/load predictions stable; include `TasteProfile` adapter.
-- [ ] Run full suite and commit/push working units.
+- [x] Implement each core-stage adaptation with source/adaptation metadata.
+- [x] Keep export/load predictions stable; include `TasteProfile` adapter.
+- [x] Run full suite and commit/push working units.
 
 ### Task 4: M7, schema search and handoff
 
 Files: `taste/methods/m7_confident.py`, `scripts/schema_search.py`, docs and method tests.
 
-- [ ] Test separate tuning/calibration conversations, finite probabilities and
+- [x] Test separate tuning/calibration conversations, finite probabilities and
   conservative uncalibrated fallback with too little calibration data.
-- [ ] Implement regularized Platt scaling and bounded dev-only schema search.
-- [ ] Run full suite, fresh review, commit/push. Report actual live-run status.
+- [x] Implement regularized Platt scaling and bounded dev-only schema search.
+- [x] Run full suite, fresh review, commit/push. Report actual live-run status.
 
 ### Task 5: Live development and final comparison (Gio's decision gate)
 

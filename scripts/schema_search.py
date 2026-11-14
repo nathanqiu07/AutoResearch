@@ -34,11 +34,14 @@ def run_search(records, manifest, configs, llm, output, dataset, seed=0, n_users
         results.append({**c, "accuracy": score["accuracy"], "failures": score["failures"],
                         "usage": score["usage"]})
         # Preserve partial search evidence even when a later configuration fails.
-        (output / "search.json").write_text(json.dumps({"partition": "dev", "trials": results}, indent=2))
-    eligible = [r for r in results if r["failures"] == 0]
-    selected = max(eligible, key=lambda r: r["accuracy"])["id"] if eligible else None
-    summary = {"partition": "dev", "trials": results, "selected_config_id": selected,
-               "note": "Development selection only; no final-test or transfer claim. Ties use first declared config."}
+        (output / "search.json").write_text(json.dumps({"partition": "dev", "status": "incomplete",
+                                                        "selected_config_id": None, "trials": results}, indent=2))
+    complete = len(results) == len(configs) and all(r["failures"] == 0 for r in results)
+    selected = max(results, key=lambda r: r["accuracy"])["id"] if complete else None
+    summary = {"partition": "dev", "status": "complete" if complete else "incomplete",
+               "trials": results, "selected_config_id": selected,
+               "note": "Selection requires every declared trial to finish without errors. "
+                       "Development selection only; no final-test or transfer claim. Ties use first declared config."}
     (output / "search.json").write_text(json.dumps(summary, indent=2) + "\n")
     return summary
 

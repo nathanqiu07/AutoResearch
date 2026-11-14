@@ -83,7 +83,8 @@ python3 -m autoresearch.taste prepare --datasets prism \
   --output runs/prefdata/prism.jsonl --manifest data/prefdata/prism-splits.json
 ```
 
-PRISM's loader is implemented; the real PRISM download has not yet been verified.
+PRISM's loader is implemented; the first real download stopped on HTTP 429 after
+caching 3,100 complete rows. No partial PRISM snapshot was published.
 The public rows service may return an error or truncated cells; the loader fails
 rather than score partial conversations. Source links:
 [Arena](https://huggingface.co/datasets/MichaelR207/chatbot_arena_personalized_0125),
@@ -150,8 +151,10 @@ python3 -m scripts.schema_search --configs configs.json --dataset arena \
 ```
 
 This command always uses development users, shares one call budget across all
-configurations, logs every trial, and selects only a configuration without errors.
-It has no final-test switch. A dev winner still needs the held-out comparison.
+configurations and logs every trial. It selects a configuration only when **all**
+declared trials finish without errors. An exhausted budget or failed trial leaves
+the search incomplete, with no winner. It has no final-test switch. A dev winner
+still needs the held-out comparison.
 
 ## Verification and limits
 
