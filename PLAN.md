@@ -435,19 +435,321 @@ Every costly run needs the user's approval first (AGENTS.md rule 5), is announce
 
 ## 12. Team split (five workstreams)
 
-| WS | Scope | Main code areas | Suggested owner |
-|---|---|---|---|
-| **A: User models** | §6.1–6.2, E1, method grid, schema search | `autoresearch/taste/` | spec 3 author (Gio): this is that spec's core |
-| **B: Taste tracks and data** | §6.3–6.4: Track P (team member's seed choices and labels) and Track S (Exa harvest, consent, time-split set), E2 | `data/researchers/`, `taste/scrape.py`, `integrations/exa.py` | **[decide]** |
-| **C: Measurement harness** | §3.2, §4: EvalAwareBench, EvalDetectBench and Petri integration (one Inspect harness), deployment pool, judges plus their validation, Modal-hosted targets and sandboxes, V3, E3a, E3b, E6 | `autoresearch/research/measure.py`, `corpus.py`, new `benchmarks/` | **[decide]** |
-| **D: Research loop** | §7: decision-point logging, taste at D1–D6, disagreement records, claim-checker, dev/held-out split, drift and setting anchor, E4, E4b | `autoresearch/research/loop.py`, `ideas.py`, `drift.py` | **[decide]** |
-| **E: Market, infrastructure, demo** | §8, §10: market, cascade, caching and batch, Modal fan-out, past.dev, E5, final report and demo | `research/market.py`, `modal_app.py`, `swarm.py`, `integrations/` | **[decide]** |
+### 12.0 Overview
 
-Interfaces to agree on day one (post them with `agentctl post` when they are set):
-* `UserModel.predict(decision_record) -> (choice, confidence)` (A → D)
-* `DecisionRecord` schema (D → A, B)
-* `Measurer.measure(env, target, judge) -> Sample{A1..A4, V1..V3, cost}` (C → D, E)
-* `Market.allocate(bids, budget) / settle(outcomes)` (E → D)
+| WS | One-line job | Produces | Main code | Owner |
+|---|---|---|---|---|
+| **A: User models** | Find the best way to turn someone's past choices into a model that predicts their next ones | the selected method + E1 | `autoresearch/taste/` | Gio (suggested: spec 3 is about exactly this) |
+| **B: Taste tracks and data** | Get the data for the two people whose taste we use, and test the method on them | Track P and Track S datasets + E2 | `data/researchers/`, `taste/scrape.py`, `integrations/exa.py` | **[decide]** |
+| **C: Measurement** | A trustworthy score for "does the model think this is a test, and does the test still work" | the scorer, calibration, E3a, E3b, E6 | `research/measure.py`, `benchmarks.py`, `corpus.py`, new `harness/` | Nathan built scorer v2 (§16); next tasks offered to David |
+| **D: Research loop** | The agent that rewrites environments, with taste used at each decision | R0 and R1 arms + E4, E4b | `research/loop.py`, `ideas.py`, new `decisions.py`, `advisor.py`, `claims.py` | **[decide]** |
+| **E: Market, infrastructure, demo** | Spend the budget well, run everything in parallel, and show the results | market + E5 + runners, charts, demo | new `research/market.py`, `modal_app.py`, `swarm.py`, `integrations/`, `scripts/` | **[decide]** |
+
+**Dependency order.** C must be trusted (its P1 gate) before any paid run of D or E means
+anything. A selects the method that B applies. D consumes A/B's user models and C's
+`Measurer`, and E's market plugs into D's loop.
+
+```
+A ──method──▶ B ──user models (P, S)──▶ D ◀──Measurer── C
+                                       ▲
+                                       └──Market──── E   (E also runs every paid sweep)
+```
+
+**One code rule that affects the split.** `autoresearch/` is standard-library only
+(AGENTS.md §3). Anything that needs Inspect (EvalDetectBench, Petri), Modal, vLLM or
+plotting lives **outside** it, in `harness/` and `scripts/`, each with its own
+`requirements.txt`. These talk to `autoresearch/` **only through JSONL files** with the
+schemas in §12.6.
+
+---
+
+### 12.1 WS A: User models
+
+**Goal.** A *method* M(history) → user model that predicts held-out choices better than
+pasting the history into the prompt (§6.2, E1).
+
+**What exists.** `taste/profile.py` (`TasteProfile` over 7 `FEATURES`), `taste/choices.py`
+(Bradley–Terry `fit_choice_model_cv`; choices are feature vectors `{a, b, chosen}`) and
+`taste/extract.py` (profile from text). None of it handles **text** options, and
+PersonalRewardBench options are text.
+
+**Build:**
+1. `taste/prefdata.py`: the PersonalRewardBench loader.
+   * Reads through the existing `research/corpus.fetch_hf_rows`. Ask the user before downloading.
+   * Normalises each row to a `Choice` (§12.6): `{user_id, context, a_text, b_text, chosen, source}`.
+   * Per-user split: history / val / test (e.g. 60/20/20, seeded). Users are also split into dev users and test users.
+   * Writes a manifest `data/prefdata/splits.json`, so everyone uses the same split.
+2. `taste/usermodel.py`: the `UserModel` interface (§12.6), with `fit`, `predict`, `artifacts()`, `cost`.
+3. `taste/methods/`, one file per method, all implementing `UserModel`:
+
+   | File | Method | Key implementation detail |
+   |---|---|---|
+   | `m0_none.py` | no history | A plain LLM judge asks "which reply would a typical user prefer?" |
+   | `m1_history.py` | raw history in the prompt | `k ∈ {5, 10, 20, all}`. Exemplar choice is random and seeded |
+   | `m2_synthesizeme.py` | SynthesizeMe | (i) For each history pair, ask an LLM *why* this user chose it. (ii) Keep a hypothesis only if adding it raises **val** accuracy. (iii) Write a persona from the kept hypotheses. (iv) Greedily pick the exemplars that most improve val accuracy |
+   | `m3_icai.py` | Inverse Constitutional AI | Propose principles per pair, then cluster them (stdlib: TF-IDF + cosine, or the LLM groups them, since we can't use embedding libraries in `autoresearch/`). Keep one principle per cluster, score each by how well it reconstructs the history pairs, and keep the top-n |
+   | `m4_bt.py` | Bradley–Terry over features | An LLM featuriser maps each text option to the 7 `FEATURES` (with a cache), then the existing `fit_choice_model_cv` fits it. This also links PersonalRewardBench to the loop's feature vocabulary |
+   | `m5_hybrid.py` | M3 principles + M2 persona + retrieved exemplars | one prompt |
+   | `m6_verified.py` | M5 + verification filter | Drop any principle or persona line that lowers val accuracy (leave-one-out) |
+   | `m7_confident.py` | M6 + confidence | Ask for P(choice). Calibrate it with Platt scaling on val. This confidence is what WS D uses to fall back to R0 |
+4. `taste/fidelity.py` and the CLI command `python3 -m autoresearch fidelity --method m6 --dataset prism|arena --users dev --n-users 50`.
+   * Reports accuracy with a bootstrap CI over users (`research/stats.bootstrap_ci`), Brier score, and $ per user model.
+   * Results go to `results/fidelity/<method>_<dataset>.json`.
+   * `--users test` requires `--final` and writes `results/fidelity/TEST_USED`. **Test users are used once**, enforced by the code, not by memory.
+5. **Schema search** (time-boxed, §6.2): `scripts/schema_search.py` runs a grid over (principle count, persona length, exemplar count, structured vs free text) for M5–M7 on dev users only, and logs every configuration it tries.
+6. `artifacts()` → `TasteArtifacts` (principles, feature weights, assumptions with credences, exemplars). This is the hand-off to WS B and WS D (§6.4). It includes an adapter to `TasteProfile`, so `Researcher.ablation_report` keeps working (AGENTS.md §6).
+
+**Model and cost.** Use a cheap judge (Haiku-class) for every method so the comparison is
+fair, and cache every call. ~8 methods × ~100 test users × 20 pairs ≈ 16k judgments
+(~$50–150). Paid runs need the user's OK.
+
+**Done when.**
+* There are unit tests per method, run on the offline LLM with a synthetic user whose rules we know, so a method that works should reach about 100%.
+* The E1 table is committed.
+* The selected method's name and config are posted to the team with `agentctl post`.
+
+**Board tasks to add:** `prefdata-loader`, `usermodel-interface`, `methods-m0-m7`, `fidelity-cli`, `schema-search`, `e1-final`.
+
+---
+
+### 12.2 WS B: Taste tracks and data
+
+**Goal.** Build the two people's data and test transfer (§6.3, E2).
+
+**Track P: one team member** (**[decide]** who):
+1. **Seed choices.** `python3 -m autoresearch seed-choices --researcher <slug> --scenario <name> --n 50`.
+   * The command generates D1-style pairs: two candidate interventions for the same EvalAwareBench item, taken from `ideas.LIBRARY` plus LLM proposals.
+   * The team member picks one and can add a sentence explaining why. Store their reasons, because they are extra signal for M2.
+   * Each pair is stored as a text `Choice` with `decision_point="D1"`, with features filled in by A's featuriser.
+2. **Decision labels.** Extend the existing `label` command to read WS D's `decisions.jsonl` (§12.6) and cover all of D1–D6, not just D1. Labels go to `data/researchers/<slug>/labels.jsonl`, with a timestamp and run id.
+3. **Noise ceiling** (from `eval-awareness-plan.md`): re-ask ~20% of the items a few days later, without showing the earlier answers. The person's agreement with themselves is the upper bound on fidelity, and E2 is reported next to it.
+4. **Hold-out:** 20% of the seed choices, plus every label from runs after a cutoff date.
+
+**Track S: one public researcher** (**[decide]** who; ask for consent where possible, and record it in `data/researchers/<slug>/CONSENT.md`):
+1. **Harvest.** Add `scrape_exa(name, queries, since, until)` to `taste/scrape.py`, using `integrations/exa.ExaClient.search`/`contents`.
+   * Collect papers, blog posts, talks and repository READMEs.
+   * **Keep `publishedDate`** in each file's front matter, so the time split is possible.
+   * Run the existing `scrape --arxiv` for papers as well.
+2. **Time split.** `taste/timesplit.py`:
+   * Choose a cutoff T. Build the profile from documents before T only.
+   * Make held-out pairs from work after T: "the direction they actually took" vs "a plausible distractor". Distractors come from earlier "future work" ideas they didn't pursue, or from LLM-generated alternatives on the same topic.
+   * **A person checks ~20 pairs**, to make sure the distractor isn't obviously wrong.
+   * Output: `data/researchers/<slug>/heldout_timesplit.jsonl`.
+3. **History pairs** from before T, built the same way, are the "choices" the selected method fits on.
+4. Leakage check: no document dated after T may enter the profile. Write a test for this.
+
+**Both tracks:** run E2 with M0, M1 and the selected method on each track's held-out set.
+Then export `TasteArtifacts` to `data/researchers/<slug>/usermodel.json` for WS D.
+
+**Cost.** Exa searches (needs the user's `EXA_API_KEY`), plus a small amount of LLM cost for building the distractors.
+**Done when.**
+* Both researcher directories exist with corpus, choices, held-out data, usermodel.json and consent.
+* The E2 table and the noise ceiling are committed.
+
+**Board tasks:** claim `real-researcher` (Track S), `human-labels` (Track P) and `exa-live-run`. Add `seed-choices-cli`, `timesplit-builder`, `noise-ceiling`.
+
+---
+
+### 12.3 WS C: Measurement
+
+**Goal.** One scorer we trust for both settings, single-scenario and agentic (§3.2, §4).
+Section 16 lists what is already done: error flagging, multi-question A2, realism AUROC,
+dev/final mode, the validity split, item rewrites, raw reasoning through `OpenAICompatLLM`,
+and `cohen_kappa`.
+
+**Build (in order):**
+1. **EvalAwareBench items.**
+   * Download a small sample (ask first) and record its real schema.
+   * Write `scripts/convert_evalawarebench.py` to produce the JSONL that `research/benchmarks.load_items` reads. Keep the **cue-factor flags** (F1–F8) and the safety/capability label in each item's metadata.
+   * Emit both the original configuration and the minimal-cue configuration, since those are the two E3a controls.
+   * Freeze the 60/40 hashed split in `data/benchmarks/evalawarebench_split.json`.
+2. **EvalDetectBench probe questions.** Use `harness/evaldetect/export_probes.py` (Inspect, outside `autoresearch/`) to export the calibrated per-model question sets as `{"<backend>:<model>": [templates with {transcript}]}`. Pass them in with `--probe-questions`. This replaces `DEFAULT_PROBE_QUESTIONS`.
+3. **Calibration gate (P1),** as `python3 -m autoresearch calibrate`. It writes `results/calibration/*.json` and fails loudly if any check fails:
+   * (a) On Needham's labelled eval vs deployment transcripts, AUROC must be ≥ 0.85 for each answerer.
+   * (b) On EvalAwareBench cue pairs, the score must move in the right direction when a cue is removed.
+   * (c) A placebo rewrite must give a change of about 0.
+   * (d) On ~100 hand-labelled transcripts, the A1 judge must reach κ ≥ 0.6. Labels come from a `label-transcripts` command that shows raw reasoning and the answer, with a yes/no "aware?" label.
+4. **Models (§4.4).**
+   * Write `configs/models.json` with the dev target, held-out target, dev judge J1, held-out judges J2 (2, from other families) and the cheap screening target (for E's cascade).
+   * `Measurer` warns if a held-out judge shares a family with the generator. That check exists; extend it to cover families, not just backends.
+5. **Reasoning target on Modal.**
+   * `harness/modal_vllm.py` serves an open reasoning model with `--reasoning-parser`, exposing an OpenAI-compatible URL.
+   * Point `OPENAI_COMPAT_BASE_URL` at it.
+   * Smoke test: run 5 samples and check that `Sample.reasoning` is filled in and A1 can be read.
+6. **Topic-matched deployment pool (§4.3).**
+   * Extend `corpus.py` with topic filters for WildChat, plus an Exa-based source.
+   * Each item gets negatives matched by topic tag.
+   * This closes the open task `topic-matched-corpus`.
+7. **Petri (agentic, E3b).** In `harness/petri/`, using `inspect_petri`:
+   * `run_audits.py` takes a seed JSONL (original v1 seeds, v2 seeds, or our rewritten seeds) and returns transcripts plus Petri's judge scores as JSONL (`AuditResult`, §12.6).
+   * `--tools simulated|sandbox`: in sandbox mode, the target's tool calls go to a **Modal Sandbox** with a real filesystem and shell.
+   * In `autoresearch/research/`, add `PetriMeasurer` with the same `measure()` signature as `Measurer`. It writes seeds, calls the harness (subprocess or Modal), and reads `AuditResult` back into `Sample` objects. A1 and A2 are computed by *our* judges on the transcripts, and Petri's own awareness score goes in a separate field as a cross-check.
+8. **Behaviour gap (V3, E6).**
+   * `Measurer.faithfulness` already compares an eval-notice version with a plain one.
+   * Add a target and probe with real baseline misbehaviour. Check this in the first hour: if the target never misbehaves on the originals, V3 can't be measured. This closes `behavior-gap-probe`.
+
+**Interface promise to WS D and WS E:** `Measurer.measure(interventions, seeds, categories) -> List[Sample]` stays stable. New fields are optional only. Any change gets a post with `agentctl post`.
+**Cost.** The calibration gate is about $30–80. Modal GPUs depend on model size **[decide]**.
+**Done when.** The calibration gate passes and is committed, the minimal-cue and Petri v2 baselines are reproduced on dev, and both measurers pass offline tests.
+
+**Board tasks:** claim `api-target`, `topic-matched-corpus` and `behavior-gap-probe`. Add `evalawarebench-converter`, `evaldetect-probes`, `calibration-gate`, `models-config`, `modal-vllm-target`, `petri-harness`, `petri-measurer`, `modal-sandbox-tools`.
+
+---
+
+### 12.4 WS D: Research loop
+
+**Goal.** Run R0, R1-P, R1-S, the prompt baselines and R1-bad through the same loop. The
+**only** difference between arms is how taste is used (§5, §7, E4, E4b).
+
+**What exists.** `research/loop.OpenResearcher.run()`: it proposes, ranks by `priority()`
+(taste × learned weight + memory + novelty), gates refuted categories, measures, accepts
+with `prob_better` ≥ 0.9, confirms on fresh samples, and updates beliefs. A crude D1 record
+exists as `self.decisions` (`chosen` vs `taste_top`). The setting gate is in `Proposer.setting_gate`.
+
+**Build:**
+1. **`research/decisions.py`: `DecisionRecord`** (§12.6), plus a `DecisionLog` that writes `runs/<run_id>/decisions.jsonl` and an optional shared-memory `DECISION` fact. Emit a record at each decision point in `run()`:
+
+   | Point | Where in `run()` | Options recorded |
+   |---|---|---|
+   | D1 | after `ranked` is computed | the top-k candidate designs with their priority parts |
+   | D2 | before `_measure` (with E: samples per candidate) | sample counts and target |
+   | D3 | the accept/confirm block | accept / reject / defer, with p, Δ and validity |
+   | D4 | the refuted-category gate, plus a new "abandon direction?" check after 2 mixed results | keep / drop the category |
+   | D5 | new: after each evaluation, the proposer LLM writes 2–3 competing explanations | the explanations |
+   | D6 | report writing: claims pulled from the findings | candidate claims |
+2. **`research/advisor.py`: `TasteAdvisor`.** It wraps a `UserModel` (WS A's interface, loaded from B's `usermodel.json`) and implements the policy in §7.2:
+   * At D1, replace `self._taste(i)` with the user model's P(choose this candidate) × `cal.weight`.
+   * At D2–D4, the user model's choice is the default, but **the statistics decide**. When they disagree, write a disagreement record.
+   * When the user model's confidence is below a threshold, fall back to R0 behaviour.
+   * The advisor never touches the acceptance thresholds, so taste can't relax the evidence bar.
+3. **Arm switches** in `ResearchConfig` and the CLI:
+   * `--taste-mode none|model|prompt`. `prompt` pastes the raw history or documents into the proposer prompt, with no advisor.
+   * `--taste-track P|S` picks which `data/researchers/<slug>`.
+   * R1-bad = `--researcher demo_contrarian --taste-mode model`.
+   * The existing `--no-taste` becomes an alias for `--taste-mode none`.
+4. **Interventions that work across items.**
+   * Today the loop rewrites one item (`--item-index`). Change it so an intervention is a *transformation*, scored as the mean over a batch of N dev items (e.g. 8, re-sampled each iteration from the dev split).
+   * Report the effect per item and pooled.
+   * This is what makes a finding about eval awareness rather than about one prompt.
+5. **Agentic mode:** `--setting agentic` swaps in C's `PetriMeasurer`. Interventions are then rewrites of seeds and auditor behaviour, with the task-level vs environment-level cue rule from §3.3 in the proposer prompt.
+6. **`research/claims.py`: the claim-checker.**
+   * Each D6 claim must cite finding ids. The checker re-derives the cited Δ, CI and status from the log, and rejects any claim that is not supported.
+   * The report includes the claim-check pass rate (E4b).
+7. **E4b rating packets.** `scripts/make_rating_packets.py` exports blinded D1–D6 records: arm names removed and order shuffled, so a team member who isn't the taste source can rate "justified by the evidence?" on a 1–5 scale. An LLM rubric judge scores the same packets.
+8. **Web setting is the same across all arms.** `eval-awareness-plan.md` warns that web search lets agents copy published methods. **[decide]** Either Exa is on for every arm, or it is off for E4 and used only in C and B.
+
+**Hot file.** `research/loop.py` is shared with E (market) and C (measurer wiring). Lock it
+with `agentctl lock` for each change and keep changes small.
+
+**Done when.**
+* Every arm runs offline end to end, and tests check that arms differ only in the taste mode.
+* `decisions.jsonl` validates against the schema.
+* One cheap live seed per arm runs (with approval).
+* E4 runs are launched by WS E's runner, and E4b packets are produced.
+
+**Board tasks:** claim `anchor-setting` (check it against the existing `setting_gate`). Add `decision-log`, `taste-advisor`, `arm-switches`, `multi-item-interventions`, `agentic-mode`, `claim-checker`, `rating-packets`.
+
+---
+
+### 12.5 WS E: Market, infrastructure, demo
+
+**Goal.** Spend the budget where it is most informative, run every paid sweep reproducibly
+and in parallel, and produce the charts and demo (§8, §10, E5).
+
+**Build:**
+1. **`research/market.py`** (standard library):
+   * `Bid{agent, candidate_id, p_validated, exp_delta, stake}`.
+   * `Market.allocate(bids, budget_calls) -> {candidate_id: n_samples}` uses successive halving. Round 1 gives every funded candidate 2 samples on the **cheap screening target**. The top half gets 4 more on the dev target. The best candidate goes to confirmation.
+   * `Market.settle(outcomes)` pays each agent the log score of its `p_validated` against the real outcome (validated or not), scaled by its stake.
+   * Wallets persist in `runs/<memory>/wallets.json`, and `BID`/`SETTLE` facts go to shared memory.
+   * Unit tests check that honest bidding earns the most credits in expectation (a simulated test: an agent that over-claims loses budget).
+2. **Bidders.** Proposers return `p_validated` in their JSON (small prompt change in `ideas.py`).
+   * Agents: the taste proposer, the Exa scout (`from_web`), a new **contrarian proposer** (a `Proposer` told to find ideas the researcher would *not* pick), and the critic, which can bid *against* a candidate.
+   * Hook into `loop.run()`: replace `chosen = gated[: evals_per_iter]` with `market.allocate`. Coordinate with WS D through the `loop.py` lock.
+   * `--allocation market|uniform|halving` gives the E5 arms.
+3. **Cheaper calls.**
+   * Prompt caching in `AnthropicLLM` (`cache_control` on the fixed system prompt and probe specification).
+   * `scripts/batch_final.py` runs the final held-out sweeps (E3a, E3b) through the Batch API.
+   * Every saving is recorded in `Budget`, so E5's cost numbers are real.
+4. **Parallel runs on Modal.** Add `--mode research-grid` to `modal_app.py`, which runs `research` over arms × seeds × settings with `worker.map`.
+   * Each cell writes its own results directory with a `CODE_VERSION`.
+   * The code version is pinned when the image is built, which also solves AGENTS.md rule 4 (mixed code versions) for Modal runs.
+   * Closes `modal-swarm-run`.
+5. **past.dev.** Run `pastdev-live-smoke` first and report the recall rate.
+   * Then add `LABEL` and `DISAGREE` facts (from B and D), so the user model can be rebuilt from shared memory between runs.
+   * This is the "living user model" demo from §10.
+6. **Experiment runner and pre-registration.**
+   * `scripts/run_experiment.py E4|E3a|E3b|E5` reads `results/prereg/<exp>.json` (arms, seeds, samples, primary metrics, success criteria). It **refuses to run** if that file isn't committed, or if the commit is newer than the code under test.
+   * It locks `autoresearch` with the reason "live run" and posts the start and end with `agentctl post`.
+7. **Charts and report** with `scripts/plots.py` (matplotlib, outside `autoresearch/`):
+   * the anytime curve of score against cumulative $, one line per arm (the main chart);
+   * a 2×2 table of A1 against A2;
+   * fidelity against the noise ceiling;
+   * real tools vs simulated tools;
+   * charts for the market against uniform allocation and plain successive halving.
+   * The README results section shows the seeds, sample counts and `CODE_VERSION` for each.
+8. **Demo script:** the four sponsor demo moments from §10, run in order on committed results, with no live calls during the demo.
+
+**Done when.** The market's unit tests pass, `research-grid` runs one cell on Modal, the pre-registrations are committed before launch, and the E5 table and charts are in `results/`.
+
+**Board tasks:** claim `modal-swarm-run` and `pastdev-live-smoke`. Add `market`, `bidder-prompts`, `prompt-caching`, `batch-runner`, `research-grid`, `prereg-runner`, `plots`, `demo-script`.
+
+---
+
+### 12.6 Shared interfaces (agree on day one; any change gets an `agentctl post`)
+
+```python
+# taste/usermodel.py            (WS A owns; B and D use)
+@dataclass
+class Choice:              # one past or held-out choice, text options
+    user_id: str; context: str; a_text: str; b_text: str; chosen: str  # "a" | "b"
+    decision_point: str = ""  # "D1".."D6" for research choices; "" for PersonalRewardBench
+    reason: str = ""; timestamp: str = ""; source: str = ""             # source: prb_arena|prb_prism|seed|label|timesplit
+
+@dataclass
+class Prediction:
+    choice: str; confidence: float; rationale: str = ""
+
+class UserModel:
+    def fit(self, history: List[Choice], val: List[Choice]) -> None: ...
+    def predict(self, context: str, options: List[str]) -> Prediction: ...  # options: 2+ texts
+    def artifacts(self) -> "TasteArtifacts": ...  # principles, weights(FEATURES), assumptions{key: credence}, exemplars
+
+# research/decisions.py         (WS D owns; B labels it, A trains on labels, E settles on it)
+@dataclass
+class DecisionRecord:
+    run_id: str; iter: int; point: str           # "D1".."D6"
+    context: str; options: List[str]; chosen: int
+    user_model_choice: Optional[int]; user_model_confidence: Optional[float]
+    evidence: Dict                                # p_better, delta, ci90, validity, n
+    overrode_taste: bool; arm: str; code_version: str
+
+# research/measure.py           (WS C owns; D and E use). Signature stays stable; new fields optional
+Measurer.measure(interventions: List[str], seeds: List[int], categories=None) -> List[Sample]
+
+# harness/petri  <->  research/PetriMeasurer   (JSONL, WS C)
+AuditSeed   = {"seed_id", "text", "variant": "v1|v2|ours", "tools": "simulated|sandbox"}
+AuditResult = {"seed_id", "transcript", "reasoning", "petri_scores": {...}, "error": null|str}
+
+# research/market.py            (WS E owns; D calls it)
+Market.allocate(bids: List[Bid], budget_calls: int) -> Dict[str, int]
+Market.settle(outcomes: Dict[str, bool]) -> Dict[str, float]          # agent -> credit change
+```
+
+### 12.7 Where the split comes from, and one difference to resolve
+
+`eval-awareness-plan.md` splits the same work by person and step. Its five people map onto
+these workstreams like this:
+* Person 1 (real data, judges, calibration) and Person 2 ("still works" check and baseline numbers) → WS C.
+* Person 3 (rewrite loop) → WS D.
+* Person 4 (taste collection, profiles, Layer 1) → WS A + WS B.
+* Person 5 (experiment runner, charts) → WS E.
+
+**The difference to resolve [decide]:** its Layer 2 comparison uses four conditions: no
+taste, generic advice of the same length, a teammate's taste as a placebo, and your taste.
+E4 here doesn't yet have the generic-advice and teammate-placebo arms. They test whether
+*this* person's taste matters or whether any structured guidance works equally well, and
+§9 doesn't cover that. Adding both would take E4 from 7 to 9 arms, roughly +$120–250.
 
 ---
 
