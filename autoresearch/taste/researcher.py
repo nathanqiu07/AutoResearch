@@ -30,7 +30,8 @@ class Researcher:
     def docs(self):
         for p in sorted(glob.glob(os.path.join(self.root, "corpus", "*.txt"))):
             kind = "other" if os.path.basename(p).startswith("other__") else "research"
-            yield kind, open(p).read()
+            with open(p) as f:
+                yield kind, f.read()
 
     def choices(self) -> List[dict]:
         p = os.path.join(self.root, "choices.jsonl")
