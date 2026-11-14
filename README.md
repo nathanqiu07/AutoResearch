@@ -122,6 +122,89 @@ Findings (directionally consistent across the three tasks):
   preferences. **Taste alignment is a useful proxy only when the taste is good**: if you
   maximise it blindly you inherit the researcher's false assumptions.
 
+## Sponsor integrations
+
+API keys are read only from environment variables, which you set yourself:
+`EXA_API_KEY`, `PAST_API_KEY`, `ANTHROPIC_API_KEY`. Modal keys come from `modal setup`.
+Each integration turns on when its key is present and is skipped cleanly otherwise.
+
+```bash
+export EXA_API_KEY=...      # fill in your own
+export PAST_API_KEY=...     # fill in your own
+python3 -m autoresearch --llm claude-cli run --task eval_awareness --researcher demo_realist
+```
+
+### Exa: the web scout runs inside every iteration
+
+The question "what makes a model notice it is being tested?" is being answered *right now*
+in new papers and posts. A loop that relies on model knowledge freezes at the training
+cutoff and repeats folk wisdom such as "longer context feels more real". The scout
+(`autoresearch/integrations/exa.py`, class `WebScout`) does three jobs in the main loop
+(`autoresearch/loop.py`):
+
+| Job | Where it is called | What it changes |
+|---|---|---|
+| Fact-check the assumption behind each experiment before it runs. It searches sources published in the last ~18 months with steered highlights. | `Researcher._critic_allows` → `WebScout.check_assumption` → `ExaClient.search` | The verdict moves the assumption's credence (weighted by confidence), and the drift critic **vetoes** experiments the web confidently refutes. |
+| Discover methods nobody gave the agent. On each re-anchor iteration it searches for new anti-eval-awareness techniques. | `Researcher._discover` → `WebScout.discover_options` | New knobs and options are **added to the live search space** and tested like built-in ones. |
+| Ground environments in real artifacts. It fetches real public workflow write-ups. | `Researcher.run` → `WebScout.grounding_material`; consumed in `EnvironmentDesignTask._online_measure` | When `scenario_source=grounded_real_workflow`, the generator builds the environment from real documents, not invented ones. |
+
+**Show your sources.** Every Exa result used is logged with what it was used for
+(`fact_check`, `method_discovery`, `environment_grounding`), its URL and its publish
+date. These go in the run report's `sources` and are printed at the end of `run`.
+Discovered options keep their `source_url`. Evidence facts in shared memory carry the
+cited URLs, so any veto can be traced to a page.
+
+### past.dev: shared memory across agents
+
+The loop is split into five agents, each writing to past.dev under its own `identity`
+(`autoresearch/integrations/shared_memory.py`, `PastDevMemory`: `POST /api/v1/ingest` and
+`POST /api/v1/recall`):
+
+| Agent | Writes | Reads (written by another agent) and uses it to |
+|---|---|---|
+| experimenter | `OUTCOME` (change, delta, validity, P(eval)) after every experiment | (none) |
+| scout | `EVIDENCE` (stance, confidence, URLs) and `METHOD` (discovered options) | (none) |
+| critic (drift monitor) | (none) | `EVIDENCE` from the scout: vetoes refuted experiments |
+| proposer | (none) | `OUTCOME` from *other runs'/workers'* experimenters: priority prior. `INSIGHT` from distillers: prompt context |
+| distiller | `INSIGHT` at the end of each run | (none) |
+
+Facts use a parseable line format (`OUTCOME task=... change=... delta=...`), so readers
+use them as data, not only as prompt text.
+
+**Which memory holds what.** The local `ResearchMemory` (JSON) holds exact numbers that
+need arithmetic: Beta credences per assumption and the experiment log. past.dev holds
+cross-agent, cross-worker facts in text form. Without `PAST_API_KEY`, the same interface
+runs on a local JSONL file (`LocalSharedMemory`), or on a `modal.Dict` inside Modal.
+
+**Does it help?** In the offline swarm with the contrarian researcher (3 rounds × 6
+workers, 6 iterations), workers that read each other's `OUTCOME` facts reached a mean
+score of 0.27 by round 1. Isolated workers stayed at 0.01. Caveats: the local
+executor runs workers one after another, so round-0 workers already see each other; and
+past.dev itself has not been exercised with a live key in this repo (calls are tested
+with mocked HTTP). The past.dev recall is semantic, so a fact might not surface for a
+given query. Readers then fall back to local credences, which costs efficiency but not
+correctness.
+
+### Modal: parallel research swarms and ablation grids
+
+`modal_app.py` runs researcher workers in parallel containers (`worker.map`, up to 64):
+
+* `--mode swarm`: R rounds × W workers on one task, run twice. In the **shared** arm,
+  workers read and write one memory layer (past.dev, or a `modal.Dict`); in the
+  **isolated** arm they do not. Per-round mean score and iterations-to-target show whether
+  the collective memory makes later rounds better: the system improving from its own results.
+* `--mode grid`: the full ablation (5 conditions × 3 tasks × seeds) in one parallel fan-out.
+
+```bash
+pip install modal && modal setup
+modal secret create autoresearch-keys ANTHROPIC_API_KEY=... EXA_API_KEY=... PAST_API_KEY=...
+modal run modal_app.py --mode swarm --task eval_awareness --rounds 3 --workers 8
+```
+
+The parallel logic lives in `autoresearch/swarm.py`, which is plain Python and tested
+locally. Modal supplies the executor. The app has been import-checked but not deployed
+from this repo, since that needs your Modal account.
+
 ## Live run (real model, via `--llm claude-cli`)
 
 One small run per condition on `eval_awareness` with Claude Sonnet 5.5 as generator, target
@@ -141,6 +224,9 @@ and judge: 1 seed, 4 iterations, 2 samples per evaluation. Full logs are in `res
   naive run concludes "longer context doesn't help" from one −0.023 result). This is the
   drift risk the assumption ledger is meant to absorb. Credences need repeated evidence
   before the drift gate treats an assumption as refuted.
+* A JSON-parsing bug (since fixed) made the model-driven proposer silently fall back to
+  the ranked candidate list in this run, so the proposals came from taste and memory
+  ranking, not the LLM.
 * With n=1 and 2 samples per score, this run is a working end-to-end check of the live
   pipeline, not evidence for or against any ablation. A meaningful live comparison needs
   more seeds and samples (roughly $0.05 per evaluation sample at these settings, including proposer and judge overhead).
