@@ -180,7 +180,8 @@ class OpenResearcher:
             if it == 1 or it % 3 == 0:
                 self._discover()
             cands = deferred + self.pr.propose(self.sc.goal, self.sc.probe, best.interventions, tried,
-                                               self.findings, self.web_ideas, self.cfg.proposals)
+                                               self.findings, self.web_ideas, self.cfg.proposals,
+                                               setting=self.sc.setting)
             deferred = []
             # candidate designs: add one intervention; occasionally ablate one
             designs = [(f"add:{c.id}", best.interventions + [c], c) for c in cands]

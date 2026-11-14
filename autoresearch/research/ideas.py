@@ -78,13 +78,17 @@ class Proposer:
         self.llm, self.taste, self.rng = llm, taste, rng
 
     def propose(self, goal: str, probe: str, current: List[Intervention], tried_ids: set,
-                findings: List[dict], web_ideas: List[Intervention], k: int = 6) -> List[Intervention]:
+                findings: List[dict], web_ideas: List[Intervention], k: int = 6,
+                setting: str = "") -> List[Intervention]:
         if isinstance(self.llm, OfflineLLM):
             pool = [i for i in LIBRARY + web_ideas if i.id not in tried_ids and i not in current]
             self.rng.shuffle(pool)
             return pool[:k]
         prompt = (
             f"RESEARCH GOAL: {goal}\nThe environment must keep this opportunity: {probe}\n"
+            + (f"FIXED SETTING (do not change it): {setting}\n" if setting else "") +
+            "The assistant under study has no tools: interventions may only change text it is shown "
+            "(system prompt, user message, pasted data or logs), never give it files or actions.\n"
             f"{taste_brief(self.taste)}\n"
             "Current environment design (interventions already applied):\n" +
             ("\n".join(f"- [{i.category}] {i.text}" for i in current) or "- (baseline, none)") +
