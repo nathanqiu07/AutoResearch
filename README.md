@@ -145,6 +145,42 @@ they would find unusual. (2) It *ranks* candidates, multiplied by the learned re
 weight. (3) The report shows how often the loop's choices matched the researcher's top pick, and
 whether their taste predicted what worked.
 
+### Arms, decision records and checked claims (WS D)
+
+The arms of experiment E4 differ **only** in how taste is used (`--taste-mode`; tests check that
+nothing else differs):
+
+| arm | flags | taste |
+|---|---|---|
+| R0 | `--taste-mode none` (or `--no-taste`) | none |
+| R1-P / R1-S | `--taste-track P` / `S` (resolved via `data/researchers/tracks.json`) | the track's user model (`usermodel.json`, WS A's method; else `profile.json`, which informs D1 only) |
+| R1-P-prompt / R1-S-prompt | `--taste-mode prompt --taste-track P` / `S` | the raw history pasted into the proposer prompt, no user model |
+| R1-bad | `--researcher demo_contrarian` | deliberately bad taste; should be down-weighted |
+
+Every choice the loop makes is written as a decision record (`research/decisions.py`) to
+`runs/<run_id>/decisions.jsonl` and next to the report: **D1** which designs to test, **D2** how
+many samples (fixed uniform allocation, so every arm spends the same), **D3** accept / reject /
+defer, **D4** keep or abandon a direction, **D5** which explanation of a result is most
+plausible, **D6** which claims go into the write-up. The user model (`research/advisor.py`) ranks
+candidates at D1 with its learned weight. At D2–D5 the statistics decide whenever they are
+decisive, and taste is the default only where the evidence is inconclusive: it may defer a
+borderline result for a re-test but can never accept one. A low-confidence prediction falls back
+to R0. Each record says whether the action departed from the user model (`overrode_taste`).
+Claims (D6) must cite finding ids, and `research/claims.py` re-derives their status and delta from
+the log; unsupported or misquoted claims are rejected, and the report gives the pass rate.
+
+Other switches: `--items-per-iter N` (with `--benchmark-items`) scores an intervention over N dev
+items re-sampled every iteration, paired by item against the current best, so a finding is about
+eval awareness rather than one prompt. `--setting agentic --petri-seeds seeds.jsonl --tools
+simulated|sandbox` swaps in C2's `PetriMeasurer`. Generated environments are checked against the
+fixed setting, and a design that drifted is never accepted.
+
+E4 / E4b tooling: `evaluate-design --report <run>.json --mode final` scores a run's final design on
+held-out items (the E4 primary metric); `scripts/e4_commands.py` prints the per-arm, per-seed
+commands from `results/prereg/E4.json` (a draft until its blocking items are resolved); and
+`scripts/make_rating_packets.py` makes blinded rating packets from decision records, runs an LLM
+rubric judge, and unblinds the ratings per arm.
+
 **Known limitation with `--llm claude-cli`.** Even with tools, settings and the system prompt
 replaced, the CLI passes some harness context to the model: in a smoke test the target
 referred to the CLI's temporary working directory. A target that can see it runs in a sandbox
