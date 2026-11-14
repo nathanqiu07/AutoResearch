@@ -21,6 +21,7 @@ from typing import Dict, List, Optional
 from .llm import Budget, get_llm
 from .loop import LoopConfig, Researcher
 from .memory import ResearchMemory
+from .integrations.shared_memory import LocalSharedMemory
 from .taste import TasteProfile
 from .tasks import TASKS, get_task
 
@@ -61,16 +62,19 @@ def run_benchmark(tasks: List[str], seeds: List[int], taste: Optional[TasteProfi
             tmp = tempfile.mkdtemp(prefix="ar_mem_")
             try:
                 memory = ResearchMemory(tmp if flags["use_memory"] else None)
+                # shared multi-agent memory: history workers write, measured worker reads
+                shared = LocalSharedMemory(os.path.join(tmp, "shared.jsonl")) if flags["use_memory"] else None
                 if flags["use_memory"]:  # historical experience from earlier research
                     for t in TASKS:
                         Researcher(get_task(t), get_llm(llm_kind, model, Budget()), memory, taste,
                                    LoopConfig(iterations=iterations, samples=samples, seed=seed + 1000,
-                                              **flags)).run()
+                                              **flags), shared=shared, worker="history").run()
                 for t in tasks:
                     llm = get_llm(llm_kind, model, Budget())
                     r = Researcher(get_task(t), llm, memory, taste,
                                    LoopConfig(iterations=iterations, samples=samples, seed=seed,
-                                              target_score=get_task(t).target_score, **flags))
+                                              target_score=get_task(t).target_score, **flags),
+                                   shared=shared, worker="measured")
                     rep = r.run()
                     decs = [d for d in memory.decisions if d["run_id"] == rep.run_id]
                     rows.append({"condition": cond, "task": t, "seed": seed,

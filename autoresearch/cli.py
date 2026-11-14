@@ -59,13 +59,28 @@ def cmd_run(args):
     cfg = LoopConfig(iterations=args.iterations, samples=args.samples, seed=args.seed,
                      use_taste=not args.no_taste, use_memory=not args.no_memory,
                      use_drift=not args.no_drift)
-    rep = Researcher(get_task(args.task), llm, memory, prof, cfg, log_dir=args.log_dir).run()
+    from .integrations.exa import get_scout
+    from .integrations.shared_memory import get_shared_memory
+    scout = None if args.no_web else get_scout(llm, cache_dir=os.path.join(args.memory, "exa_cache"))
+    shared = None if args.no_shared else get_shared_memory(args.shared_path, run_tag=args.worker)
+    print(f"agents: web scout={'exa' if scout else 'off (set EXA_API_KEY)'} | shared memory="
+          f"{shared.backend if shared else 'off'}")
+    rep = Researcher(get_task(args.task), llm, memory, prof, cfg, log_dir=args.log_dir,
+                     scout=scout, shared=shared, worker=args.worker).run()
     print(f"task={rep.task} run={rep.run_id} best_score={rep.best_score:.3f}")
     print("best_config:", json.dumps(rep.best_config))
     print("metrics:", json.dumps({k: round(v, 3) for k, v in rep.best_metrics.items()}))
     print("drift events:", len(rep.drift_events), "| compute:", rep.compute)
     for i in rep.insights:
         print(" *", i)
+    if rep.shared_memory:
+        print("shared memory:", json.dumps(rep.shared_memory))
+    for o in rep.discovered_options:
+        print(f" + discovered {o['knob']}={o['option']} from {o.get('source_url')}")
+    if rep.sources:
+        print(f"web sources used ({len(rep.sources)}):")
+        for s in rep.sources[:25]:
+            print(f"   [{s['used_for']}] {s['title'][:70]} <{s['url']}> {s['published'] or ''}")
 
 
 def cmd_benchmark(args):
@@ -132,7 +147,10 @@ def main(argv=None):
     r.add_argument("--seed", type=int, default=0)
     r.add_argument("--max-calls", type=int, default=2000)
     r.add_argument("--max-seconds", type=float, default=3600)
-    for f in ("--no-taste", "--no-memory", "--no-drift"):
+    r.add_argument("--shared-path", default="runs/shared_memory.jsonl",
+                   help="local shared-memory file (used when PAST_API_KEY is unset)")
+    r.add_argument("--worker", default="local")
+    for f in ("--no-taste", "--no-memory", "--no-drift", "--no-web", "--no-shared"):
         r.add_argument(f, action="store_true")
     r.set_defaults(fn=cmd_run)
     b = sub.add_parser("benchmark")
