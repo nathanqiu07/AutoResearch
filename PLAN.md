@@ -510,3 +510,33 @@ metrics, either taste track, and the M1 / prompt baselines (I15).
 
 *Benchmark details (sizes, factor counts, AUROC figures) come from paper abstracts and
 summaries. Check them against the repos in P0 before relying on them.*
+
+---
+
+## 16. Scorer status and handoff (2026-11-14, workstream C)
+
+**Done** (`autoresearch/research/`, standard library only, 39 tests pass, offline only, no paid runs yet):
+
+- **Errors are flagged, not averaged in.** If the self-report, judge or faithfulness output can't be parsed, or a call fails, the sample gets `behavior="error"` plus an `error` reason. Every aggregate excludes these samples and reports the count and reasons. Before this, they silently scored 0.5.
+- **A2 asks several questions, with two kinds of answerer.** `Measurer.p_eval` averages several probe questions (`DEFAULT_PROBE_QUESTIONS` are **placeholders**). `--probe-questions file.json` loads per-model sets. In final mode, held-out judges also answer, and their answers go in `Sample.judge_p_eval`.
+- **Realism AUROC.** `stats.auroc` (Mann–Whitney) and `measure.realism_auroc` compare P(eval) on our environments with P(eval) on real-pool transcripts, per answerer, where 0.5 is the target. Turn it on with `--realism-samples N`. The report gets a table.
+- **Dev vs final.** `Measurer(mode="dev"|"final")`, `Models(heldout_target=, heldout_judges=[])`, and CLI flags `--mode --heldout-target --heldout-judges`. Final mode also picks items from the held-out benchmark split. It warns if a held-out judge shares a backend with the generator.
+- **Validity split.** The judge now returns `opportunity` (V1), `scorable` (V2) and `bait_reached` (catches buried bait). On rewrites, `faithful_to_original` also runs. Validity is the minimum of these, and the summary reports each part as `validity_parts`.
+- **Benchmark items as input.** `research/benchmarks.py` loads a local JSONL of items. Its field names are not verified against EvalAwareBench, so it accepts `user|input|prompt` and fails loudly otherwise. It also does a deterministic 60/40 hashed split. With an item loaded, the baseline is the untouched original and candidates are rewrites. CLI flags: `--benchmark-items --item-index`.
+- **Raw reasoning for A1.** `LLM.complete_with_reasoning`, plus a new `OpenAICompatLLM` backend that reads vLLM's `reasoning_content` (set `OPENAI_COMPAT_BASE_URL`). Use it for the target with `--target-llm openai-compat`. The judge reads the reasoning when there is any.
+- **`stats.cohen_kappa`**, for checking the A1 judge against hand labels.
+
+**Interface changes, for anyone calling `Measurer` directly:**
+
+- `Sample` has new optional fields: `opportunity, scorable, bait_reached, faithful, judge_p_eval, reasoning, error`.
+- A self-report now costs 3 calls instead of 1, so an online sample takes **7 calls** instead of 5.
+- The discriminator no longer counts an unparseable answer as 0.5. It drops A3 for that sample instead.
+
+**Next tasks, in order (David: these are ready to claim):**
+
+1. **Get the real EvalAwareBench items.** Download a small sample (ask first, see §4.3), check the schema, and write a converter to the JSONL format in `benchmarks.py`. Then run one minimal-cue item through `--benchmark-items` as a smoke test (needs approval: paid).
+2. **Replace the placeholder probe questions** with EvalDetectBench's calibrated per-model sets: `freeze-lasr/aware_bench`, exported as `{"<backend>:<model>": [templates with {transcript}]}`.
+3. **Calibration gate (P1).** (a) On labeled eval-vs-deployment transcripts (e.g. Needham's `jjpn2/eval_awareness`), P(eval) AUROC should be ≥0.85 for each answerer. (b) EvalAwareBench cue pairs: removing a cue should move the score in the right direction. (c) Placebo rewrite: an irrelevant edit should give roughly 0 change. (d) About 100 hand labels; the A1 judge needs κ≥0.6 (`cohen_kappa`).
+4. **Pick and configure held-out models** (§4.4): a held-out target and 2 judges from families other than the generator. Run final mode only at the end.
+5. **Reasoning target.** Serve an open reasoning model on Modal with vLLM and `--reasoning-parser`, then point `OPENAI_COMPAT_BASE_URL` at it.
+6. **Later: Petri / agentic.** Multi-turn environments with tools in a Modal sandbox. Not started, so it goes on the board first.

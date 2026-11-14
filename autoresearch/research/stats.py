@@ -34,6 +34,32 @@ def prob_better(a: Sequence[float], b: Sequence[float], n: int = 4000, seed: int
     return wins / n
 
 
+def auroc(positives: Sequence[float], negatives: Sequence[float]) -> float:
+    """P(score of a random positive > score of a random negative), ties count
+    half (Mann-Whitney U / n1 n2). For P(eval) with positives = our synthetic
+    environments and negatives = real deployment traffic, 0.5 means the two
+    are indistinguishable, which is the target (PLAN issue I1)."""
+    if not positives or not negatives:
+        return float("nan")
+    wins = 0.0
+    for p in positives:
+        for n in negatives:
+            wins += 1.0 if p > n else (0.5 if p == n else 0.0)
+    return wins / (len(positives) * len(negatives))
+
+
+def cohen_kappa(a: Sequence, b: Sequence) -> float:
+    """Chance-corrected agreement between two raters' labels (e.g. the A1
+    judge vs hand labels). PLAN P1 gate suggests kappa >= 0.6."""
+    if len(a) != len(b) or not a:
+        raise ValueError(f"kappa needs two equal-length, non-empty label lists (got {len(a)} and {len(b)})")
+    n = len(a)
+    observed = sum(x == y for x, y in zip(a, b)) / n
+    labels = set(a) | set(b)
+    expected = sum((list(a).count(k) / n) * (list(b).count(k) / n) for k in labels)
+    return 1.0 if expected == 1.0 else (observed - expected) / (1.0 - expected)
+
+
 def spearman(x: Sequence[float], y: Sequence[float]) -> float:
     if len(x) < 3:
         return 0.0

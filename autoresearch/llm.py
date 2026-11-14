@@ -63,6 +63,70 @@ class LLM:
                  temperature: float = 0.7) -> str:
         raise NotImplementedError
 
+    def complete_with_reasoning(self, prompt: str, system: str = "", max_tokens: int = 1024,
+                                temperature: float = 0.7):
+        """(raw reasoning, final text). Backends that expose raw chain of
+        thought override this; the rest return empty reasoning, so the
+        verbalized-awareness metric falls back to reading the reply only."""
+        return "", self.complete(prompt, system=system, max_tokens=max_tokens, temperature=temperature)
+
+    @property
+    def label(self) -> str:
+        return f"{self.name}:{getattr(self, 'model', '')}"
+
+
+def parse_openai_chat(data: dict):
+    """(reasoning, text, input_tokens, output_tokens) from an OpenAI-style
+    chat completion. vLLM reasoning parsers put raw chain of thought in
+    `reasoning_content` (newer servers: `reasoning`)."""
+    msg = ((data.get("choices") or [{}])[0].get("message") or {})
+    reasoning = msg.get("reasoning_content") or msg.get("reasoning") or ""
+    usage = data.get("usage") or {}
+    return reasoning, msg.get("content") or "", usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
+
+
+class OpenAICompatLLM(LLM):
+    """Any OpenAI-compatible chat endpoint, e.g. an open-weight reasoning model
+    served by vLLM on Modal. Exposes raw reasoning, which the co-primary
+    chain-of-thought awareness metric (PLAN A1) needs. Base URL from
+    OPENAI_COMPAT_BASE_URL (e.g. https://<app>.modal.run/v1); optional key
+    from OPENAI_COMPAT_API_KEY."""
+    name = "openai-compat"
+
+    def __init__(self, model: str, budget: Optional[Budget] = None, base_url: Optional[str] = None):
+        super().__init__(budget)
+        self.model = model
+        self.base_url = (base_url or os.environ.get("OPENAI_COMPAT_BASE_URL") or "").rstrip("/")
+        if not self.base_url:
+            raise RuntimeError("OPENAI_COMPAT_BASE_URL is not set")
+        self.key = os.environ.get("OPENAI_COMPAT_API_KEY", "")
+
+    def _call(self, prompt, system, max_tokens, temperature):
+        messages = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
+        body = {"model": self.model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
+        headers = {"content-type": "application/json"}
+        if self.key:
+            headers["authorization"] = f"Bearer {self.key}"
+        req = urllib.request.Request(self.base_url + "/chat/completions", data=json.dumps(body).encode(), headers=headers)
+        for attempt in range(4):
+            try:
+                with urllib.request.urlopen(req, timeout=300) as r:
+                    data = json.loads(r.read())
+                break
+            except Exception:
+                if attempt == 3:
+                    raise
+                time.sleep(2 ** attempt)
+        reasoning, text, inp, out = parse_openai_chat(data)
+        self.budget.charge(inp or _approx_tokens(system + prompt), out or _approx_tokens(reasoning + text))
+        return reasoning, text
+
+    def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+        return self._call(prompt, system, max_tokens, temperature)[1]
+
+    def complete_with_reasoning(self, prompt, system="", max_tokens=1024, temperature=0.7):
+        return self._call(prompt, system, max_tokens, temperature)
+
 
 class AnthropicLLM(LLM):
     name = "anthropic"
@@ -156,6 +220,8 @@ def get_llm(kind: str = "auto", model: str = "claude-sonnet-5-5",
         return OfflineLLM(budget)
     if kind == "claude-cli":
         return ClaudeCLILLM(model=model, budget=budget)
+    if kind == "openai-compat":
+        return OpenAICompatLLM(model=model, budget=budget)
     return AnthropicLLM(model=model, budget=budget)
 
 

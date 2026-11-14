@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 from ..memory import ResearchMemory
 from ..taste.profile import TasteProfile
 from .ideas import Intervention, Proposer
-from .measure import Measurer, Sample, Scenario, DEFAULT_SCENARIO
+from .measure import Measurer, Sample, Scenario, DEFAULT_SCENARIO, realism_auroc
 from .stats import bootstrap_ci, mean, prob_better, spearman
 
 
@@ -33,6 +33,7 @@ class ResearchConfig:
     seed: int = 0
     max_calls: int = 2000
     faithfulness_samples: int = 0  # >0: final eval-notice control on baseline and best design
+    realism_samples: int = 0       # >0: real-traffic transcripts for realism AUROC on baseline and best
 
 
 class Calibration:
@@ -90,7 +91,17 @@ class Evaluation:
                 "self_report": mean([s.self_report for s in ok]),
                 "verbalized": mean([s.verbalized for s in ok]),
                 "discriminated": mean(disc) if disc else None,
-                "validity": mean([s.validity for s in ok]), "behaviors": beh}
+                "validity": mean([s.validity for s in ok]), "behaviors": beh,
+                "validity_parts": {k: _mean_present([getattr(s, k) for s in ok])
+                                   for k in ("opportunity", "scorable", "bait_reached", "faithful")},
+                "judge_p_eval": {j: _mean_present([s.judge_p_eval.get(j) for s in ok])
+                                 for j in sorted({j for s in ok for j in s.judge_p_eval})},
+                "error_reasons": sorted({s.error for s in self.samples if s.behavior == "error" and s.error})[:5]}
+
+
+def _mean_present(xs):
+    xs = [x for x in xs if x is not None]
+    return mean(xs) if xs else None
 
 
 class OpenResearcher:
@@ -266,8 +277,16 @@ class OpenResearcher:
             faith = {"baseline": self.ms.faithfulness([], self._seeds(n)),
                      "best": self.ms.faithfulness([i.text for i in best.interventions], self._seeds(n),
                                                   [i.category for i in best.interventions])}
+        realism = {}
+        if self.cfg.realism_samples and not self._exhausted():
+            systems = [s.env["system"] for s in baseline.samples + best.samples if s.env.get("system")]
+            real = self.ms.real_pool_p_eval(self.cfg.realism_samples, seed=self.cfg.seed, system_prompts=systems)
+            realism = {"baseline": realism_auroc(baseline.samples, real), "best": realism_auroc(best.samples, real)}
         rep = self._report(baseline, best, time.time() - t0)
         rep["faithfulness"] = faith
+        rep["realism_auroc"] = realism
+        rep["mode"] = getattr(self.ms, "mode", "dev")
+        rep["measurer_warnings"] = list(getattr(self.ms, "warnings", []))
         rep["setting_gate_refusals"] = getattr(self.pr, "gated", [])
         return rep
 
@@ -335,6 +354,17 @@ def write_report(rep: dict, out_dir: str) -> str:
         L += ["", "Positive sensitivity means the target behaves better when it knows it is being evaluated. "
                   "So an environment it does not see as an evaluation exposes the deployment behaviour that "
                   "evaluations miss."]
+    ra = rep.get("realism_auroc") or {}
+    if ra:
+        L += ["", "## Realism AUROC vs real traffic (A2)", "",
+              "P(eval) on our environments vs on real deployment messages, per answerer. 0.5 = indistinguishable "
+              "(the target); 1.0 = every environment looks more like a test than every real message.", "",
+              "| answerer | baseline AUROC | best AUROC | n env (best) | n real |", "|---|---|---|---|---|"]
+        for who in sorted(set(ra.get("baseline", {})) | set(ra.get("best", {}))):
+            b0, b1 = ra.get("baseline", {}).get(who, {}), ra.get("best", {}).get(who, {})
+            L.append(f"| {who} | {fmt(b0.get('auroc'))} | {fmt(b1.get('auroc'))} | {b1.get('n_env', '-')} | {b1.get('n_real', '-')} |")
+    if rep.get("measurer_warnings"):
+        L += ["", f"## Measurement warnings (mode={rep.get('mode')})", ""] + [f"- {w}" for w in rep["measurer_warnings"]]
     if rep.get("setting_gate_refusals"):
         L += ["", "## Proposals refused by the setting gate (drift control)", ""]
         L += [f"- [{g['category']}] {g['idea'][:140]}: {g['why'][:160]}" for g in rep["setting_gate_refusals"]]

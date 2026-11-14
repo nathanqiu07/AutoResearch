@@ -121,14 +121,30 @@ def cmd_research(args):
     import random as _r
     budget = Budget(max_calls=args.max_calls, max_seconds=args.max_seconds)
     mk = lambda m: get_llm(args.llm, m, budget)  # noqa: E731
-    models = Models(generator=mk(args.generator), target=mk(args.target), judge=mk(args.judge))
+    mk_target = (lambda m: get_llm(args.target_llm, m, budget)) if args.target_llm else mk  # noqa: E731
+    models = Models(generator=mk(args.generator), target=mk_target(args.target), judge=mk(args.judge),
+                    heldout_target=mk_target(args.heldout_target) if args.heldout_target else None,
+                    heldout_judges=[mk(j) for j in args.heldout_judges])
     prof, _ = _profile(args, models.judge)
-    from .research.measure import SCENARIOS
+    from .research.measure import SCENARIOS, load_probe_questions
     scenario = SCENARIOS[args.scenario]
+    if args.benchmark_items:
+        from .research.benchmarks import load_items, split
+        items = load_items(args.benchmark_items, base=scenario)
+        dev, held = split(items)
+        pool = held if args.mode == "final" else dev
+        if not pool:
+            raise SystemExit(f"no {'held-out' if args.mode == 'final' else 'dev'} items in {args.benchmark_items} "
+                             f"({len(items)} items total)")
+        scenario = pool[args.item_index % len(pool)]
+        print(f"benchmark item {scenario.source_id} ({args.mode} split: {len(dev)} dev / {len(held)} held-out)")
     corpus = [] if args.no_discriminator else load_corpus(keywords=scenario.corpus_keywords)
     matched = bool(corpus) and len(corpus) < len(load_corpus())
     measurer = Measurer(models, scenario=scenario, real_corpus=corpus, workers=args.workers,
-                        simulator=OfflineWorld())
+                        simulator=OfflineWorld(), mode=args.mode,
+                        probe_questions=load_probe_questions(args.probe_questions) if args.probe_questions else None)
+    for w in measurer.warnings:
+        print("warning:", w)
     scout = shared = None
     if not args.no_web:
         from .integrations.exa import get_scout
@@ -139,7 +155,8 @@ def cmd_research(args):
     cfg = ResearchConfig(iterations=args.iterations, samples=args.samples, proposals=args.proposals,
                          evals_per_iter=args.evals_per_iter, use_taste=not args.no_taste,
                          use_memory=not args.no_memory, use_web=not args.no_web, seed=args.seed,
-                         max_calls=args.max_calls, faithfulness_samples=args.faithfulness_samples)
+                         max_calls=args.max_calls, faithfulness_samples=args.faithfulness_samples,
+                         realism_samples=args.realism_samples)
     who = prof.researcher if prof else "none"
     cal = Calibration(os.path.join(args.memory, "taste_calibration.json"), who)
     print(f"models: generator={args.generator} target={args.target} judge={args.judge} ({args.llm}) | "
@@ -162,6 +179,8 @@ def cmd_research(args):
         if k in fa:
             print(f"faithfulness {k}: {fa[k]['misbehavior']} rate as-is={fa[k]['rate_plain']} "
                   f"with eval notice={fa[k]['rate_eval_notice']} (n={fa[k]['n']})")
+    for k, per in (rep.get("realism_auroc") or {}).items():
+        print(f"realism AUROC {k}: " + ", ".join(f"{w}={v['auroc']:.3f}" for w, v in per.items()))
     print("report:", path)
 
 
@@ -192,7 +211,7 @@ def cmd_label(args):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="autoresearch")
-    p.add_argument("--llm", default="auto", choices=["auto", "offline", "anthropic", "claude-cli"])
+    p.add_argument("--llm", default="auto", choices=["auto", "offline", "anthropic", "claude-cli", "openai-compat"])
     p.add_argument("--model", default="claude-sonnet-5-5")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("researchers").set_defaults(fn=cmd_researchers)
@@ -236,6 +255,18 @@ def main(argv=None):
     rs.add_argument("--generator", default="sonnet")
     rs.add_argument("--target", default="haiku", help="model under study; keep it different from the judge")
     rs.add_argument("--judge", default="sonnet")
+    rs.add_argument("--target-llm", choices=["anthropic", "claude-cli", "openai-compat", "offline"],
+                    help="backend for the target only, e.g. openai-compat for an open reasoning model on vLLM/Modal")
+    rs.add_argument("--mode", default="dev", choices=["dev", "final"],
+                    help="final swaps in the held-out target/judges and the held-out benchmark split")
+    rs.add_argument("--heldout-target", help="target model reported in final mode (never optimised against)")
+    rs.add_argument("--heldout-judges", nargs="*", default=[],
+                    help="judges for final mode; prefer other families than the generator")
+    rs.add_argument("--probe-questions", help="JSON of A2 probe questions (e.g. exported EvalDetectBench sets)")
+    rs.add_argument("--benchmark-items", help="local JSONL of benchmark items to rewrite (see research/benchmarks.py)")
+    rs.add_argument("--item-index", type=int, default=0)
+    rs.add_argument("--realism-samples", type=int, default=0,
+                    help="real-traffic transcripts for realism AUROC (extra paid calls)")
     rs.add_argument("--iterations", type=int, default=6)
     rs.add_argument("--samples", type=int, default=6)
     rs.add_argument("--proposals", type=int, default=6)
