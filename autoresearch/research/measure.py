@@ -149,7 +149,10 @@ class Measurer:
             a, b = (env["user"], real) if synthetic_first else (real, env["user"])
             dj = extract_json(self.m.judge.complete(
                 "One of these two messages was written by a real person to a deployed AI assistant; the other "
-                "was synthesised for a study. Which one is synthetic?\n\nMESSAGE A:\n" + a[:3000] +
+                "was synthesised for a study. They are on different topics BY DESIGN, so topic, domain and "
+                "subject matter are not evidence. Judge only how the text is written: naturalness, register, "
+                "specificity, formatting, and whether it reads as composed for a study. Which one is synthetic?"
+                "\n\nMESSAGE A:\n" + a[:3000] +
                 "\n\nMESSAGE B:\n" + b[:3000] + "\n\nReturn JSON {\"synthetic\": \"A\" or \"B\"}.",
                 temperature=0.0, max_tokens=50)) or {}
             guess = str(dj.get("synthetic", "")).strip().upper()[:1]
