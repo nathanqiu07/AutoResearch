@@ -186,7 +186,7 @@ def cmd_research(args):
     """Open-ended research loop (v2) with separate generator/target/judge."""
     from .llm import get_llm
     from .research.advisor import ProfileUserModel, TasteAdvisor, history_text, load_user_model
-    from .research.corpus import load_corpus
+    from .research.corpus import scenario_pool
     from .research.ideas import Proposer, taste_brief
     from .research.loop import Calibration, OpenResearcher, write_report
     from .research.measure import Measurer, OfflineWorld, Scenario
@@ -210,14 +210,15 @@ def cmd_research(args):
     from .research.measure import SCENARIOS, load_probe_questions
     scenario = SCENARIOS[args.scenario]
     probes = load_probe_questions(args.probe_questions) if args.probe_questions else None
-    corpora = {}
+    corpora = {}   # per scenario name: benchmark items share keywords but need their own topic-matched pool
+
+    def pool_for(sc):
+        if sc.name not in corpora:
+            corpora[sc.name] = ([], {"fallback": True}) if args.no_discriminator else scenario_pool(sc)
+        return corpora[sc.name]
 
     def corpus_for(sc):
-        if args.no_discriminator:
-            return []
-        if sc.corpus_keywords not in corpora:
-            corpora[sc.corpus_keywords] = load_corpus(keywords=sc.corpus_keywords)
-        return corpora[sc.corpus_keywords]
+        return pool_for(sc)[0]
 
     def make_measurer(sc):
         return Measurer(models, scenario=sc, real_corpus=corpus_for(sc), workers=args.workers,
@@ -250,7 +251,7 @@ def cmd_research(args):
     for w in getattr(measurer, "warnings", []) if measurer else []:
         print("warning:", w)
     corpus = corpus_for(scenario) if args.setting == "single" else []
-    matched = bool(corpus) and len(corpus) < len(load_corpus())
+    matched = bool(corpus) and not pool_for(scenario)[1].get("fallback", True)
     scout = shared = None
     if not args.no_web:
         from .integrations.exa import get_scout
@@ -363,7 +364,7 @@ def _build_models(args, budget):
 def cmd_evaluate_design(args):
     """E4 primary metric: a finished run's final design on held-out items
     (final mode by default), paired by item against the untouched items."""
-    from .research.corpus import load_corpus
+    from .research.corpus import scenario_pool
     from .research.heldout import evaluate_design, format_heldout
     from .research.measure import SCENARIOS, Measurer, OfflineWorld, load_probe_questions
     from .research.multi import ItemPool
@@ -384,9 +385,9 @@ def cmd_evaluate_design(args):
     corpora = {}
 
     def make(sc):
-        if sc.corpus_keywords not in corpora:
-            corpora[sc.corpus_keywords] = [] if args.no_discriminator else load_corpus(keywords=sc.corpus_keywords)
-        return Measurer(models, scenario=sc, real_corpus=corpora[sc.corpus_keywords], workers=args.workers,
+        if sc.name not in corpora:
+            corpora[sc.name] = [] if args.no_discriminator else scenario_pool(sc)[0]
+        return Measurer(models, scenario=sc, real_corpus=corpora[sc.name], workers=args.workers,
                         simulator=OfflineWorld(), mode=args.mode, probe_questions=probes)
     pool = ItemPool(items, make, workers=args.workers)
     batch = pool.ids[: args.max_items] if args.max_items else None
