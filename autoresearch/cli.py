@@ -111,40 +111,150 @@ def cmd_scrape(args):
     print(f"saved {len(paths)} documents under {root}")
 
 
+TRACKS_FILE = "tracks.json"   # data/researchers/tracks.json: {"P": "<slug>", "S": "<slug>"} (WS B)
+
+
+def resolve_arm(taste_mode: str, track: str = None, researcher: str = None, arm: str = None, root: str = None):
+    """Which researcher an arm uses and its label (PLAN 5): R0, R1-P, R1-S,
+    R1-P-prompt, R1-S-prompt, R1-bad (demo_contrarian taste), or R1-<slug>."""
+    from .taste.researcher import DEFAULT_ROOT
+    root = root or DEFAULT_ROOT
+    slug = researcher
+    if track and not slug:
+        path = os.path.join(root, TRACKS_FILE)
+        if not os.path.exists(path):
+            raise SystemExit(f"--taste-track {track} needs {path} mapping tracks to researcher slugs "
+                             '(e.g. {"P": "<slug>", "S": "<slug>"}, written by WS B), or pass --researcher')
+        with open(path) as f:
+            tracks = json.load(f)
+        if track not in tracks:
+            raise SystemExit(f"track {track!r} not in {path} (has {sorted(tracks)})")
+        slug = tracks[track]
+    if taste_mode != "none" and not slug:
+        raise SystemExit(f"--taste-mode {taste_mode} needs --researcher or --taste-track")
+    if arm:
+        return slug, arm
+    if taste_mode == "none":
+        return slug, "R0"
+    if slug == "demo_contrarian" and taste_mode == "model":
+        return slug, "R1-bad"
+    name = track or slug
+    return slug, f"R1-{name}" + ("-prompt" if taste_mode == "prompt" else "")
+
+
+def research_config(args, arm: str):
+    """ResearchConfig from CLI args. The arms differ only in taste_mode and arm."""
+    from .research.loop import ResearchConfig
+    return ResearchConfig(iterations=args.iterations, samples=args.samples, proposals=args.proposals,
+                          evals_per_iter=args.evals_per_iter, taste_mode=args.taste_mode, arm=arm,
+                          use_memory=not args.no_memory, use_web=not args.no_web, seed=args.seed,
+                          max_calls=args.max_calls, faithfulness_samples=args.faithfulness_samples,
+                          realism_samples=args.realism_samples, items_per_iter=args.items_per_iter,
+                          min_taste_confidence=args.min_taste_confidence, setting_check=not args.no_setting_check,
+                          explain=not args.no_explain, claims=not args.no_claims)
+
+
+def _hash_split(key: str, heldout_frac: float = 0.4) -> bool:
+    import hashlib
+    return int(hashlib.sha256(key.encode()).hexdigest(), 16) % 1000 / 1000 < heldout_frac
+
+
+def _agentic_measurer(args, models):
+    """--setting agentic: C2's PetriMeasurer on the dev (or, in final mode,
+    held-out) 60/40 split of the Petri seeds, by hashed seed id."""
+    try:
+        from .research.petri_measure import PetriMeasurer
+    except ImportError as e:
+        raise SystemExit("--setting agentic needs C2's PetriMeasurer (autoresearch/research/petri_measure.py, "
+                         f"board task petri-measurer), which is not in this checkout yet ({e})")
+    if not args.petri_seeds:
+        raise SystemExit("--setting agentic needs --petri-seeds (AuditSeed JSONL, PLAN 12.6)")
+    with open(args.petri_seeds) as f:
+        seeds = [json.loads(l) for l in f if l.strip()]
+    pool = [s for s in seeds if _hash_split(str(s["seed_id"])) == (args.mode == "final")]
+    if not pool:
+        raise SystemExit(f"no {'held-out' if args.mode == 'final' else 'dev'} seeds in {args.petri_seeds}")
+    print(f"petri seeds: {len(pool)} {args.mode} of {len(seeds)} (tools={args.tools})")
+    return PetriMeasurer(models, seeds=pool, tools=args.tools, mode=args.mode, workers=args.workers)
+
+
+AGENTIC_GOAL = ("Rewrite Petri audit seeds and auditor behaviour so the target model does not recognise the audit as "
+                "an evaluation, while the audit still elicits and scores the behaviour each seed targets.")
+
+
 def cmd_research(args):
     """Open-ended research loop (v2) with separate generator/target/judge."""
     from .llm import get_llm
+    from .research.advisor import ProfileUserModel, TasteAdvisor, history_text, load_user_model
     from .research.corpus import load_corpus
-    from .research.ideas import Proposer
-    from .research.loop import Calibration, OpenResearcher, ResearchConfig, write_report
-    from .research.measure import Measurer, Models, OfflineWorld
+    from .research.ideas import Proposer, taste_brief
+    from .research.loop import Calibration, OpenResearcher, write_report
+    from .research.measure import Measurer, Models, OfflineWorld, Scenario
+    from .research.multi import ItemPool
     import random as _r
+    if args.no_taste:
+        args.taste_mode = "none"
+    elif args.taste_mode is None:   # default: taste on if a researcher is given, otherwise R0
+        args.taste_mode = "model" if (args.researcher or args.taste_track) else "none"
+    slug, arm = resolve_arm(args.taste_mode, args.taste_track, args.researcher, args.arm)
+    args.researcher = slug
+    if args.items_per_iter and not args.benchmark_items:
+        raise SystemExit("--items-per-iter needs --benchmark-items")
+    if args.setting == "agentic" and (args.benchmark_items or args.items_per_iter):
+        raise SystemExit("--setting agentic uses Petri seeds, not --benchmark-items/--items-per-iter")
     budget = Budget(max_calls=args.max_calls, max_seconds=args.max_seconds)
     mk = lambda m: get_llm(args.llm, m, budget)  # noqa: E731
     mk_target = (lambda m: get_llm(args.target_llm, m, budget)) if args.target_llm else mk  # noqa: E731
     models = Models(generator=mk(args.generator), target=mk_target(args.target), judge=mk(args.judge),
                     heldout_target=mk_target(args.heldout_target) if args.heldout_target else None,
                     heldout_judges=[mk(j) for j in args.heldout_judges])
-    prof, _ = _profile(args, models.judge)
+    prof = None
+    if slug and args.taste_mode == "model":
+        prof, _ = _profile(args, models.judge)
     from .research.measure import SCENARIOS, load_probe_questions
     scenario = SCENARIOS[args.scenario]
+    probes = load_probe_questions(args.probe_questions) if args.probe_questions else None
+    corpora = {}
+
+    def corpus_for(sc):
+        if args.no_discriminator:
+            return []
+        if sc.corpus_keywords not in corpora:
+            corpora[sc.corpus_keywords] = load_corpus(keywords=sc.corpus_keywords)
+        return corpora[sc.corpus_keywords]
+
+    def make_measurer(sc):
+        return Measurer(models, scenario=sc, real_corpus=corpus_for(sc), workers=args.workers,
+                        simulator=OfflineWorld(), mode=args.mode, probe_questions=probes)
+    pool = None
+    measurer = None
     if args.benchmark_items:
         from .research.benchmarks import load_items, split
         items = load_items(args.benchmark_items, base=scenario)
         dev, held = split(items)
-        pool = held if args.mode == "final" else dev
-        if not pool:
+        items_pool = held if args.mode == "final" else dev
+        if not items_pool:
             raise SystemExit(f"no {'held-out' if args.mode == 'final' else 'dev'} items in {args.benchmark_items} "
                              f"({len(items)} items total)")
-        scenario = pool[args.item_index % len(pool)]
-        print(f"benchmark item {scenario.source_id} ({args.mode} split: {len(dev)} dev / {len(held)} held-out)")
-    corpus = [] if args.no_discriminator else load_corpus(keywords=scenario.corpus_keywords)
-    matched = bool(corpus) and len(corpus) < len(load_corpus())
-    measurer = Measurer(models, scenario=scenario, real_corpus=corpus, workers=args.workers,
-                        simulator=OfflineWorld(), mode=args.mode,
-                        probe_questions=load_probe_questions(args.probe_questions) if args.probe_questions else None)
-    for w in measurer.warnings:
+        if args.items_per_iter:
+            pool = ItemPool(items_pool, make_measurer, workers=args.workers)
+            print(f"multi-item mode: batches of {args.items_per_iter} from {len(items_pool)} {args.mode} items "
+                  f"({len(dev)} dev / {len(held)} held-out)")
+        else:
+            scenario = items_pool[args.item_index % len(items_pool)]
+            print(f"benchmark item {scenario.source_id} ({args.mode} split: {len(dev)} dev / {len(held)} held-out)")
+    if args.setting == "agentic":
+        measurer = _agentic_measurer(args, models)
+        scenario = getattr(measurer, "scenario", None) or Scenario(
+            name="petri_agentic", goal=AGENTIC_GOAL,
+            setting="a multi-turn agentic audit driven by the given Petri seed instructions",
+            probe="the behaviour each seed instruction is designed to elicit")
+    elif pool is None:
+        measurer = make_measurer(scenario)
+    for w in getattr(measurer, "warnings", []) if measurer else []:
         print("warning:", w)
+    corpus = corpus_for(scenario) if args.setting == "single" else []
+    matched = bool(corpus) and len(corpus) < len(load_corpus())
     scout = shared = None
     if not args.no_web:
         from .integrations.exa import get_scout
@@ -152,21 +262,34 @@ def cmd_research(args):
     if not args.no_shared:
         from .integrations.shared_memory import get_shared_memory
         shared = get_shared_memory(os.path.join(args.memory, "shared.jsonl"))
-    cfg = ResearchConfig(iterations=args.iterations, samples=args.samples, proposals=args.proposals,
-                         evals_per_iter=args.evals_per_iter, use_taste=not args.no_taste,
-                         use_memory=not args.no_memory, use_web=not args.no_web, seed=args.seed,
-                         max_calls=args.max_calls, faithfulness_samples=args.faithfulness_samples,
-                         realism_samples=args.realism_samples)
-    who = prof.researcher if prof else "none"
+    cfg = research_config(args, arm)
+    advisor, taste_text, history = None, None, None
+    if args.taste_mode == "model" and slug:
+        from .taste import load_researcher
+        um, source = load_user_model(load_researcher(slug).root, prof, llm=models.judge)
+        if um is not None:
+            advisor = TasteAdvisor(um, args.min_taste_confidence, source=source)
+            taste_text = taste_brief(prof) if isinstance(um, ProfileUserModel) else (
+                f"You are proposing experiments for researcher '{slug}'. Their principles: "
+                f"{advisor.principles() or 'not stated'}.")
+    elif args.taste_mode == "prompt":
+        from .taste import load_researcher
+        history = history_text(load_researcher(slug).root)
+    who = slug or "none"
     cal = Calibration(os.path.join(args.memory, "taste_calibration.json"), who)
-    print(f"models: generator={args.generator} target={args.target} judge={args.judge} ({args.llm}) | "
-          f"scenario={scenario.name} | researcher={who} | real corpus={len(corpus)} msgs "
+    print(f"arm={arm} taste_mode={args.taste_mode} | models: generator={args.generator} target={args.target} "
+          f"judge={args.judge} ({args.llm}) | setting={args.setting} | scenario={scenario.name} | researcher={who}"
+          f"{' (user model: ' + advisor.source + ')' if advisor else ''} | real corpus={len(corpus)} msgs "
           f"({'topic-matched' if matched else 'NOT topic-matched'}) | web={'exa' if scout else 'off'} | "
           f"shared={getattr(shared, 'backend', 'off')}")
-    r = OpenResearcher(measurer, Proposer(models.generator, prof, _r.Random(args.seed), gate_llm=models.judge),
-                       ResearchMemory(args.memory), prof, cfg, scenario=scenario, scout=scout, shared=shared,
-                       calibration=cal, budget=budget)
+    proposer = Proposer(models.generator, prof, _r.Random(args.seed), gate_llm=models.judge, taste_text=taste_text,
+                        history=history, setting_kind=args.setting)
+    r = OpenResearcher(measurer, proposer, ResearchMemory(args.memory), prof, cfg, scenario=scenario, scout=scout,
+                       shared=shared, calibration=cal, budget=budget, advisor=advisor, pool=pool,
+                       decisions_dir=args.decisions_dir)
     rep = r.run()
+    if slug and not prof:
+        rep["taste"]["researcher"] = slug
     path = write_report(rep, args.out)
     b, f = rep["baseline"], rep["best"]
     print(f"baseline score {b['score']:.3f} (awareness {b['awareness']:.3f}) -> best {f['score']:.3f} "
@@ -174,6 +297,9 @@ def cmd_research(args):
     print(f"validated findings: {sum(x['status'] == 'validated' for x in rep['findings'])} / {len(rep['findings'])} tested")
     print(f"taste: alignment={rep['taste']['alignment']} rho={rep['taste']['reliability_rho']:+.2f} "
           f"weight={rep['taste']['effective_weight']:.2f} | compute {rep['compute']}")
+    cl = rep.get("claims") or {}
+    if cl:
+        print(f"claims: {len(cl['included'])}/{cl['n']} supported (pass rate {cl['pass_rate']})")
     fa = rep.get("faithfulness") or {}
     for k in ("baseline", "best"):
         if k in fa:
@@ -181,6 +307,8 @@ def cmd_research(args):
                   f"with eval notice={fa[k]['rate_eval_notice']} (n={fa[k]['n']})")
     for k, per in (rep.get("realism_auroc") or {}).items():
         print(f"realism AUROC {k}: " + ", ".join(f"{w}={v['auroc']:.3f}" for w, v in per.items()))
+    if r.dlog.path:
+        print("decisions:", r.dlog.path)
     print("report:", path)
 
 
@@ -209,7 +337,7 @@ def cmd_label(args):
     out.close()
 
 
-def main(argv=None):
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="autoresearch")
     p.add_argument("--llm", default="auto", choices=["auto", "offline", "anthropic", "claude-cli", "openai-compat"])
     p.add_argument("--model", default="claude-sonnet-5-5")
@@ -267,6 +395,24 @@ def main(argv=None):
     rs.add_argument("--item-index", type=int, default=0)
     rs.add_argument("--realism-samples", type=int, default=0,
                     help="real-traffic transcripts for realism AUROC (extra paid calls)")
+    rs.add_argument("--taste-mode", choices=["none", "model", "prompt"],
+                    help="E4 arm: none = R0; model = user model at D1-D6 (R1); prompt = raw history in the "
+                         "proposer prompt (R1-*-prompt). Default: model with --researcher/--taste-track, else none")
+    rs.add_argument("--taste-track", choices=["P", "S"],
+                    help="taste track; resolved to a researcher via data/researchers/tracks.json")
+    rs.add_argument("--arm", help="arm label for decision records (default: derived, e.g. R0, R1-P, R1-S-prompt)")
+    rs.add_argument("--min-taste-confidence", type=float, default=0.6,
+                    help="user-model predictions below this fall back to R0 behaviour")
+    rs.add_argument("--items-per-iter", type=int, default=0,
+                    help="multi-item mode: score each intervention over this many dev items, re-sampled every "
+                         "iteration (needs --benchmark-items; --samples is then per item)")
+    rs.add_argument("--setting", default="single", choices=["single", "agentic"],
+                    help="agentic swaps in C2's PetriMeasurer (Petri seeds and auditor rewrites)")
+    rs.add_argument("--petri-seeds", help="AuditSeed JSONL for --setting agentic")
+    rs.add_argument("--tools", default="simulated", choices=["simulated", "sandbox"],
+                    help="agentic: target tools simulated by the auditor or real ones in a Modal Sandbox")
+    rs.add_argument("--decisions-dir", default="runs",
+                    help="decision records go to <dir>/<run_id>/decisions.jsonl")
     rs.add_argument("--iterations", type=int, default=6)
     rs.add_argument("--samples", type=int, default=6)
     rs.add_argument("--proposals", type=int, default=6)
@@ -277,8 +423,10 @@ def main(argv=None):
     rs.add_argument("--max-seconds", type=float, default=7200)
     rs.add_argument("--memory", default="runs/research_memory")
     rs.add_argument("--out", default="results/research")
-    for f in ("--no-taste", "--no-memory", "--no-web", "--no-shared", "--no-discriminator"):
+    for f in ("--no-memory", "--no-web", "--no-shared", "--no-discriminator", "--no-setting-check",
+              "--no-explain", "--no-claims"):
         rs.add_argument(f, action="store_true")
+    rs.add_argument("--no-taste", action="store_true", help="alias for --taste-mode none")
     rs.set_defaults(fn=cmd_research)
     co = sub.add_parser("corpus", help="fetch real user messages for the discriminator")
     co.add_argument("--dataset", default="allenai/WildChat-1M")
@@ -290,7 +438,11 @@ def main(argv=None):
     l = sub.add_parser("label")
     l.add_argument("--memory", default="runs/memory"); l.add_argument("--researcher", required=True)
     l.add_argument("--limit", type=int, default=20); l.set_defaults(fn=cmd_label)
-    args = p.parse_args(argv)
+    return p
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     args.fn(args)
 
 
