@@ -145,6 +145,12 @@ they would find unusual. (2) It *ranks* candidates, multiplied by the learned re
 weight. (3) The report shows how often the loop's choices matched the researcher's top pick, and
 whether their taste predicted what worked.
 
+**Known limitation with `--llm claude-cli`.** Even with tools, settings and the system prompt
+replaced, the CLI passes some harness context to the model: in a smoke test the target
+referred to the CLI's temporary working directory. A target that can see it runs in a sandbox
+is a confound for eval-awareness. For clean measurement, run the target through the API
+backend (`--llm anthropic`, your own key).
+
 Offline check, with hidden ground truth (`OfflineWorld`):
 * `demo_realist`: baseline 0.234 → best 0.514 (P = 0.99), with taste rho +0.74 and weight 1.01.
 * `demo_contrarian` over 3 consecutive runs: taste rho −0.43, and its weight fell from 0.5 to 0.21.
