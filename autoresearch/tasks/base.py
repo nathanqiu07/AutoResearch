@@ -44,6 +44,8 @@ class Task:
     # option -> idea feature tags (used by taste models)
     option_features: Dict[str, Dict[str, float]] = {}
     invariants: List[Invariant] = []
+    # "solved enough" threshold used for iterations-to-target (time metric)
+    target_score: float = 0.9
 
     def baseline_config(self) -> Dict[str, str]:
         return {k: v[0] for k, v in self.search_space.items()}

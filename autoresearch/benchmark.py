@@ -50,9 +50,9 @@ def decision_alignment(decisions: List[dict], judge: TasteProfile) -> Optional[f
 
 
 def run_benchmark(tasks: List[str], seeds: List[int], taste: Optional[TasteProfile],
-                  judge: Optional[TasteProfile], iterations: int = 15, samples: int = 8,
+                  judge: Optional[TasteProfile], iterations: int = 8, samples: int = 8,
                   llm_kind: str = "offline", model: str = "claude-sonnet-5-5",
-                  conditions: Optional[List[str]] = None, target: float = 0.8) -> Dict:
+                  conditions: Optional[List[str]] = None) -> Dict:
     conditions = conditions or list(CONDITIONS)
     rows = []
     for cond in conditions:
@@ -70,11 +70,13 @@ def run_benchmark(tasks: List[str], seeds: List[int], taste: Optional[TasteProfi
                     llm = get_llm(llm_kind, model, Budget())
                     r = Researcher(get_task(t), llm, memory, taste,
                                    LoopConfig(iterations=iterations, samples=samples, seed=seed,
-                                              target_score=target, **flags))
+                                              target_score=get_task(t).target_score, **flags))
                     rep = r.run()
                     decs = [d for d in memory.decisions if d["run_id"] == rep.run_id]
                     rows.append({"condition": cond, "task": t, "seed": seed,
                                  "score": rep.best_score,
+                                 # faithful: a best design that no longer tests anything scores 0
+                                 "faithful_score": rep.best_score if rep.best_metrics.get("validity", 0) >= 0.7 else 0.0,
                                  "validity": rep.best_metrics.get("validity"),
                                  "valid_best": rep.best_metrics.get("validity", 0) >= 0.7,
                                  "iters_to_target": rep.iterations_to_target or iterations + 1,
@@ -97,7 +99,7 @@ def summarize(rows):
             m = lambda k: round(st.mean(r[k] for r in sel if r[k] is not None), 3) if any(  # noqa: E731
                 r[k] is not None for r in sel) else None
             out.setdefault(cond, {})[task] = {
-                "score": m("score"), "score_sd": round(st.pstdev(r["score"] for r in sel), 3),
+                "score": m("score"), "faithful_score": m("faithful_score"), "score_sd": round(st.pstdev(r["score"] for r in sel), 3),
                 "valid_best_rate": m("valid_best"), "iters_to_target": m("iters_to_target"),
                 "calls": m("calls"), "invalid_accepted": m("invalid_accepted"),
                 "taste_alignment": m("taste_alignment")}
@@ -106,13 +108,16 @@ def summarize(rows):
 
 def format_table(summary) -> str:
     tasks = list(next(iter(summary.values())).keys())
-    hdr = f"{'condition':<11}" + "".join(f"| {t[:16]:<16} score  valid iters align " for t in tasks)
-    lines = [hdr, "-" * len(hdr)]
+    cols = "faithful iters calls invalid align"
+    hdr = f"{'condition':<10}" + "".join(f" | {t:<{len(cols)}}" for t in tasks)
+    sub = f"{'':<10}" + "".join(f" | {cols}" for _ in tasks)
+    lines = [hdr, sub, "-" * len(hdr)]
     for cond, by in summary.items():
-        line = f"{cond:<11}"
+        line = f"{cond:<10}"
         for t in tasks:
             s = by[t]
-            al = "  -  " if s["taste_alignment"] is None else f"{s['taste_alignment']:.2f} "
-            line += f"| {'':<16} {s['score']:.3f}  {s['valid_best_rate']:.2f}  {s['iters_to_target']:5.1f} {al}"
+            al = "  -  " if s["taste_alignment"] is None else f"{s['taste_alignment']:.2f}"
+            line += (f" | {s['faithful_score']:8.3f} {s['iters_to_target']:5.1f} {s['calls']:5.0f}"
+                     f" {s['invalid_accepted']:7.1f} {al:>5}")
         lines.append(line)
     return "\n".join(lines)

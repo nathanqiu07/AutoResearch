@@ -140,7 +140,7 @@ def main(argv=None):
     b.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2, 3, 4])
     b.add_argument("--conditions", nargs="+", default=list(CONDITIONS), choices=list(CONDITIONS))
     b.add_argument("--researcher")
-    b.add_argument("--iterations", type=int, default=12)
+    b.add_argument("--iterations", type=int, default=8)
     b.add_argument("--samples", type=int, default=8)
     b.add_argument("--out", default="runs/benchmark.json")
     b.set_defaults(fn=cmd_benchmark)
