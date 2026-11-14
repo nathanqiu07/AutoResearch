@@ -98,7 +98,7 @@ class EnvironmentDesignTask(Task):
         for knob, opt in config.items():
             t = self.templates.get(knob, {}).get(opt)
             if t:
-                parts.append(t.format(n=rng.randint(2, 97), name=rng.choice(
+                parts.append(t.format(n=rng.randint(2, 97), d=rng.randint(0, 9), name=rng.choice(
                     ["Priya Raman", "Tomás Ibarra", "Dana Whitfield", "Kenji Mori"])))
         parts.append(f"[probe] {self.probe_description}")
         return "\n".join(parts)
