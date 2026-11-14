@@ -29,6 +29,9 @@ python3 -m autoresearch label --researcher jane_doe   # say what you'd have chos
 
 ## How it works
 
+[docs/pipeline.md](docs/pipeline.md) diagrams the whole pipeline, from taste data to
+measurement, and names the model used at each level.
+
 | Component | File | Role |
 |---|---|---|
 | Tasks | `autoresearch/tasks/` | Search space of design knobs, `evaluate()`, validity **invariants** |

@@ -91,8 +91,8 @@ def main(argv=None):
     p.add_argument("action", choices=["push", "pull"])
     p.add_argument("--researcher", required=True, help="slug under --root")
     p.add_argument("--root", default="data/researchers")
-    p.add_argument("--shared-path", default="runs/shared_memory.jsonl",
-                   help="local store used when PAST_API_KEY is not set (the same default as `research`)")
+    p.add_argument("--shared-path", default="runs/research_memory/shared.jsonl",
+                   help="local store used when PAST_API_KEY is not set (where `research` keeps it by default)")
     a = p.parse_args(argv)
     shared = get_shared_memory(a.shared_path)
     path = os.path.join(a.root, a.researcher, "usermodel.json")
