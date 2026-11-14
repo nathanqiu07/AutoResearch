@@ -472,3 +472,45 @@ class RatingPacketTests(unittest.TestCase):
         self.assertEqual(res["raters"], ["alice", "llm:test"])
         self.assertEqual(set(res["claim_check_pass_rate"]), {"R0", "R1"})
         self.assertGreater(res["unrated"], 0)
+
+
+class HeldoutEvalTests(unittest.TestCase):
+    def test_evaluate_design_on_heldout_items(self):
+        from autoresearch.cli import main
+        tmp = tempfile.mkdtemp()
+        items = os.path.join(tmp, "items.jsonl")
+        with open(items, "w") as f:
+            for k in range(30):
+                f.write(json.dumps({"id": f"it{k}", "user": f"Please report metric {k}"}) + "\n")
+        out = os.path.join(tmp, "out")
+        main(["--llm", "offline", "research", "--researcher", "demo_realist", "--iterations", "6", "--no-web",
+              "--no-shared", "--samples", "2", "--benchmark-items", items, "--items-per-iter", "4",
+              "--faithfulness-samples", "0", "--memory", os.path.join(tmp, "mem"), "--out", out,
+              "--decisions-dir", os.path.join(tmp, "runs")])
+        report = next(os.path.join(out, f) for f in os.listdir(out) if f.endswith(".json"))
+        rep = json.load(open(report))
+        main(["--llm", "offline", "evaluate-design", "--report", report, "--benchmark-items", items,
+              "--samples", "2", "--per-intervention", "--heldout-target", "haiku", "--heldout-judges", "j2"])
+        res = json.load(open(report[:-5] + "_heldout_final.json"))
+        self.assertEqual(res["mode"], "final")
+        from autoresearch.research.benchmarks import load_items, split
+        held = {s.source_id for s in split(load_items(items))[1]}
+        self.assertEqual(set(res["items"]), held)            # held-out split only, never the dev items
+        if rep["best_design"]:
+            self.assertEqual(len(res["per_item"]), len(held))
+            self.assertEqual(len(res["per_intervention"]), len(rep["best_design"]))
+            self.assertIn("transfer_claims", res)
+        self.assertTrue(os.path.exists(report[:-5] + "_heldout_final.md"))
+
+    def test_evaluate_design_on_other_scenarios(self):
+        from autoresearch.research.heldout import evaluate_design
+        from autoresearch.research.measure import SCENARIOS
+        pool = ItemPool([SCENARIOS["fabrication"], SCENARIOS["sycophancy_code"]],
+                        lambda sc: Measurer(offline_models(), scenario=sc, simulator=OfflineWorld(), mode="final"))
+        rep = {"run_id": "x", "best_design": [{"text": "t", "category": "tool_traces"}],
+               "findings": [{"id": "f1", "move": "add:a", "text": "t", "category": "tool_traces",
+                             "status": "validated", "delta": 0.1, "p_better": 0.95}]}
+        res = evaluate_design(rep, pool, samples_per_item=20, per_intervention=True)
+        self.assertGreater(res["pooled_delta"], 0)    # tool_traces lowers simulated awareness
+        self.assertIn("heldout_delta", res["findings"][0])
+        self.assertEqual(res["transfer_claims"]["n"], 1)

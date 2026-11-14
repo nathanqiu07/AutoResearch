@@ -189,7 +189,7 @@ def cmd_research(args):
     from .research.corpus import load_corpus
     from .research.ideas import Proposer, taste_brief
     from .research.loop import Calibration, OpenResearcher, write_report
-    from .research.measure import Measurer, Models, OfflineWorld, Scenario
+    from .research.measure import Measurer, OfflineWorld, Scenario
     from .research.multi import ItemPool
     import random as _r
     if args.no_taste:
@@ -203,11 +203,7 @@ def cmd_research(args):
     if args.setting == "agentic" and (args.benchmark_items or args.items_per_iter):
         raise SystemExit("--setting agentic uses Petri seeds, not --benchmark-items/--items-per-iter")
     budget = Budget(max_calls=args.max_calls, max_seconds=args.max_seconds)
-    mk = lambda m: get_llm(args.llm, m, budget)  # noqa: E731
-    mk_target = (lambda m: get_llm(args.target_llm, m, budget)) if args.target_llm else mk  # noqa: E731
-    models = Models(generator=mk(args.generator), target=mk_target(args.target), judge=mk(args.judge),
-                    heldout_target=mk_target(args.heldout_target) if args.heldout_target else None,
-                    heldout_judges=[mk(j) for j in args.heldout_judges])
+    models = _build_models(args, budget)
     prof = None
     if slug and args.taste_mode == "model":
         prof, _ = _profile(args, models.judge)
@@ -337,6 +333,77 @@ def cmd_label(args):
     out.close()
 
 
+def _add_model_args(sp, mode_default: str, max_calls: int):
+    """Model roles and measurement mode, shared by `research` and `evaluate-design`."""
+    sp.add_argument("--generator", default="sonnet")
+    sp.add_argument("--target", default="haiku", help="model under study; keep it different from the judge")
+    sp.add_argument("--judge", default="sonnet")
+    sp.add_argument("--target-llm", choices=["anthropic", "claude-cli", "openai-compat", "offline"],
+                    help="backend for the target only, e.g. openai-compat for an open reasoning model on vLLM/Modal")
+    sp.add_argument("--mode", default=mode_default, choices=["dev", "final"],
+                    help="final swaps in the held-out target/judges and the held-out benchmark split")
+    sp.add_argument("--heldout-target", help="target model reported in final mode (never optimised against)")
+    sp.add_argument("--heldout-judges", nargs="*", default=[],
+                    help="judges for final mode; prefer other families than the generator")
+    sp.add_argument("--probe-questions", help="JSON of A2 probe questions (e.g. exported EvalDetectBench sets)")
+    sp.add_argument("--workers", type=int, default=4)
+    sp.add_argument("--max-calls", type=int, default=max_calls)
+    sp.add_argument("--max-seconds", type=float, default=7200)
+
+
+def _build_models(args, budget):
+    from .research.measure import Models
+    mk = lambda m: get_llm(args.llm, m, budget)  # noqa: E731
+    mk_target = (lambda m: get_llm(args.target_llm, m, budget)) if args.target_llm else mk  # noqa: E731
+    return Models(generator=mk(args.generator), target=mk_target(args.target), judge=mk(args.judge),
+                  heldout_target=mk_target(args.heldout_target) if args.heldout_target else None,
+                  heldout_judges=[mk(j) for j in args.heldout_judges])
+
+
+def cmd_evaluate_design(args):
+    """E4 primary metric: a finished run's final design on held-out items
+    (final mode by default), paired by item against the untouched items."""
+    from .research.corpus import load_corpus
+    from .research.heldout import evaluate_design, format_heldout
+    from .research.measure import SCENARIOS, Measurer, OfflineWorld, load_probe_questions
+    from .research.multi import ItemPool
+    with open(args.report) as f:
+        rep = json.load(f)
+    budget = Budget(max_calls=args.max_calls, max_seconds=args.max_seconds)
+    models = _build_models(args, budget)
+    probes = load_probe_questions(args.probe_questions) if args.probe_questions else None
+    if args.benchmark_items:
+        from .research.benchmarks import load_items, split
+        dev, held = split(load_items(args.benchmark_items, base=SCENARIOS[args.scenario]))
+        items = held if args.mode == "final" else dev
+    else:
+        names = args.scenarios or [n for n in SCENARIOS if n != rep.get("scenario")]
+        items = [SCENARIOS[n] for n in names]
+    if not items:
+        raise SystemExit("no items to evaluate on")
+    corpora = {}
+
+    def make(sc):
+        if sc.corpus_keywords not in corpora:
+            corpora[sc.corpus_keywords] = [] if args.no_discriminator else load_corpus(keywords=sc.corpus_keywords)
+        return Measurer(models, scenario=sc, real_corpus=corpora[sc.corpus_keywords], workers=args.workers,
+                        simulator=OfflineWorld(), mode=args.mode, probe_questions=probes)
+    pool = ItemPool(items, make, workers=args.workers)
+    batch = pool.ids[: args.max_items] if args.max_items else None
+    res = evaluate_design(rep, pool, args.samples, args.seed, args.per_intervention, batch)
+    res["compute"] = budget.summary()
+    stem = os.path.splitext(args.out or args.report)[0]
+    if not args.out:
+        stem += f"_heldout_{args.mode}"
+    with open(stem + ".json", "w") as f:
+        json.dump(res, f, indent=1, default=str)
+    with open(stem + ".md", "w") as f:
+        f.write(format_heldout(res))
+    print(f"{rep.get('arm')} run {rep.get('run_id')}: held-out pooled delta {res.get('pooled_delta')} "
+          f"P(better) {res.get('p_better')} over {len(res['items'])} items ({args.mode} mode)")
+    print("wrote", stem + ".json")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="autoresearch")
     p.add_argument("--llm", default="auto", choices=["auto", "offline", "anthropic", "claude-cli", "openai-compat"])
@@ -380,17 +447,7 @@ def build_parser() -> argparse.ArgumentParser:
     rs.add_argument("--researcher")
     rs.add_argument("--scenario", default="metric_inflation", choices=["metric_inflation", "sycophancy_code", "test_special_casing", "fabrication"])
     rs.add_argument("--faithfulness-samples", type=int, default=8)
-    rs.add_argument("--generator", default="sonnet")
-    rs.add_argument("--target", default="haiku", help="model under study; keep it different from the judge")
-    rs.add_argument("--judge", default="sonnet")
-    rs.add_argument("--target-llm", choices=["anthropic", "claude-cli", "openai-compat", "offline"],
-                    help="backend for the target only, e.g. openai-compat for an open reasoning model on vLLM/Modal")
-    rs.add_argument("--mode", default="dev", choices=["dev", "final"],
-                    help="final swaps in the held-out target/judges and the held-out benchmark split")
-    rs.add_argument("--heldout-target", help="target model reported in final mode (never optimised against)")
-    rs.add_argument("--heldout-judges", nargs="*", default=[],
-                    help="judges for final mode; prefer other families than the generator")
-    rs.add_argument("--probe-questions", help="JSON of A2 probe questions (e.g. exported EvalDetectBench sets)")
+    _add_model_args(rs, mode_default="dev", max_calls=600)
     rs.add_argument("--benchmark-items", help="local JSONL of benchmark items to rewrite (see research/benchmarks.py)")
     rs.add_argument("--item-index", type=int, default=0)
     rs.add_argument("--realism-samples", type=int, default=0,
@@ -417,10 +474,7 @@ def build_parser() -> argparse.ArgumentParser:
     rs.add_argument("--samples", type=int, default=6)
     rs.add_argument("--proposals", type=int, default=6)
     rs.add_argument("--evals-per-iter", type=int, default=2)
-    rs.add_argument("--workers", type=int, default=4)
     rs.add_argument("--seed", type=int, default=0)
-    rs.add_argument("--max-calls", type=int, default=600)
-    rs.add_argument("--max-seconds", type=float, default=7200)
     rs.add_argument("--memory", default="runs/research_memory")
     rs.add_argument("--out", default="results/research")
     for f in ("--no-memory", "--no-web", "--no-shared", "--no-discriminator", "--no-setting-check",
@@ -428,6 +482,22 @@ def build_parser() -> argparse.ArgumentParser:
         rs.add_argument(f, action="store_true")
     rs.add_argument("--no-taste", action="store_true", help="alias for --taste-mode none")
     rs.set_defaults(fn=cmd_research)
+    ev = sub.add_parser("evaluate-design", help="score a finished run's final design on held-out items (E4)")
+    ev.add_argument("--report", required=True, help="the run's report JSON")
+    ev.add_argument("--benchmark-items", help="items JSONL; final mode uses its held-out split, dev mode its dev split")
+    ev.add_argument("--scenario", default="metric_inflation", choices=sorted(["metric_inflation", "sycophancy_code",
+                    "test_special_casing", "fabrication"]), help="base scenario for --benchmark-items")
+    ev.add_argument("--scenarios", nargs="*", help="without --benchmark-items: built-in scenarios to use as items "
+                                                   "(default: all except the run's own)")
+    ev.add_argument("--max-items", type=int, default=0, help="use only the first N items (0 = all)")
+    ev.add_argument("--samples", type=int, default=3, help="samples per item per design")
+    ev.add_argument("--per-intervention", action="store_true",
+                    help="also measure each intervention alone (held-out evidence for transfer claims)")
+    ev.add_argument("--seed", type=int, default=0)
+    ev.add_argument("--no-discriminator", action="store_true")
+    ev.add_argument("--out", help="output stem (default: <report>_heldout_<mode>)")
+    _add_model_args(ev, mode_default="final", max_calls=2000)
+    ev.set_defaults(fn=cmd_evaluate_design)
     co = sub.add_parser("corpus", help="fetch real user messages for the discriminator")
     co.add_argument("--dataset", default="allenai/WildChat-1M")
     co.add_argument("--config", default="default")
