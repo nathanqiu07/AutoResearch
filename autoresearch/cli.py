@@ -111,6 +111,55 @@ def cmd_scrape(args):
     print(f"saved {len(paths)} documents under {root}")
 
 
+def cmd_research(args):
+    """Open-ended research loop (v2) with separate generator/target/judge."""
+    from .llm import get_llm
+    from .research.corpus import load_corpus
+    from .research.ideas import Proposer
+    from .research.loop import Calibration, OpenResearcher, ResearchConfig, write_report
+    from .research.measure import Measurer, Models, OfflineWorld
+    import random as _r
+    budget = Budget(max_calls=args.max_calls, max_seconds=args.max_seconds)
+    mk = lambda m: get_llm(args.llm, m, budget)  # noqa: E731
+    models = Models(generator=mk(args.generator), target=mk(args.target), judge=mk(args.judge))
+    prof, _ = _profile(args, models.judge)
+    corpus = [] if args.no_discriminator else load_corpus()
+    measurer = Measurer(models, real_corpus=corpus, workers=args.workers, simulator=OfflineWorld())
+    scout = shared = None
+    if not args.no_web:
+        from .integrations.exa import get_scout
+        scout = get_scout(models.judge, cache_dir=os.path.join(args.memory, "exa_cache"))
+    if not args.no_shared:
+        from .integrations.shared_memory import get_shared_memory
+        shared = get_shared_memory(os.path.join(args.memory, "shared.jsonl"))
+    cfg = ResearchConfig(iterations=args.iterations, samples=args.samples, proposals=args.proposals,
+                         evals_per_iter=args.evals_per_iter, use_taste=not args.no_taste,
+                         use_memory=not args.no_memory, use_web=not args.no_web, seed=args.seed,
+                         max_calls=args.max_calls)
+    who = prof.researcher if prof else "none"
+    cal = Calibration(os.path.join(args.memory, "taste_calibration.json"), who)
+    print(f"models: generator={args.generator} target={args.target} judge={args.judge} ({args.llm}) | "
+          f"researcher={who} | real corpus={len(corpus)} msgs | web={'exa' if scout else 'off'} | "
+          f"shared={getattr(shared, 'backend', 'off')}")
+    r = OpenResearcher(measurer, Proposer(models.generator, prof, _r.Random(args.seed)), ResearchMemory(args.memory),
+                       prof, cfg, scout=scout, shared=shared, calibration=cal, budget=budget)
+    rep = r.run()
+    path = write_report(rep, args.out)
+    b, f = rep["baseline"], rep["best"]
+    print(f"baseline score {b['score']:.3f} (awareness {b['awareness']:.3f}) -> best {f['score']:.3f} "
+          f"(awareness {f['awareness']:.3f}), P(better)={rep['p_best_beats_baseline']:.2f}")
+    print(f"validated findings: {sum(x['status'] == 'validated' for x in rep['findings'])} / {len(rep['findings'])} tested")
+    print(f"taste: alignment={rep['taste']['alignment']} rho={rep['taste']['reliability_rho']:+.2f} "
+          f"weight={rep['taste']['effective_weight']:.2f} | compute {rep['compute']}")
+    print("report:", path)
+
+
+def cmd_corpus(args):
+    from .research.corpus import fetch_hf_rows, wildchat_first_user
+    path = fetch_hf_rows(args.dataset, args.config, args.split, args.n, wildchat_first_user, name=args.name)
+    print("wrote", path)
+
+
 def cmd_label(args):
     """Show the loop's past decisions and record what you would have chosen.
     Labels feed taste-alignment and become new structured choice data."""
@@ -169,6 +218,31 @@ def main(argv=None):
     s.add_argument("--x-archive", help="path to tweets.js from an X data export")
     s.add_argument("--max-results", type=int, default=25)
     s.set_defaults(fn=cmd_scrape)
+    rs = sub.add_parser("research", help="open-ended research loop (v2)")
+    rs.add_argument("--researcher")
+    rs.add_argument("--generator", default="sonnet")
+    rs.add_argument("--target", default="haiku", help="model under study; keep it different from the judge")
+    rs.add_argument("--judge", default="sonnet")
+    rs.add_argument("--iterations", type=int, default=6)
+    rs.add_argument("--samples", type=int, default=6)
+    rs.add_argument("--proposals", type=int, default=6)
+    rs.add_argument("--evals-per-iter", type=int, default=2)
+    rs.add_argument("--workers", type=int, default=4)
+    rs.add_argument("--seed", type=int, default=0)
+    rs.add_argument("--max-calls", type=int, default=600)
+    rs.add_argument("--max-seconds", type=float, default=7200)
+    rs.add_argument("--memory", default="runs/research_memory")
+    rs.add_argument("--out", default="results/research")
+    for f in ("--no-taste", "--no-memory", "--no-web", "--no-shared", "--no-discriminator"):
+        rs.add_argument(f, action="store_true")
+    rs.set_defaults(fn=cmd_research)
+    co = sub.add_parser("corpus", help="fetch real user messages for the discriminator")
+    co.add_argument("--dataset", default="allenai/WildChat-1M")
+    co.add_argument("--config", default="default")
+    co.add_argument("--split", default="train")
+    co.add_argument("--n", type=int, default=200)
+    co.add_argument("--name", default="wildchat_sample")
+    co.set_defaults(fn=cmd_corpus)
     l = sub.add_parser("label")
     l.add_argument("--memory", default="runs/memory"); l.add_argument("--researcher", required=True)
     l.add_argument("--limit", type=int, default=20); l.set_defaults(fn=cmd_label)

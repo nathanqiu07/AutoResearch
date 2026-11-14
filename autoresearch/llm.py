@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import subprocess
+import threading
 import time
 import urllib.request
 from dataclasses import dataclass, field
@@ -26,11 +27,14 @@ class Budget:
     output_tokens: int = 0
     cost_usd: float = 0.0
     started: float = field(default_factory=time.time)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
-    def charge(self, inp: int, out: int) -> None:
-        self.calls += 1
-        self.input_tokens += inp
-        self.output_tokens += out
+    def charge(self, inp: int, out: int, cost: float = 0.0) -> None:
+        with self._lock:  # backends may be called from worker threads
+            self.calls += 1
+            self.input_tokens += inp
+            self.output_tokens += out
+            self.cost_usd += cost
 
     @property
     def elapsed(self) -> float:
@@ -127,8 +131,7 @@ class ClaudeCLILLM(LLM):
         u = data.get("usage", {})
         inp = (u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
                + u.get("cache_read_input_tokens", 0)) or _approx_tokens(prompt)
-        self.budget.charge(inp, u.get("output_tokens", 0))
-        self.budget.cost_usd += float(data.get("total_cost_usd", 0.0))
+        self.budget.charge(inp, u.get("output_tokens", 0), float(data.get("total_cost_usd", 0.0)))
         return data.get("result", "")
 
 

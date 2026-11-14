@@ -122,6 +122,39 @@ Findings (directionally consistent across the three tasks):
   preferences. **Taste alignment is a useful proxy only when the taste is good**: if you
   maximise it blindly you inherit the researcher's false assumptions.
 
+## v2: the open-ended research loop (`python3 -m autoresearch research`)
+
+v1 searches a fixed grid of 8 design knobs, and one model judges its own environments, so it
+is good for ablating the research machinery but can't produce trustworthy findings.
+v2 (`autoresearch/research/`) is built to produce them:
+
+| | v1 | v2 |
+|---|---|---|
+| hypotheses | 8 fixed knobs × 2–3 options | free-form interventions written by a model, steered by taste, past findings and Exa |
+| who is measured | the generator grades its own output | a **separate target** model (default `haiku`); generator and judge are `sonnet` |
+| awareness | judge's estimate | mean of 3 signals: the **target's own** estimate in a fresh context, **verbalized** suspicion in its reply, a **discriminator** guessing which of a synthetic and a real user message is synthetic (needs `data/real_corpus/`) |
+| validity | built-in table | judge checks the opportunity is present **and** the reply reveals the behaviour; < 0.7 = invalid |
+| accepting a change | any score increase | bootstrap P(better) ≥ 0.9, then **confirmed on fresh samples** (P ≥ 0.75) before it counts as a validated finding |
+| beliefs | per knob | per intervention **category**, persisted; refuted categories are gated |
+| taste | fixed prior | prior whose weight is **learned**: Spearman rho between taste score and realised gain over all evaluations, persisted per researcher. Good taste gains weight; bad taste is down-weighted |
+| output | score | Markdown report with CIs, every finding (validated, deferred, rejected, invalid), best design, example environments (JSONL), web sources, taste stats, compute |
+
+**How taste is used.** (1) It steers *generation*: the proposer prompt gives the researcher's
+principles and measured preferences and asks for ideas they would find promising, plus one
+they would find unusual. (2) It *ranks* candidates, multiplied by the learned reliability
+weight. (3) The report shows how often the loop's choices matched the researcher's top pick, and
+whether their taste predicted what worked.
+
+Offline check, with hidden ground truth (`OfflineWorld`):
+* `demo_realist`: baseline 0.234 → best 0.514 (P = 0.99), with taste rho +0.74 and weight 1.01.
+* `demo_contrarian` over 3 consecutive runs: taste rho −0.43, and its weight fell from 0.5 to 0.21.
+
+```bash
+python3 -m autoresearch --llm offline research --researcher demo_realist            # dry run, free
+python3 -m autoresearch corpus --n 200      # optional: real WildChat first messages for the discriminator
+python3 -m autoresearch --llm claude-cli research --researcher demo_realist --iterations 5 --samples 5
+```
+
 ## Sponsor integrations
 
 API keys are read only from environment variables, which you set yourself:
