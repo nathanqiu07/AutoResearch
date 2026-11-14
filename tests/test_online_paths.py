@@ -83,7 +83,9 @@ class OnlinePathTests(unittest.TestCase):
             llm = ClaudeCLILLM(model="claude-sonnet-5-5")
             self.assertEqual(llm.complete("ping", system="s"), "pong")
         cmd = run.call_args[0][0]
-        self.assertIn("--system-prompt", cmd)
+        self.assertEqual(cmd[cmd.index("--system-prompt") + 1], "s")
+        self.assertEqual(cmd[cmd.index("--tools") + 1], "")
+        self.assertEqual(cmd[cmd.index("--setting-sources") + 1], "")
         self.assertEqual(run.call_args[1]["input"], "ping")
         self.assertEqual(llm.budget.input_tokens, 7)
 

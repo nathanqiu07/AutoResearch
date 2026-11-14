@@ -24,6 +24,7 @@ class Budget:
     calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    cost_usd: float = 0.0
     started: float = field(default_factory=time.time)
 
     def charge(self, inp: int, out: int) -> None:
@@ -40,7 +41,8 @@ class Budget:
 
     def summary(self) -> dict:
         return {"calls": self.calls, "input_tokens": self.input_tokens,
-                "output_tokens": self.output_tokens, "seconds": round(self.elapsed, 2)}
+                "output_tokens": self.output_tokens,
+                "cost_usd": round(self.cost_usd, 4), "seconds": round(self.elapsed, 2)}
 
 
 def _approx_tokens(text: str) -> int:
@@ -94,8 +96,14 @@ class AnthropicLLM(LLM):
 
 class ClaudeCLILLM(LLM):
     """Uses the locally signed-in `claude` CLI (`claude -p`), so real models can
-    be used with the account's existing login and no API key in this process."""
+    be used with the account's existing login and no API key in this process.
+
+    Each call is isolated so it behaves like a plain model call: all tools are
+    disabled, MCP servers and settings files (including CLAUDE.md memory) are
+    skipped, the CLI's own system prompt is replaced, and it runs from an empty
+    temporary directory."""
     name = "claude-cli"
+    DEFAULT_SYSTEM = "You are a helpful assistant."
 
     def __init__(self, model: str = "claude-sonnet-5-5", budget: Optional[Budget] = None,
                  binary: str = "claude", timeout: float = 300.0):
@@ -103,19 +111,24 @@ class ClaudeCLILLM(LLM):
         self.model, self.binary, self.timeout = model, binary, timeout
 
     def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
-        cmd = [self.binary, "-p", "--model", self.model, "--output-format", "json"]
-        if system:
-            cmd += ["--system-prompt", system]
-        proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
-                              timeout=self.timeout)
-        if proc.returncode != 0:
+        import tempfile
+        cmd = [self.binary, "-p", "--model", self.model, "--output-format", "json",
+               "--tools", "", "--strict-mcp-config", "--setting-sources", "",
+               "--system-prompt", system or self.DEFAULT_SYSTEM]
+        with tempfile.TemporaryDirectory(prefix="ar_cli_") as cwd:
+            proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
+                                  timeout=self.timeout, cwd=cwd)
+        try:
+            data = json.loads(proc.stdout)
+        except json.JSONDecodeError:
             raise RuntimeError(f"claude CLI failed: {(proc.stderr or proc.stdout).strip()[:300]}")
-        data = json.loads(proc.stdout)
-        if data.get("is_error"):
+        if proc.returncode != 0 or data.get("is_error"):
             raise RuntimeError(f"claude CLI error: {str(data.get('result'))[:300]}")
-        usage = data.get("usage", {})
-        self.budget.charge(usage.get("input_tokens", _approx_tokens(prompt)),
-                           usage.get("output_tokens", 0))
+        u = data.get("usage", {})
+        inp = (u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
+               + u.get("cache_read_input_tokens", 0)) or _approx_tokens(prompt)
+        self.budget.charge(inp, u.get("output_tokens", 0))
+        self.budget.cost_usd += float(data.get("total_cost_usd", 0.0))
         return data.get("result", "")
 
 
