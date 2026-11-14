@@ -559,7 +559,8 @@ class OpenResearcher:
                 self.findings.append(finding)
                 if e is top:
                     top_finding = finding
-                if mv.startswith("add") and st in ("rejected", "unconfirmed") and HURTS_P < pp < self.cfg.accept_p:
+                # mixed = neither validated nor clearly worse: failed confirmation, or inconclusive
+                if mv.startswith("add") and (st == "unconfirmed" or (st == "rejected" and HURTS_P < pp < self.cfg.accept_p)):
                     self._mixed[i.category] = self._mixed.get(i.category, 0) + 1
                 if self.shared:
                     from ..integrations.shared_memory import format_fact
