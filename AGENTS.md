@@ -27,6 +27,7 @@ Two kinds of "agent" exist here. Don't mix them up:
 | `autoresearch/memory.py` | Persistent experiments, assumption credences, insights, decisions | Exact numbers only |
 | `autoresearch/drift.py` | Drift gates and re-anchoring | |
 | `autoresearch/loop.py` | The research loop and runtime multi-agent wiring | Hot file. Lock it before editing. |
+| `autoresearch/research/` | **v2 open-ended loop**: `measure.py` (generator/target/judge, 3 awareness signals), `ideas.py` (free-form interventions, taste-steered proposer), `loop.py` (accept/confirm, beliefs, taste calibration, report), `stats.py`, `corpus.py` | The loop for real findings. v1 `loop.py` is the ablation testbed |
 | `autoresearch/integrations/` | Exa scout, past.dev/local shared memory, HTTP | |
 | `autoresearch/benchmark.py`, `swarm.py`, `modal_app.py` | Ablations, parallel swarms, Modal | |
 | `results/` | Committed results. Each live run dir has a `CODE_VERSION` | Never edit by hand |
@@ -38,6 +39,7 @@ Two kinds of "agent" exist here. Don't mix them up:
 python3 -m unittest discover -s tests -t .      # must pass before every push
 python3 -m autoresearch --llm offline run --iterations 6 --researcher demo_realist
 python3 -m autoresearch --llm offline benchmark --researcher demo_contrarian --seeds 0 1 2
+python3 -m autoresearch --llm offline research --researcher demo_realist      # v2 dry run
 ```
 
 Python 3.9+, standard library only in `autoresearch/` (Modal is optional, in `modal_app.py`).
