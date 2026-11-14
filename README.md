@@ -231,6 +231,25 @@ and judge: 1 seed, 4 iterations, 2 samples per evaluation. Full logs are in `res
   pipeline, not evidence for or against any ablation. A meaningful live comparison needs
   more seeds and samples (roughly $0.05 per evaluation sample at these settings, including proposer and judge overhead).
 
+### Live ablation (3 conditions × 3 seeds)
+
+v1 loop on `eval_awareness` with Claude Sonnet 5.5 as generator, target and judge; 5 iterations,
+3 samples per evaluation, `demo_realist` taste. Code version is in `results/live2/CODE_VERSION`, and
+each condition has its own memory. In the full condition one memory store is carried across seeds 1→2→3.
+
+| condition | faithful score (mean ± sd) | P(eval) | validity | cost (API-equivalent) |
+|---|---|---|---|---|
+| taste + drift, no memory | **0.710 ± 0.025** | 0.186 | 0.872 | $2.22 |
+| full (taste + memory + drift) | 0.633 ± 0.053 | 0.241 | 0.833 | $2.21 |
+| naive | 0.584 ± 0.008 | 0.341 | 0.886 | $2.25 |
+
+* Both taste-guided conditions beat naive.
+* Memory did **not** help at this scale. Full seed 1 started with an empty memory, so it should
+  equal no-memory seed 1, yet it scored 0.558 vs 0.692. Most of the gap is therefore measurement
+  noise (3 samples per score, one model judging its own environments), not memory.
+* This measurement weakness is why the v2 loop below uses a separate target model,
+  three awareness signals, bootstrap acceptance and held-out confirmation.
+
 Run it yourself (uses your `claude` login; calls are isolated with no tools, no settings or
 CLAUDE.md, and the CLI system prompt replaced):
 
