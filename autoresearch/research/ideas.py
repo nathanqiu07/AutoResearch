@@ -233,8 +233,11 @@ class Proposer:
             f"{self._taste_section()}\nYou write the claims section of a research report on eval awareness. "
             "Findings (delta and P(better) are relative to the design that was best when it was tested):\n"
             f"{rows}\n\nWrite up to 6 claims worth reporting, including negative results. Each claim must cite "
-            f"the finding ids it rests on and give its kind, one of {kinds}, and the delta it reports. Return a "
-            "JSON list of {\"text\": str, \"kind\": str, \"finding_ids\": [str], \"delta\": number}.",
+            f"the finding ids it rests on and give its kind, one of {kinds}. Give \"delta\" only as the cited "
+            "finding's delta, or for several findings the mean of their deltas, copied from the table (omit it "
+            "otherwise). 'improves' needs status validated; 'hurts' needs P(better) <= 0.2; 'no_clear_effect' "
+            "fits findings that were neither validated nor clearly worse. Return a JSON list of {\"text\": str, "
+            "\"kind\": str, \"finding_ids\": [str], \"delta\": number or omitted}.",
             temperature=0.3, max_tokens=1500))
         return [o for o in out if isinstance(o, dict)] if isinstance(out, list) else []
 

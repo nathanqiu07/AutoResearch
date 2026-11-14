@@ -8,6 +8,8 @@ write-up, and the pass rate is reported (E4b).
 A claim is a dict:
   {"text": str, "kind": one of KINDS, "finding_ids": [str], "delta": optional number,
    "p_better": optional number}
+A stated delta must match the cited finding's logged delta, or for several
+findings the mean of their deltas, to within DELTA_TOL.
 
 Kinds, relative to the finding's move (adding or removing an intervention):
   improves          every cited finding was validated (accepted, then confirmed on fresh samples), delta > 0
