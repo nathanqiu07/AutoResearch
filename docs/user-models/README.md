@@ -115,6 +115,30 @@ does not change split policy. The shared budget counts attempted calls, includin
 failed calls. Providers can have internal retries, so this is a cap on backend
 invocations, not a guarantee about provider-billed attempts or dollars.
 
+For the redeemed OpenAI credits, a direct Responses API pilot is available:
+
+```bash
+python3 -m autoresearch.taste fidelity --dataset arena --methods m0 m1 \
+  --n-users 1 --backend openai --model gpt-6-luna --max-usd 1 \
+  --max-calls 20 --max-seconds 180 --output runs/fidelity/openai-dev-01
+```
+
+Set `OPENAI_API_KEY` in the process environment using a project key under the
+organization that received the credits. Optional `OPENAI_ORG_ID` and
+`OPENAI_PROJECT_ID` select explicit headers. Never put the key in this repository
+or in chat. [Official key guidance](https://developers.openai.com/api/docs/guides/api-keys).
+
+This direct backend currently supports only the priced `gpt-6-luna` pilot. It uses
+reasoning effort `none`, no tools, standard service, and `store=false`. It reserves
+a conservative dollar amount before each request, retains uncertain reservations
+after failures, makes no HTTP retries, and rejects long-context requests. The cap
+and cost estimates use the [published rates](https://developers.openai.com/api/docs/pricing)
+checked November 14, 2026; they are not a provider billing statement. Adding a
+different evaluation model requires verifying its settings and rates first.
+
+The command is a proposed development check, not permission to start spending.
+Gio must confirm its cap and configure local credentials before it runs.
+
 Codex runs from an empty temporary directory, ignores user configuration, disables
 tools and rejects any tool event. It is a **CLI harness** comparison, not raw API
 inference. Temperature/output-token settings are not enforced like API parameters;

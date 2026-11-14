@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from ..llm import Budget, get_llm
-from .backends import CodexLLM
+from .backends import CodexLLM, OpenAILLM
 from .fidelity import run_fidelity, select_users
 from .methods import create_method
 from .prefdata import build_manifest, download_dataset, load_records, save_records, write_manifest
@@ -17,15 +17,19 @@ def backend(args):
         return CodexLLM(args.model, budget=budget)
     if args.model == "default":
         raise ValueError("API/Claude backends require an explicit --model")
+    if args.backend == "openai":
+        return OpenAILLM(args.model, budget=budget, max_usd=args.max_usd)
     return get_llm(args.backend, args.model, budget)
 
 
 def model_args(parser):
-    parser.add_argument("--backend", choices=["codex-cli", "anthropic", "openai-compat", "claude-cli"],
+    parser.add_argument("--backend", choices=["codex-cli", "openai", "anthropic", "openai-compat", "claude-cli"],
                         default="codex-cli")
     parser.add_argument("--model", default="default")
     parser.add_argument("--max-calls", type=int, default=100)
     parser.add_argument("--max-seconds", type=float, default=300)
+    parser.add_argument("--max-usd", type=float, default=1.0,
+                        help="conservative request-reservation cap for the direct OpenAI backend only")
     parser.add_argument("--cache", default="runs/taste-cache")
 
 
@@ -95,8 +99,10 @@ def main(argv=None):
         report = run_fidelity(records, args.manifest, factories, args.output, args.dataset,
                               args.users, args.n_users, args.seed, args.final,
                               run_config={"backend": args.backend, "model": args.model, "method_config": config,
-                                          "max_calls": args.max_calls, "max_seconds": args.max_seconds})
+                                          "max_calls": args.max_calls, "max_seconds": args.max_seconds,
+                                          "max_usd": args.max_usd if args.backend == "openai" else None})
         print(json.dumps({"report": str(Path(args.output) / "report.json"),
+                          "backend_budgets": report["backend_budgets"],
                           "methods": {m: {k: v for k, v in result.items() if k != "per_user"}
                                       for m, result in report["methods"].items()}}, indent=2))
     else:

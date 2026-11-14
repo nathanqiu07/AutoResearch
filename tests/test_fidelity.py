@@ -24,6 +24,20 @@ def records():
 
 
 class FidelityTests(unittest.TestCase):
+    def test_shared_backend_budget_snapshot_is_saved_once(self):
+        from autoresearch.taste.fidelity import run_fidelity
+        llm = RecordingLLM()
+        llm.cost_summary = lambda: {"reserved_usd": .25, "spent_usd": .1,
+                                    "cost_basis": "conservative_estimate"}
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d)
+            write_manifest(p / "split.json", build_manifest(records()))
+            factories = {m: (lambda user, method=m: create_method(method, llm)) for m in ("m0", "m1")}
+            report = run_fidelity(records(), p / "split.json", factories, p / "out", "arena")
+            self.assertEqual(report["backend_budgets"], [{"backend": llm.label, **llm.cost_summary()}])
+            self.assertEqual(json.loads((p / "out" / "report.json").read_text())["backend_budgets"],
+                             report["backend_budgets"])
+
     def test_user_macro_not_pair_micro_and_dev_does_not_touch_test_users(self):
         from autoresearch.taste.fidelity import run_fidelity
         with tempfile.TemporaryDirectory() as d:

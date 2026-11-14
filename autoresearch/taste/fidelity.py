@@ -73,6 +73,7 @@ def run_fidelity(records, manifest_path, factories, output_dir, dataset, users="
     per_method = {m: {} for m in factories}
     usage = {m: {"calls": 0, "cache_hits": 0, "input_tokens": 0, "output_tokens": 0,
                  "cost_usd": 0.0, "cost_available": False} for m in factories}
+    backends = {}
     with (out / "predictions.jsonl").open("x") as log:
         for user in selected:
             split = manifest["users"][user]
@@ -82,6 +83,8 @@ def run_fidelity(records, manifest_path, factories, output_dir, dataset, users="
                 model, fit_error = None, None
                 try:
                     model = factory(user)
+                    if callable(getattr(model.llm, "cost_summary", None)):
+                        backends[id(model.llm)] = model.llm
                     model.fit(history, val)
                     artifact_path = out / "models" / (digest([user, method]) + ".json")
                     model.save(artifact_path)
@@ -133,6 +136,7 @@ def run_fidelity(records, manifest_path, factories, output_dir, dataset, users="
             paired[method] = {"mean": mean(differences),
                               "ci95": list(bootstrap_ci(differences, level=0.95, seed=seed))}
     report = {**registration, "methods": summary, "differences_vs_m1": paired,
+              "backend_budgets": [{"backend": llm.label, **llm.cost_summary()} for llm in backends.values()],
               "interpretation": "User-macro accuracy; failures count as wrong; Brier covers valid predictions only. "
                                 "Bootstrap samples users. Small pilots do not establish research transfer.",
               "completed": time.time()}
