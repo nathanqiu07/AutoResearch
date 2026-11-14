@@ -433,26 +433,36 @@ Every costly run needs the user's approval first (AGENTS.md rule 5), is announce
 
 ---
 
-## 12. Team split (five workstreams)
+## 12. Team split (six workstreams; E deferred)
 
 ### 12.0 Overview
 
+**Status (2026-11-14): WS E is on hold until 2026-11-15.** Until then, nobody builds the
+market, the cost layer, the `research-grid` fan-out, the runner or the charts. Its parts
+that others need right away are covered elsewhere:
+* C2 owns its own Modal pieces (the vLLM target and the sandboxes).
+* WS D allocates samples uniformly: the existing `evals_per_iter` and `samples`.
+* Paid runs are started by hand from the CLI, following AGENTS.md rules 4–5. Each needs the user's approval, a lock with the reason "live run", and a `CODE_VERSION`. For the main experiments, the pre-registration file `results/prereg/<exp>.json` is written and committed by hand.
+
 | WS | One-line job | Produces | Main code | Owner |
 |---|---|---|---|---|
-| **A: User models** | Find the best way to turn someone's past choices into a model that predicts their next ones | the selected method + E1 | `autoresearch/taste/` | Gio (suggested: spec 3 is about exactly this) |
-| **B: Taste tracks and data** | Get the data for the two people whose taste we use, and test the method on them | Track P and Track S datasets + E2 | `data/researchers/`, `taste/scrape.py`, `integrations/exa.py` | **[decide]** |
-| **C: Measurement** | A trustworthy score for "does the model think this is a test, and does the test still work" | the scorer, calibration, E3a, E3b, E6 | `research/measure.py`, `benchmarks.py`, `corpus.py`, new `harness/` | **Nathan** (built scorer v2, §16) |
-| **D: Research loop** | The agent that rewrites environments, with taste used at each decision | R0 and R1 arms + E4, E4b | `research/loop.py`, `ideas.py`, new `decisions.py`, `advisor.py`, `claims.py` | **[decide]** |
-| **E: Market, infrastructure, demo** | Spend the budget well, run everything in parallel, and show the results | market + E5 + runners, charts, demo | new `research/market.py`, `modal_app.py`, `swarm.py`, `integrations/`, `scripts/` | **[decide]** |
+| **A: User models** | Find the best way to turn someone's past choices into a model that predicts their next ones | the selected method + E1 | `autoresearch/taste/` | **Gio** |
+| **B: Taste tracks and data** | Get the data for the two people whose taste we use, and test the method on them | Track P and Track S datasets + E2 | `data/researchers/`, `taste/scrape.py`, `integrations/exa.py` | **Ethan** |
+| **C1: Scoring and calibration** | Make sure the score is right: judges and probe questions that really measure eval awareness and validity, on single-scenario EvalAwareBench items | the calibrated `Measurer`, the P1 gate, E3a, E6 | `research/measure.py`, `benchmarks.py`, `corpus.py`, `harness/evaldetect/` | **Nathan**. Builds on his scorer v2; §16 tasks 1–3 |
+| **C2: Targets and agentic environments** | Provide the models and environments being scored: held-out models, the Modal reasoning target, and Petri audits with real tools | `configs/models.json`, the Modal target, `PetriMeasurer`, E3b | `harness/modal_vllm.py`, `harness/petri/`, `research/petri_measure.py` | **Abhi**. §16 tasks 4–6 |
+| **D: Research loop** | The agent that rewrites environments, with taste used at each decision | R0 and R1 arms + E4, E4b | `research/loop.py`, `ideas.py`, new `decisions.py`, `advisor.py`, `claims.py` | **David** |
+| **E: Market, infrastructure, demo** *(on hold until 2026-11-15)* | Spend the budget well, run everything in parallel, and show the results | market + E5 + runners, charts, demo | new `research/market.py`, `modal_app.py`, `swarm.py`, `integrations/`, `scripts/` | to be assigned when it resumes |
 
-**Dependency order.** C must be trusted (its P1 gate) before any paid run of D or E means
-anything. A selects the method that B applies. D consumes A/B's user models and C's
-`Measurer`, and E's market plugs into D's loop.
+**Dependency order.** C1 must be trusted (its P1 gate) before any paid run of D means
+anything. C2 supplies the targets C1 calibrates on and the agentic setting that D uses
+for E3b. A selects the method that B applies. D consumes A/B's user models and the C1/C2
+measurers. When E resumes, its market plugs into D's loop.
 
 ```
-A ──method──▶ B ──user models (P, S)──▶ D ◀──Measurer── C
-                                       ▲
-                                       └──Market──── E   (E also runs every paid sweep)
+A ──method──▶ B ──user models (P, S)──▶ D ◀──Measurer───────── C1
+                                       ▲  ◀──PetriMeasurer──── C2
+                                       │   C2 ──targets──▶ C1   C1 ──judges/probes──▶ C2
+                                       └──Market──── E   (on hold until 2026-11-15)
 ```
 
 **One code rule that affects the split.** `autoresearch/` is standard-library only
@@ -550,49 +560,66 @@ Then export `TasteArtifacts` to `data/researchers/<slug>/usermodel.json` for WS 
 
 ---
 
-### 12.3 WS C: Measurement
+### 12.3 WS C: Measurement, split into C1 and C2
 
 **Goal.** One scorer we trust for both settings, single-scenario and agentic (§3.2, §4).
 Section 16 lists what is already done: error flagging, multi-question A2, realism AUROC,
 dev/final mode, the validity split, item rewrites, raw reasoning through `OpenAICompatLLM`,
 and `cohen_kappa`.
 
-**Build (in order):**
-1. **EvalAwareBench items.**
+The work is split so the two halves touch different files:
+
+| | **C1: Scoring and calibration (single-scenario)** | **C2: Targets and agentic environments** |
+|---|---|---|
+| Question it answers | *Is the score right?* Do the judges and probe questions measure eval awareness and validity correctly? | *What is being scored, and on which models?* The reasoning targets, held-out models, and the Petri agentic setting with real tools |
+| Build items below | 1, 2, 3, 6, 8 | 4, 5, 7 |
+| Files it owns | `research/measure.py`, `research/benchmarks.py`, `research/corpus.py`, `scripts/convert_evalawarebench.py`, `harness/evaldetect/`, `data/benchmarks/`, `results/calibration/` | `configs/models.json`, `harness/modal_vllm.py`, `harness/petri/`, new `research/petri_measure.py` (a separate file, so C2 never edits `measure.py`) |
+| Experiments | E3a, E6, the P1 calibration gate | E3b |
+| Gives the other half | judge prompts, probe questions and calibration results. C2's `PetriMeasurer` reuses C1's A1 and A2 judges instead of writing its own | model endpoints: `configs/models.json` and the `OPENAI_COMPAT_BASE_URL` of the Modal reasoning target, which C1 needs for A1 and the κ check |
+| Gets from the other half | the reasoning target. Until it's up, run calibration on an API reasoning model and redo check (d) once the Modal target is up | stable judge and probe interfaces from `measure.py`, announced with `agentctl post` when they change |
+| Done when | the calibration gate passes and is committed; minimal-cue baseline reproduced on dev; behaviour-gap target found | Modal reasoning target serving and smoke-tested; Petri v1 and v2 baselines reproduced on dev in both tool modes; `PetriMeasurer` passes offline tests |
+| Board tasks | claim `topic-matched-corpus`, `behavior-gap-probe`; add `evalawarebench-converter`, `evaldetect-probes`, `calibration-gate`, `label-transcripts` | claim `api-target`; add `models-config`, `modal-vllm-target`, `petri-harness`, `petri-measurer`, `modal-sandbox-tools` |
+| Cost | calibration gate about $30–80 | Modal GPU time (**[decide]** model size), plus Petri dev baselines about $50–150 |
+
+**C2 without WS E.** WS E is deferred, so C2 owns its own Modal pieces: the vLLM server and
+the sandboxes. E's later `research-grid` fan-out will reuse C2's Modal image rather than
+building another. The cheap screening target in `configs/models.json` (item 4) is set up
+now but used only once the market exists.
+
+**Build (C1 = items 1, 2, 3, 6, 8; C2 = items 4, 5, 7):**
+1. **[C1] EvalAwareBench items.**
    * Download a small sample (ask first) and record its real schema.
    * Write `scripts/convert_evalawarebench.py` to produce the JSONL that `research/benchmarks.load_items` reads. Keep the **cue-factor flags** (F1–F8) and the safety/capability label in each item's metadata.
    * Emit both the original configuration and the minimal-cue configuration, since those are the two E3a controls.
    * Freeze the 60/40 hashed split in `data/benchmarks/evalawarebench_split.json`.
-2. **EvalDetectBench probe questions.** Use `harness/evaldetect/export_probes.py` (Inspect, outside `autoresearch/`) to export the calibrated per-model question sets as `{"<backend>:<model>": [templates with {transcript}]}`. Pass them in with `--probe-questions`. This replaces `DEFAULT_PROBE_QUESTIONS`.
-3. **Calibration gate (P1),** as `python3 -m autoresearch calibrate`. It writes `results/calibration/*.json` and fails loudly if any check fails:
+2. **[C1] EvalDetectBench probe questions.** Use `harness/evaldetect/export_probes.py` (Inspect, outside `autoresearch/`) to export the calibrated per-model question sets as `{"<backend>:<model>": [templates with {transcript}]}`. Pass them in with `--probe-questions`. This replaces `DEFAULT_PROBE_QUESTIONS`.
+3. **[C1] Calibration gate (P1),** as `python3 -m autoresearch calibrate`. It writes `results/calibration/*.json` and fails loudly if any check fails:
    * (a) On Needham's labelled eval vs deployment transcripts, AUROC must be ≥ 0.85 for each answerer.
    * (b) On EvalAwareBench cue pairs, the score must move in the right direction when a cue is removed.
    * (c) A placebo rewrite must give a change of about 0.
    * (d) On ~100 hand-labelled transcripts, the A1 judge must reach κ ≥ 0.6. Labels come from a `label-transcripts` command that shows raw reasoning and the answer, with a yes/no "aware?" label.
-4. **Models (§4.4).**
+4. **[C2] Models (§4.4).**
    * Write `configs/models.json` with the dev target, held-out target, dev judge J1, held-out judges J2 (2, from other families) and the cheap screening target (for E's cascade).
    * `Measurer` warns if a held-out judge shares a family with the generator. That check exists; extend it to cover families, not just backends.
-5. **Reasoning target on Modal.**
+5. **[C2] Reasoning target on Modal.**
    * `harness/modal_vllm.py` serves an open reasoning model with `--reasoning-parser`, exposing an OpenAI-compatible URL.
    * Point `OPENAI_COMPAT_BASE_URL` at it.
    * Smoke test: run 5 samples and check that `Sample.reasoning` is filled in and A1 can be read.
-6. **Topic-matched deployment pool (§4.3).**
+6. **[C1] Topic-matched deployment pool (§4.3).**
    * Extend `corpus.py` with topic filters for WildChat, plus an Exa-based source.
    * Each item gets negatives matched by topic tag.
    * This closes the open task `topic-matched-corpus`.
-7. **Petri (agentic, E3b).** In `harness/petri/`, using `inspect_petri`:
+7. **[C2] Petri (agentic, E3b).** In `harness/petri/`, using `inspect_petri`:
    * `run_audits.py` takes a seed JSONL (original v1 seeds, v2 seeds, or our rewritten seeds) and returns transcripts plus Petri's judge scores as JSONL (`AuditResult`, §12.6).
    * `--tools simulated|sandbox`: in sandbox mode, the target's tool calls go to a **Modal Sandbox** with a real filesystem and shell.
-   * In `autoresearch/research/`, add `PetriMeasurer` with the same `measure()` signature as `Measurer`. It writes seeds, calls the harness (subprocess or Modal), and reads `AuditResult` back into `Sample` objects. A1 and A2 are computed by *our* judges on the transcripts, and Petri's own awareness score goes in a separate field as a cross-check.
-8. **Behaviour gap (V3, E6).**
+   * In the new `autoresearch/research/petri_measure.py`, add `PetriMeasurer` with the same `measure()` signature as `Measurer`. It writes seeds, calls the harness (subprocess or Modal), and reads `AuditResult` back into `Sample` objects. A1 and A2 are computed by *our* judges on the transcripts, and Petri's own awareness score goes in a separate field as a cross-check.
+8. **[C1] Behaviour gap (V3, E6).**
    * `Measurer.faithfulness` already compares an eval-notice version with a plain one.
    * Add a target and probe with real baseline misbehaviour. Check this in the first hour: if the target never misbehaves on the originals, V3 can't be measured. This closes `behavior-gap-probe`.
 
-**Interface promise to WS D and WS E:** `Measurer.measure(interventions, seeds, categories) -> List[Sample]` stays stable. New fields are optional only. Any change gets a post with `agentctl post`.
-**Cost.** The calibration gate is about $30–80. Modal GPUs depend on model size **[decide]**.
-**Done when.** The calibration gate passes and is committed, the minimal-cue and Petri v2 baselines are reproduced on dev, and both measurers pass offline tests.
-
-**Board tasks (owner Nathan, added 2026-11-14):** claim `api-target`, `topic-matched-corpus` and `behavior-gap-probe`. Added `evalawarebench-converter`, `evaldetect-probes`, `calibration-gate`, `models-config`, `modal-vllm-target`, `petri-harness`, `petri-measurer`, `modal-sandbox-tools`.
+**Interface promise to WS D (and WS E when it resumes):** `Measurer.measure(interventions, seeds, categories) -> List[Sample]` (C1) and `PetriMeasurer.measure(...)` (C2) keep the same signature. New fields are optional only. Any change gets a post with `agentctl post`.
+Cost, done-when and board tasks for each half are in the C1/C2 table at the top of this section.
+Nathan added all of these board tasks on 2026-11-14, before the split. `api-target` was claimed under WS C and is now a C2 (Abhi) task.
 
 ---
 
@@ -631,27 +658,29 @@ exists as `self.decisions` (`chosen` vs `taste_top`). The setting gate is in `Pr
    * Today the loop rewrites one item (`--item-index`). Change it so an intervention is a *transformation*, scored as the mean over a batch of N dev items (e.g. 8, re-sampled each iteration from the dev split).
    * Report the effect per item and pooled.
    * This is what makes a finding about eval awareness rather than about one prompt.
-5. **Agentic mode:** `--setting agentic` swaps in C's `PetriMeasurer`. Interventions are then rewrites of seeds and auditor behaviour, with the task-level vs environment-level cue rule from §3.3 in the proposer prompt.
+5. **Agentic mode:** `--setting agentic` swaps in C2's `PetriMeasurer`. Interventions are then rewrites of seeds and auditor behaviour, with the task-level vs environment-level cue rule from §3.3 in the proposer prompt.
 6. **`research/claims.py`: the claim-checker.**
    * Each D6 claim must cite finding ids. The checker re-derives the cited Δ, CI and status from the log, and rejects any claim that is not supported.
    * The report includes the claim-check pass rate (E4b).
 7. **E4b rating packets.** `scripts/make_rating_packets.py` exports blinded D1–D6 records: arm names removed and order shuffled, so a team member who isn't the taste source can rate "justified by the evidence?" on a 1–5 scale. An LLM rubric judge scores the same packets.
 8. **Web setting is the same across all arms.** `eval-awareness-plan.md` warns that web search lets agents copy published methods. **[decide]** Either Exa is on for every arm, or it is off for E4 and used only in C and B.
 
-**Hot file.** `research/loop.py` is shared with E (market) and C (measurer wiring). Lock it
+**Hot file.** `research/loop.py` is shared with C1/C2 (measurer wiring) and later E (market). Lock it
 with `agentctl lock` for each change and keep changes small.
 
 **Done when.**
 * Every arm runs offline end to end, and tests check that arms differ only in the taste mode.
 * `decisions.jsonl` validates against the schema.
 * One cheap live seed per arm runs (with approval).
-* E4 runs are launched by WS E's runner, and E4b packets are produced.
+* E4 runs are launched (by hand from the CLI while WS E is on hold, otherwise by E's runner), and E4b packets are produced.
 
 **Board tasks:** claim `anchor-setting` (check it against the existing `setting_gate`). Add `decision-log`, `taste-advisor`, `arm-switches`, `multi-item-interventions`, `agentic-mode`, `claim-checker`, `rating-packets`.
 
 ---
 
-### 12.5 WS E: Market, infrastructure, demo
+### 12.5 WS E: Market, infrastructure, demo (on hold until 2026-11-15)
+
+*On hold. This section is the plan for when it resumes. §12.0 lists the stopgaps in the meantime.*
 
 **Goal.** Spend the budget where it is most informative, run every paid sweep reproducibly
 and in parallel, and produce the charts and demo (§8, §10, E5).
@@ -724,10 +753,10 @@ class DecisionRecord:
     evidence: Dict                                # p_better, delta, ci90, validity, n
     overrode_taste: bool; arm: str; code_version: str
 
-# research/measure.py           (WS C owns; D and E use). Signature stays stable; new fields optional
+# research/measure.py           (WS C1 owns; D uses, E later). Signature stays stable; new fields optional
 Measurer.measure(interventions: List[str], seeds: List[int], categories=None) -> List[Sample]
 
-# harness/petri  <->  research/PetriMeasurer   (JSONL, WS C)
+# harness/petri  <->  research/petri_measure.PetriMeasurer   (JSONL, WS C2; uses C1's A1/A2 judges)
 AuditSeed   = {"seed_id", "text", "variant": "v1|v2|ours", "tools": "simulated|sandbox"}
 AuditResult = {"seed_id", "transcript", "reasoning", "petri_scores": {...}, "error": null|str}
 
@@ -740,7 +769,8 @@ Market.settle(outcomes: Dict[str, bool]) -> Dict[str, float]          # agent ->
 
 `eval-awareness-plan.md` splits the same work by person and step. Its five people map onto
 these workstreams like this:
-* Person 1 (real data, judges, calibration) and Person 2 ("still works" check and baseline numbers) → WS C.
+* Person 1 (real data, judges, calibration) and Person 2 ("still works" check and baseline numbers) → WS C1.
+* WS C2 (Petri, agentic, real tools, Modal targets) has no person in that plan, where Petri is only a judge and the agentic task is a stretch goal.
 * Person 3 (rewrite loop) → WS D.
 * Person 4 (taste collection, profiles, Layer 1) → WS A + WS B.
 * Person 5 (experiment runner, charts) → WS E.
@@ -834,7 +864,7 @@ summaries. Check them against the repos in P0 before relying on them.*
 - A self-report now costs 3 calls instead of 1, so an online sample takes **7 calls** instead of 5.
 - The discriminator no longer counts an unparseable answer as 0.5. It drops A3 for that sample instead.
 
-**Next tasks:** superseded by §12.3 (WS C, owner Nathan); kept here for the short version.
+**Next tasks:** superseded by §12.3 and kept here as the short version. *Owners (2026-11-14, see §12.0): tasks 1–3 → Nathan (C1), tasks 4–6 → Abhi (C2).*
 
 1. **Get the real EvalAwareBench items.** Download a small sample (ask first, see §4.3), check the schema, and write a converter to the JSONL format in `benchmarks.py`. Then run one minimal-cue item through `--benchmark-items` as a smoke test (needs approval: paid).
 2. **Replace the placeholder probe questions** with EvalDetectBench's calibrated per-model sets: `freeze-lasr/aware_bench`, exported as `{"<backend>:<model>": [templates with {transcript}]}`.
