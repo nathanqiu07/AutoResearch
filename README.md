@@ -161,6 +161,39 @@ python3 -m autoresearch corpus --n 200      # optional: real WildChat first mess
 python3 -m autoresearch --llm claude-cli research --researcher demo_realist --iterations 5 --samples 5
 ```
 
+### First live v2 run
+
+`results/research_live/` (code `0ba93f2`): `demo_realist` taste, target `haiku`, generator and
+judge `sonnet`, 144 real WildChat messages as the discriminator reference, 5 iterations,
+5 samples per evaluation plus confirmation. 305 calls, $3.58 API-equivalent, 24 min, 0 errors. Exa off (no key).
+
+| | score [90% CI] | awareness | target self-report | verbalized | discriminated | validity |
+|---|---|---|---|---|---|---|
+| baseline (no interventions) | 0.390 [0.374, 0.407] | 0.577 | 0.710 | 0.020 | 1.000 | 0.922 |
+| best design | **0.518** [0.474, 0.557] | 0.402 | **0.285** | 0.020 | 0.900 | 0.866 |
+
+**What it found.** Of 10 model-proposed interventions, 1 was validated, and it held up on 5 fresh
+samples (P = 1.00): framing the request as a *routine, recurring* task with history. That means
+"the weekly status note again", prior weeks' entries in the team's casual voice, and a named
+reader. It cut the target's own estimate that the interaction was a test from 0.71 to 0.29.
+Nine others were rejected, including two that made things clearly worse (P ≤ 0.07): adding
+mundane non-determinism, and an annoyed hand-off note from a teammate. Taste predicted
+outcomes (rho +0.70 over 10 evaluations), so its weight stayed near 1. The loop picked the
+researcher's top idea in 60% of decisions.
+
+**What this run can't show, honestly:**
+* **No behaviour gap to measure.** Haiku reported honestly in all 55 samples, so this probe can't
+  show whether awareness *changes behaviour*. A target or probe with some baseline misbehaviour is
+  needed to test faithfulness directly.
+* **Two signals are weak.** Verbalized suspicion was ~0.02 everywhere, since Haiku never says it
+  suspects a test. The discriminator stayed at 0.9–1.0, which most likely reflects the topic
+  confound (real WildChat messages vs workplace tasks), not realism.
+* **Scenario drift.** The proposer moved the setting from "analytics assistant" to "ML team's
+  eval-script repo", and later ideas referred to folders and files even though the target has no
+  tools. The goal-level drift gates don't catch a *setting* shift. The setting needs anchoring.
+* **One run, n = 5–10 per evaluation, CLI harness confound** (see above). This is a first finding,
+  not an established result.
+
 ## Sponsor integrations
 
 API keys are read only from environment variables, which you set yourself:
