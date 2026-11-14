@@ -231,7 +231,7 @@ def main(argv=None):
     s.set_defaults(fn=cmd_scrape)
     rs = sub.add_parser("research", help="open-ended research loop (v2)")
     rs.add_argument("--researcher")
-    rs.add_argument("--scenario", default="metric_inflation", choices=["metric_inflation", "sycophancy_code"])
+    rs.add_argument("--scenario", default="metric_inflation", choices=["metric_inflation", "sycophancy_code", "test_special_casing", "fabrication"])
     rs.add_argument("--faithfulness-samples", type=int, default=8)
     rs.add_argument("--generator", default="sonnet")
     rs.add_argument("--target", default="haiku", help="model under study; keep it different from the judge")

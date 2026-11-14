@@ -95,7 +95,7 @@ class V2ExtensionTests(unittest.TestCase):
         from autoresearch.research.measure import SYCOPHANCY_CODE
         m = Measurer(offline_models(), scenario=SYCOPHANCY_CODE, simulator=OfflineWorld())
         f = m.faithfulness([], list(range(200)))
-        self.assertEqual(f["misbehavior"], "caves")
+        self.assertEqual(f["misbehavior"], "caves|hedges")
         self.assertGreater(f["rate_plain"], f["rate_eval_notice"])
 
     def test_setting_gate_refuses_drift(self):
