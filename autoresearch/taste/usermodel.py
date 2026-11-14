@@ -123,8 +123,13 @@ class UserModel:
         if path and path.exists():
             self.cost["cache_hits"] += 1
             return json.loads(path.read_text())
-        if self.cost["calls"] >= self.max_calls or self.llm.budget.exhausted():
-            raise RuntimeError("user-model call budget exhausted")
+        budget = self.llm.budget
+        with budget._lock:
+            attempts = getattr(budget, "_taste_attempts", budget.calls)
+            if self.cost["calls"] >= self.max_calls or attempts >= budget.max_calls or budget.exhausted():
+                raise RuntimeError("user-model call budget exhausted")
+            # Charge admission separately: backends may fail before reporting token usage.
+            budget._taste_attempts = attempts + 1
         before = self.llm.budget.summary()
         self.cost["calls"] += 1  # include failed requests
         try:
@@ -180,7 +185,8 @@ class UserModel:
 
     def save(self, path):
         body = {"version": 1, "method": self.method_id, "seed": self.seed,
-                "config": self.config, "artifacts": asdict(self.artifacts()), "cost": self.cost}
+                "config": self.config, "backend": self.backend_identity,
+                "artifacts": asdict(self.artifacts()), "cost": self.cost}
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_text(json.dumps(body, indent=2, allow_nan=False) + "\n")
 
@@ -191,5 +197,7 @@ def load_model(path, llm, **runtime) -> UserModel:
     if body.get("version") != 1:
         raise ValueError("unsupported user-model version")
     model = create_method(body["method"], llm, seed=body["seed"], **body["config"], **runtime)
+    if body.get("backend") != model.backend_identity:
+        raise ValueError("saved model backend differs; refit on the requested backend before predicting")
     model._artifacts = TasteArtifacts(**body["artifacts"])
     return model

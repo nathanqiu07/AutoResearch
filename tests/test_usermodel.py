@@ -121,3 +121,29 @@ class UserModelTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             model.predict("q2", ["a", "b"])
         self.assertEqual(len(llm.prompts), 1)
+
+    def test_failed_attempts_share_the_run_cap_across_models(self):
+        _, create = self.api()
+        class FailingLLM(RecordingLLM):
+            def complete(self, prompt, **kwargs):
+                self.prompts.append(prompt)
+                raise RuntimeError("backend unavailable")
+        llm = FailingLLM()
+        llm.budget.max_calls = 1
+        for _ in range(3):
+            with self.assertRaises(RuntimeError):
+                create("m0", llm).predict("q", ["a", "b"])
+        self.assertEqual(len(llm.prompts), 1)
+
+    def test_reload_rejects_different_backend_identity(self):
+        _, create = self.api()
+        from autoresearch.taste.usermodel import load_model
+        a, b = RecordingLLM(), RecordingLLM()
+        a.model, b.model = "development", "evaluation"
+        model = create("m0", a)
+        model.fit([], [])
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "model.json"
+            model.save(p)
+            with self.assertRaisesRegex(ValueError, "backend"):
+                load_model(p, b)
