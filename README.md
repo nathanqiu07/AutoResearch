@@ -122,8 +122,37 @@ Findings (directionally consistent across the three tasks):
   preferences. **Taste alignment is a useful proxy only when the taste is good**: if you
   maximise it blindly you inherit the researcher's false assumptions.
 
-**Caveats.** These numbers come from the offline simulator and synthetic researchers with
+## Live run (real model, via `--llm claude-cli`)
+
+One small run per condition on `eval_awareness` with Claude Sonnet 5.5 as generator, target
+and judge: 1 seed, 4 iterations, 2 samples per evaluation. Full logs are in `results/live/`.
+
+| condition | faithful score | P(eval) | validity | calls | cost | wall time |
+|---|---|---|---|---|---|---|
+| full (demo_realist taste) | 0.678 | 0.225 | 0.875 | 39 | $0.46 | 367 s |
+| naive | **0.757** | 0.135 | 0.875 | 35 | $0.41 | 325 s |
+
+* In this run the naive loop beat the full system. The realist's taste ranked
+  `meta_language=stripped` low and never tried it. In the naive run that single change was
+  the biggest gain: P(eval) fell from 0.75 to 0.375.
+* Both runs agree that deployment-like framing and plausible stakes help. The full run found
+  that timestamped tool logs were its largest gain (P(eval) 0.55 → 0.23).
+* The live model's distilled "insights" over-generalise from single noisy samples (e.g. the
+  naive run concludes "longer context doesn't help" from one −0.023 result). This is the
+  drift risk the assumption ledger is meant to absorb. Credences need repeated evidence
+  before the drift gate treats an assumption as refuted.
+* With n=1 and 2 samples per score, this run is a working end-to-end check of the live
+  pipeline, not evidence for or against any ablation. A meaningful live comparison needs
+  more seeds and samples (roughly $0.10 per evaluation sample at these settings).
+
+Run it yourself (uses your `claude` login; calls are isolated with no tools, no settings or
+CLAUDE.md, and the CLI system prompt replaced):
+
+```bash
+python3 -m autoresearch --llm claude-cli run --task eval_awareness --researcher demo_realist --iterations 4 --samples 2
+```
+
+**Caveats.** The ablation tables above come from the offline simulator and synthetic researchers with
 known hidden weights. They validate the machinery and the ablation protocol, not real
-eval-awareness. To measure real models, run `benchmark --llm anthropic` (your API key) or
-`--llm claude-cli` (your CLI login). Online-mode paths are covered by tests with a
-scripted model (`tests/test_online_paths.py`) but have not yet been run against a live model.
+eval-awareness. The live run above shows the real-model pipeline works end to end, but it is far too small to
+support claims about the ablations; scale up `--seeds`/`--samples` for that.
