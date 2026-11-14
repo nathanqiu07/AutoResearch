@@ -417,3 +417,45 @@ class ClaimTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _rating_script():
+    import importlib.util
+    path = os.path.join(os.path.dirname(__file__), "..", "scripts", "make_rating_packets.py")
+    spec = importlib.util.spec_from_file_location("make_rating_packets", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class RatingPacketTests(unittest.TestCase):
+    def test_blinded_packets_judge_and_summary(self):
+        mrp = _rating_script()
+        d = tempfile.mkdtemp()
+        reps = [researcher(ResearchConfig(iterations=4, seed=s, taste_mode=mode), taste=GOOD, ddir=d).run()
+                for s, mode in ((0, "none"), (0, "model"))]
+        out = tempfile.mkdtemp()
+        rdir = os.path.join(out, "reports")
+        for rep in reps:
+            write_report(rep, rdir)   # also writes <stem>_decisions.jsonl: duplicates must be dropped
+        mrp.main(["make", "--decisions", d, rdir, "--out", out, "--seed", "1"])
+        packets = mrp.load_jsonl(os.path.join(out, "packets.jsonl"))
+        key = mrp.load_jsonl(os.path.join(out, "key.jsonl"))
+        self.assertEqual(len(packets), sum(len(r["decisions"]) for r in reps))
+        self.assertEqual({k["arm"] for k in key}, {"R0", "R1"})
+        blob = json.dumps(packets)
+        for leak in ('"arm"', '"run_id"', "user_model", "overrode_taste", "code_version", '"taste"', "taste_weight"):
+            self.assertNotIn(leak, blob)
+        self.assertNotEqual([k["packet_id"] for k in key][:5], sorted(k["packet_id"] for k in key)[:5])
+
+        class Judge(LLM):
+            def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+                return '{"rating": 4, "why": "ok"}' if "reject" in prompt else "no idea"
+        ratings = mrp.judge_packets(packets, Judge(), "llm:test")
+        self.assertTrue(any(r["rating"] is None for r in ratings))
+        human = [{"packet_id": p["packet_id"], "rating": 5, "rater": "alice"} for p in packets[:10]]
+        res = mrp.summarize(key, ratings + human, mrp.load_reports([rdir]))
+        self.assertEqual(set(res["by_arm"]), {"R0", "R1"})
+        self.assertEqual(res["raters"], ["alice", "llm:test"])
+        self.assertEqual(set(res["claim_check_pass_rate"]), {"R0", "R1"})
+        self.assertGreater(res["unrated"], 0)
