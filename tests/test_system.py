@@ -84,6 +84,7 @@ class BenchmarkTests(unittest.TestCase):
 
     def test_extract_json(self):
         self.assertEqual(extract_json('blah {"a": 1} tail'), {"a": 1})
+        self.assertEqual(extract_json('x [{"a": 1}, {"b": 2}] y'), [{"a": 1}, {"b": 2}])
 
 
 if __name__ == "__main__":

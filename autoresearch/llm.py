@@ -157,11 +157,12 @@ def get_llm(kind: str = "auto", model: str = "claude-sonnet-5-5",
 
 
 def extract_json(text: str):
-    """Pull the first JSON object/array out of a model response."""
-    for open_c, close_c in (("{", "}"), ("[", "]")):
-        s = text.find(open_c)
+    """Pull the first JSON object/array out of a model response, trying the
+    bracket that opens first (so a list of objects is returned as a list)."""
+    starts = sorted((text.find(o), o, c) for o, c in (("{", "}"), ("[", "]")) if text.find(o) != -1)
+    for s, _, close_c in starts:
         e = text.rfind(close_c)
-        if s != -1 and e > s:
+        if e > s:
             try:
                 return json.loads(text[s:e + 1])
             except json.JSONDecodeError:
