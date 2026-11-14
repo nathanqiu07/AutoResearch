@@ -28,7 +28,7 @@ class Budget:
     max_seconds: float = 3600.0
     # Per Budget (one run, or one swarm cell), not a lifetime total. Only backends
     # that report cost count toward it; today that is ClaudeCLILLM alone.
-    max_cost_usd: float = 25.0
+    max_cost_usd: float = 200.0
     calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
