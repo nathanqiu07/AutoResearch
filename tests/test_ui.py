@@ -43,12 +43,23 @@ class ConsoleTest(unittest.TestCase):
         c = Console(io.StringIO(), color=False, unicode=True, width=60)
         t = c.table(["id", "text"], [["f1", "x" * 200]], flex=1)
         self.assertTrue(all(visible_len(line) <= 60 for line in t.splitlines()), t)
+        self.assertEqual(t.count("x"), 200 + 1)   # wrapped, nothing lost (+1 for the "x" in "text")
+        t = c.table(["id", "text"], [["f1", "x" * 200]], flex=1, wrap=False)
+        self.assertTrue(all(visible_len(line) <= 60 for line in t.splitlines()), t)
         self.assertIn("…", t)
 
     def test_panel_lines_same_width(self):
         c = Console(io.StringIO(), color=True, unicode=True, width=80)
         p = c.panel(["short", c.style("a longer styled line", "bold"), "y" * 300], title="Run")
         self.assertEqual(len({visible_len(line) for line in p.splitlines()}), 1, p)
+
+    def test_multiline_cells_and_wrapping(self):
+        c = Console(io.StringIO(), color=True, unicode=True, width=50)
+        t = c.table(["id", "text"], [["f1", [c.style("cat", "cyan"), "word " * 30]]], flex=1)
+        lines = t.splitlines()
+        self.assertEqual(len({visible_len(line) for line in lines}), 1, t)
+        self.assertGreater(len(lines), 6)          # header, rules, category line and wrapped text
+        self.assertIn(c.style("cat", "cyan"), t)    # a short line keeps its colour
 
     def test_bar(self):
         c = Console(io.StringIO(), color=False, unicode=True)

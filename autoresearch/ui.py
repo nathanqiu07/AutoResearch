@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import sys
+import textwrap
 from typing import IO, List, Optional, Sequence
 
 _CODES = {
@@ -143,29 +144,39 @@ class Console:
         return [self.pad(self.style(k, key_style), w) + "  " + str(v) for k, v in pairs]
 
     def table(self, headers: Sequence[str], rows: Sequence[Sequence], align: Optional[str] = None,
-              flex: Optional[int] = None, title: str = "", style: str = "gray") -> str:
-        """A boxed table. ``align`` is one of ``<>^`` per column; ``flex`` names the
-        column (plain text) that is shortened when the table is wider than the console."""
+              flex: Optional[int] = None, wrap: bool = True, title: str = "", style: str = "gray") -> str:
+        """A boxed table. ``align`` is one of ``<>^`` per column. ``flex`` names the column
+        that gives up width when the table is wider than the console: its text wraps onto
+        more lines (``wrap``) or is cut short. A cell given as a list or tuple holds several
+        lines. A line that has to be wrapped or cut loses its styling."""
         n = len(headers)
         align = (align or "<" * n).ljust(n, "<")
-        cells = [[str(c) if c is not None else "" for c in r] for r in rows]
-        widths = [max([visible_len(h) for h in [headers[i]]] + [visible_len(r[i]) for r in cells]) for i in range(n)]
+        as_lines = lambda c: [str(x) for x in c] if isinstance(c, (list, tuple)) else ["" if c is None else str(c)]
+        cells = [[as_lines(c) for c in r] for r in rows]
+        widths = [max([visible_len(headers[i])] + [visible_len(x) for r in cells for x in r[i]]) for i in range(n)]
         total = sum(widths) + 3 * n + 1
         if flex is not None and total > self.width:
-            widths[flex] = max(widths[flex] - (total - self.width), max(visible_len(headers[flex]), 8))
-            cells = [r[:flex] + [r[flex] if visible_len(r[flex]) <= widths[flex]
-                                 else self.truncate(strip_ansi(r[flex]), widths[flex])] + r[flex + 1:]
-                     for r in cells]
+            w = widths[flex] = max(widths[flex] - (total - self.width), max(visible_len(headers[flex]), 12))
+            for r in cells:
+                fitted = []
+                for text in r[flex]:
+                    if visible_len(text) <= w:
+                        fitted.append(text)
+                    else:
+                        plain = strip_ansi(text)
+                        fitted += textwrap.wrap(plain, w) if wrap else [self.truncate(plain, w)]
+                r[flex] = fitted
         b = self.box
         line = lambda l, m, r: self.style(l + m.join(b["h"] * (w + 2) for w in widths) + r, style)
         side = self.style(b["v"], style)
-        fmt = lambda r, hdr=False: side + side.join(
-            " " + self.pad(self.style(c, "bold") if hdr else c, widths[i], align[i]) + " "
-            for i, c in enumerate(r)) + side
+        fmt = lambda r: side + side.join(" " + self.pad(c, widths[i], align[i]) + " " for i, c in enumerate(r)) + side
         out = []
         if title:
             out.append(self.style(title, "bold"))
-        out += [line(b["tl"], b["tt"], b["tr"]), fmt(list(headers), hdr=True), line(b["lt"], b["x"], b["rt"])]
-        out += [fmt(r) for r in cells]
+        out += [line(b["tl"], b["tt"], b["tr"]), fmt([self.style(h, "bold") for h in headers]),
+                line(b["lt"], b["x"], b["rt"])]
+        for r in cells:
+            height = max(len(c) for c in r)
+            out += [fmt([c[k] if k < len(c) else "" for c in r]) for k in range(height)]
         out.append(line(b["bl"], b["bt"], b["br"]))
         return "\n".join(out)

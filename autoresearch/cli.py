@@ -204,7 +204,11 @@ def cmd_research(args):
     from .research.loop import Calibration, OpenResearcher, write_report
     from .research.measure import Measurer, OfflineWorld, Scenario
     from .research.multi import ItemPool
+    from .research import display
+    from .ui import Console
     import random as _r
+    con = Console()
+    items_desc = None
     if args.no_taste:
         args.taste_mode = "none"
     elif args.taste_mode is None:   # default: taste on if a researcher is given, otherwise R0
@@ -249,11 +253,11 @@ def cmd_research(args):
                              f"({len(items)} items total)")
         if args.items_per_iter:
             pool = ItemPool(items_pool, make_measurer, workers=args.workers)
-            print(f"multi-item mode: batches of {args.items_per_iter} from {len(items_pool)} {args.mode} items "
-                  f"({len(dev)} dev / {len(held)} held-out)")
+            items_desc = (f"batches of {args.items_per_iter} from {len(items_pool)} {args.mode} items "
+                          f"({len(dev)} dev / {len(held)} held-out)")
         else:
             scenario = items_pool[args.item_index % len(items_pool)]
-            print(f"benchmark item {scenario.source_id} ({args.mode} split: {len(dev)} dev / {len(held)} held-out)")
+            items_desc = f"benchmark item {scenario.source_id} ({args.mode} split: {len(dev)} dev / {len(held)} held-out)"
     if args.setting == "agentic":
         measurer = _agentic_measurer(args, models)
         scenario = getattr(measurer, "scenario", None) or Scenario(
@@ -262,8 +266,6 @@ def cmd_research(args):
             probe="the behaviour each seed instruction is designed to elicit")
     elif pool is None:
         measurer = make_measurer(scenario)
-    for w in getattr(measurer, "warnings", []) if measurer else []:
-        print("warning:", w)
     corpus = corpus_for(scenario) if args.setting == "single" else []
     matched = bool(corpus) and not pool_for(scenario)[1].get("fallback", True)
     scout = shared = None
@@ -288,11 +290,6 @@ def cmd_research(args):
         history = history_text(load_researcher(slug).root)
     who = slug or "none"
     cal = Calibration(os.path.join(args.memory, "taste_calibration.json"), who)
-    print(f"arm={arm} taste_mode={args.taste_mode} | models: generator={args.generator} target={args.target} "
-          f"judge={args.judge} ({args.llm}) | setting={args.setting} | scenario={scenario.name} | researcher={who}"
-          f"{' (user model: ' + advisor.source + ')' if advisor else ''} | real corpus={len(corpus)} msgs "
-          f"({'topic-matched' if matched else 'NOT topic-matched'}) | web={'exa' if scout else 'off'} | "
-          f"shared={getattr(shared, 'backend', 'off')}")
     proposer = Proposer(models.generator, prof, _r.Random(args.seed), gate_llm=models.judge, taste_text=taste_text,
                         history=history, setting_kind=args.setting)
     contrarian = market = screen = None
@@ -312,9 +309,19 @@ def cmd_research(args):
         screen = Measurer(dataclasses.replace(models, target=mk_t(args.screen_target)), scenario=scenario,
                           real_corpus=corpus_for(scenario), workers=args.workers, simulator=OfflineWorld(),
                           mode="dev", probe_questions=probes)
-    print(f"allocation={args.allocation}" + (f" (screen {args.screen_samples} samples on "
-          f"{args.screen_target or args.target})" if args.allocation != "uniform" else "")
-          + (f" | contrarian={args.contrarian}" if args.contrarian else ""))
+    con.print(display.setup_panel(con, {
+        "arm": arm, "taste_mode": args.taste_mode, "researcher": who,
+        "user_model": advisor.source if advisor else None,
+        "generator": args.generator, "target": args.target, "judge": args.judge, "llm": args.llm,
+        "setting": args.setting, "scenario": scenario.name, "items": items_desc,
+        "corpus_n": len(corpus), "matched": matched,
+        "allocation": args.allocation,
+        "screen": (f"{args.screen_samples} samples on {args.screen_target or args.target}"
+                   if args.allocation != "uniform" else None),
+        "contrarian": args.contrarian, "web": "exa" if scout else "off",
+        "shared": getattr(shared, "backend", "off")}))
+    for w in getattr(measurer, "warnings", []) if measurer else []:
+        con.print(con.style("warning: ", "bold", "yellow") + w)
     r = OpenResearcher(measurer, proposer, ResearchMemory(args.memory), prof, cfg, scenario=scenario, scout=scout,
                        shared=shared, calibration=cal, budget=budget, advisor=advisor, pool=pool,
                        decisions_dir=args.decisions_dir, market=market, contrarian=contrarian,
@@ -325,29 +332,7 @@ def cmd_research(args):
     if slug and not prof:
         rep["taste"]["researcher"] = slug
     path = write_report(rep, args.out)
-    b, f = rep["baseline"], rep["best"]
-    print(f"baseline score {b['score']:.3f} (awareness {b['awareness']:.3f}) -> best {f['score']:.3f} "
-          f"(awareness {f['awareness']:.3f}), P(better)={rep['p_best_beats_baseline']:.2f}")
-    print(f"validated findings: {sum(x['status'] == 'validated' for x in rep['findings'])} / {len(rep['findings'])} tested")
-    print(f"taste: alignment={rep['taste']['alignment']} rho={rep['taste']['reliability_rho']:+.2f} "
-          f"weight={rep['taste']['effective_weight']:.2f} | compute {rep['compute']}")
-    cl = rep.get("claims") or {}
-    if cl:
-        print(f"claims: {len(cl['included'])}/{cl['n']} supported (pass rate {cl['pass_rate']})")
-    fa = rep.get("faithfulness") or {}
-    for k in ("baseline", "best"):
-        if k in fa:
-            print(f"faithfulness {k}: {fa[k]['misbehavior']} rate as-is={fa[k]['rate_plain']} "
-                  f"with eval notice={fa[k]['rate_eval_notice']} (n={fa[k]['n']})")
-    mk_rep = rep.get("market")
-    if mk_rep:
-        print("market wallets: " + ", ".join(f"{a}={w['balance']:.1f}" for a, w in mk_rep["wallets"].items())
-              + f" | bids {mk_rep['n_bids']}, settled {mk_rep['n_settled']}, Brier {mk_rep['brier']}")
-    for k, per in (rep.get("realism_auroc") or {}).items():
-        print(f"realism AUROC {k}: " + ", ".join(f"{w}={v['auroc']:.3f}" for w, v in per.items()))
-    if r.dlog.path:
-        print("decisions:", r.dlog.path)
-    print("report:", path)
+    con.print(display.results(con, rep, path, r.dlog.path))
 
 
 def cmd_corpus(args):
