@@ -244,9 +244,7 @@ def cmd_research(args):
     pool = None
     measurer = None
     if args.benchmark_items:
-        from .research.benchmarks import load_items, split
-        items = load_items(args.benchmark_items, base=scenario)
-        dev, held = split(items)
+        dev, held = _split_items(args.benchmark_items, scenario, args.split_file)
         items_pool = held if args.mode == "final" else dev
         if not items_pool:
             raise SystemExit(f"no {'held-out' if args.mode == 'final' else 'dev'} items in {args.benchmark_items} "
@@ -254,7 +252,8 @@ def cmd_research(args):
         if args.items_per_iter:
             pool = ItemPool(items_pool, make_measurer, workers=args.workers)
             items_desc = (f"batches of {args.items_per_iter} from {len(items_pool)} {args.mode} items "
-                          f"({len(dev)} dev / {len(held)} held-out)")
+                          f"({len(dev)} dev / {len(held)} held-out, "
+                          f"{'frozen split ' + os.path.basename(args.split_file) if args.split_file else 'hash split'})")
         else:
             scenario = items_pool[args.item_index % len(items_pool)]
             items_desc = f"benchmark item {scenario.source_id} ({args.mode} split: {len(dev)} dev / {len(held)} held-out)"
@@ -361,6 +360,22 @@ def cmd_label(args):
     out.close()
 
 
+def _split_items(path, base, split_file=None):
+    """(dev, held-out) benchmark items. With a frozen split file (e.g. C1's
+    data/benchmarks/evalawarebench_split.json, grouped by task pair) that split is
+    used; without one, the deterministic per-id hash split. The two differ, so every
+    run and held-out evaluation of one experiment must use the same choice."""
+    from .research.benchmarks import apply_split, load_items, load_split, split
+    items = load_items(path, base=base)
+    if split_file:
+        return apply_split(items, load_split(split_file), allow_missing=True)
+    beside = sorted(f for f in os.listdir(os.path.dirname(os.path.abspath(path))) if f.endswith("_split.json"))
+    if beside:
+        print(f"note: no --split-file given, so items are split by id hash; a frozen split exists beside the items "
+              f"({', '.join(beside)})", file=sys.stderr)
+    return split(items)
+
+
 def _add_model_args(sp, mode_default: str, max_calls: int):
     """Model roles and measurement mode, shared by `research` and `evaluate-design`."""
     sp.add_argument("--generator", default="sonnet")
@@ -404,8 +419,7 @@ def cmd_evaluate_design(args):
     models = _build_models(args, budget)
     probes = load_probe_questions(args.probe_questions) if args.probe_questions else None
     if args.benchmark_items:
-        from .research.benchmarks import load_items, split
-        dev, held = split(load_items(args.benchmark_items, base=SCENARIOS[args.scenario]))
+        dev, held = _split_items(args.benchmark_items, SCENARIOS[args.scenario], args.split_file)
         items = held if args.mode == "final" else dev
     else:
         names = args.scenarios or [n for n in SCENARIOS if n != rep.get("scenario")]
@@ -541,6 +555,8 @@ def build_parser() -> argparse.ArgumentParser:
     rs.add_argument("--faithfulness-samples", type=int, default=8)
     _add_model_args(rs, mode_default="dev", max_calls=600)
     rs.add_argument("--benchmark-items", help="local JSONL of benchmark items to rewrite (see research/benchmarks.py)")
+    rs.add_argument("--split-file", help="frozen dev/held-out split of the --benchmark-items ids "
+                    "(e.g. data/benchmarks/evalawarebench_split.json); default: hash split by item id")
     rs.add_argument("--item-index", type=int, default=0)
     rs.add_argument("--realism-samples", type=int, default=0,
                     help="real-traffic transcripts for realism AUROC (extra paid calls)")
@@ -592,6 +608,8 @@ def build_parser() -> argparse.ArgumentParser:
     ev = sub.add_parser("evaluate-design", help="score a finished run's final design on held-out items (E4)")
     ev.add_argument("--report", required=True, help="the run's report JSON")
     ev.add_argument("--benchmark-items", help="items JSONL; final mode uses its held-out split, dev mode its dev split")
+    ev.add_argument("--split-file", help="frozen dev/held-out split of the --benchmark-items ids "
+                    "(e.g. data/benchmarks/evalawarebench_split.json); default: hash split by item id")
     ev.add_argument("--scenario", default="metric_inflation", choices=sorted(["metric_inflation", "sycophancy_code",
                     "test_special_casing", "fabrication"]), help="base scenario for --benchmark-items")
     ev.add_argument("--scenarios", nargs="*", help="without --benchmark-items: built-in scenarios to use as items "

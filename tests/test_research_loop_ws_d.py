@@ -554,8 +554,14 @@ class E4PreregTests(unittest.TestCase):
             for k in range(20):
                 f.write(json.dumps({"id": f"it{k}", "user": f"Please report metric {k}"}) + "\n")
         prereg["shared_run_settings"]["benchmark_items"] = items
+        split = os.path.join(tmp, "split.json")   # a frozen split, as C1's evalawarebench_split.json
+        with open(split, "w") as f:
+            json.dump({"version": 1, "dev": [f"it{k}" for k in range(12)],
+                       "heldout": [f"it{k}" for k in range(12, 20)]}, f)
+        prereg["shared_run_settings"]["split_file"] = split
         lines = mod.commands(prereg, ["R0", "R1-bad"], [0], llm="offline", out_root=os.path.join(tmp, "out"),
                              runs_root=os.path.join(tmp, "runs"))
+        self.assertIn("--split-file", lines[0])
         self.assertEqual(len(lines), 2)
         self.assertEqual(len(mod.commands(prereg, llm="offline")), 6 * 8)
         for line in lines:
@@ -566,6 +572,41 @@ class E4PreregTests(unittest.TestCase):
         self.assertEqual(arms, {"R0", "R1-bad"})
         with self.assertRaises(SystemExit):
             mod.commands(prereg, ["external-agent"], [0])
+        # model flags come from the models config: dev roles for runs, one evaluation per held-out target
+        models = {"roles": {"generator": "g", "dev_target": "t", "dev_judge": "j",
+                            "heldout_targets": ["ht1", "ht2"], "heldout_judges": ["hj"]}}
+        run = mod.commands(prereg, ["R0"], [0], models=models)[0]
+        self.assertIn("--generator g --target t --judge j", run)
+        self.assertNotIn("--mode final", run)
+        held = mod.heldout_commands(prereg, models, ["R0"], [0])
+        self.assertEqual(len(held), 2)
+        self.assertTrue(all("--mode final" in h and "--heldout-judges hj" in h and "--split-file" in h for h in held))
+        self.assertEqual(len({h.split("--out ")[1].split()[0] for h in held}), 2)   # one output per target
+        import fnmatch   # the report glob matches run reports, not held-out outputs or decision files
+        self.assertTrue(fnmatch.fnmatch("metric_inflation_a5a1d533.json", mod.REPORT_GLOB))
+        for other in ("heldout-ht1.json", "x_a5a1d533_heldout_final.json", "x_a5a1d533_decisions.jsonl"):
+            self.assertFalse(fnmatch.fnmatch(other, mod.REPORT_GLOB))
+        with open(os.path.join(root, "results", "prereg", "E4.json")) as f:   # the real prereg names C2's config
+            real = json.load(f)
+        self.assertTrue(os.path.exists(os.path.join(root, real["models_config"])))
+        self.assertTrue(os.path.exists(os.path.join(root, real["shared_run_settings"]["split_file"])))
+
+    def test_frozen_split_file_is_used_instead_of_hash_split(self):
+        from autoresearch.cli import _split_items
+        from autoresearch.research.measure import SCENARIOS
+        tmp = tempfile.mkdtemp()
+        items = os.path.join(tmp, "items.jsonl")
+        with open(items, "w") as f:
+            for k in range(10):
+                f.write(json.dumps({"id": f"it{k}", "user": f"q {k}"}) + "\n")
+        split = os.path.join(tmp, "items_split.json")
+        with open(split, "w") as f:
+            json.dump({"version": 1, "dev": ["it0", "it1"], "heldout": [f"it{k}" for k in range(2, 10)]}, f)
+        dev, held = _split_items(items, SCENARIOS["metric_inflation"], split)
+        self.assertEqual([s.source_id for s in dev], ["it0", "it1"])
+        self.assertEqual(len(held), 8)
+        dev_h, held_h = _split_items(items, SCENARIOS["metric_inflation"])   # hash split differs
+        self.assertNotEqual([s.source_id for s in dev_h], ["it0", "it1"])
 
 
 class SpendCapTests(unittest.TestCase):

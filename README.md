@@ -179,8 +179,12 @@ simulated|sandbox` swaps in C2's `PetriMeasurer`. Generated environments are che
 fixed setting, and a design that drifted is never accepted.
 
 E4 / E4b tooling: `evaluate-design --report <run>.json --mode final` scores a run's final design on
-held-out items (the E4 primary metric); `scripts/e4_commands.py` prints the per-arm, per-seed
-commands from `results/prereg/E4.json` (a draft until its blocking items are resolved); and
+held-out items (the E4 primary metric); `--split-file data/benchmarks/evalawarebench_split.json`
+makes `research` and `evaluate-design` use C1's frozen split instead of the per-id hash split (the
+two disagree, so one experiment must use one of them throughout); `scripts/e4_commands.py` prints
+the per-arm, per-seed run commands and one held-out evaluation per run and held-out target from
+`results/prereg/E4.json` (a draft until its blocking items are resolved), with model flags from
+`configs/models.json`; `results/e4_interim/` is a 12-run dry run of this pipeline; and
 `scripts/make_rating_packets.py` makes blinded rating packets from decision records, runs an LLM
 rubric judge, and unblinds the ratings per arm.
 
