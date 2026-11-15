@@ -42,8 +42,8 @@ Files: scripts/gio_petri/run_baseline.py and test_review.py.
 Files: docs/user-models/overnight/*, docs/user-models/baseline-review-02/*, results/gio-baseline-review-02/*.
 - [x] Deliver complete copy-paste overnight prompts before paid run.
 - [x] Produce full transcript/reasoning and primary/legacy results with provenance; immutable raw log references.
-- [ ] Verify hashes, credential-pattern scan and relevant tests; push scoped commits and verify remote.
-- [ ] Report complete result even if invalid. Goal ends only when prompt pack and full run handoff are both delivered.
+- [x] Verify hashes, credential-pattern scan and relevant tests; push scoped commits and verify remote.
+- [x] Report complete result even if invalid. Goal ends only when prompt pack and full run handoff are both delivered.
 
 ## Execution ledger
 
@@ -61,3 +61,5 @@ Recovery: original failed/empty audit export and logs preserved. Offline extract
 Task 3: full redacted publication bundle and readable findings prepared. Original logs stay unchanged. The target conversation contains no shutdown mention; no valid baseline decision was observed. Other agents' intake and integration lanes remain separate. Targeted tests: 28 passing; repository suite: 663 tests, two skipped. Final artifact integrity, documentation links and remote publication are checked at closeout.
 
 Closeout verification: 81 publication files match their SHA-256 manifest. Published evidence and review documents pass credential-pattern scanning; every relative review-document link resolves. Full recovered transcript/reasoning are included verbatim in the readable handoff. Seed/template byte equality and model/routing/generation equality against baseline01 pass. Fresh targeted suite: 28 passing; fresh repository suite: 663 tests, two skipped. Independent read-only audit found no material contradictions; its minor missing-score.json wording was corrected. Shared autoresearch/ and harness/petri/ sources are unchanged from the audit runtime commit.
+
+Publication completed at 053aae78a965ef18b94a0adbd3a520f6069e2346; remote branch equality verified. Full negative result and overnight prompts delivered; original goal completed. A later coordinator request adds only the documented future utility interface/readiness handoff, without further model calls.
