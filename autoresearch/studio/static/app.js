@@ -612,7 +612,7 @@ function panelAbout(panel, nextBtn) {
 // ----- Materials (personal)
 function panelMaterials(panel, nextBtn) {
   const queue = [];
-  panel.innerHTML = head("Your materials", "Anything you have written: papers, drafts, blog posts, research notes, reviews, talk transcripts. Writing outside research (marked <em>other</em>) counts too, at lower weight.") + `
+  panel.innerHTML = head("Your materials", "Anything you have written: papers, drafts, blog posts, research notes, reviews, talk transcripts.") + `
     <div class="card">
       <h3>Upload files</h3>
       <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose files to upload">
