@@ -12,6 +12,7 @@ MODAL="${MODAL_BIN:?}"
 if [ "$(uname)" = Darwin ] && [ -z "${SSL_CERT_FILE:-}" ] && [ -f /etc/ssl/cert.pem ]; then export SSL_CERT_FILE=/etc/ssl/cert.pem; fi
 STEP="${1:-all}"                       # all | loop | final
 ITER="${ITERATIONS:-4}"; SAMPLES="${SAMPLES:-12}"; EVALS="${EVALS_PER_ITER:-3}"
+REWRITE="${PETRI_REWRITE:-both}"         # what designs rewrite: seed | auditor | both
 RUN_TAG="${RUN_TAG:?set RUN_TAG}"      # names the loop output dir, so 'final' can be re-run alone
 LOOP_OUT="$MAIN/runs/loop/evan_hubinger_$RUN_TAG"
 POOL_FILE="${POOL_FILE:-$HOME/.autoresearch/pool.json}"; export POOL_FILE
@@ -80,17 +81,22 @@ export TINKER_PROXY_KEY=local OPENAI_COMPAT_PLAIN_THINKING="${OPENAI_COMPAT_PLAI
 export OPENAI_COMPAT_BASE_URL=http://127.0.0.1:8100/v1 OPENAI_COMPAT_API_KEY=local
 T_SPEC="openai-compat:$T_MODEL"
 
-echo "deploying auditor in Modal workspace $MODAL_POOL_LABEL ($MODAL_PROFILE)..."
-A_URL=$(deploy autoresearch-auditor Qwen/Qwen3-235B-A22B-Instruct-2507-FP8 H100:4 none 65536); DEPLOY_TS=$(date +%s)
-wait_ready autoresearch-auditor "$A_URL" "${READY_MINUTES:-40}"
+if [ -n "${AUDITOR_URL:-}" ] && curl -sf -m 15 -H "Authorization: Bearer $VLLM_KEY" "$AUDITOR_URL/models" >/dev/null 2>&1; then
+  A_URL="$AUDITOR_URL"; DEPLOY_TS=$(date +%s)   # reuse an auditor that is already up (its earlier minutes are closed by whoever started it)
+  echo "reusing auditor at $A_URL"
+else
+  echo "deploying auditor in Modal workspace $MODAL_POOL_LABEL ($MODAL_PROFILE)..."
+  A_URL=$(deploy autoresearch-auditor Qwen/Qwen3-235B-A22B-Instruct-2507-FP8 H100:4 none 65536); DEPLOY_TS=$(date +%s)
+  wait_ready autoresearch-auditor "$A_URL" "${READY_MINUTES:-40}"
+fi
 export MODALAUD_BASE_URL="$A_URL" MODALAUD_API_KEY="$VLLM_KEY"
 export PETRI_MAX_CONNECTIONS="${PARALLEL:-40}" PETRI_MAX_SAMPLES="${PARALLEL:-40}"
 
 MODELS=(--generator openai:gpt-6-luna --judge openai:gpt-5.1 --target "$T_SPEC")
 if [ "$STEP" = all ] || [ "$STEP" = loop ]; then
-  echo "== loop: evan_hubinger, $ITER iterations x $EVALS evals, $SAMPLES audits per eval"
-  python3 -m autoresearch.cli research --setting agentic --mode dev --petri-seeds data/petri/seeds_v2.jsonl \
-    --researcher evan_hubinger --taste-mode model "${MODELS[@]}" ${LOOP_EXTRA:-} \
+  echo "== loop: evan_hubinger, $ITER iterations x $EVALS evals, $SAMPLES audits per eval, rewrite=$REWRITE"
+  PYTHONUNBUFFERED=1 python3 -m autoresearch.cli research --setting agentic --mode dev --petri-seeds data/petri/seeds_v2.jsonl \
+    --researcher evan_hubinger --taste-mode model --petri-rewrite "$REWRITE" "${MODELS[@]}" ${LOOP_EXTRA:-} \
     --iterations "$ITER" --samples "$SAMPLES" --evals-per-iter "$EVALS" --parallel-evals --workers "${SCORE_WORKERS:-16}" \
     --max-cost "${LOOP_MAX_COST:-60}" --max-seconds $((MAX_MIN * 60)) --max-calls 50000 \
     --memory "$LOOP_OUT/memory" --out "$LOOP_OUT/report" 2>&1 | tee "$LOOP_OUT/loop.log"
@@ -99,15 +105,15 @@ if [ "$STEP" = all ] || [ "$STEP" = final ]; then
   REPORT=$(ls -t "$LOOP_OUT"/report/*.json 2>/dev/null | grep -v _environments | head -1)
   [ -n "$REPORT" ] || { echo "no loop report in $LOOP_OUT/report"; exit 1; }
   echo "== export taste_real (dev) from the loop's best design ($REPORT)"
-  python3 -m autoresearch.cli export-seeds --report "$REPORT" --condition taste_real --split dev \
+  PYTHONUNBUFFERED=1 python3 -m autoresearch.cli export-seeds --report "$REPORT" --condition taste_real --split dev \
     --petri-seeds data/petri/seeds_v2.jsonl "${MODELS[@]}" --out "$LOOP_OUT/taste_real_dev.jsonl" 2>&1 | tee "$LOOP_OUT/export.log"
   echo "== final dev eval: stock vs control vs taste_real"
-  python3 scripts/c2_e3b.py --condition stock=data/petri/seeds_v2.jsonl \
+  PYTHONUNBUFFERED=1 python3 scripts/c2_e3b.py --condition stock=data/petri/seeds_v2.jsonl \
     --condition control="$MAIN/runs/petri/control_dev.jsonl" --condition taste_real="$LOOP_OUT/taste_real_dev.jsonl" \
     --split dev --limit 12 --epochs 1 --tools simulated --target "$T_SPEC" --judge openai:gpt-5.1 \
     --petri-auditor openai-api/modalaud/Qwen/Qwen3-235B-A22B-Instruct-2507-FP8 --petri-judge openai/gpt-5.1 \
     --max-cost 20 --workers "${SCORE_WORKERS:-16}" --petri-batch 36 \
     --cache-dir "$MAIN/runs/petri/cache/control_moonshotai_Kimi-K2.6_n12" \
-    --out "$MAIN/results/e3b/loop_evan_hubinger_stock_control_taste_moonshotai_Kimi-K2.6_dev_n12_$(date +%Y-%m-%d).json" \
+    --out "$MAIN/results/e3b/loop_evan_hubinger_rewrite-${REWRITE}_stock_control_taste_moonshotai_Kimi-K2.6_dev_n12_$(date +%Y-%m-%d).json" \
     2>&1 | tee "$LOOP_OUT/final.log"
 fi
