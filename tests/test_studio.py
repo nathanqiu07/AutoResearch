@@ -131,6 +131,12 @@ class StoreTest(unittest.TestCase):
         # the studio never points the team's personal track at a new person
         self.assertFalse(os.path.exists(os.path.join(self.root, "tracks.json")))
 
+    def test_a_failing_trackp_command_is_a_studio_error(self):
+        slug = _personal(self.root)
+        with mock.patch.object(store.trackp, "main", side_effect=SystemExit(2)):
+            with self.assertRaises(store.StudioError):
+                store.ensure_seed_pairs(self.root, slug)
+
     def test_build_writes_a_profile_the_loop_loads(self):
         slug = _personal(self.root)
         store.add_doc(self.root, slug, "research", "Statement",
@@ -298,6 +304,11 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.call("DELETE", f"/api/profiles/{slug}/docs/{doc['file']}")[0], 200)
         self.assertEqual(self.call("GET", "/api/profiles/missing_one")[0], 404)
         self.assertEqual(self.call("POST", f"/api/profiles/{slug}/build", {"backend": "gpt-free"})[0], 400)
+        # a command that exits answers with an error instead of dropping the connection
+        with mock.patch.object(store, "list_profiles", side_effect=SystemExit(2)):
+            code, out = self.call("GET", "/api/profiles")
+        self.assertEqual(code, 500)
+        self.assertIn("exited", out["error"])
 
 
 if __name__ == "__main__":

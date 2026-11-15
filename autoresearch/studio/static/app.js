@@ -161,8 +161,7 @@ function flow(container, steps, opts = {}) {
   function draw(dir) {
     const st = steps[i], vis = visible(), pos = vis.indexOf(i);
     setProgress(pos / vis.length);
-    const old = stage.querySelector(".tf-screen");
-    if (old) { old.classList.add(dir < 0 ? "leave-back" : "leave"); setTimeout(() => old.remove(), 420); }
+    sendOff(stage, dir);
     const screen = document.createElement("div");
     screen.className = `tf-screen ${dir < 0 ? "enter-back" : "enter"}`;
     const tilt = [-0.8, 0.6, -0.4, 0.9, -0.6][pos % 5];
@@ -280,8 +279,7 @@ function burstAt(el) { const r = el.getBoundingClientRect(); burst(r.left + r.wi
 
 function doneScreen(container, { title, text, actions, icon = "sparkle" }) {
   const stage = container.querySelector(".tf-stage");
-  const old = stage.querySelector(".tf-screen");
-  if (old) { old.classList.add("leave"); setTimeout(() => old.remove(), 420); }
+  sendOff(stage, 1);
   const screen = document.createElement("div");
   screen.className = "tf-screen enter";
   screen.innerHTML = `<div class="tf-card sketch done" style="--card-tilt:-.6deg">
@@ -295,6 +293,18 @@ function doneScreen(container, { title, text, actions, icon = "sparkle" }) {
   sketchify(screen);
   const nav = container.querySelector(".tf-nav"); if (nav) nav.remove();
   const d = screen.querySelector(".done-icon .doodle"); if (d) setTimeout(() => burstAt(d), 450);
+}
+
+/* Every card still on stage (including one still arriving when the person moves on quickly)
+   leaves before the next one comes in, so only one question is ever shown. */
+function sendOff(stage, dir) {
+  stage.querySelectorAll(".tf-screen:not(.leave):not(.leave-back)").forEach(old => {
+    old.classList.remove("enter", "enter-back");
+    old.classList.add(dir < 0 ? "leave-back" : "leave");
+    old.setAttribute("aria-hidden", "true");
+    old.querySelectorAll("input, textarea, button").forEach(el => { el.tabIndex = -1; });
+    setTimeout(() => old.remove(), 420);
+  });
 }
 
 /* faint doodles drifting behind every form, like the home page */
