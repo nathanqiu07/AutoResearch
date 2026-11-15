@@ -264,32 +264,30 @@
 
   /* ================================================================== Create */
   const SRC = [["Papers", 0], ["Posts and talks", 0], ["Code", 0], ["Trade-off answers", 1], ["Pairwise choices", 1], ["Past loop decisions", 1]];
-  const METH = ["Inverse Constitutional AI", "SynthesizeMe", "Bradley–Terry", "Verification filter", "Calibration (M7, untested)"];
-  const srcY = (k) => 290 + k * 60 + 24, methY = (k) => 290 + k * 74 + 30;
+  const METH = ["Inverse Constitutional AI", "SynthesizeMe", "P2 · Research-process reconstruction", "P5 · Conditional decision-rule induction", "P8 · Contrastive interpretive modeling"];
+  const srcY = (k) => 330 + k * 90 + 32, methY = (k) => 330 + k * 108 + 44;
   add({
     id: "create", label: "Step 1 · Build the user model", cls: "s-create", step: 1, beats: 3,
     html: `${head("User model construction")}
       <svg class="flows" width="1920" height="1080" viewBox="0 0 1920 1080" aria-hidden="true"></svg>
-      ${SRC.map(([s, me], k) => `<div class="src ${me ? "me" : ""}" data-in="0" style="top:${290 + k * 60}px;--d:${k * 70}ms">${s}</div>`).join("")}
-      ${METH.map((h, k) => `<div class="meth" data-in="1" style="top:${290 + k * 74}px;--d:${k * 110}ms"><h4>${h}</h4></div>`).join("")}
+      ${SRC.map(([s, me], k) => `<div class="src ${me ? "me" : ""}" data-in="0" style="top:${330 + k * 90}px;--d:${k * 70}ms">${s}</div>`).join("")}
+      ${METH.map((h, k) => `<div class="meth" data-in="1" style="top:${330 + k * 108}px;--d:${k * 110}ms"><h4>${h}</h4></div>`).join("")}
       <div class="out" data-in="2">
         <div class="h">user model</div>
         <div><span class="k">principles</span>ICAI</div>
         <div><span class="k">persona</span>SynthesizeMe</div>
         <div><span class="k">exemplars</span>past decisions</div>
-        <div><span class="k">weights</span>Bradley–Terry</div>
+        <div><span class="k">process</span>P2</div>
+        <div><span class="k">rules</span>P5</div>
+        <div><span class="k">rivals</span>P8</div>
         <div><span class="k">confidence</span>reported</div>
       </div>
-      <div class="construction-lenses">
-        <div class="lens-box" data-in="2"><span>P2</span><h4>Research-process reconstruction</h4><p>Reconstruct projects, decisions, failures and updates.</p></div>
-        <div class="lens-box" data-in="2" style="--d:120ms"><span>P5</span><h4>Conditional decision-rule induction</h4><p>Learn which choices they prefer under which conditions.</p></div>
-        <div class="lens-box" data-in="2" style="--d:240ms"><span>P8</span><h4>Contrastive interpretive modeling</h4><p>Compare explanations using evidence and counter-evidence. Ask about unresolved choices.</p></div>
-      </div>`,
+`,
     init(el) {
-      const svg = el.querySelector("svg.flows"), mid = { x: 560, y: 470 };
+      const svg = el.querySelector("svg.flows"), mid = { x: 560, y: 590 };
       this.a = SRC.map((_, k) => U.svg("path", { class: "fl", d: `M 440 ${srcY(k)} C 500 ${srcY(k)}, 510 ${mid.y}, ${mid.x} ${mid.y}` }, svg));
       this.b = METH.map((_, k) => U.svg("path", { class: "fl", d: `M ${mid.x} ${mid.y} C 600 ${mid.y}, 600 ${methY(k)}, 640 ${methY(k)}` }, svg));
-      this.c = METH.map((_, k) => U.svg("path", { class: "fl", d: `M 1180 ${methY(k)} C 1270 ${methY(k)}, 1270 470, 1360 470` }, svg));
+      this.c = METH.map((_, k) => U.svg("path", { class: "fl", d: `M 1180 ${methY(k)} C 1270 ${methY(k)}, 1270 600, 1360 600` }, svg));
       this.len = (p) => p._l || (p._l = p.getTotalLength());
       const g = U.svg("g", {}, svg), r = U.rng(5);
       this.parts = Array.from({ length: 34 }, () => ({ dot: U.svg("circle", { r: 5, class: "pt", opacity: 0 }, g), s: r() * 3, v: 0.00035 + r() * 0.0003, src: Math.floor(r() * SRC.length), m: Math.floor(r() * METH.length) }));
@@ -311,8 +309,8 @@
     },
     notes: [
       "Step one. Two kinds of evidence: what the researcher has published, and choices they make for us directly (orange borders): trade-off answers, pairwise choices, labels on past loop decisions.",
-      "Our fitting methods learn from a person's choices. The catalog profiles are distilled from their writing. Inverse Constitutional AI extracts principles and keeps those that reconstruct their choices (propose, cluster, dedupe, test, filter). SynthesizeMe writes and verifies hypotheses about the person, then a persona and exemplars. Bradley–Terry learns weights over idea features. A verification filter keeps a component only if it predicts that person’s held-out choices. Only M7 calibrates confidence, and it was never tested. We built eight variants, M0 to M7. On dev users, none beats the no-history baseline yet.",
-      "The output is the user model: principles, persona, exemplars, weights, three richer lenses (P2, P5, P8) and a reported confidence.",
+      "Our fitting methods learn from a person's choices. The catalog profiles are distilled from their writing. Inverse Constitutional AI extracts principles and keeps those that reconstruct their choices (propose, cluster, dedupe, test, filter). SynthesizeMe writes and verifies hypotheses about the person, then a persona and exemplars. A verification filter keeps a component only if it predicts that person’s held-out choices. Only M7 calibrates confidence, and it was never tested. We built eight variants, M0 to M7. On dev users, none beats the no-history baseline yet.",
+      "The five displayed construction approaches are ICAI, SynthesizeMe, research-process reconstruction (P2), conditional decision-rule induction (P5), and contrastive interpretive modeling (P8). P2 reconstructs projects, decisions, failures and updates. P5 learns which choices they prefer under which conditions. P8 compares explanations using evidence and counter-evidence, and asks about unresolved choices. The output records principles, persona, exemplars, process, rules, rivals and reported confidence.",
     ],
   });
 
