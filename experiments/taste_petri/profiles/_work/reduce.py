@@ -13,7 +13,8 @@ W = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.dirname(W)
 RUN_DIR = "/private/tmp/claude-501/-Users-ethancai-Projects-Ongoing-AutoResearch/414d2fe3-0b7c-4161-aca0-f3ceaeffeb26/scratchpad/run"
 NAMES = {"evan_hubinger": "Evan Hubinger", "samuel_bowman": "Samuel R. Bowman", "owain_evans": "Owain Evans",
-         "ryan_greenblatt": "Ryan Greenblatt", "buck_shlegeris": "Buck Shlegeris"}
+         "ryan_greenblatt": "Ryan Greenblatt", "buck_shlegeris": "Buck Shlegeris", "samuel_marks": "Samuel Marks",
+         "elizabeth_barnes": "Beth Barnes", "jacob_steinhardt": "Jacob Steinhardt"}
 FILES = {"(a)": "a_principles.md", "(b)": "b_decision_heuristics.md", "(c)": "c_petri_transfer.md",
          "(d)": "d_extrapolation.md", "(e)": "e_taste_vector.md"}
 

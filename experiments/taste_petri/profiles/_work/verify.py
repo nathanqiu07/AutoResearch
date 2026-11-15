@@ -1,9 +1,12 @@
-"""Check every map-step quote appears verbatim (modulo whitespace / quote-mark style) in its source doc.
+"""usage: python3 verify.py [slug ...]  (default: every slug in selection.json)
+
+Check every map-step quote appears verbatim (modulo whitespace / quote-mark style) in its source doc.
 Writes evidence/<slug>.jsonl with only the verified items, each tagged with doc id and date."""
 import glob
 import json
 import os
 import re
+import sys
 
 W = os.path.dirname(os.path.abspath(__file__))
 
@@ -26,8 +29,8 @@ def found(q, doc):
 def main():
     sel = {s["slug"] + "/" + s["file"][:-4]: s for s in json.load(open(W + "/selection.json"))}
     os.makedirs(W + "/evidence", exist_ok=True)
-    stats = {}
-    for slug in sorted({k.split("/")[0] for k in sel}):
+    stats = json.load(open(W + "/verify_stats.json")) if os.path.exists(W + "/verify_stats.json") else {}
+    for slug in sys.argv[1:] or sorted({k.split("/")[0] for k in sel}):
         out, ok, bad = [], 0, 0
         for path in sorted(glob.glob(f"{W}/map/{slug}/*.json")):
             s = sel[slug + "/" + os.path.basename(path)[:-5]]

@@ -160,3 +160,51 @@ success on its own.
   demo_realist's fitted weights.
 - Map coverage is partial: 98 of about 540 docs. Early-career NLU work (Bowman) and theory (Hubinger) reach (d) only
   through titles.
+
+## Batch 2: Samuel Marks, Beth Barnes, Jacob Steinhardt (2026-11-15)
+
+Same pipeline and prompts as above, run on three corpora that landed later. Slugs: `samuel_marks`,
+`elizabeth_barnes`, `jacob_steinhardt`. Nicholas Carlini was skipped: `data/researchers/nicholas_carlini/` had no
+`corpus/` when this ran.
+
+| researcher | docs mapped | quotes verified | quotes dropped | evidence items cited in the cards |
+|---|---|---|---|---|
+| Samuel Marks | 15 | 147 | 7 | 78 |
+| Beth Barnes | 15 | 147 | 3 | 78 |
+| Jacob Steinhardt | 15 | 150 | 2 | 84 |
+
+**Selection** (`_work/selection_batch2.py`, appended to `selection.json` as indices 98-142, so the first 98 entries
+and their map files are unchanged). Priority was eval awareness, realism of setups, auditing, model organisms and eval
+methodology, preferring solo and first-author writing:
+- Marks: Petri announcement, "Towards Alignment Auditing as a Numbers-Go-Up Science", hidden-objectives auditing
+  game, alignment auditing agents, AuditBench, Auditing Games for Sandbagging, Steering Evaluation-Aware Models to Act
+  Like They Are Deployed, persona selection model, in-the-wild behaviour prediction, synthetic document finetuning,
+  plus four solo method posts (downstream validation, practical interp projects, research directions, behaviourally
+  identical classifiers).
+- Barnes: 80,000 Hours #217 and AXRP #34 podcasts, ARC Evals posts (2021-2023: crude deception eval, evaluating
+  alignment, GPT-4 dangerous-capability evals, agents on realistic autonomous tasks), RE-Bench, HCAST, time horizons,
+  the developer-productivity RCT, METR's auditing role, the 2026 report thread, the task bounty, managing risks.
+- Steinhardt: Transluce "User awareness in frontier models", "Some Focus Areas for Embedded Evaluations", Docent,
+  investigator agents (paper and jailbreaking blog), o3 truthfulness, surfacing pathological behaviours, latent user
+  representations, three solo oversight/governance posts, agentic-benchmark best practices, in-context reward hacking,
+  "Troubling Trends in ML Scholarship".
+
+**Script changes** (backward compatible; old outputs not regenerated): `verify.py` and `timeline.py` take optional
+slug arguments (`verify.py` merges into `verify_stats.json`); `timeline.py` now drops docs with Hobbhahn in the
+authors line; `reduce.py` knows the three new names.
+
+**CLI calls: 48** (45 sonnet map, 3 sonnet reduce; all logged in `_work/calls.log`, no failures). No hand edits to the
+batch-2 cards.
+
+**Hobbhahn exclusion.** No selected doc has him as an author (checked on the `authors:` line). His co-authored papers
+(CoT Monitorability and two Reflection Mechanisms posts in Barnes; "Log analysis is necessary..." in Steinhardt) are
+also removed from the timelines. Some selected papers cite him in their references; `grep -i hobbhahn` on the
+batch-2 cards and evidence files returns nothing.
+
+**Caveats.**
+- Barnes's two podcasts are filed as solo, but the hosts speak too; capped at 160k chars, so the end of #217 is unread.
+- Most Steinhardt evidence is from Transluce blogs/papers where he is last author; Marks's AuditBench, sandbagging and
+  eval-aware-steering items are middle-author. Weight by the author position on each quote.
+- Steinhardt (c) move 2 ("use real, recognizable people and organizations") and Marks (c) move 3 ("realistic named
+  org") conflict with the brief's rule that all arms fictionalise real organisations (I18). A rewriter should read
+  them as "plausible, specific, non-placeholder names", not real ones.
