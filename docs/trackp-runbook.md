@@ -7,6 +7,20 @@ for an agent collecting them. All commands are
 
 **Start every session with `status`.** Its `next` list says what to run, in order.
 
+## 0. One sitting (each person, at a terminal)
+
+Each team member gets their own personal-track dataset. The person runs
+
+```bash
+python3 -m autoresearch.taste.trackp start            # asks for their full name
+```
+
+It creates `data/researchers/<slug>/` (slug from the name), writes the built-in seed items,
+shows the consent statements and records the person's agreement, then asks the seed items.
+They quit with `q` and run `start` again with the same name to resume. `start` makes no model
+calls. Like `init`, it points the personal track (key P) at that person. The sections below are
+the step-by-step equivalent, for agents and for the paid extras.
+
 ## 1. Set up (once)
 
 ```bash

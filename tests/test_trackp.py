@@ -229,6 +229,22 @@ class TrackPTest(unittest.TestCase):
         (row,) = read(os.path.join(self.dir, trackp.SEED_CHOICES))
         self.assertEqual((row["chosen"], row["reason"]), ("b", ""))
 
+    def test_start_sets_up_by_name_takes_consent_and_resumes(self):
+        said = []
+        self.assertEqual(trackp.start(self.root, "Jane Q. Doe", ask=lambda _: "n", say=said.append), 0)
+        d = os.path.join(self.root, "jane_q_doe")
+        self.assertFalse(os.path.exists(os.path.join(d, trackp.SEED_CHOICES)))
+        replies = iter(["yes", "1", "q"])
+        self.assertEqual(trackp.start(self.root, "Jane Q. Doe", ask=lambda _: next(replies), say=said.append), 1)
+        with open(os.path.join(d, "CONSENT.md")) as f:
+            consent = f.read()
+        self.assertNotIn("- [ ]", consent)
+        self.assertIn("Recorded by: Jane Q. Doe", consent)
+        replies = iter(["2", "q"])   # consent is not asked again, and the answered item is not re-served
+        self.assertEqual(trackp.start(self.root, "Jane Q. Doe", ask=lambda _: next(replies), say=said.append), 1)
+        self.assertEqual(len(read(os.path.join(d, trackp.SEED_CHOICES))), 2)
+        self.assertEqual(len(trackp.pending_items(self.root, "jane_q_doe", ("seed",))), N_SEED - 2)
+
     def test_split_holds_out_stable_seed_pairs_and_late_runs(self):
         self.seed()
         first_test = {c.example_id for c in trackp.split(self.root, SLUG)["test"]}

@@ -19,6 +19,7 @@ After `init`, --researcher defaults to the personal track (key P) in tracks.json
 next. The person answers in a terminal (answer / label / recheck), or an agent shows
 them `pending` items in chat and saves each reply with `record` (docs/trackp-runbook.md).
 
+    python3 -m autoresearch.taste.trackp start [--name "<full name>"]   # set up, consent, answer: one sitting
     python3 -m autoresearch.taste.trackp init --researcher <slug> --name "<full name>"
     python3 -m autoresearch.taste.trackp seed-pairs [--llm-scenarios K --llm anthropic]
     python3 -m autoresearch.taste.trackp balance --backend ... --model ...   # paid
@@ -40,6 +41,7 @@ import glob
 import json
 import os
 import random
+import re
 from dataclasses import asdict
 from typing import Callable, Dict, List, Optional
 
@@ -266,6 +268,39 @@ def ask_items(root: str, slug: str, items: List[dict], ask: Callable = input, sa
     return n
 
 
+def slugify(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+
+
+def start(root: str, name: str, ask: Callable = input, say: Callable = print) -> int:
+    """One terminal sitting for a new or returning person: set up, take consent, answer seed items."""
+    slug = slugify(name)
+    if not slug:
+        raise SystemExit("the name needs at least one letter or digit")
+    from ..research.measure import SCENARIOS
+    d = init(root, slug, name)
+    write_seed_pairs(root, slug, tradeoffs.build_seed_pairs(tradeoffs.load_bank(),
+                                                            [SCENARIOS[n] for n in sorted(SCENARIOS)], 0))
+    consent = os.path.join(d, "CONSENT.md")
+    with open(consent) as f:
+        text = f.read()
+    if "- [ ]" in text:
+        say("\nBefore you start, you agree that:")
+        for line in text.splitlines():
+            if line.startswith("- [ ] "):
+                say("  * " + line[6:])
+        if ask("Agree to all? [y/N] ").strip().lower() not in ("y", "yes"):
+            say("No consent, so nothing was asked. Run start again to agree.")
+            return 0
+        text = text.replace("- [ ]", "- [x]").replace(
+            "Recorded by:\n", f"Recorded by: {name} (agreed at the terminal, {datetime.date.today().isoformat()})\n")
+        with open(consent, "w") as f:
+            f.write(text)
+    say(f"\nSaving to {d}. About 12 minutes; quit with q at any time and run start again to resume. "
+        "There are no right answers: each question asks what you would do.")
+    return ask_items(root, slug, pending_items(root, slug, ("seed",)), ask, say)
+
+
 def labels_to_choices(slug: str, labels: List[dict]) -> List[Choice]:
     """Each label becomes one pairwise Choice per rejected option (chosen vs it),
     with a/b order set by hash so the chosen text isn't always a."""
@@ -477,6 +512,8 @@ def main(argv=None):
         sp.add_argument("--frac", type=float, default=0.2, help="share of answers re-asked for the noise ceiling")
         sp.add_argument("--min-days", type=float, default=3, help="wait before re-asking")
         return sp
+    sub.add_parser("start", help="set up a person by name, take consent and answer seed items (resumable)") \
+        .add_argument("--name", help="your full name (asked if omitted)")
     i = cmd("init", "create the directory and CONSENT.md, and set the personal track (key P) in tracks.json")
     i.add_argument("--name", required=True)
     s = cmd("seed-pairs", "generate trade-off items to answer: stance and scenario (no answers are asked here)")
@@ -532,6 +569,9 @@ def main(argv=None):
     ft.add_argument("--seed", type=int, default=0)
     ft.add_argument("--cache", default="runs/taste-cache")
     args = p.parse_args(argv)
+    if args.command == "start":
+        print(f"recorded {start(args.root, args.name or input('Your full name: '))} answers")
+        return
     slug = args.researcher or _track_p(args.root)
     decisions = getattr(args, "decisions", None)
     if decisions is None:
