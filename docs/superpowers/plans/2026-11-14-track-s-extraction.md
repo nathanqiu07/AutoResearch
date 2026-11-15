@@ -73,7 +73,7 @@
 
 **Files:**
 - Modify: `autoresearch/taste/scrape.py`
-- Modify: `autoresearch/cli.py` (the `scrape` subcommand gains `--exa`, `--start`, `--end`)
+- CLI: the `harvest` subcommand of `python3 -m autoresearch.taste.timesplit` (Task 6), so the shared `cli.py` stays untouched
 - Test: `tests/test_scrape_exa.py` (new)
 
 **Interfaces:**
@@ -101,7 +101,7 @@
 
 - [ ] **Step 4: Run the full suite.** Expected: OK.
 
-- [ ] **Step 5: Commit** `autoresearch/taste/scrape.py autoresearch/cli.py tests/test_scrape_exa.py`.
+- [ ] **Step 5: Commit** `autoresearch/taste/scrape.py tests/test_scrape_exa.py`.
 
 ### Task 3: Exa structured extraction
 

@@ -8,6 +8,7 @@ Everything lands in data/researchers/<slug>/corpus/ as plain text with a
 `kind` prefix ('research' or 'other')."""
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import os
@@ -66,3 +67,195 @@ def import_x_archive(tweets_js: str, root: str):
     if other:
         out.append(_save(root, "other", "x_posts", "\n".join(other)))
     return out
+
+
+# ---- Exa harvest (Track S) -------------------------------------------------
+# Each item is checked as his own work and dated, then written with front matter that
+# taste/timesplit.read_doc understands. See docs/track-s-extraction.md.
+
+ARXIV_ID = re.compile(r"arxiv\.org/(?:abs|pdf|html)/(\d{4}\.\d{4,5})(?:v\d+)?", re.IGNORECASE)
+FORUM_POST = re.compile(r"(?:lesswrong\.com|alignmentforum\.org)/posts/([A-Za-z0-9]+)", re.IGNORECASE)
+TEXT_DATE = re.compile(r"\b(20\d\d-[01]\d-[0-3]\d)\b")
+# (category, domains, kind). Papers use Exa's "publication" category; the other sources are
+# picked by domain, since Exa's category enum has no tweet, talk or code value.
+HARVEST_SOURCES = (("publication", ["arxiv.org"], "paper"),
+                   (None, ["lesswrong.com", "alignmentforum.org"], "post"),
+                   (None, ["apolloresearch.ai"], "blog"),
+                   (None, ["x.com", "twitter.com"], "tweet"),
+                   (None, ["youtube.com"], "talk"),
+                   (None, ["github.com"], "code"))
+ENUMERATE_SCHEMA = {"type": "object", "properties": {"items": {"type": "array", "items": {
+    "type": "object", "properties": {"title": {"type": "string"}, "url": {"type": "string"},
+                                     "date": {"type": "string"}, "kind": {"type": "string"}}}}}}
+
+
+def canonical_url(url: str) -> str:
+    m = ARXIV_ID.search(url)
+    if m:
+        return f"https://arxiv.org/abs/{m.group(1)}"
+    m = FORUM_POST.search(url)
+    if m:
+        return f"https://www.lesswrong.com/posts/{m.group(1)}"
+    p = urllib.parse.urlparse(url.strip())
+    host = p.netloc.lower().removeprefix("www.")
+    return f"https://{host}{p.path.rstrip('/')}"
+
+
+def fetch_arxiv_meta(arxiv_ids):
+    """{id: {"authors": [...], "published": "YYYY-MM-DD"}} from arXiv's API (v1 date)."""
+    out = {}
+    ids = sorted(set(arxiv_ids))
+    for i in range(0, len(ids), 50):
+        q = urllib.parse.urlencode({"id_list": ",".join(ids[i:i + 50]), "max_results": 50})
+        with urllib.request.urlopen(urllib.request.Request(
+                f"http://export.arxiv.org/api/query?{q}", headers=UA), timeout=60) as r:
+            tree = ET.fromstring(r.read())
+        ns = {"a": "http://www.w3.org/2005/Atom"}
+        for e in tree.findall("a:entry", ns):
+            m = ARXIV_ID.search(e.findtext("a:id", "", ns))
+            if m:
+                out[m.group(1)] = {"authors": [a.findtext("a:name", "", ns) for a in e.findall("a:author", ns)],
+                                   "published": (e.findtext("a:published", "", ns) or "")[:10]}
+    return out
+
+
+def _is_him(text: str, name: str) -> bool:
+    parts = name.lower().split()
+    t = text.lower()
+    return parts[-1] in t and (parts[0][0] in t.replace(parts[-1], "") or "".join(parts) in t)
+
+
+def author_position(authors, name):
+    """'solo' | 'first' | 'last' | 'middle', or None when he isn't listed."""
+    hits = [i for i, a in enumerate(authors) if a and _is_him(a, name)]
+    if not hits:
+        return None
+    i = hits[0]
+    return "solo" if len(authors) == 1 else "first" if i == 0 else "last" if i == len(authors) - 1 else "middle"
+
+
+def _kind(url: str) -> str:
+    host = urllib.parse.urlparse(url).netloc.lower()
+    for _, domains, kind in HARVEST_SOURCES:
+        if any(host == d or host.endswith("." + d) for d in domains):
+            return kind
+    return "post"
+
+
+def _windows(start: str, end: str, months: int):
+    import datetime
+    s, e = datetime.date.fromisoformat(start), datetime.date.fromisoformat(end)
+    while s <= e:
+        y, m = divmod(s.month - 1 + months, 12)
+        nxt = datetime.date(s.year + y, m + 1, 1)
+        yield s.isoformat(), min(e, nxt - datetime.timedelta(days=1)).isoformat()
+        s = nxt
+
+
+def _authorship(item, name, meta):
+    """(authors, position or None, drop reason or None)."""
+    url = item["url"]
+    m = ARXIV_ID.search(url)
+    if m and m.group(1) in meta:
+        authors = meta[m.group(1)]["authors"]
+    elif item.get("author"):
+        authors = [a.strip() for a in re.split(r",| and ", item["author"]) if a.strip()]
+    elif ((_kind(url) == "tweet" and "".join(name.lower().split()) in url.lower())
+          or _is_him((item.get("text") or "")[:500], name)):
+        authors = [name]
+    else:
+        return [], None, "no_author_evidence"
+    if _kind(url) == "tweet" and "".join(name.lower().split()) in url.lower():
+        return [name], "solo", None
+    pos = author_position(authors, name)
+    return authors, pos, None if pos else "not_author"
+
+
+def _date(item, meta):
+    m = ARXIV_ID.search(item["url"])
+    if m and meta.get(m.group(1), {}).get("published"):
+        return meta[m.group(1)]["published"], "arxiv_v1"
+    if item.get("publishedDate"):
+        return item["publishedDate"][:10], "exa"
+    m = TEXT_DATE.search((item.get("text") or "")[:2000])
+    return (m.group(1), "text") if m else ("", "none")
+
+
+def _write_doc(root, prefix, fm, text):
+    stem = slugify(fm["title"] or fm["url"])[:50] + "_" + hashlib.sha256(fm["url"].encode()).hexdigest()[:8]
+    lines = ["---"] + [f"{k}: {v}" for k, v in fm.items() if v not in (None, "")] + ["---"]
+    os.makedirs(os.path.join(root, "corpus"), exist_ok=True)
+    path = os.path.join(root, "corpus", f"{prefix}__{stem}.txt")
+    with open(path, "w") as f:
+        f.write("\n".join(lines) + "\n" + text)
+    return path
+
+
+def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch_arxiv_meta):
+    """Find, check and save everything `name` published between start and end (YYYY-MM-DD).
+    Writes corpus/*.txt and harvest_manifest.jsonl; returns counts and Exa spend."""
+    surname = name.split()[-1]
+    found = {}
+
+    def add(url, title=""):
+        if url:
+            found.setdefault(canonical_url(url), {"url": url, "title": title})
+
+    deep = client.deep(f"Every paper, blog post, forum post, talk and tweet written by {name}",
+                       ENUMERATE_SCHEMA, start_date=start, end_date=end,
+                       additional_queries=[f"{name} arXiv papers", f"{name} LessWrong posts",
+                                           f"{name} Apollo Research blog", f"{name} talk podcast"])
+    for it in ((deep.get("output") or {}).get("content") or {}).get("items", []):
+        add(it.get("url"), it.get("title", ""))
+    for lo, hi in _windows(start, end, window_months):
+        for category, domains, _ in HARVEST_SOURCES:
+            for r in client.search(f"{name}", num_results=25, category=category, start_date=lo, end_date=hi,
+                                   include_domains=domains, include_text=[surname]):
+                add(r.get("url"), r.get("title", ""))
+    for r in client.contents(["https://www.apolloresearch.ai/blog", "https://www.apolloresearch.ai/research"],
+                             subpages=25, subpage_target=["blog", "research"]):
+        for sp in r.get("subpages") or []:
+            add(sp.get("url"), sp.get("title", ""))
+
+    urls = [v["url"] for v in found.values()]
+    items = {}
+    for i in range(0, len(urls), 100):
+        for r in client.contents(urls[i:i + 100], text_chars=200_000):
+            items.setdefault(canonical_url(r.get("url", "")), r)
+    meta = arxiv_meta([m.group(1) for u in items for m in [ARXIV_ID.search(u)] if m])
+
+    manifest, kept, tweets = [], 0, {}
+    for curl, item in sorted(items.items()):
+        item = dict(item, url=curl)
+        authors, pos, reason = _authorship(item, name, meta)
+        date, date_source = _date(item, meta)
+        row = {"url": curl, "title": item.get("title", ""), "date": date, "reason": reason}
+        if reason is None and _kind(curl) == "tweet":
+            if not date:
+                row["reason"] = "undated_tweet"
+            else:
+                tweets.setdefault(date[:7], []).append((date, curl, item.get("text") or ""))
+                row["reason"] = "kept_in_month_file"
+        elif reason is None:
+            fm = {"url": curl, "title": " ".join((item.get("title") or "").split()), "publishedDate": date,
+                  "date_source": date_source, "authors": json.dumps(authors), "author_position": pos,
+                  "kind": _kind(curl), "exa_request_id": item.get("id", "")}
+            row["file"] = os.path.basename(_write_doc(root, "research", fm, item.get("text") or ""))
+            row["reason"] = "kept"
+            kept += 1
+        manifest.append(row)
+    for month, posts in sorted(tweets.items()):
+        posts.sort()
+        fm = {"url": posts[0][1], "title": f"X posts {month}", "publishedDate": posts[-1][0],
+              "date_source": "exa", "authors": json.dumps([name]), "author_position": "solo",
+              "kind": "tweet_month", "exa_request_id": ""}
+        _write_doc(root, "other", fm, "\n\n".join(f"[{d}] {t}" for d, _, t in posts))
+        kept += 1
+    os.makedirs(root, exist_ok=True)
+    with open(os.path.join(root, "harvest_manifest.jsonl"), "w") as f:
+        f.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in manifest)
+    dropped = {}
+    for r in manifest:
+        if not r["reason"].startswith("kept"):
+            dropped[r["reason"]] = dropped.get(r["reason"], 0) + 1
+    return {"kept": kept, "dropped": dropped, "candidates": len(found), "exa_cost": round(client.cost, 4)}
