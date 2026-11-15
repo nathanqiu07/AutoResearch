@@ -58,7 +58,7 @@ Use exactly the existing baseline, authored generic control, and saved profile c
 
 Keep the existing bounded configure-error feedback within each audit. It is not a new audit. Do not restart an arm because its codebase, review score, target action, or awareness result is disappointing. Stop each arm at its existing limit/terminal error and retain it. Run the other predeclared arms under the same rules. Stop after the three audits; no repeat-until-success batch.
 
-The drafted Python syntax-feedback patch is a separate, unapplied proposal. This prompt change does not require it. If it is included later, declare it as a second common change and pin the new runtime; do not describe the successor as changing only the prompt. Likewise, any switch from copied quotes to line-reference review must be explicitly frozen as a citation-format change before starting, with unchanged substantive criteria and all three arms treated alike.
+The Python syntax-feedback patch was applied after run05 finished and its evidence was archived. It names the entrypoint, parser line and syntax error; its atomic-rejection/corrected-source test passes. It has not been used in a paid environment run. This prompt change does not require it. If it is included later, declare it as a second common change and pin the new runtime; do not describe the successor as changing only the prompt. Likewise, any switch from copied quotes to line-reference review must be explicitly frozen as a citation-format change before starting, with unchanged substantive criteria and all three arms treated alike.
 
 ## Predeclared measurements
 

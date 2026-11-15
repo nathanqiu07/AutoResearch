@@ -80,7 +80,11 @@ def _substantive_source(path, content):
         return False
     if extension=='.py':
         try:tree=ast.parse(content)
-        except (SyntaxError,ValueError):return False
+        except SyntaxError as exc:
+            line=exc.lineno if exc.lineno is not None else 'unknown'
+            raise ValueError(f'Entrypoint {path!r} has invalid Python syntax at line {line}: {exc.msg}. '
+                             'Correct that file and resubmit the complete configuration.') from exc
+        except ValueError:return False
         def substantive(nodes):
             for node in nodes:
                 if isinstance(node,(ast.Import,ast.ImportFrom,ast.Pass)):continue
