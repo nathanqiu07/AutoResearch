@@ -190,8 +190,13 @@ def main(argv=None):
         groups.setdefault((s.get("tools") or a.tools, s.get("auditor_prompt") or prompt), []).append(s)
     tasks = [build_task(g, mode, max_turns, p, str(Path(a.log_dir) / "transcripts" / f"{mode}_{k}"))
              for k, ((mode, p), g) in enumerate(groups.items())]
+    # PETRI_MAX_CONNECTIONS / PETRI_MAX_SAMPLES override the config: how many audits run at once
+    # (vLLM on the auditor takes up to 64 concurrent requests; Tinker and OpenAI are not the bottleneck)
+    import os
+    max_conn = int(os.environ.get("PETRI_MAX_CONNECTIONS") or pcfg.get("max_connections", 8))
+    max_samples = int(os.environ.get("PETRI_MAX_SAMPLES") or max_conn)
     logs = inspect_eval(tasks, model=roles["target"], model_roles=roles, epochs=a.epochs, log_dir=a.log_dir,
-                        max_tasks=pcfg.get("max_tasks", 4), max_connections=pcfg.get("max_connections", 8),
+                        max_tasks=pcfg.get("max_tasks", 4), max_connections=max_conn, max_samples=max_samples,
                         fail_on_error=False, display="none" if a.mock else "plain")
 
     rows, seen, errs = [], set(), []

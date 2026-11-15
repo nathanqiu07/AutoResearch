@@ -4,6 +4,9 @@
 #   bash scripts/c2_pilot.sh smoke         # target answers + returns raw reasoning, 5 samples (~$2)
 #   bash scripts/c2_pilot.sh baseline [N]  # stock seeds only, N dev seeds (default 12)
 #   bash scripts/c2_pilot.sh control [N]   # plain-agent rewrites, then stock vs control in one report
+#   bash scripts/c2_pilot.sh screen [RUNS] # stock runs on the 29-seed screen pool (data/petri/screen_pool.jsonl), RUNS
+#                                          # per seed (default 2); then scripts/c2_screen_select.py keeps the seeds Kimi notices.
+#                                          # MAX_TURNS sets audit length (default: configs/models.json petri.max_turns)
 # Main target (Nathan, 2026-11-15): Kimi K2.6 on Tinker, through harness/tinker_proxy.py (K2.5 is deprecated there).
 # TINKER_MODEL overrides the Tinker model (default moonshotai/Kimi-K2.6; preflight lists what each
 # account serves). TARGET=qwen uses Qwen3-30B-A3B on Modal instead.
@@ -49,7 +52,8 @@ case "$step" in
   smoke)    RUN_USD="${TINKER_RUN_USD:-3}";  MAX_MIN="${MAX_MINUTES:-20}" ;;
   baseline) RUN_USD="${TINKER_RUN_USD:-15}"; MAX_MIN="${MAX_MINUTES:-150}" ;;
   control)  RUN_USD="${TINKER_RUN_USD:-25}"; MAX_MIN="${MAX_MINUTES:-240}" ;;
-  *) echo "usage: [TARGET=kimi|qwen] $0 preflight|smoke|baseline|control [N]"; exit 2 ;;
+  screen)   RUN_USD="${TINKER_RUN_USD:-15}"; MAX_MIN="${MAX_MINUTES:-300}" ;;
+  *) echo "usage: [TARGET=kimi|qwen] $0 preflight|smoke|baseline|control|screen [N]"; exit 2 ;;
 esac
 : "${OPENAI_API_KEY:?OPENAI_API_KEY not set (judge)}"
 export OPENAI_PRICE_PER_MTOK="${OPENAI_PRICE_PER_MTOK:-gpt-6-luna=0.10,0.50}"   # Nathan: aggregator price, confirm
@@ -157,6 +161,11 @@ auditor() {
 E3B=(--split dev --limit "$n" --epochs 1 --tools simulated --target "$T_SPEC" --judge openai:gpt-5.1
      --petri-auditor openai-api/modalaud/Qwen/Qwen3-235B-A22B-Instruct-2507-FP8 --petri-judge openai/gpt-5.1 --max-cost 15
      --cache-dir "runs/petri/cache/${step}_${tag}_n${n}")   # resume: re-running a step skips finished audits
+[ -n "${MAX_TURNS:-}" ] && E3B+=(--max-turns "$MAX_TURNS")
+# Parallelism: audits at once (PARALLEL, default 32; the auditor's vLLM takes 64 concurrent requests) and
+# scoring threads for our judges (SCORE_WORKERS, default 16). Was 8 and 4: the pilot ran 24 audits in 32 min.
+export PETRI_MAX_CONNECTIONS="${PARALLEL:-32}" PETRI_MAX_SAMPLES="${PARALLEL:-32}"
+E3B+=(--workers "${SCORE_WORKERS:-16}")
 case "$step" in
   smoke)
     python3 scripts/c2_smoke_target.py --n 5 --target "$T_SPEC" --judge openai:gpt-5.1 --max-cost 3 ;;
@@ -174,4 +183,11 @@ case "$step" in
     auditor
     python3 scripts/c2_e3b.py --condition stock=data/petri/seeds_v2.jsonl --condition control=runs/petri/control_dev.jsonl \
       "${E3B[@]}" --out "results/e3b/pilot_stock_vs_control_${tag}_dev_n${n}_${stamp}.json" ;;
+  screen)
+    # N = runs per seed here; all 29 pool seeds; split filter off (pool rows are split "screen")
+    auditor
+    out="results/e3b/screen_stock_${tag}_pool29_r${n}_t${MAX_TURNS:-cfg}_${stamp}.json"
+    python3 scripts/c2_e3b.py --condition stock=data/petri/screen_pool.jsonl "${E3B[@]}" --split all --limit 0 --epochs "$n" \
+      --out "$out"
+    python3 scripts/c2_screen_select.py "$out" --out data/petri/seeds_screened.jsonl ;;
 esac
