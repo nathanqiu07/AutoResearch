@@ -77,9 +77,39 @@ class BackendTests(unittest.TestCase):
         self.assertFalse(body["store"])
         self.assertNotIn("tools", body)
         self.assertNotIn("temperature", body)
+        self.assertEqual(body["prompt_cache_options"], {"mode": "implicit", "ttl": "30m"})
+        self.assertEqual(backend.enforced_settings["prompt_cache_options"], body["prompt_cache_options"])
         self.assertEqual(backend.enforced_settings["reasoning_effort"], "medium")
-        self.assertAlmostEqual(backend.cost_summary()["spent_usd"], 0.0004)
+        self.assertAlmostEqual(backend.cost_summary()["spent_usd"], 0.00045)
         self.assertEqual(backend.cost_summary()["reserved_usd"], 0)
+
+    def test_30m_cache_write_upper_bound_reserves_and_charges_every_input_token(self):
+        from decimal import Decimal
+        for model, input_rate, expected in (("gpt-6-luna", "0.125", 0.0000225),
+                                           ("gpt-6-sol", "2.5", 0.00045),
+                                           ("gpt-6-astra", "12.5", 0.00225)):
+            with self.subTest(model=model):
+                backend = self.backend(model=model, reasoning="medium")
+                with patch.dict("os.environ", {"OPENAI_API_KEY": "synthetic-key"}), \
+                     patch("urllib.request.urlopen", return_value=self.response()) as network, \
+                     patch.object(backend.ledger, "reserve", wraps=backend.ledger.reserve) as reserve:
+                    backend.complete("synthetic", max_tokens=128)
+                input_bound = len(network.call_args.args[0].data) + 1024
+                # Derive the documented upper bound independently of backend._price.
+                expected_input = Decimal(input_bound) * Decimal(input_rate) / 1_000_000
+                output_rate = {"gpt-6-luna": Decimal("0.5"), "gpt-6-sol": Decimal("10"),
+                               "gpt-6-astra": Decimal("50")}[model]
+                self.assertEqual(reserve.call_args.args[0], expected_input + 128 * output_rate / 1_000_000)
+                self.assertAlmostEqual(backend.cost_summary()["spent_usd"], expected)
+
+    def test_new_cache_write_pricing_cannot_reopen_old_ledger_policy(self):
+        with patch.object(self.b, "PRICING_VERSION", "openai-standard-short-context-2026-11-15"):
+            prior = self.ledger()
+            prior.reserve(0.001, {"legacy": True})
+        with self.assertRaisesRegex(ValueError, "configuration"):
+            self.ledger()
+        self.assertEqual(prior.summary()["attempts"], 1)
+        self.assertEqual(prior.summary()["reserved_usd"], 0.001)
 
     def test_invalid_model_or_reasoning_rejected_before_transport(self):
         for model, reasoning in [("unverified", "medium"), ("gpt-6-astra", "none"), ("gpt-6-sol", "ultra")]:
@@ -118,11 +148,11 @@ class BackendTests(unittest.TestCase):
              patch("urllib.request.urlopen", return_value=self.response(status="incomplete")):
             with self.assertRaises(RuntimeError):
                 backend.complete("q", max_tokens=128)
-        self.assertAlmostEqual(backend.cost_summary()["spent_usd"], 0.0004)
+        self.assertAlmostEqual(backend.cost_summary()["spent_usd"], 0.00045)
         self.assertGreater(backend.cost_summary()["reserved_usd"], 0)
 
     def test_partial_usage_preserves_known_component_and_marks_unknown(self):
-        for usage, expected, missing in (({"input_tokens": 100}, 0.0002, "output"),
+        for usage, expected, missing in (({"input_tokens": 100}, 0.00025, "output"),
                                          ({"output_tokens": 20}, 0.0002, "input")):
             with self.subTest(usage=usage):
                 ledger = self.b.DollarLedger(Path(self.temp.name) / (missing + ".sqlite3"), max_usd=1,
@@ -166,7 +196,7 @@ class BackendTests(unittest.TestCase):
             result = runner_case.run_job(manifest)
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["actual_backend"]["enforced_settings"]["reasoning_effort"], "medium")
-        self.assertAlmostEqual(result["usage"]["reported_api_usd"], 0.0004)
+        self.assertAlmostEqual(result["usage"]["reported_api_usd"], 0.00045)
         self.assertEqual(result["usage"]["reserved_api_usd"], 0)
         self.assertEqual(result["usage"]["budget_detail"]["campaign"]["attempts"], 1)
 
