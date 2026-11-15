@@ -168,3 +168,78 @@ python3 -m autoresearch.research.real_repos attach --seeds data/petri/seeds_v2.j
   `LocalRepoGitTest` (the real setup commands run with local git in temp dirs) and the repo
   audits (FakeSandbox). None of them use Modal or the network.
 
+## petri/counterfactual.py (WS C2): counterfactual cue replays
+
+This measures the causal effect of **one** cue. Take a finished sandbox-mode audit and stop it at a
+decision point, target turn N (1-based, as `transcript.py` numbers turns). Replay the target from
+there under each single-cue mutation, with everything else fixed. Each mutation is compared with the
+unmutated control replay, paired by decision point.
+
+1. **Case** (`cases`, needs inspect_ai + petri). From the Inspect log it takes the target's final
+   branch, its tool definitions, and the shell commands that built the sandbox up to turn N, in the
+   order they ran:
+   * the repo clone from the sample's `repo`;
+   * the auditor's `sandbox_exec` calls;
+   * the target's routed tool calls, including any from rolled-back branches, because the sandbox does
+     not roll back.
+2. **Base.** Run those commands in a fresh sandbox and snapshot its filesystem
+   (`Sandbox.snapshot_filesystem()` returns an Image). A failed clone fails the case. A failed audit
+   command is replayed as it happened.
+3. **Branch.** For each (mutation, replicate):
+   * start `Sandbox.create(image=snapshot)`;
+   * apply the mutation, a text edit of the target-visible prefix and/or a shell edit of the sandbox
+     files;
+   * sample the target's next K turns. The target runs alone through Inspect's model API, its
+     shell-type calls run in that branch's sandbox (`sandbox_tools.route`), and other calls get a fixed
+     "unavailable" error, the same in every branch.
+   A branch stops early when the target replies without a tool call, since there is no auditor to
+   answer it.
+4. **Rows.** One JSONL row per (case, decision turn, mutation, replicate) with the mutated prefix,
+   continuation, transcript, the continuation's raw reasoning, and `mutation_record`. The record holds
+   the spec, the text changes per message, and each shell command with its exit status and output (the
+   changed files with per-rule counts).
+
+```bash
+python harness/petri/counterfactual.py mutations                       # the registry
+$AUTORESEARCH_PETRI_PYTHON harness/petri/counterfactual.py cases --log runs/petri/logs/X.eval --turns 2,4 --out cases.jsonl
+python harness/petri/counterfactual.py replay --cases cases.jsonl --out rows.jsonl --mock   # free: mock target, fake sandbox
+# paid + Modal (needs approval):
+$AUTORESEARCH_PETRI_PYTHON harness/petri/counterfactual.py replay --cases cases.jsonl --out rows.jsonl \
+    --target openai-api/modal/Qwen/Qwen3-30B-A3B --k 3 --replicates 3 --today 2026-11-15
+# score with C1's judges (A1 = Measurer.verbalized, A2 = Measurer.p_eval) and report per-cue effects
+python3 -m autoresearch.research.counterfactual score rows.jsonl --out scored.jsonl   # paid; --offline is free
+python3 -m autoresearch.research.counterfactual analyze scored.jsonl --out-dir runs/cf
+```
+
+**Mutations.** Each one is deterministic given the case and `--today`, and every row records its
+inputs:
+
+| mutation | what changes |
+|---|---|
+| `realistic_names` | placeholder names become fictional realistic ones (PLAN I18) |
+| `lower_stakes` / `raise_stakes` | stakes wording |
+| `messy_formatting` | neat markdown in the system prompt and user turns becomes messy plain text |
+| `add_fake_git_history` / `remove_git_history` | the working directory's git history |
+| `present_dates` | every ISO date shifts so the latest one is today; intervals are kept |
+
+* Text edits and file edits use the same `apply_spec` code: its source is shipped into the sandbox.
+* File mtimes are kept.
+* Text edits never touch the target's own reasoning blocks (which may be signed), tool-call arguments
+  or file names, so earlier commands still point at files that exist.
+* Add a mutation by adding a `Mutation` to `MUTATIONS`.
+
+**Injectable parts.** Sandboxes: `ModalSnapshotBackend` or `FakeSnapshotBackend`. Targets:
+`InspectTarget` (any Inspect model or model id) or `FakeTarget`. Only those two import third-party
+packages, lazily.
+
+**Tests:** `harness/petri/test_counterfactual.py`.
+* Standard-library tests run on any Python 3.9+.
+* The Inspect tests skip without inspect_ai and petri. They run a mockllm target and a real Petri
+  mock audit through `cases`.
+* `tests/test_counterfactual.py` covers scoring and effects, and runs a free end-to-end replay, score
+  and analyze.
+
+**Not supported yet:**
+* replaying `local_path` repos (their bundle upload would need replaying too);
+* audits that ran in simulated mode (they replay with no sandbox, every tool call gets the fixed
+  error, and file mutations are skipped and recorded as such).

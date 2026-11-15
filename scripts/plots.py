@@ -12,6 +12,7 @@ Charts (matplotlib, scripts/requirements-plots.txt):
   allocation.png    market vs uniform vs halving: $ per validated finding, and bid calibration per agent
   tools.png         real (sandbox) vs simulated tools: A1 and A2 per tool mode (agentic runs)
   fidelity.png      held-out accuracy per user-model method against the noise ceiling (E1/E2)
+  ladder.png        A1 and A2 per realism level (`plots.py ladder ladder_report.json`; realism ladder)
 
 summary.md lists every run with its arm, seed, sample counts and CODE_VERSION, the
 E5 table and the A1 x A2 table, so the README can link real numbers. Offline
@@ -345,6 +346,28 @@ def chart_fidelity(report: dict, ceiling: Optional[float], out_dir) -> str:
     return _save(fig, plt, out_dir, "fidelity.png")
 
 
+def chart_ladder(rep: dict, out_dir) -> Optional[str]:
+    """ladder.png: A1 and A2 per realism level (autoresearch.research.ladder report), with CI bars."""
+    levels = [l for l in rep.get("levels") or [] if l in (rep.get("per_level") or {})]
+    if not levels:
+        return None
+    plt = _plt()
+    fig, ax = plt.subplots(figsize=(7, 4))
+    x = list(range(len(levels)))
+    for k, (m, lab) in enumerate((("A1", "A1 verbalized"), ("A2", "A2 self-report P(eval)"))):
+        stats = [rep["per_level"][l][m] for l in levels]
+        ys = [s["mean"] if s["mean"] is not None else float("nan") for s in stats]
+        err = [[y - s["ci"][0] if s["ci"] else 0 for y, s in zip(ys, stats)],
+               [s["ci"][1] - y if s["ci"] else 0 for y, s in zip(ys, stats)]]
+        ax.errorbar([i + (k - 0.5) * 0.08 for i in x], ys, yerr=err, marker="o", capsize=3, label=lab)
+    ax.set_xticks(x, [f"{l}\n(n={rep['per_level'][l]['n_ok']})" for l in levels])
+    ax.set_ylim(0, 1)
+    ax.set_ylabel(f"eval awareness ({int(round(rep.get('ci_level', 0.9) * 100))}% CI; lower is better)")
+    ax.set_title("Realism ladder: same seeds, more realism")
+    ax.legend(frameon=False)
+    return _save(fig, plt, out_dir, "ladder.png", offline=bool(rep.get("offline")))
+
+
 def _save(fig, plt, out_dir, name, offline=False) -> str:
     os.makedirs(out_dir, exist_ok=True)
     p = os.path.join(out_dir, name)
@@ -359,13 +382,17 @@ def _save(fig, plt, out_dir, name, offline=False) -> str:
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("what", choices=["summary", "all", "fidelity"])
+    ap.add_argument("what", choices=["summary", "all", "fidelity", "ladder"])
     ap.add_argument("paths", nargs="+")
     ap.add_argument("--out", help="output directory (default: the first path)")
     ap.add_argument("--title")
     ap.add_argument("--ceiling", help="fidelity: noise-ceiling accuracy, or a JSON file with 'self_agreement'")
     args = ap.parse_args(argv)
     out = args.out or (args.paths[0] if os.path.isdir(args.paths[0]) else os.path.dirname(args.paths[0]))
+    if args.what == "ladder":   # a ladder_report.json from python3 -m autoresearch.research.ladder analyze
+        with open(args.paths[0]) as f:
+            print("wrote", chart_ladder(json.load(f), out))
+        return 0
     if args.what == "fidelity":
         with open(args.paths[0]) as f:
             rep = json.load(f)
