@@ -120,3 +120,101 @@ def retrieval_cache_key(documents, config, decision, consumer_identity):
     return digest({"version": VERSION, "implementation_hash": implementation_hash(),
                    "sources": sources, "query": decision_query(decision),
                    "consumer": consumer_identity, "config": config})
+
+
+def embedding_inputs(documents, config, decision):
+    """Exact ordered inputs for a separately leased embedding call: query first."""
+    chunks = chunk_documents(documents, config)
+    return [decision_query(decision)] + [chunk["text"] for chunk in chunks]
+
+
+def _embedding_request(documents, config, decision):
+    chunks = chunk_documents(documents, config)
+    inputs = [decision_query(decision)] + [chunk["text"] for chunk in chunks]
+    return {"source_manifest_hash": config["allowed_source_manifest_hash"],
+            "researcher_id": config["researcher_id"], "chunk_chars": config.get("chunk_chars", 1200),
+            "implementation_hash": implementation_hash(), "query_sha256": digest(decision),
+            "chunk_hashes": [digest(chunk) for chunk in chunks],
+            "input_hashes": [sha256_bytes(text.encode("utf-8")) for text in inputs],
+            "input_policy": "canonical-decision-json-then-exact-chunk-text-v1",
+            "similarity": "cosine-v1"}
+
+
+def _unit_vectors(vectors, count):
+    if not isinstance(vectors, list) or len(vectors) != count or not vectors:
+        raise ValueError("embedding vector count mismatch")
+    dimension = len(vectors[0]) if isinstance(vectors[0], list) else 0
+    if not dimension:
+        raise ValueError("embedding dimension must be positive")
+    unit = []
+    for vector in vectors:
+        if (not isinstance(vector, list) or len(vector) != dimension
+                or any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in vector)):
+            raise ValueError("embedding vector is malformed")
+        try:
+            numeric = [float(value) for value in vector]
+        except OverflowError:
+            raise ValueError("embedding coordinate exceeds numeric range") from None
+        if any(not math.isfinite(value) for value in numeric):
+            raise ValueError("embedding vector is nonfinite")
+        norm = math.hypot(*numeric)
+        if not math.isfinite(norm) or norm <= 0:
+            raise ValueError("embedding vector has zero or invalid norm")
+        unit.append([value / norm for value in numeric])
+    return dimension, unit
+
+
+def _embedding_usage(usage):
+    if not isinstance(usage, dict) or usage.get("mode") not in {"live", "offline_fixture"}:
+        raise ValueError("embedding usage mode must be explicit")
+    if usage["mode"] == "live":
+        if (not isinstance(usage.get("producer_job_id"), str) or not usage["producer_job_id"]
+                or not isinstance(usage.get("response_sha256"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", usage["response_sha256"]) is None):
+            raise ValueError("live embedding producer job and response hash required")
+
+
+def make_embedding_bundle(documents, config, decision, *, model, vectors, usage):
+    """Record supplied vectors, without calling a model or authenticating origin.
+
+    Live production must retain its coordinator job ID and raw response hash in
+    usage. These hashes prove consistency, not that a claimed provider ran.
+    """
+    request = _embedding_request(documents, config, decision)
+    dimensions, _ = _unit_vectors(vectors, len(request["input_hashes"]))
+    if not isinstance(model, str) or not model:
+        raise ValueError("embedding model is required")
+    _embedding_usage(usage)
+    body = {"schema_version": "approved-embedding-bundle-v1", "request": request,
+            "model": model, "dimensions": dimensions, "vectors": vectors, "usage": usage}
+    body["bundle_sha256"] = digest(body)
+    # Detached JSON value; changes to the producer's arrays cannot alter it.
+    import json
+    return json.loads(canonical_json(body))
+
+
+def rank_semantic(documents, config, decision, bundle):
+    chunks = chunk_documents(documents, config)
+    request = _embedding_request(documents, config, decision)
+    if not isinstance(bundle, dict) or bundle.get("schema_version") != "approved-embedding-bundle-v1":
+        raise ValueError("embedding bundle schema mismatch")
+    if (not isinstance(bundle.get("model"), str) or not bundle["model"]
+            or not isinstance(config.get("embedding_model"), str) or not config["embedding_model"]):
+        raise ValueError("embedding model must be explicitly declared")
+    body = {key: value for key, value in bundle.items() if key != "bundle_sha256"}
+    if (bundle.get("bundle_sha256") != digest(body)
+            or bundle.get("bundle_sha256") != config.get("embedding_bundle_sha256")
+            or bundle.get("request") != request
+            or bundle.get("model") != config.get("embedding_model")):
+        raise ValueError("embedding bundle source/query/model/hash mismatch")
+    dimensions, vectors = _unit_vectors(bundle.get("vectors"), len(chunks) + 1)
+    declared = config.get("embedding_dimensions")
+    if (isinstance(declared, bool) or not isinstance(declared, int) or dimensions != declared
+            or isinstance(bundle.get("dimensions"), bool) or dimensions != bundle.get("dimensions")):
+        raise ValueError("embedding dimension mismatch")
+    usage = bundle.get("usage")
+    _embedding_usage(usage)
+    query = vectors[0]
+    scores = [(-sum(a * b for a, b in zip(query, vector)), chunk["document_id"], chunk["start"], chunk)
+              for chunk, vector in zip(chunks, vectors[1:])]
+    return [entry[-1] for entry in sorted(scores, key=lambda row: row[:3])]

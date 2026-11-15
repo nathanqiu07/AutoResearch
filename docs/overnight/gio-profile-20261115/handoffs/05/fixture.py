@@ -12,6 +12,7 @@ from autoresearch.taste.overnight.baselines import predict_baseline, register_ba
 from autoresearch.taste.overnight.contracts import build_profile, digest, sha256_text, source_manifest
 from autoresearch.taste.overnight.consumer import PROMPT_VERSION, ProfileFailure, implementation_hash, prepare_payload
 from autoresearch.taste.overnight.registry import register_builder
+from autoresearch.taste.overnight.retrieval import make_embedding_bundle
 
 
 class FixtureBackend:
@@ -29,6 +30,7 @@ def fixture_summary(documents, config, extractor):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--semantic-fixture", action="store_true", help="use artificial vectors, not an embedding API")
     args = parser.parse_args()
     register_baselines()
     register_builder("fixture_plain_summary", fixture_summary, prompt_version="fixture-v1", prompt_sha256="f" * 64)
@@ -51,6 +53,12 @@ def main():
         cfg = dict(config, method_id=method)
         if method in {"memory_summary", "profile_retrieval"}:
             cfg.update(frozen_profile=summary.to_dict(), expected_profile_id=summary.profile_id, profile_cap=128)
+        if method == "semantic_retrieval" and args.semantic_fixture:
+            bundle = make_embedding_bundle(docs, cfg, decision, model="synthetic-vectors-v1",
+                                           vectors=[[1, 0], [0, 1], [1, 0]],
+                                           usage={"mode": "offline_fixture", "calls": 0})
+            cfg.update(embedding_bundle=bundle, embedding_bundle_sha256=bundle["bundle_sha256"],
+                       embedding_model=bundle["model"], embedding_dimensions=bundle["dimensions"])
         profile = build_profile(docs, cfg, backend)
         consumer_config = {"method_implementation_hash": profile.method_implementation_hash,
                            "renderer_implementation_hash": implementation_hash(),

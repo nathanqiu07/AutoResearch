@@ -20,3 +20,14 @@ Ruling: cross-consumer reuse is supported by the neutral contract, so consumer i
 Ruling: the shared runner must enforce retrieval decision binding; helper/prompt compatibility and final-data custody remain infrastructure/evaluator responsibilities, with exact integration requirements sent to the coordinator. No claim of live quality or semantic coverage.
 
 Verification: final implementation passed 681 repository tests (two skipped), and all 18 targeted tests. Synthetic fixture showed six complete controls and semantic unavailable; no live calls.
+
+## Followup: semantic bundle support
+
+- [x] Add exact embedding-input construction and immutable source/query/model-bound vector bundles, then cosine ranking under the existing packer. No network adapter or ungated model calls.
+- [x] Exercise modified queries, option order, vector shape/norm, missing model, missing live-producer provenance, and oversized numeric coordinates; rejected bundles remain unavailable.
+- [x] Independent review found missing model and live provenance checks on load; both reproduced RED and fixed. A huge-integer coordinate also reproduced an OverflowError and now yields a controlled ValueError.
+- [ ] Publish the second fixture/handoff and send exact commits for integration. Live embeddings remain a separate coordinator allocation.
+
+Ruling: vector bundle hashes establish input consistency, not provider authenticity or paid-cost reconciliation. Producer job traces remain required. Embedding costs are recorded once at production and retained as separate metadata on reuse.
+
+Semantic verification: 22 targeted tests passed; full repository suite 685 tests passed, two skipped. Offline semantic fixture exercised all seven controls; no model calls. Compatibility snapshot against infrastructure05c503e passed the then-current21 tests before the final metadata regression was added.

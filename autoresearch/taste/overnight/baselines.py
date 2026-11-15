@@ -4,7 +4,8 @@ Call register_baselines() once per worker process. Retrieval builds require a
 label-free config['decision'] and consumer_identity. Reuse those profiles only
 for that decision; predict_baseline checks the binding before the common consumer.
 No builder here calls an LLM or fetches a source. Frozen summaries are reused,
-not independently regenerated; semantic retrieval is explicitly unavailable.
+not independently regenerated. Semantic retrieval requires a separately produced
+and input-bound vector bundle; a missing bundle is explicitly unavailable.
 """
 from . import retrieval
 from .contracts import ProfileArtifact, canonical_json, digest, render_content, validate_documents
@@ -55,7 +56,7 @@ def build_baseline(documents, config, extractor):
         if not isinstance(name, str) or not name.strip():
             return _result(status="unavailable", error="researcher_name_required")
         return _result({"name": name})
-    if method == "semantic_retrieval":
+    if method == "semantic_retrieval" and config.get("embedding_bundle") is None:
         return _result(status="unavailable", error="embedding_backend_not_configured")
     profile = None
     if method in {"memory_summary", "profile_retrieval"}:
@@ -73,10 +74,19 @@ def build_baseline(documents, config, extractor):
     chunks = retrieval.chunk_documents(documents, config)
     usage = {"retrieval_implementation_hash": retrieval.implementation_hash(),
              "available_chunks": len(chunks)}
-    if method in {"lexical_retrieval", "profile_retrieval"}:
+    if method in {"lexical_retrieval", "profile_retrieval", "semantic_retrieval"}:
         key = retrieval.retrieval_cache_key(documents, config, config.get("decision"),
                                             config.get("consumer_identity"))
-        chunks = retrieval.rank_lexical(chunks, config["decision"])
+        if method == "semantic_retrieval":
+            try:
+                chunks = retrieval.rank_semantic(documents, config, config["decision"], config["embedding_bundle"])
+            except (ValueError, TypeError):
+                return _result(status="unavailable", error="invalid_embedding_bundle")
+            usage.update(embedding_bundle_sha256=config["embedding_bundle_sha256"],
+                         embedding_model=config["embedding_model"],
+                         embedding_production_usage=config["embedding_bundle"]["usage"])
+        else:
+            chunks = retrieval.rank_lexical(chunks, config["decision"])
         chunks = chunks[:retrieval.positive_int(config.get("top_k", 5), "top_k")]
         usage.update(retrieval_cache_key=key, decision_sha256=digest(config["decision"]))
     elif method != "raw_evidence":
@@ -112,7 +122,7 @@ def register_baselines():
 
 def predict_baseline(profile, context, options, consumer, config):
     from .consumer import ProfileFailure, predict_profile
-    if profile.method_id in {"lexical_retrieval", "profile_retrieval"}:
+    if profile.method_id in {"lexical_retrieval", "profile_retrieval", "semantic_retrieval"}:
         decision = {"context": context, "options": list(options)}
         if canonical_json(profile.config.get("decision")) != retrieval.decision_query(decision):
             raise ProfileFailure("unavailable", "retrieved_profile_decision_mismatch")

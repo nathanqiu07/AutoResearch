@@ -85,6 +85,36 @@ class RetrievalTests(unittest.TestCase):
         self.assertLessEqual(len(canonical_json(result).encode()), 240)
         self.assertLessEqual(len(canonical_json({"passages": result["passages"]}).encode()), 140)
 
+    def test_semantic_bundle_ranks_vectors_and_binds_exact_inputs(self):
+        chunks = self.r.chunk_documents(self.docs, self.cfg)
+        bundle = self.r.make_embedding_bundle(self.docs, self.cfg, self.decision,
+                                              model="fixture-embedding", vectors=[[1, 0], [0, 1], [1, 0]],
+                                              usage={"mode": "offline_fixture", "calls": 0})
+        cfg = dict(self.cfg, embedding_model="fixture-embedding", embedding_dimensions=2,
+                   embedding_bundle_sha256=bundle["bundle_sha256"])
+        ranked = self.r.rank_semantic(self.docs, cfg, self.decision, bundle)
+        self.assertEqual(ranked[0]["document_id"], "d2")
+        self.assertEqual(ranked[1]["document_id"], "d1")
+        for changed in [dict(self.decision, context="changed"),
+                        dict(self.decision, options=list(reversed(self.decision["options"])) )]:
+            with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, "embedding"):
+                self.r.rank_semantic(self.docs, cfg, changed, bundle)
+        tampered = dict(bundle, vectors=[[1, 0], [1, 0], [0, 1]])
+        with self.assertRaisesRegex(ValueError, "embedding"):
+            self.r.rank_semantic(self.docs, cfg, self.decision, tampered)
+        with self.assertRaisesRegex(ValueError, "embedding"):
+            self.r.rank_semantic(self.docs, dict(cfg, embedding_model="different"), self.decision, bundle)
+
+    def test_semantic_rejects_bad_vectors_without_silent_lexical_fallback(self):
+        for vectors in [[[0, 0], [1, 0], [0, 1]], [[1, 0], [1], [0, 1]],
+                        [[1, 0], [True, 0], [0, 1]], [[1, 0], [float("nan"), 0], [0, 1]],
+                        [[1, 0], [10**1000, 0], [0, 1]],
+                        [[1, 0], [1, 0]]]:
+            with self.subTest(vectors=vectors), self.assertRaises(ValueError):
+                self.r.make_embedding_bundle(self.docs, self.cfg, self.decision,
+                                              model="fixture-embedding", vectors=vectors,
+                                              usage={"mode": "offline_fixture", "calls": 0})
+
 
 if __name__ == "__main__":
     unittest.main()

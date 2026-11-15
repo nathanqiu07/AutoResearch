@@ -133,6 +133,46 @@ class BaselineTests(unittest.TestCase):
                     self.assertEqual(result.status, "unavailable")
                     self.assertEqual(result.error_code, "missing_or_invalid_frozen_profile")
 
+    def test_semantic_control_uses_bound_vectors_and_retains_production_usage(self):
+        from autoresearch.taste.overnight.retrieval import make_embedding_bundle
+        from autoresearch.taste.overnight.baselines import predict_baseline
+        from autoresearch.taste.overnight.consumer import ProfileFailure
+        bundle = make_embedding_bundle(self.docs, self.cfg, self.cfg["decision"], model="fixture-embedding",
+                                       vectors=[[1, 0], [0, 1], [1, 0]],
+                                       usage={"mode": "offline_fixture", "calls": 0})
+        changes = {"embedding_bundle": bundle, "embedding_model": "fixture-embedding",
+                   "embedding_dimensions": 2, "embedding_bundle_sha256": bundle["bundle_sha256"]}
+        profile = self.build("semantic_retrieval", **changes)
+        self.assertEqual(profile.status, "complete")
+        self.assertEqual(profile.content["passages"][0]["document_id"], "d2")
+        self.assertEqual(profile.fit_usage["embedding_production_usage"], bundle["usage"])
+        self.assertEqual(profile.fit_usage["calls"], 0)
+        with self.assertRaisesRegex(ProfileFailure, "decision_mismatch"):
+            predict_baseline(profile, "different", ["left", "right"], NoCalls(), {})
+        changes["embedding_dimensions"] = 3
+        rejected = self.build("semantic_retrieval", **changes)
+        self.assertEqual(rejected.status, "unavailable")
+        self.assertEqual(rejected.error_code, "invalid_embedding_bundle")
+
+    def test_loaded_semantic_bundles_require_model_and_live_provenance(self):
+        from autoresearch.taste.overnight.retrieval import make_embedding_bundle
+        original = make_embedding_bundle(self.docs, self.cfg, self.cfg["decision"], model="fixture-embedding",
+                                         vectors=[[1, 0], [0, 1], [1, 0]], usage={"mode": "offline_fixture"})
+        for defect in ["live_without_producer", "missing_models"]:
+            bundle = json.loads(json.dumps(original))
+            extra = {"embedding_model": "fixture-embedding", "embedding_dimensions": 2}
+            if defect == "live_without_producer":
+                bundle["usage"] = {"mode": "live"}
+            else:
+                del bundle["model"]
+                extra["embedding_model"] = None
+            bundle["bundle_sha256"] = contracts.digest({k: v for k, v in bundle.items() if k != "bundle_sha256"})
+            with self.subTest(defect=defect):
+                result = self.build("semantic_retrieval", embedding_bundle=bundle,
+                                    embedding_bundle_sha256=bundle["bundle_sha256"], **extra)
+                self.assertEqual(result.status, "unavailable")
+                self.assertEqual(result.error_code, "invalid_embedding_bundle")
+
 
 def summary_fixture(documents, config, extractor):
     return {"content": {"prose": "Prefers controlled experiments when testing a claim."}}
