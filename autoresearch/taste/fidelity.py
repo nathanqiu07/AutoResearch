@@ -12,7 +12,16 @@ from ..research.stats import bootstrap_ci, mean
 from .prefdata import build_manifest
 from .usermodel import digest
 
-DEFAULT_FINAL_MARKER = Path(__file__).resolve().parents[2] / "results" / "fidelity" / "TEST_USED"
+def _final_marker():
+    root = Path(__file__).resolve().parents[2]
+    try:
+        common = subprocess.check_output(["git", "rev-parse", "--git-common-dir"], cwd=root, text=True).strip()
+        return (root / common).resolve() / "fidelity_TEST_USED"
+    except (OSError, subprocess.CalledProcessError):
+        return root / "results" / "fidelity" / "TEST_USED"
+
+
+DEFAULT_FINAL_MARKER = _final_marker()
 
 
 def select_users(manifest, dataset, partition, n_users=None, seed=0):
@@ -42,7 +51,7 @@ def run_fidelity(records, manifest_path, factories, output_dir, dataset, users="
                  run_config=None):
     records = list(records)
     manifest = json.loads(Path(manifest_path).read_text())
-    if build_manifest(records, manifest["seed"]) != manifest:
+    if build_manifest(records, manifest["seed"], manifest.get("deduplication"), manifest.get("provenance")) != manifest:
         raise ValueError("records do not match the frozen split manifest")
     if not factories:
         raise ValueError("at least one method is required")
@@ -56,18 +65,29 @@ def run_fidelity(records, manifest_path, factories, output_dir, dataset, users="
     out = Path(output_dir)
     if out.exists():
         raise FileExistsError("output directory exists; predictions must not be overwritten")
-    registration = {"manifest_id": manifest["manifest_id"], "dataset": dataset,
+    registration = {"provenance": manifest.get("provenance"), "manifest_id": manifest["manifest_id"], "dataset": dataset,
                     "user_partition": users, "user_ids": selected, "seed": seed,
                     "methods": list(factories), "config": run_config or {},
                     "code_version": _code_version(), "started": time.time()}
+    try:
+        registration["working_tree_dirty"] = bool(subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=Path(__file__).resolve().parents[2], text=True).strip())
+    except (OSError, subprocess.CalledProcessError):
+        registration["working_tree_dirty"] = None
     registration["run_id"] = digest(registration)
     if final:
+        legacy = Path(__file__).resolve().parents[2] / "results" / "fidelity" / "TEST_USED"
+        primary_legacy = _final_marker().parent.parent / "results" / "fidelity" / "TEST_USED"
+        if legacy.exists() or primary_legacy.exists():
+            raise FileExistsError("legacy final-test marker already exists")
         marker = Path(final_marker)
         marker.parent.mkdir(parents=True, exist_ok=True)
         # Reserve before any fitting or prediction. A crash cannot grant a second look.
         with marker.open("x") as f:
             json.dump(registration, f, indent=2)
     out.mkdir(parents=True)
+    (out / "split-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     (out / "registration.json").write_text(json.dumps(registration, indent=2) + "\n")
     by_id = {r.choice.identity: r.choice for r in records}
     per_method = {m: {} for m in factories}
@@ -83,6 +103,7 @@ def run_fidelity(records, manifest_path, factories, output_dir, dataset, users="
                 model, fit_error = None, None
                 try:
                     model = factory(user)
+                    model.trace_path = out / "requests.jsonl"
                     if callable(getattr(model.llm, "cost_summary", None)):
                         backends[id(model.llm)] = model.llm
                     model.fit(history, val)
@@ -110,6 +131,7 @@ def run_fidelity(records, manifest_path, factories, output_dir, dataset, users="
                 valid_briers = [r["brier"] for r in cases if r["brier"] is not None]
                 per_method[method][user] = {
                     "accuracy": mean([float(r["correct"]) for r in cases]),
+                    "status": "failed" if any(r["error"] for r in cases) else "complete",
                     "n": len(cases), "failures": sum(r["error"] is not None for r in cases),
                     "brier_valid_only": mean(valid_briers) if valid_briers else None,
                     "seconds": time.monotonic() - started}
@@ -135,7 +157,9 @@ def run_fidelity(records, manifest_path, factories, output_dir, dataset, users="
             differences = [people[u]["accuracy"] - per_method["m1"][u]["accuracy"] for u in selected]
             paired[method] = {"mean": mean(differences),
                               "ci95": list(bootstrap_ci(differences, level=0.95, seed=seed))}
-    report = {**registration, "methods": summary, "differences_vs_m1": paired,
+    report = {**registration, "mode": "offline_fixture" if (run_config or {}).get("backend") == "offline" else ("live" if (run_config or {}).get("backend") in {"openai", "codex-cli", "anthropic", "openai-compat", "claude-cli"} else "unknown"),
+              "status": "incomplete" if any(v["failures"] for v in summary.values()) else "complete",
+              "methods": summary, "differences_vs_m1": paired,
               "backend_budgets": [{"backend": llm.label, **llm.cost_summary()} for llm in backends.values()],
               "interpretation": "User-macro accuracy; failures count as wrong; Brier covers valid predictions only. "
                                 "Bootstrap samples users. Small pilots do not establish research transfer.",

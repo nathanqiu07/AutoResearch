@@ -7,12 +7,16 @@ from ..llm import Budget, get_llm
 from .backends import CodexLLM, OpenAILLM
 from .fidelity import run_fidelity, select_users
 from .methods import create_method
-from .prefdata import build_manifest, download_dataset, load_records, save_records, write_manifest
+from .prefdata import (build_manifest, deduplicate_records, download_dataset, load_records,
+                       save_records, write_manifest)
 from .usermodel import load_model
 
 
 def backend(args):
     budget = Budget(max_calls=args.max_calls, max_seconds=args.max_seconds)
+    if args.backend == "offline":
+        from .offline import OfflineTasteLLM
+        return OfflineTasteLLM(model="fixture-v1" if args.model == "default" else args.model, budget=budget)
     if args.backend == "codex-cli":
         return CodexLLM(args.model, budget=budget)
     if args.model == "default":
@@ -23,8 +27,8 @@ def backend(args):
 
 
 def model_args(parser):
-    parser.add_argument("--backend", choices=["codex-cli", "openai", "anthropic", "openai-compat", "claude-cli"],
-                        default="codex-cli")
+    parser.add_argument("--backend", choices=["offline", "codex-cli", "openai", "anthropic", "openai-compat", "claude-cli"],
+                        default="offline")
     parser.add_argument("--model", default="default")
     parser.add_argument("--max-calls", type=int, default=100)
     parser.add_argument("--max-seconds", type=float, default=300)
@@ -42,10 +46,12 @@ def main(argv=None):
     prepare.add_argument("--output", default="runs/prefdata/arena.jsonl")
     prepare.add_argument("--manifest", default="data/prefdata/splits.json")
     prepare.add_argument("--seed", type=int, default=0)
+    prepare.add_argument("--deduplicate", action="store_true",
+                         help="record and remove agreeing duplicates within the same partitions")
     fidelity = commands.add_parser("fidelity", help="compare methods on a fixed user partition")
-    fidelity.add_argument("--records", default="runs/prefdata/arena.jsonl")
-    fidelity.add_argument("--manifest", default="data/prefdata/splits.json")
-    fidelity.add_argument("--dataset", choices=["arena", "prism"], required=True)
+    fidelity.add_argument("--records", default="runs/prefdata/prism.jsonl")
+    fidelity.add_argument("--manifest", default="data/prefdata/prism-splits.json")
+    fidelity.add_argument("--dataset", choices=["arena", "prism"], default="prism")
     fidelity.add_argument("--methods", nargs="+", choices=["m%d" % i for i in range(8)], default=["m0", "m1"])
     fidelity.add_argument("--users", choices=["dev", "test"], default="dev")
     fidelity.add_argument("--n-users", type=int)
@@ -60,23 +66,69 @@ def main(argv=None):
     predict.add_argument("--context", required=True)
     predict.add_argument("--options", nargs="+", required=True)
     model_args(predict)
+    smoke = commands.add_parser("smoke", help="deterministic offline fixture through all four core methods and team adviser")
+    smoke.add_argument("--output", default="runs/taste-smoke")
+    export = commands.add_parser("export", help="package an existing development run and verify team integration")
+    export.add_argument("--run", required=True)
+    export.add_argument("--records", default="runs/prefdata/prism.jsonl")
+    export.add_argument("--manifest", default="data/prefdata/prism-splits.json")
+    export.add_argument("--method", default="m3", choices=["m0", "m1", "m2", "m3"])
+    export.add_argument("--user-id")
+    export.add_argument("--output", required=True)
+    export.add_argument("--verify-integration", action="store_true", help="makes a prediction call; consumes backend budget")
+    model_args(export)
     args = parser.parse_args(argv)
     if args.command == "prepare":
         if len(set(args.datasets)) != len(args.datasets):
             raise ValueError("duplicate dataset selection")
-        records = [r for dataset in args.datasets for r in download_dataset(dataset, args.raw_cache, args.seed)]
-        manifest = build_manifest(records, args.seed)
-        if Path(args.output).exists() and build_manifest(load_records(args.output), args.seed) != manifest:
+        records = [r for dataset in args.datasets for r in download_dataset(
+            dataset, args.raw_cache, args.seed, allow_duplicates=args.deduplicate)]
+        records, audit = deduplicate_records(records) if args.deduplicate else (records, None)
+        manifest = build_manifest(records, args.seed, audit)
+        if Path(args.output).exists() and build_manifest(load_records(args.output), args.seed, audit) != manifest:
             raise ValueError("existing normalized records differ; use a new snapshot path")
         write_manifest(args.manifest, manifest)
         if not Path(args.output).exists():
             save_records(args.output, records)
         print(json.dumps({"n_examples": len(records), "n_users": len(manifest["users"]),
                           "manifest_id": manifest["manifest_id"]}))
+    elif args.command == "smoke":
+        from .offline import OfflineTasteLLM, fixture_records
+        from .handoff import build_bundle, write_bundle
+        from .viewer import build_viewer
+        out = Path(args.output)
+        out.mkdir(parents=True, exist_ok=False)
+        records = fixture_records()
+        manifest_path = out / "manifest.json"
+        write_manifest(manifest_path, build_manifest(records, provenance={"dataset": "synthetic_fixture_not_prism", "revision": "fixture-v1"}))
+        save_records(out / "records.jsonl", records)
+        llm = OfflineTasteLLM(budget=Budget(max_calls=500, max_seconds=120))
+        factories = {m: (lambda user, m=m: create_method(m, llm, seed=0, max_history=3,
+                     max_hypotheses=2, max_principles=2, max_exemplars=1)) for m in ("m0", "m1", "m2", "m3")}
+        run_fidelity(records, manifest_path, factories, out / "run", "prism",
+                     run_config={"backend": "offline", "model": "fixture-v1", "purpose": "plumbing_only"})
+        bundle = build_bundle(out / "run", records, manifest_path, llm=llm, method="m3", export_dir=out / "export")
+        write_bundle(bundle, out / "bundle.json")
+        build_viewer(bundle, out / "viewer.html")
+        print(json.dumps({"mode": "offline_fixture", "report": str(out / "run/report.json"),
+                          "bundle": str(out / "bundle.json"), "viewer": str(out / "viewer.html"),
+                          "integration": bundle["integration"]}, indent=2))
+    elif args.command == "export":
+        from .handoff import build_bundle, write_bundle
+        from .viewer import build_viewer
+        out = Path(args.output)
+        out.mkdir(parents=True, exist_ok=False)
+        bundle = build_bundle(args.run, load_records(args.records), args.manifest,
+                              llm=backend(args) if args.verify_integration else None,
+                              method=args.method, user_id=args.user_id, export_dir=out)
+        write_bundle(bundle, out / "bundle.json")
+        build_viewer(bundle, out / "viewer.html")
+        print(json.dumps({"bundle": str(out / "bundle.json"), "viewer": str(out / "viewer.html"),
+                          "integration": bundle["integration"]}, indent=2))
     elif args.command == "fidelity":
         records = load_records(args.records)
         manifest = json.loads(Path(args.manifest).read_text())
-        if build_manifest(records, manifest["seed"]) != manifest:
+        if build_manifest(records, manifest["seed"], manifest.get("deduplication"), manifest.get("provenance")) != manifest:
             raise ValueError("records do not match manifest")
         if len(set(args.methods)) != len(args.methods):
             raise ValueError("duplicate method selection")
@@ -87,6 +139,8 @@ def main(argv=None):
                               sum(len(manifest["users"][u]["test"]) for u in selected),
                               "note": "Prediction count excludes method fitting/search calls. No model calls made."}))
             return
+        if args.final and args.backend == "offline":
+            raise ValueError("offline fixtures cannot consume the final test")
         if args.final and args.model == "default":
             raise ValueError("final comparison requires a pinned --model")
         config = json.loads(args.config)
