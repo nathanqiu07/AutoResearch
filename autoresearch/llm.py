@@ -160,6 +160,10 @@ PRICES_PER_MTOK = {
     "claude-sonnet-4-6": (3.0, 15.0), "claude-sonnet-5-5": (2.0, 10.0), "claude-sonnet-5": (2.0, 10.0),
     "claude-opus-5-5": (4.0, 20.0), "claude-opus-4-6": (5.0, 25.0),
     "claude-haiku-4-5": (1.0, 5.0), "claude-haiku-5-5": (0.10, 0.50),
+    "claude-sonnet-4-5": (3.0, 15.0),
+    # OpenAI: list prices taken from third-party aggregators on 2026-11-14, not verified
+    # against OpenAI's pricing page.
+    "gpt-5": (1.25, 10.0), "gpt-5.1": (1.25, 10.0),
 }
 
 
@@ -191,6 +195,20 @@ def list_price_usd(model: str, input_tokens: int, output_tokens: int, prices=Non
     whether an unknown price is acceptable; OpenAIResponsesLLM refuses to start without one)."""
     inp, out = (prices or PRICES_PER_MTOK).get(model, (0.0, 0.0))
     return (input_tokens * inp + output_tokens * out) / 1_000_000
+
+
+MANUAL_THINKING_MARKERS = ("-4-5", "-4-1", "-4-0", "sonnet-4-2", "opus-4-2", "-3-")
+
+
+def anthropic_needs_manual_thinking(model: str) -> bool:
+    """True for Claude models that take manual extended thinking
+    ({"type": "enabled", "budget_tokens": N}) instead of adaptive thinking.
+
+    Source: Anthropic's extended-thinking docs, as we read them: adaptive thinking with
+    `display` exists only on Claude 4.6 and later; Sonnet 4.5, Haiku 4.5 and older need a
+    token budget (N >= 1024, N < max_tokens). The rule is a substring match on the model id
+    (MANUAL_THINKING_MARKERS above), so correct that tuple if a model is misclassified."""
+    return any(marker in model for marker in MANUAL_THINKING_MARKERS)
 
 
 class AnthropicLLM(LLM):
@@ -272,8 +290,12 @@ class AnthropicLLM(LLM):
             return "", self.complete(prompt, system=system, max_tokens=max_tokens, temperature=temperature)
         self.budget.check_spend()
         # no temperature: sampling parameters are restricted while thinking is on
+        if anthropic_needs_manual_thinking(self.model):   # budget_tokens < max_tokens always holds: headroom is added
+            thinking = {"type": "enabled", "budget_tokens": self.THINKING_HEADROOM}
+        else:
+            thinking = {"type": "adaptive", "display": "summarized"}
         body = {"model": self.model, "max_tokens": max_tokens + self.THINKING_HEADROOM,
-                "thinking": {"type": "adaptive", "display": "summarized"},
+                "thinking": thinking,
                 "messages": [{"role": "user", "content": prompt}]}
         if system:
             body["system"] = self.system_field(system)
@@ -308,6 +330,34 @@ def parse_openai_responses(data: dict):
     return "\n".join(reasoning), "".join(texts), usage.get("input_tokens", 0), usage.get("output_tokens", 0)
 
 
+def parse_openai_price_env(value: str):
+    """(bare price or None, {model: price}) from OPENAI_PRICE_PER_MTOK. Either
+    "<input>,<output>" (the instance's own model) or
+    "<model>=<input>,<output>;<model2>=<input>,<output>" (USD per million tokens)."""
+    def bad():
+        return RuntimeError("OPENAI_PRICE_PER_MTOK must be '<input>,<output>' or "
+                            f"'<model>=<input>,<output>;<model2>=<input>,<output>' in USD per million tokens, got {value!r}")
+
+    def price(text: str):
+        try:
+            inp, out = (float(x) for x in text.split(","))
+        except ValueError:
+            raise bad() from None
+        if not (0 <= inp < float("inf") and 0 <= out < float("inf")):   # rejects negative, nan, inf
+            raise bad()
+        return inp, out
+
+    if "=" not in value and ";" not in value:
+        return price(value), {}
+    per_model = {}
+    for entry in value.split(";"):
+        model, sep, text = entry.partition("=")
+        if not sep or not model.strip():
+            raise bad()
+        per_model[model.strip()] = price(text)
+    return None, per_model
+
+
 class OpenAIResponsesLLM(LLM):
     """OpenAI models through the Responses API over stdlib HTTP, for use as a
     target (the model inside the environment) or a held-out judge.
@@ -339,12 +389,10 @@ class OpenAIResponsesLLM(LLM):
         self.prices = dict(PRICES_PER_MTOK)
         env_price = os.environ.get("OPENAI_PRICE_PER_MTOK", "")
         if env_price:
-            try:
-                inp, out = (float(x) for x in env_price.split(","))
-            except ValueError:
-                raise RuntimeError(f"OPENAI_PRICE_PER_MTOK must be '<input>,<output>' in USD per million "
-                                   f"tokens, got {env_price!r}") from None
-            self.prices[self.model] = (inp, out)
+            bare, per_model = parse_openai_price_env(env_price)
+            self.prices.update(per_model)
+            if bare:
+                self.prices[self.model] = bare
         if self.model not in self.prices:
             raise RuntimeError(f"no price known for OpenAI model {self.model!r}: set OPENAI_PRICE_PER_MTOK="
                                "'<input>,<output>' so the spend cap can count its calls")
