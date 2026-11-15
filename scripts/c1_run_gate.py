@@ -59,7 +59,9 @@ sys.path.insert(0, ROOT)
 from autoresearch.llm import Budget, OfflineLLM  # noqa: E402
 from autoresearch.research import calibrate as cal  # noqa: E402
 from autoresearch.research.benchmarks import load_split  # noqa: E402
-from autoresearch.research.measure import Measurer, Models, load_probe_questions  # noqa: E402
+from autoresearch.research.measure import (DEFAULT_PROBE_QUESTIONS, Measurer, Models,  # noqa: E402
+                                           a1_is_lower_bound, headline_judge, load_probe_questions,
+                                           probe_set_for)
 
 # The team's fixed lineup (decided by Nathan). The dev target's served model id is Abhi's (C2)
 # to define, so it is never hard-coded: --dev-target is required to execute the dev phase.
@@ -67,7 +69,6 @@ DEV_TARGET_PLACEHOLDER = "openai-compat:<qwen3-30b-a3b served id>"
 HELDOUT_TARGETS = ["anthropic:claude-sonnet-4-5+thinking", "openai:gpt-5+thinking"]
 DEV_JUDGE = "anthropic:claude-haiku-4-5"        # J1: A1 + A2 in dev
 HELDOUT_JUDGE = "openai:gpt-5.1"                # J2: with J1, scores every held-out target in final
-SUMMARY_TARGETS = ("anthropic:claude-sonnet-4-5", "openai:gpt-5")   # APIs return reasoning summaries, not raw
 BENCH = os.path.join("data", "benchmarks")
 # Two named scenarios, each printed by one command (--scenario pilot / full).
 SCENARIOS = {
@@ -146,29 +147,12 @@ def apply_scenario(args) -> None:
     args.labelled_n, args.gap_limit = sc["labelled_n"], sc["gap_limit"]
 
 
-def family(spec: str) -> str:
-    """Model family of a spec, to put the cross-family judge first. Local stand-in
-    until measure.model_family lands (the Orchestrator's measure.py change)."""
-    from autoresearch.llm import split_spec
-    backend, model = split_spec(spec)
-    name = model.lower()
-    for fam, keys in (("anthropic", ("claude",)), ("openai", ("gpt", "o1", "o3", "o4")), ("qwen", ("qwen",))):
-        if any(k in name for k in keys):
-            return fam
-    return {"anthropic": "anthropic", "openai": "openai"}.get(backend or "", backend or "unknown")
-
-
 def judges_for(target: str, j1: str, j2: str) -> list:
-    """Both judges, the one from a different family than the target first: that
-    one is measurer.judge in final mode (A1, V3 labels) and the headline. For a
-    target of neither judge's family (Qwen), J1 stays first."""
-    return [j2, j1] if family(target) == family(j1) and family(j2) != family(target) else [j1, j2]
-
-
-def a1_is_lower_bound(spec: str) -> bool:
-    """True for a target whose API returns a reasoning summary, not the raw
-    reasoning: A1 read from it can only undercount verbalized awareness."""
-    return (spec[:-len("+thinking")] if spec.endswith("+thinking") else spec) in SUMMARY_TARGETS
+    """Both judges, the one from a different family than the target first
+    (measure.headline_judge): it is measurer.judge in final mode (A1, V3 labels)
+    and the headline. For a target of neither judge's family (Qwen), J1 stays first."""
+    head = headline_judge(target, [j1, j2])
+    return [j1, j2] if head in (None, j1) else [j2, j1]
 
 
 def _exists(path):
@@ -241,10 +225,12 @@ def build_plan(args) -> dict:
         cells = ([(dev_target, [args.dev_judge])] if phase == "dev" else
                  [(t, judges_for(t, args.dev_judge, args.heldout_judge)) for t in args.heldout_targets])
         for t, judges in cells:
-            answerers = [t] + (judges if phase == "final" else [])
+            answerers = [t] + judges   # Measurer.judges: J1 in dev, both held-out judges in final
             lines = cal.estimate_cost(t, answerers, judges[0], envs, probes, labelled_chars, hand_chars,
                                       gap_envs, args.gap_seeds, judges[0])
+            q = [len(probe_set_for(probes or {"default": DEFAULT_PROBE_QUESTIONS}, x)) for x in answerers]
             steps.append({"phase": phase, "target": t, "judges": judges, "answerers": answerers, "lines": lines,
+                          "sample_calls": cal.sample_calls(q[0], q[1:]), "probe_counts": dict(zip(answerers, q)),
                           "gate_cmd": _gate_cmd(args, phase, t, judges, pairs_path, probes, labelled_path, have_kappa),
                           "gap_args": _gap_args(args, t, judges[0]) if gap_items else None})
     return {"pairs": pairs, "pairs_path": pairs_path, "pair_limit": limit, "envs": envs, "probes": probes,
@@ -314,6 +300,9 @@ def print_plan(plan: dict, args) -> None:
             print("   (this API returns reasoning SUMMARIES: A1 on this target is a LOWER BOUND)")
         for x in s["lines"]:
             print(f"   {x.step:<42} {x.model}\n      {x.how}")
+        qs = ", ".join(f"{k} {v}" for k, v in s["probe_counts"].items())
+        print(f"   probe questions per answerer: {qs}. Loop, per Measurer.sample() (generated item, real corpus, "
+              f"no faithfulness rewrite): up to {s['sample_calls']} calls")
         g, a = _sum(s["lines"], gate_only=True), _sum(s["lines"])
         print(f"   gate: {g[0]:,} calls, {_usd(g[1], g[2])} | gate + V3: {a[0]:,} calls, {_usd(a[1], a[2])}")
         if a[0] > args.max_calls:

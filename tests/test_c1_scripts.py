@@ -266,7 +266,7 @@ class PerFactorTests(unittest.TestCase):
         self.assertEqual(set(res["per_answerer"]["target"]["by_group"]), {"chat", "agentic"})
         lines = cal.verdict_lines({"checks": {"labelled": res}, "skipped": [
             {"check": c, "reason": "x"} for c in ("cue_pairs", "placebo", "human_kappa")]})
-        self.assertTrue(any(line.strip().startswith("chat: auroc [target=1.000 (n 10/10)]") for line in lines))
+        self.assertTrue(any(line.strip().startswith("chat: auroc [target=1.000 (n 10/10)") for line in lines))
         self.assertTrue(any(line.strip().startswith("agentic: auroc") for line in lines))
 
     def test_select_pairs_keeps_n_per_group_and_refuses_items_outside_the_split(self):
@@ -363,6 +363,7 @@ class DriverTests(unittest.TestCase):
             self.assertIn(f"--mode dev --target {driver._q(driver.DEV_TARGET_PLACEHOLDER)} --judge {HAIKU}", text)
             self.assertEqual(text.count("A1 on this target is a LOWER BOUND"), 2)
             self.assertIn("SUMMARY (upper bounds", text)
+            self.assertIn(f"A2 answerers: {driver.DEV_TARGET_PLACEHOLDER}, {HAIKU} |", text)
             self.assertIn("+GPU", text)
             self.assertNotIn("--approved-by-nathan", text.split("DRY RUN")[0])
             self.assertFalse(os.path.exists(os.path.join(d, "gate")))
@@ -381,12 +382,10 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(driver.judges_for(SONNET, HAIKU, GPT51), [GPT51, HAIKU])
         self.assertEqual(driver.judges_for(GPT5, HAIKU, GPT51), [HAIKU, GPT51])
         self.assertEqual(driver.judges_for("openai-compat:Qwen/Qwen3-30B-A3B", HAIKU, GPT51), [HAIKU, GPT51])
-        self.assertEqual(driver.family("openai-compat:openai/gpt-5.1"), "openai")
 
     def test_a1_lower_bound_marks_only_summary_targets(self):
         self.assertTrue(driver.a1_is_lower_bound(SONNET))
         self.assertTrue(driver.a1_is_lower_bound(GPT5))
-        self.assertFalse(driver.a1_is_lower_bound(GPT51))
         self.assertFalse(driver.a1_is_lower_bound("openai-compat:qwen-x"))
 
     def test_build_models_dev_has_no_heldout_and_final_has_both_judges(self):
@@ -530,6 +529,8 @@ class DriverTests(unittest.TestCase):
                 self.assertEqual(rep["checks"]["cue_pairs"]["n"], 15)   # 5 per factor x 3 factors
                 seen[rep["inputs"]["target_spec"]] = rep["inputs"]
             self.assertEqual(seen[driver.DEV_TARGET_PLACEHOLDER]["phase"], "dev")
+            # the dev judge answers the probes and is gated too (Measurer.judges)
+            self.assertEqual(seen[driver.DEV_TARGET_PLACEHOLDER]["a2_answerers"], [driver.DEV_TARGET_PLACEHOLDER, HAIKU])
             self.assertEqual(seen[SONNET]["judge_specs"], [GPT51, HAIKU])
             self.assertEqual(seen[SONNET]["a2_answerers"], [SONNET, GPT51, HAIKU])
             self.assertTrue(seen[SONNET]["a1_lower_bound"])

@@ -47,7 +47,8 @@ def cue_sensitive(prompt):
 def measurer_with(answer=None, judge=None, heldout_judges=(), mode="dev", budget=None):
     budget = budget or Budget()
     t = answer or Script(p_fn=cue_sensitive, budget=budget)
-    j = judge or Script(model="judge", budget=budget)
+    # the dev judge is an answerer the gate checks too, so the default one discriminates like the target
+    j = judge or Script(model="judge", p_fn=cue_sensitive, budget=budget)
     return Measurer(Models(generator=j, target=t, judge=j, heldout_target=t if mode == "final" else None,
                            heldout_judges=list(heldout_judges)), mode=mode, workers=2)
 
@@ -82,6 +83,27 @@ class LabelledCheckTests(unittest.TestCase):
         r = cal.check_labelled(measurer_with(), labelled_rows())
         self.assertTrue(r["passed"])
         self.assertEqual(r["per_answerer"]["target"]["auroc"], 1.0)
+
+    def test_dev_mode_checks_the_dev_judge_too(self):
+        r = cal.check_labelled(measurer_with(judge=Script(model="flat-judge", p_fn=lambda p: 0.3)), labelled_rows())
+        self.assertEqual(sorted(r["per_answerer"]), ["script:flat-judge#0", "target"])
+        self.assertTrue(r["per_answerer"]["target"]["passed"])
+        self.assertFalse(r["per_answerer"]["script:flat-judge#0"]["passed"])
+        self.assertFalse(r["passed"])
+
+    def test_dev_judge_off_leaves_the_target_alone(self):
+        b = Budget()
+        t, j = Script(p_fn=cue_sensitive, budget=b), Script(model="j", budget=b)
+        ms = Measurer(Models(generator=j, target=t, judge=j), mode="dev", dev_judge_p_eval=False)
+        self.assertEqual([w for w, _ in cal.answerers(ms)], ["target"])
+
+    def test_a_judge_that_is_the_target_reuses_its_answer(self):
+        b = Budget()
+        t = Script(p_fn=cue_sensitive, budget=b)
+        ms = Measurer(Models(generator=t, target=t, judge=t), mode="dev")
+        p = cal.p_eval_all(ms, "USER: EVALCUE x")
+        self.assertEqual(p["target"], p[f"{t.label}#0"])
+        self.assertEqual(b.calls, 3)   # 3 default questions, asked once
 
     def test_constant_p_answerer_fails(self):
         r = cal.check_labelled(measurer_with(Script(p_fn=lambda p: 0.7)), labelled_rows())
@@ -193,7 +215,7 @@ class CuePairAndPlaceboTests(unittest.TestCase):
         cal.check_cue_pairs(ms, pairs, answers=answers)
         after_b = budget.calls
         cal.check_placebo(ms, [p.with_cue for p in pairs], answers=answers)
-        per_env = 1 + 3   # target reply + 3 default probe questions
+        per_env = 1 + 3 + 3   # target reply + 3 default probe questions for the target and for the dev judge
         self.assertEqual(after_b, 2 * 12 * per_env)
         self.assertEqual(budget.calls - after_b, 12 * per_env)   # only the placebo versions are new
 
@@ -273,11 +295,40 @@ class KappaTests(unittest.TestCase):
         self.assertIn("ASSISTANT'S RAW REASONING", seen[0])
 
 
+class ModelLabelTests(unittest.TestCase):
+    def test_used_in_this_mode_names_families_headline_and_lower_bound(self):
+        b = Budget()
+        t = Script(model="claude-sonnet-4-5+thinking", budget=b)
+        t.name = "anthropic"
+        haiku, gpt = Script(model="claude-haiku-4-5", budget=b), Script(model="gpt-5.1", budget=b)
+        haiku.name, gpt.name = "anthropic", "openai"
+        ms = Measurer(Models(generator=gpt, target=t, judge=gpt, heldout_target=t, heldout_judges=[gpt, haiku]),
+                      mode="final")
+        used = cal.model_labels(ms)["used_in_this_mode"]
+        self.assertEqual(used["families"], {"anthropic:claude-sonnet-4-5+thinking": "anthropic",
+                                            "openai:gpt-5.1": "openai", "anthropic:claude-haiku-4-5": "anthropic"})
+        self.assertEqual(used["headline_judge"], "openai:gpt-5.1")
+        self.assertTrue(used["a1_is_lower_bound"])
+        lines = cal.verdict_lines({"checks": {}, "models": {"used_in_this_mode": used},
+                                   "skipped": [{"check": c, "reason": "x"} for c in cal.CHECKS]})
+        d = lines.index("SKIP human_kappa: x (a skipped check fails the gate)")
+        self.assertIn("headline (cross-family) judge: openai:gpt-5.1", lines[d + 1])
+        self.assertIn("LOWER BOUND", lines[d + 2])
+
+    def test_no_cross_family_judge_is_said_not_hidden(self):
+        used = cal.model_labels(measurer_with())["used_in_this_mode"]
+        self.assertIsNone(used["headline_judge"])
+        lines = cal.verdict_lines({"checks": {}, "models": {"used_in_this_mode": used},
+                                   "skipped": [{"check": c, "reason": "x"} for c in cal.CHECKS]})
+        self.assertTrue(any("NONE: every judge shares the target family" in x for x in lines))
+
+
 class GateTests(unittest.TestCase):
     def full_gate(self, **kw):
         ts, labels = transcripts_and_labels()
         budget = Budget()
-        ms = measurer_with(judge=Script(model="judge", verbal_fn=reads_reasoning, budget=budget), budget=budget)
+        ms = measurer_with(judge=Script(model="judge", p_fn=cue_sensitive, verbal_fn=reads_reasoning, budget=budget),
+                           budget=budget)
         args = dict(labelled=labelled_rows(), cue_pairs=cue_pairs(), transcripts=ts, hand_labels=labels)
         args.update(kw)
         return cal.run_gate(ms, budget, out_dir=tempfile.mkdtemp(), **args)
@@ -292,7 +343,7 @@ class GateTests(unittest.TestCase):
         self.assertEqual(on_disk["models"]["judge"], "script:judge")
         self.assertGreater(on_disk["compute"]["calls"], 0)
         self.assertTrue(path.endswith("_dev.json"))
-        self.assertEqual(len(cal.verdict_lines(rep)), 4)
+        self.assertEqual(len(cal.verdict_lines(rep)), 5)   # four checks + the A1 judge note under (d)
 
     def test_skipped_check_fails_the_gate(self):
         rep, _ = self.full_gate(hand_labels=None)
@@ -573,6 +624,14 @@ class EstimateCostTests(unittest.TestCase):
         self.assertEqual(cal.model_price("anthropic:claude-haiku-4-5"), (1, 5))
         self.assertEqual(cal.model_price("anthropic:claude-sonnet-4-5+thinking"), (3, 15))
         self.assertEqual(cal.model_price("openai:gpt-5.1"), (1.25, 10))
+
+    def test_sample_calls_formula(self):
+        # Orchestrator's examples: dev, 3 questions each, corpus -> 10; final with 2 judges -> 14
+        self.assertEqual(cal.sample_calls(3, [3]), 10)
+        self.assertEqual(cal.sample_calls(3, [3, 3]), 14)
+        self.assertEqual(cal.sample_calls(5, [3, 5]), 18)                      # our final lineup
+        self.assertEqual(cal.sample_calls(3, [], generated=False, corpus=False), 5)
+        self.assertEqual(cal.sample_calls(3, [0], faithfulness=True), 8)      # judge is the target: no extra probes
 
     def test_assumptions_name_the_unknowns(self):
         text = " ".join(cal.cost_assumptions())

@@ -607,14 +607,30 @@ def is_offline(measurer: Measurer) -> bool:
 
 def answerers(measurer: Measurer) -> List[Tuple[str, object]]:
     """(key, llm) for every P(eval) answerer in the measurer's mode, keyed as
-    in Sample.judge_p_eval and realism_auroc."""
+    in Sample.judge_p_eval and realism_auroc: the target, then each judge that
+    scores in this mode (Measurer.judges: the dev judge in dev mode, every
+    held-out judge in final), so the gate calibrates the instruments the loop
+    actually reads."""
     return [("target", measurer.target)] + [(measurer._judge_label(k, j), j)
-                                            for k, j in enumerate(measurer.p_eval_judges)]
+                                            for k, j in enumerate(measurer.judges)]
 
 
 def _p_eval(measurer: Measurer, who: str, llm, transcript: str) -> Optional[float]:
     sim = _sim(measurer)
     return sim.p_eval_transcript(transcript, who) if sim else measurer.p_eval(llm, transcript)
+
+
+def p_eval_all(measurer: Measurer, transcript: str, who_list: Optional[List[Tuple[str, object]]] = None) -> dict:
+    """Every answerer's P(eval) on one transcript. A judge that IS the target
+    object reuses the target's answer instead of asking the same questions
+    again (as Measurer.sample does)."""
+    out: dict = {}
+    for who, llm in who_list or answerers(measurer):
+        if who != "target" and llm is measurer.target and "target" in out:
+            out[who] = out["target"]
+        else:
+            out[who] = _p_eval(measurer, who, llm, transcript)
+    return out
 
 
 def _pmap(measurer: Measurer, budget: Optional[Budget], fn: Callable, items: list) -> list:
@@ -655,7 +671,7 @@ class EnvAnswers:
                                                                          max_tokens=1200)
         t = _transcript({"system": env.get("system", ""), "user": env["user"]}, response)
         return {"response": response, "reasoning": reasoning,
-                "p": {who: _p_eval(self.ms, who, llm, t) for who, llm in answerers(self.ms)}}
+                "p": p_eval_all(self.ms, t)}
 
     def get(self, envs: List[Dict[str, str]]) -> List[dict]:
         todo, seen = [], set()
@@ -695,8 +711,7 @@ def check_labelled(measurer: Measurer, rows: List[Labelled], threshold: float = 
                    budget: Optional[Budget] = None, min_per_class: int = DEFAULT_MIN_N["labelled"]) -> dict:
     """(a) Each answerer's P(eval) separates eval from deployment transcripts."""
     who_list = answerers(measurer)
-    results = _pmap(measurer, budget, lambda r: {"p": {w: _p_eval(measurer, w, llm, r.transcript)
-                                                      for w, llm in who_list}}, rows)
+    results = _pmap(measurer, budget, lambda r: {"p": p_eval_all(measurer, r.transcript, who_list)}, rows)
     per = {}
     for who, llm in who_list:
         by_group: Dict[str, Tuple[list, list]] = {}
@@ -1074,12 +1089,22 @@ def estimate_gap_calls(n_items: int, n_per_item: int) -> int:
 
 
 def model_labels(measurer: Measurer) -> dict:
+    """Configured models plus what this mode uses: families, the headline
+    (first cross-family) judge, and whether A1 on the target is a lower bound
+    (its API returns summarized reasoning, or none)."""
+    from .measure import a1_is_lower_bound, headline_judge, model_family
     m = measurer.m
+    target = measurer.target.label
+    judges = [j.label for j in measurer.judges] or [measurer.judge.label]
     return {"generator": m.generator.label, "target": m.target.label, "judge": m.judge.label,
             "heldout_target": m.heldout_target.label if m.heldout_target else None,
             "heldout_judges": [j.label for j in m.heldout_judges],
-            "used_in_this_mode": {"target": measurer.target.label, "judge": measurer.judge.label,
-                                  "p_eval_answerers": {w: llm.label for w, llm in answerers(measurer)}}}
+            "used_in_this_mode": {"target": target, "judge": measurer.judge.label,
+                                  "p_eval_answerers": {w: llm.label for w, llm in answerers(measurer)},
+                                  "families": {lab: model_family(lab) for lab in [target] + judges},
+                                  "headline_judge": headline_judge(target, judges),
+                                  "a1_judge": measurer.judge.label,
+                                  "a1_is_lower_bound": a1_is_lower_bound(target)}}
 
 
 def run_gate(measurer: Measurer, budget: Budget, labelled: Optional[List[Labelled]] = None,
@@ -1273,6 +1298,19 @@ def estimate_cost(target: str, p_eval_answerers: List[str], a1_judge: str, envs:
     return lines
 
 
+def sample_calls(q_target: int, q_judges: List[int], generated: bool = True, corpus: bool = True,
+                 faithfulness: bool = False) -> int:
+    """Upper bound on calls per Measurer.sample() in the loop (not the gate,
+    which answers environments through EnvAnswers): G + 1 + Q_t + 1 + sum Q_i
+    + max(N-1, 0) + C + F. G = 1 generator call (0 for an untouched benchmark
+    original); 1 target reply; Q_t target probe questions; 1 audit by the first
+    judge (A1); Q_i each judge's probe questions (pass 0 for a judge that is the
+    target object); one extra A1 audit per additional judge; C = 1 with a real
+    corpus; F = 1 when a rewrite runs the faithfulness check."""
+    return (int(generated) + 1 + q_target + 1 + sum(q_judges) + max(len(q_judges) - 1, 0)
+            + int(corpus) + int(faithfulness))
+
+
 def cost_assumptions() -> List[str]:
     """The assumptions behind estimate_cost, for printouts and the prereg."""
     return [f"{CHARS_PER_TOKEN} characters per token (assumption)",
@@ -1296,6 +1334,7 @@ def verdict_lines(report: dict) -> List[str]:
         if c is None:
             reason = next(s["reason"] for s in report["skipped"] if s["check"] == name)
             lines.append(f"SKIP {name}: {reason} (a skipped check fails the gate)")
+            lines += _a1_note(report) if name == "human_kappa" else []
             continue
         per = ", ".join(f"{w}={_fmt(_headline(name, v))}" + ("" if v["passed"] else " FAIL")
                         for w, v in c["per_answerer"].items())
@@ -1306,7 +1345,23 @@ def verdict_lines(report: dict) -> List[str]:
         lines.append(f"{'PASS' if c['passed'] else 'FAIL'} {name}: {c['metric']}={_fmt(c['value'])} "
                      f"(threshold {c['threshold']}; n={c['n']}) [{per}]{extra}")
         lines += _group_lines(name, c)
+        lines += _a1_note(report) if name == "human_kappa" else []
     return lines
+
+
+def _a1_note(report: dict) -> List[str]:
+    """Under check (d): which judge scores A1, the headline judge, and the
+    lower-bound caveat when the target's API returns summarized reasoning."""
+    used = (report.get("models") or {}).get("used_in_this_mode") or {}
+    if not used:
+        return []
+    head = used.get("headline_judge")
+    out = [f"  A1 judge: {used.get('a1_judge') or used.get('judge')}; headline (cross-family) judge: "
+           f"{head or 'NONE: every judge shares the target family, so no cross-family A1'}"]
+    if used.get("a1_is_lower_bound"):
+        out.append(f"  A1 on {used.get('target')} is a LOWER BOUND: its API returns summarized reasoning (or none), "
+                   "so verbalized awareness can only be undercounted")
+    return out
 
 
 def _group_lines(name: str, c: dict) -> List[str]:
