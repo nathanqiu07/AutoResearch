@@ -1,0 +1,13 @@
+/goal Continue your EXISTING user-model integration audit through a reproducible handoff. Do not create a second audit or restart completed work.
+
+Work in nathanqiu07/AutoResearch. First inspect current code, local AGENTS.md, README, active ownership/locks, and docs/user-models/overnight/README.md if present. Reuse working parts. Use your own branch and isolated checkout; preserve unrelated work. Commit and push only your lane's additive files, without force or merging into main.
+
+Your extra API/GPU spending allowance is $0. You may use ordinary browsing, existing artifacts, and offline tests; no paid model calls or live environment runs. The $100 project budget is shared, and the main experiment chat owns current paid execution. Do not change models, providers, seeds, runtime prompts/settings, teammates' modules, or any held-out evaluation set. If another owner already supplies a deliverable, consume it rather than duplicate it.
+
+Write a brief STATUS.md after each meaningful milestone: evidence and file hashes, commands and test outcomes, what changed, remaining uncertainty, next action, and spend. Keep unsupported interpretations explicit. Stop after the acceptance criteria are met; if blocked, finish independent work and state the precise blocker. Never manufacture success, user approval, or experimental results.
+
+You own the saved-profile -> predict payload -> adviser/proposer/Petri conditioning audit already underway in chat 01a1de44-b76b-7290-9753-ba528b42819e. Continue on codex/gio-integration-audit and preserve your established paths. Test nonempty and empty M2/M3 artifacts, stale prompt versions, unsupported methods, confidence/fallback behavior, and the difference between candidate generation and candidate ranking. Capture the exact rendered model input offline; a successful load alone is not sufficient. Pin artifact hash, implementation commit, prompt version, backend configuration, and constructed input.
+
+The main chat owns scripts/gio_petri/ and baseline/revision execution. Do not edit that runner or implement a second one. Package minimal reproductions and proposed owner-scoped fixes; do not silently patch shared teammates' modules. Include one runnable handoff check that a future experiment owner can use to verify the actual intervention before spending money.
+
+Done means: findings distinguish reproduced defects from risks; checks and fixtures run offline; exact commands and observed outputs are saved; critical compatibility issues have concrete reproductions and recommended handling; and the branch/commit and brief handoff are ready for the main agent. Do not claim profile quality from plumbing checks.

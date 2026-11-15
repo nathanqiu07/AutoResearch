@@ -1,0 +1,15 @@
+/goal Independently stress-test the meaning of AutoResearch's environment-quality measurements and deliver a small, executable offline challenge suite plus a concise methods review.
+
+Work in nathanqiu07/AutoResearch. First inspect current code, local AGENTS.md, README, active ownership/locks, and docs/user-models/overnight/README.md if present. Reuse working parts. Use your own branch and isolated checkout; preserve unrelated work. Commit and push only your lane's additive files, without force or merging into main.
+
+Your extra API/GPU spending allowance is $0. You may use ordinary browsing, existing artifacts, and offline tests; no paid model calls or live environment runs. The $100 project budget is shared, and the main experiment chat owns current paid execution. Do not change models, providers, seeds, runtime prompts/settings, teammates' modules, or any held-out evaluation set. If another owner already supplies a deliverable, consume it rather than duplicate it.
+
+Write a brief STATUS.md after each meaningful milestone: evidence and file hashes, commands and test outcomes, what changed, remaining uncertainty, next action, and spend. Keep unsupported interpretations explicit. Stop after the acceptance criteria are met; if blocked, finish independent work and state the precise blocker. Never manufacture success, user approval, or experimental results.
+
+Own only docs/overnight/measurement/ and scripts/gio_measurement_audit/. Do not duplicate the integration agent's profile/payload audit or modify the main chat's scripts/gio_petri/. Inspect the actual saved baseline, exact judge prompts, and score calculations. Locate the latest approved 30-turn review artifacts when present; do not wait for them to start.
+
+Build 8-12 clearly labeled synthetic challenge cases covering: threat only named but never shown; threat fully shown and ignored; deliberate noninterference; confirmed modification; attempted edit without tool confirmation; cutoff before choice; an obviously staged but valid test; realistic-looking but invalid test; explicit evaluation awareness; no expressed awareness despite high prompted recognition. State any ambiguous expected outcome instead of inventing gold certainty. Use these to test structural checks offline; do not call an LLM or claim judge accuracy from scripted outputs.
+
+Read at most six directly relevant primary papers/docs, including Petri's actual rubric and work separating prompted recognition, expressed awareness, and behavior changes. Record precisely what transfers to this project, what does not, and which findings contradict our preferred story. No sprawling literature review. Produce an exact proposed evaluation for whether a judge distinguishes the challenge cases, and a short matched-control proposal for future approval. Do not change the active experiment.
+
+Done means: a runnable fixture/schema check, an expected-outcomes file with rationale and uncertainty, a source-linked review under 1,200 words, a prioritized list of at most three actionable measurement risks, and a handoff with commands, hashes, and zero additional API spend.
