@@ -740,3 +740,41 @@
   A local "28 judgments" phrase is qualified nearby as fourteen underlying
   judgments; no owner edit or score recalculation is performed. The compact
   review retains source pins and line-referenced assessments, not raw data.
+
+## Approved private continuation retention and findings navigation
+
+- Previous turn published 042/043 at remote-verified `32513a519ee5b544608e43a0348669bfd235e3de`.
+  The goal remains active. The recurring wakeup was viewed again without any
+  model, reasoning or notification-setting changes.
+- Root independently binds the frozen 3,022 map to 3,016 exact allowed tuples plus
+  six exclusions, including roles and observed sizes: 23 checks pass. Three exact
+  reuse identities leave 3,013 new logical paths and 2,813 distinct content hashes.
+  This metadata check remains separate from actual-byte preservation.
+- Audit 044 privately preserves all approved records. Actual source hashes,
+  sizes and states match before/after; every same-hash source is independently
+  read and byte-compared before deduplication. The new archive is 24,580,726 bytes,
+  SHA256 `6ef3b765d2a43ef7292489e372c5ff30999f1e6e95e244c952f28583383128f6`,
+  with 2,813 members representing 105,191,777 bytes. Three snapshots reuse 042.
+- Coordinator separately clears the two exact approval metadata files for
+  PRIVATE retention only. Before any 044 commit/push, root removes its untracked
+  public copies of those two files and the complete mapping/source-state receipt.
+  The original author guide/manifest are also kept private to avoid stale
+  publication instructions. All exact originals remain retained; no data loss.
+  A new narrower public manifest and publication-scope review supersede the
+  earlier author/reviewer public-safe wording.
+- The external 044 bundle has 33 payload entries / 28,082,867 bytes plus manifest
+  and copy receipt, all files 0600 and directories 0700. Copied-location verification passes
+  all 2,813 new members, 3,016 mappings and three reused members; only argv differs from
+  the original verification. Exact read_regular inputs are allowlisted and
+  subprocess/socket operations denied; this is explicitly not OS-level tracing.
+  No original logical bodies are reread by that verification or semantically
+  parsed, and no consumer/model execution or experiment replay occurs.
+- Independent code/metadata review passes 143 checks and six synthetic controls;
+  additive publication review passes 235 boundary and 26 saved-copy comparisons.
+  The author’s 16 controls and failure history remain separate. No independent
+  reviewer opens production payload/archive bodies or claims content eligibility.
+- Audit 045 drafts a compact ten-finding navigation index from 19 pinned public
+  sources at `32513a5`. Root verifies all 19 byte/size/line identities, converts its
+  links to portable repository paths, clarifies the byte-cap wording and keeps
+  later 044 retention outside its historical source cut. No new empirical result
+  or current legacy-adviser repair verdict is inferred from the synthesis.

@@ -7,6 +7,11 @@ jobs. No model/inference-setting changes or production adviser edits were made.
 
 ## What the current evidence supports
 
+[What the audit found and changed](FINDINGS.md) is a compact navigation index of
+the material findings, independently retested repairs, historical limits and
+remaining uncertainties. Its sources are pinned separately from this evolving
+overview.
+
 | Question | Supported conclusion | Remaining limit |
 |---|---|---|
 | Did the four controls run on matched recorded items? | All 112 cells across 28 ordered decisions have consistent provenance (024); those decisions form 14 exact content groups shown in two orders (031). | This is not preference scoring or provider-authenticated traffic. |
@@ -24,6 +29,7 @@ jobs. No model/inference-setting changes or production adviser edits were made.
 | Can original downstream05 checks run without Git? | The recovered reader repeats all 1,316 checks using 210 existing owner files, 90 retained source members and 13 private records; ordered reports match apart from invocation/reader identity (039). | This recovers exact bytes and checks, not the full installed environment or historical Git provenance. |
 | Are original downstream05 recovery inputs retained outside this worktree? | A separate 1.06 MB capsule retains its 141 public files, thirteen-record private gap, tools and guide. Replay from that copy passes all 1,316 checks (041). | It explicitly depends on the separately retained 210 owner payload files and is same-machine storage. |
 | Does the closed204 continuation reconcile? | Three retained snapshots agree on 204 completed jobs, 672 unique request identities/reservations and $0.124590125 recorded usage, with no current holds. External-copy replay passes all 45 checks (042). | This is metadata reconciliation. Wider raw input hashes, eligibility and consumer execution are outside that replay; earlier holds remain separate. |
+| Are the approved closed204 record bytes recoverable? | All 3,016 approved sources pass before/after checks. An external private bundle verifies 2,813 new members and three existing snapshot aliases, preserving exact logical mappings (044). | Six references stay excluded. Typed clearance and byte verification are not a semantic label/secret scan or consumer-quality result; approval metadata and complete mappings stay private. |
 | Can the evidence be reconstructed later? | Exact scripts, source pins, failures, hashes and verified private input archives are retained. A new outside-worktree checkpoint contains 16 private archives and 2,419 public files through 037; recovery of 037 passes all 6,336 checks (040). | This is same-machine retention, excludes 038 and later, and does not preserve the full provider/Python environment or rerun every historical audit. |
 
 Expanded semantic construction and saved-P1/memory conditioning are covered in
@@ -456,9 +462,11 @@ preserves original039 separately from later owner fixes and the older checkpoint
 [20261115-042](../../../results/integration-audit/20261115-042/PUBLICATION.md)
 adds a closed-continuation metadata reconciliation and first-order retention map.
 Its three approved snapshots and exact checking code are privately recoverable
-outside the worktree. The wider 3,022-identity map remains a proposal with four
-held context records; estimated sizes and declared hashes are not verified raw
-retention or an independent prediction-quality result.
+outside the worktree. The wider 3,022-identity map is frozen as a proposal;
+[20261115-044](../../../results/integration-audit/20261115-044/README.md)
+separately verifies private retention of the subsequently approved 3,016-identity
+subset. The four context records and two separately owned source files remain
+excluded. Neither package establishes prediction quality.
 [20261115-043](../../../results/integration-audit/20261115-043/PUBLICATION.md)
 finds no material interpretive overclaim in six pinned public narratives. They
 already distinguish paired units, aliases, missingness, selected development
