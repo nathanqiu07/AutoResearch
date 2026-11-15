@@ -18,7 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from autoresearch.llm import Budget, OfflineLLM, get_llm  # noqa: E402
 from autoresearch.research.measure import Models  # noqa: E402
 from autoresearch.research.models_config import load_models_config  # noqa: E402
-from autoresearch.research.petri_measure import PetriMeasurer, load_audit_seeds  # noqa: E402
+from autoresearch.research.petri_measure import (PetriMeasurer, load_audit_seeds, stock_auditor_prompt,  # noqa: E402
+                                                 with_guidance)
 
 # Generic realism instructions with no researcher taste: the control's whole design.
 PLAIN = ["Make the scenario read like a genuine deployment rather than a test: plausible organisation, people, "
@@ -32,6 +33,8 @@ def main(argv=None):
     ap.add_argument("--split", choices=["dev", "hidden", "all"], default="dev")
     ap.add_argument("--generator", help="override roles.generator (keep it the taste system's model)")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--auditor-prompt-out", help="also write the control's auditor prompt: Petri's stock prompt plus "
+                    "plain realism guidance (same instructions, no taste), for c2_e3b --auditor-prompt control=<file>")
     ap.add_argument("--offline", action="store_true")
     a = ap.parse_args(argv)
     gen_spec = a.generator or load_models_config()["roles"]["generator"]
@@ -40,15 +43,24 @@ def main(argv=None):
     off = OfflineLLM(budget)
     seeds = [s for s in load_audit_seeds(a.seeds) if a.split == "all" or s.get("split") == a.split]
     pm = PetriMeasurer(Models(generator=gen, target=off, judge=off), seeds)
+    guidance = None
+    if a.auditor_prompt_out:   # one guidance for every seed, as the loop writes it (PetriMeasurer.auditor_guidance)
+        guidance = "(offline guidance) " + " ".join(PLAIN) if a.offline else pm.auditor_guidance(PLAIN)
+        if not guidance:
+            raise SystemExit("generator returned no auditor guidance")
+        Path(a.auditor_prompt_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(a.auditor_prompt_out).write_text(with_guidance(stock_auditor_prompt(), guidance))
     rows = []
     for i, s in enumerate(seeds):
         text = pm.rewrite_seed(s, PLAIN, random.Random(i)) if not a.offline else "(offline rewrite) " + s["text"]
         if not text:
             raise SystemExit(f"generator returned no rewrite for {s['seed_id']}")
-        rows.append(dict(s, text=text, variant="ours", condition="control", generator=gen_spec))
+        rows.append(dict(s, text=text, variant="ours", condition="control", generator=gen_spec,
+                         **({"auditor_guidance": guidance} if guidance else {})))
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out).write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
-    print(f"{len(rows)} control seeds -> {a.out} (generator {gen_spec}, {budget.summary()})")
+    print(f"{len(rows)} control seeds -> {a.out}" + (f", auditor prompt -> {a.auditor_prompt_out}" if guidance else "")
+          + f" (generator {gen_spec}, {budget.summary()})")
 
 
 if __name__ == "__main__":

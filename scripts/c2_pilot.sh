@@ -64,13 +64,16 @@ GPUS=0
 [ "$target" = qwen ] && GPUS=$((GPUS + 1))
 RUN_ID="c2-$step-$(date +%Y%m%dT%H%M%S)-$$"
 PROXY_PID=""; WATCHDOG=""; MODAL_POOL_LABEL=""; PICK_TS=""; DEPLOY_TS=""; LOG_PIDS=""
+# Separate app name and proxy port let a pilot run beside another C2 run (e.g. c2_loop_evan.sh) without
+# either one's cleanup stopping the other's auditor. Each app is its own GPU container (billed separately).
+AUDITOR_APP="${AUDITOR_APP:-autoresearch-auditor}"; PROXY_PORT="${PROXY_PORT:-8100}"
 cleanup() {
   [ -n "$WATCHDOG" ] && kill "$WATCHDOG" 2>/dev/null || true
   [ -n "$PROXY_PID" ] && kill "$PROXY_PID" 2>/dev/null || true
   for p in $LOG_PIDS; do pkill -P "$p" 2>/dev/null || true; kill "$p" 2>/dev/null || true; done
   if [ "$GPUS" -gt 0 ]; then
     "$MODAL" app stop -y autoresearch-vllm >/dev/null 2>&1 || true   # -y: without a TTY it asks and aborts
-    "$MODAL" app stop -y autoresearch-auditor >/dev/null 2>&1 || true
+    "$MODAL" app stop -y "$AUDITOR_APP" >/dev/null 2>&1 || true
   fi
   if [ -n "$MODAL_POOL_LABEL" ]; then
     # GPUs bill from the first deploy (containers start on the first request); nothing deployed, $0
@@ -131,10 +134,10 @@ if [ "$target" = kimi ]; then
   [ -f "$POOL_FILE" ] || : "${TINKER_API_KEY:?TINKER_API_KEY not set (Kimi runs on Tinker)}"
   [ -f "$POOL_FILE" ] || : "${TINKER_BUDGET_USD:?no pool file: set TINKER_BUDGET_USD (lifetime Tinker budget for your account)}"
   T_MODEL="$T_MODEL_TINKER"
-  "$PY" harness/tinker_proxy.py --port 8100 --model "$T_MODEL" --max-total-tokens "$TOKEN_CAP" \
+  "$PY" harness/tinker_proxy.py --port "$PROXY_PORT" --model "$T_MODEL" --max-total-tokens "$TOKEN_CAP" \
      "${POOL_ARGS[@]}" --run-budget-usd "$RUN_USD" --usage-file runs/petri/tinker_usage.json & PROXY_PID=$!
   sleep 3; kill -0 "$PROXY_PID" || { echo "tinker proxy failed to start"; exit 1; }
-  T_URL=http://127.0.0.1:8100/v1; T_KEY=local
+  T_URL=http://127.0.0.1:$PROXY_PORT/v1; T_KEY=local
   export OPENAI_COMPAT_ENDPOINTS="{\"moonshotai/\": {\"base_url\": \"$T_URL\", \"key_env\": \"TINKER_PROXY_KEY\"}}"
   export TINKER_PROXY_KEY=local
   # K2.6 always thinks. Our probe and judge-style calls ask for ~300 tokens, which it spends thinking
@@ -152,10 +155,10 @@ T_SPEC="openai-compat:$T_MODEL"; tag=$(echo "$T_MODEL" | tr '/' '_')
 stamp=$(date +%Y-%m-%d)
 auditor() {
   echo "deploying auditor (Qwen3-235B-A22B-Instruct-2507-FP8, 4xH100) in Modal workspace $MODAL_POOL_LABEL..."
-  A_URL=$(deploy autoresearch-auditor Qwen/Qwen3-235B-A22B-Instruct-2507-FP8 H100:4 none 65536)
+  A_URL=$(deploy "$AUDITOR_APP" Qwen/Qwen3-235B-A22B-Instruct-2507-FP8 H100:4 none 65536)
   [ -n "$DEPLOY_TS" ] || DEPLOY_TS=$(date +%s)
   # first load in a workspace downloads ~240 GB of weights; later loads read the hf-cache volume
-  wait_ready autoresearch-auditor "$A_URL" "${READY_MINUTES:-40}"
+  wait_ready "$AUDITOR_APP" "$A_URL" "${READY_MINUTES:-40}"
   export MODALAUD_BASE_URL="$A_URL" MODALAUD_API_KEY="$VLLM_KEY"
 }
 E3B=(--split dev --limit "$n" --epochs 1 --tools simulated --target "$T_SPEC" --judge openai:gpt-5.1
@@ -177,15 +180,17 @@ case "$step" in
     python3 scripts/c2_e3b.py --condition stock=data/petri/seeds_v2.jsonl "${E3B[@]}" \
       --out "results/e3b/pilot_stock_${tag}_dev_n${n}_${stamp}.json" ;;
   control)
-    # generated once and reused, so a retry audits the same control seeds (and hits the audit cache)
-    if [ ! -s runs/petri/control_dev.jsonl ] || [ -n "${CONTROL_REGEN:-}" ]; then
-      python3 scripts/c2_make_control.py --split dev --out runs/petri/control_dev.jsonl
+    # The control edits the seed AND the auditor prompt, like the taste conditions (--petri-rewrite both).
+    # Generated once and reused, so a retry audits the same control (and hits the audit cache).
+    C_SEEDS=runs/petri/control_both_dev.jsonl; C_PROMPT=runs/petri/control_both_auditor_prompt.txt
+    if [ ! -s "$C_SEEDS" ] || [ ! -s "$C_PROMPT" ] || [ -n "${CONTROL_REGEN:-}" ]; then
+      python3 scripts/c2_make_control.py --split dev --out "$C_SEEDS" --auditor-prompt-out "$C_PROMPT"
     else
-      echo "reusing runs/petri/control_dev.jsonl (CONTROL_REGEN=1 makes new control seeds)"
+      echo "reusing $C_SEEDS and $C_PROMPT (CONTROL_REGEN=1 makes a new control)"
     fi
     auditor
-    python3 scripts/c2_e3b.py --condition stock=data/petri/seeds_v2.jsonl --condition control=runs/petri/control_dev.jsonl \
-      "${E3B[@]}" --out "results/e3b/pilot_stock_vs_control_${tag}_dev_n${n}_${stamp}.json" ;;
+    python3 scripts/c2_e3b.py --condition stock=data/petri/seeds_v2.jsonl --condition control="$C_SEEDS" \
+      --auditor-prompt control="$C_PROMPT" "${E3B[@]}" --out "results/e3b/pilot_stock_vs_control_both_${tag}_dev_n${n}_${stamp}.json" ;;
   screen)
     # N = runs per seed here; all 29 pool seeds; split filter off (pool rows are split "screen")
     auditor

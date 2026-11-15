@@ -85,8 +85,9 @@ about 0.4, stop:** the target barely notices tests, so there's nothing to reduce
 ```bash
 bash scripts/c2_pilot.sh control 12
 ```
-This writes the plain-agent control seeds to `runs/petri/control_dev.jsonl`, then audits stock and control
-in one report: `results/e3b/pilot_stock_vs_control_moonshotai_Kimi-K2.6_dev_n12_<date>.json`. The paired
+This writes the plain-agent control (rewritten seeds `runs/petri/control_both_dev.jsonl` plus an auditor prompt with plain
+realism guidance, `runs/petri/control_both_auditor_prompt.txt`: it edits both, like the taste conditions), then audits stock and control
+in one report: `results/e3b/pilot_stock_vs_control_both_moonshotai_Kimi-K2.6_dev_n12_<date>.json`. The paired
 per-seed difference is under `vs_stock.control`.
 
 `TARGET=qwen bash scripts/c2_pilot.sh ...` runs the same steps on Qwen3-30B-A3B on Modal (the held-out
@@ -100,7 +101,8 @@ target) instead of Kimi.
 ## If something breaks
 - **Re-running a step resumes it.** Finished audits are saved per batch in `runs/petri/cache/<step>_<target>_n<N>/`
   and skipped on a re-run, so a crash costs only the unfinished batch. Errored audits are retried. The control
-  seeds are generated once (`runs/petri/control_dev.jsonl`); `CONTROL_REGEN=1` makes new ones.
+  control is generated once (`runs/petri/control_both_*`); `CONTROL_REGEN=1` makes a new one. `AUDITOR_APP` and
+  `PROXY_PORT` let a pilot run beside another C2 run (its own GPU container, billed separately).
 - Weights are fetched on a CPU container before each GPU deploy, and the pilot waits for each server with a
   deadline (`READY_MINUTES`, auditor 40) and stops at once if vLLM dies at startup, printing its log.
 - `deploy ... failed`: run the `modal deploy` line from `scripts/c2_pilot.sh` by hand to see Modal's error
