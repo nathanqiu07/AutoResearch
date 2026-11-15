@@ -12,6 +12,7 @@ import threading
 import time
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
@@ -26,6 +27,10 @@ def load_driver():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def peer_fixture_builder(documents, config, extractor):
+    return {'content': {'fixture': True}}
 
 
 class CampaignClock(datetime):
@@ -154,6 +159,114 @@ class DriverTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.prepared()
         self.batch['ledger']['max_usd'] = 9.999994875
         self.packet['backend']['max_calls'] = 2
+        with self.assertRaises(ValueError): self.prepared()
+
+    def peer_packet(self):
+        target = json.loads(Path(self.release['path']).read_bytes())
+        target['target_bundle_sha256'] = 'e' * 64
+        target_ref = self.write('parent-target.json', target)
+        peer_doc = dict(self.document, document_id='peer-doc', researcher_id='r2')
+        peer = dict(target, researcher_id='r2', sources={'documents': [peer_doc],
+                    'source_manifest': self.d.source_manifest([peer_doc]),
+                    'allowed_source_manifest_hash': self.d.digest(self.d.source_manifest([peer_doc]))})
+        peer['items'] = [dict(item, researcher_id='r2', item_id='peer-' + item['item_id']) for item in self.items]
+        peer['items_sha256'] = self.d.digest(peer['items'])
+        peer_ref = self.write('parent-peer.json', peer)
+        records = sorted([self.document, peer_doc], key=lambda d: d['document_id'])
+        sources = self.d.source_manifest(records)
+        derivative = dict(target, schema_version='released-development-v2-p7-peers-v1',
+            approved_peer_sources=True,
+            parent_releases=[{'researcher_id': 'r1', 'release': target_ref},
+                             {'researcher_id': 'r2', 'release': peer_ref}],
+            peer_policy={'allowed_method_id': 'P7', 'purpose': 'contrastive peer fitting',
+                         'target_researcher_id': 'r1', 'peer_researcher_ids': ['r2'],
+                         'no_heldout_sources': True},
+            sources={'documents': records, 'source_manifest': sources,
+                     'allowed_source_manifest_hash': self.d.digest(sources)})
+        self.packet['manifest']['method_id'] = self.packet['config']['method_id'] = 'P7'
+        self.packet['config'].update(allowed_sources=sources, allowed_source_manifest_hash=self.d.digest(sources))
+        self.packet['registration'] = {'module': 'autoresearch.taste.overnight.profiles_hypotheses',
+                                       'function': 'register_hypotheses_builders'}
+        self.batch['release_schema_version'] = derivative['schema_version']
+        return derivative
+
+    def bind_peer(self, derivative):
+        self.packet['release'] = self.write('peer-derivative.json', derivative)
+        for key in ('approved_peer_sources', 'peer_policy', 'parent_releases'):
+            self.packet['config'][key] = json.loads(json.dumps(derivative[key]))
+
+    def test_p7_peer_derivative_exact_union_and_parent_hashes(self):
+        derivative = self.peer_packet()
+        self.bind_peer(derivative)
+        with patch.object(self.d, '_register', return_value=SimpleNamespace()):
+            prepared = self.prepared()
+        self.assertEqual(len(prepared['jobs'][0]['documents']), 2)
+        for mutate in ('record', 'parent_hash', 'parent_ref', 'extra_record'):
+            changed = json.loads(json.dumps(derivative))
+            if mutate == 'record': changed['sources']['documents'][0]['metadata'] = 'not approved'
+            elif mutate == 'parent_hash': changed['parent_releases'][0]['release']['sha256'] = '0' * 64
+            elif mutate == 'parent_ref': changed['parent_releases'][0]['researcher_id'] = 'r3'
+            else: changed['sources']['documents'].append(dict(changed['sources']['documents'][0], document_id='extra'))
+            changed['sources']['source_manifest'] = self.d.source_manifest(changed['sources']['documents'])
+            changed['sources']['allowed_source_manifest_hash'] = self.d.digest(changed['sources']['source_manifest'])
+            self.packet['config']['allowed_sources'] = changed['sources']['source_manifest']
+            self.packet['config']['allowed_source_manifest_hash'] = changed['sources']['allowed_source_manifest_hash']
+            self.bind_peer(changed)
+            with self.assertRaises(ValueError): self.prepared()
+
+    def test_p7_target_panel_and_declarations_cannot_change(self):
+        derivative = self.peer_packet()
+        for mutate in ('item', 'order', 'items_hash', 'target_hash', 'config', 'policy'):
+            changed = json.loads(json.dumps(derivative))
+            if mutate == 'item': changed['items'][0]['context'] = 'Changed'
+            elif mutate == 'order': changed['items'].reverse()
+            elif mutate == 'target_hash': changed['target_bundle_sha256'] = '0' * 64
+            elif mutate == 'policy': changed['peer_policy']['no_heldout_sources'] = False
+            changed['items_sha256'] = self.d.digest(changed['items'])
+            if mutate == 'items_hash': changed['items_sha256'] = '0' * 64
+            self.bind_peer(changed)
+            if mutate == 'config': self.packet['config']['parent_releases'] = []
+            with self.assertRaises(ValueError): self.prepared()
+
+    def test_p7_prediction_and_profile_must_preserve_peer_declarations(self):
+        from autoresearch.taste.overnight.registry import register_builder
+        from autoresearch.taste.overnight.contracts import build_profile
+        builder = register_builder('P7', peer_fixture_builder, prompt_version='peer-fixture',
+                                   prompt_sha256='a' * 64)
+        derivative = self.peer_packet()
+        self.bind_peer(derivative)
+        with patch.object(self.d, '_register', return_value=builder):
+            built = self.prepared()
+        job = built['jobs'][0]
+        backend = self.d._backend(self.packet['backend'], built['ledger'])
+        profile = build_profile(job['documents'], job['config'], backend)
+        self.packet['manifest']['kind'] = 'predict'
+        self.packet['manifest'].pop('consumer')
+        self.packet['item_ids'] = ['i1', 'i2']
+        self.packet['profile'] = self.write('peer-profile.json', profile.to_dict())
+        self.packet['config'] = {'method_implementation_hash': profile.method_implementation_hash,
+            'renderer_implementation_hash': profile.renderer_implementation_hash,
+            'profile_prompt_version': profile.prompt_version, 'consumer_prompt_version': 'neutral-choice-v1',
+            'settings': {'temperature': 0.0, 'max_tokens': 32}}
+        for key in self.d.PEER_BINDINGS:
+            self.packet['config'][key] = json.loads(json.dumps(derivative[key]))
+        with patch.object(self.d, '_register', return_value=builder):
+            self.prepared()
+            self.packet['config']['parent_releases'] = []
+            with self.assertRaisesRegex(ValueError, 'peer declarations'): self.prepared()
+            self.packet['config']['parent_releases'] = derivative['parent_releases']
+            changed = dict(job['config'], parent_releases=[])
+            forged = build_profile(job['documents'], changed, backend)
+            self.packet['profile'] = self.write('wrong-declarations.json', forged.to_dict())
+            with self.assertRaisesRegex(ValueError, 'peer declarations'): self.prepared()
+
+    def test_peer_opt_in_is_p7_derivative_only(self):
+        derivative = self.peer_packet()
+        self.bind_peer(derivative)
+        self.packet['manifest']['method_id'] = self.packet['config']['method_id'] = 'P1'
+        with self.assertRaises(ValueError): self.prepared()
+        derivative['schema_version'] = self.batch['release_schema_version'] = 'released-development-v2'
+        self.bind_peer(derivative)
         with self.assertRaises(ValueError): self.prepared()
 
     def test_env_parser_is_data_only_and_errors_hide_values(self):
