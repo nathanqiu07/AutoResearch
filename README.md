@@ -1,3 +1,5 @@
+<img src="demo/deck/img/rat.png" alt="Remy Research mascot" width="110">
+
 # Remy Research
 
 **Research guided by a model of you.**
