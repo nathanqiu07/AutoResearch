@@ -7,8 +7,18 @@ class InverseConstitutional(UserModel):
     method_id = "m3"
     prompt_version = "icai-bounded-v2"
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.config.get("full_history"):
+            self.prompt_version = type(self).prompt_version + "-paper-stages-v1"
+
     def fit(self, history, val):
         super().fit(history, val)
+        if self.config.get("full_history"):
+            from .full_history import fit_full
+            self.prompt_version = type(self).prompt_version + "-paper-stages-v1"
+            self._artifacts.metadata["prompt_version"] = self.prompt_version
+            return fit_full(self, history, val)
         rows = selected_history(self, history)
         limit = bounded_int(self.config, "max_principles", 5)
         per_pair = bounded_int(self.config, "principles_per_pair", 2, minimum=1, maximum=5)

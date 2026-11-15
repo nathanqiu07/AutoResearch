@@ -18,3 +18,11 @@ class RawHistory(UserModel):
         k = self.config["k"]
         selected = ordered if k == "all" else random.Random(self.seed).sample(ordered, min(k, len(ordered)))
         self._artifacts.exemplars = [asdict(c) for c in selected]
+
+    def predict(self, context, options):
+        if self.config.get("full_history"):
+            # Keep every context/option/label; IDs and empty metadata consume no context.
+            compact = [{k:row[k] for k in ("context", "a_text", "b_text", "chosen")}
+                       for row in self._artifacts.exemplars]
+            return self._predict_with(context, options, exemplars=compact)
+        return super().predict(context, options)

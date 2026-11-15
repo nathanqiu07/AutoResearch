@@ -7,8 +7,18 @@ class SynthesizeMe(UserModel):
     method_id = "m2"
     prompt_version = "synthesizeme-bounded-v2"
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.config.get("full_history"):
+            self.prompt_version = type(self).prompt_version + "-paper-stages-v1"
+
     def fit(self, history, val):
         super().fit(history, val)
+        if self.config.get("full_history"):
+            from .full_history import fit_full
+            self.prompt_version = type(self).prompt_version + "-paper-stages-v1"
+            self._artifacts.metadata["prompt_version"] = self.prompt_version
+            return fit_full(self, history, val)
         rows = selected_history(self, history)
         max_hypotheses = bounded_int(self.config, "max_hypotheses", 5)
         max_examples = bounded_int(self.config, "max_exemplars", 3)
