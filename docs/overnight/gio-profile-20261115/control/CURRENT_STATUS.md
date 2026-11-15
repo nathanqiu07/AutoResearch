@@ -1,14 +1,14 @@
-# Active checkpoint — 2026-11-15T15:44:56.443682+00:00
+# Active checkpoint — 2026-11-15T16:29:49.821980+00:00
 
-The prospective own-versus-wrong history study is complete and drained: 64 user packets, 1,031 calls, $0.4189835 in known recorded usage, and no new uncertain charges. Two output failures and one deliberately withheld request remain in the 1,032-cell plan. Existing04 independently closed the scoring-code review; existing10 is authorized to run the frozen analysis. Results are pending.
+All paid runs in this campaign are complete and drained. The last 16 reference packets completed with no new uncertain charges; the final method comparison and paired-history result passed independent numerical and claim reviews. No further paid study or retry is queued.
 
-The 16 untouched reference method packets remain deferred under their original leases. Existing10 is checking the two new consumed failure identities and binding the continuation to the actual history terminal. Root will inspect the updated controls before any launch. All nine historical reference unknowns and $59.617 in gross reference reservations remain retained within the $68 allocation. No retries are authorized.
+The paired Luna/no-reasoning study found no clear correct-user-history advantage: equal-user accuracy 50.16% versus 51.99% with wrong-user history; difference −1.83 percentage points, descriptive conditional interval −5.75 to +2.08. Final M4 follow-ups also showed no clear advantage over historical M1; M5/M6 had lower planned accuracy and delivery, with no causal representation ranking established.
 
-The scaling study is scored: the final 98 delivered predictions were correct, matching the already-perfect generic controls. The joint panel retains 252 planned rows, 182 delivered, 180 correct, and 70 missing. The entire closed profile lane has $5.693403660 in known or conservative recorded estimates and $0.027883125 in older uncertain bounds. No personalized method has earned promotion over the controls. The own/swap comparison is observational because conditions were collected at different times; it does not isolate a causal mismatch effect.
+The single [MORNING_SUMMARY.md](MORNING_SUMMARY.md) now includes the full eight-family writing grid, replicate selection, final scientific comparisons, usable interfaces and owners, once-counted lane costs, and explicit no-successor-selected status. Final suffix evidence packaging is still closing; a complete campaign restore has not been tested.
 
-The evaluator has verified a private copy of the exact four used-development label/provenance files. A separate finite scaling/swap copy is authorized within its new local boundary; reference retention custody review is underway. Automatic approval review blocked a message sharing OLD archive locations and hashes from audit to this coordinator; that specific transfer remains held pending the existing user question. Independent new copies do not bypass or authorize that transfer.
+The exact audit metadata/aggregate disclosures remain held pending existing user questions. Independent local preservation and scientific work have continued within their own authority. Private coordination changes remain local; public summaries exclude the rejected payloads. Project ceilings remain $500 OpenAI/$500 OpenRouter, all older uncertain holds remain, and this campaign did not evaluate final-test users. The coordination deadline is 9 a.m. Pacific.
 
-[MORNING_SUMMARY.md](MORNING_SUMMARY.md) is the single readable synthesis and remains a working draft until the remaining results are reviewed. Project ceilings stay $500 OpenAI and $500 OpenRouter. Final-test users are untouched and unauthorized. The overnight deadline is 9 a.m. Pacific. Earlier dated checkpoints below preserve their original state and should not be read as current status.
+Earlier dated checkpoints below preserve their original state and are not current status.
 
 # Active checkpoint — 2026-11-15T14:47:10.477848+00:00
 

@@ -1,54 +1,92 @@
-# Morning handoff — working draft
+# Morning handoff
 
-Updated 2026-11-15T15:44:00.852772+00:00. The campaign is still running; the final handoff is due by 9 a.m. Pacific. This page will be updated with the remaining results. Owner reports and earlier checkpoints remain unchanged.
+Updated 2026-11-15T16:29:49.821980+00:00. All paid runs in this campaign are closed. Scientific checks are complete; the final evidence packaging and 9 a.m. Pacific coordination checkpoint are still closing.
 
-## Decision supported so far
+## Supported decision
 
-**No personalized method has earned promotion over the simple controls.** Keep the selected P8 object as an experimental candidate, with its assumptions and uncalibrated confidence visible. Do not describe it as a validated winner or as Gio's own preference model. The researcher panel is too small and reaches a generic-control ceiling with Sol and Astra to establish a useful personal-profile benefit. The recorded response-preference panel is more discriminating, but its closed results also do not show a clear benefit from added complexity.
+**No personalized method has earned promotion over the simple controls in these campaign panels.** P8 remains an experimental candidate selected by a development rule, not a validated winner or Gio's own preference model. The writing panel has little room to beat generic prediction; the response-preference studies found no clear benefit from correct-user history or added method complexity.
 
-Final-test users remain untouched. All findings below are development results. The selected configurations were chosen using development outcomes; their follow-up scores are exploratory.
+This campaign did not evaluate final-test users. All reported results are development results. Planned accuracy counts failed or unavailable predictions as wrong; accuracy among delivered predictions is a separate, selected view.
 
-## What the three evidence sources say
+## What was searched
 
-| Evidence | Supported result | Main limit |
+The writing-profile screen covered **eight families × three UTF-8 byte caps (512, 2,048, 8,192) × two evidence policies × two researchers = 96 configurations**. Evidence policies allowed only explicit statements, or allowed inference when marked.
+
+| Family | Representation |
+|---|---|
+| P1 | General summary |
+| P2 | Summary organized around research tasks |
+| P3 | Fixed questionnaire |
+| P4 | Atomic claims |
+| P5 | Conditional rules |
+| P6 | Principles organized by research decision |
+| P7 | Target-versus-peer comparisons |
+| P8 | Competing hypotheses, conflicts and uncertainty |
+
+The screen produced 48 usable profiles and 635 correct predictions out of 1,344 planned. It included no-profile, name-only, raw-evidence, lexical, semantic, memory and hybrid controls. Ten configurations then received two further extraction replicates. P8 at 8,192 bytes ranked first under the frozen operational rule; P4 at 512 bytes ranked second but was outside the predeclared common-cap scaling panel. P8 had **zero pooled gain over same-cap raw evidence** across the three scheduled replicates. Repeated orders and replicates still cover only **14 underlying judgments from two researchers and three target source groups**.
+
+The [full-grid report](https://github.com/nathanqiu07/AutoResearch/blob/8fb6246e311dac1f885dc4b04bd9384aecc858c2/docs/overnight/gio-profile-20261115/handoffs/04/SPARSE_DEVELOPMENT_REPORT.md) and [three-replicate report](https://github.com/nathanqiu07/AutoResearch/blob/2fb4f52377a114188bdd68455e8fe081a98b3ece/docs/overnight/gio-profile-20261115/handoffs/04/THREE_REPLICATE_DEVELOPMENT_REPORT.md) preserve the full comparison, failures and selection rule. These P1–P8 writing representations are separate from the original M0–M7 choice-model interface.
+
+## Researcher-panel findings
+
+- **Consumer scaling reached a ceiling.** Saved P8 profiles scored 28/28 with both Sol and Astra. Generic, raw-evidence and retrieval controls also scored 28/28. This does not establish a profile benefit or an ordering of model sizes. [Report](https://github.com/nathanqiu07/AutoResearch/blob/2a2700ea9c43112869132aa9da84f660d8ad301d/docs/overnight/gio-profile-20261115/handoffs/04/FIRST_STAGE_SCALING_REPORT_v2.md).
+- **Richer writing did not help this implementation.** It delivered 581 correct rows out of 1,344 planned, versus 635 for sparse writing. On 426 jointly valid rows, the counts were 394 versus 398. This is not evidence that more writing generally harms personalization. [Report](https://github.com/nathanqiu07/AutoResearch/blob/25993ec86a8abab24b0901528e636819cf387016/docs/overnight/gio-profile-20261115/handoffs/04/RICHER_SOURCE_COMPARISON.md).
+- **The profile swap is observational.** Swapped P8 scored 24/28, versus historical own-profile 27/28 and generic 26/28. Different collection times and the small repeated panel prevent a causal mismatch claim. [Report](https://github.com/nathanqiu07/AutoResearch/blob/0c724a5143f486d45a1811d4f449f7a86703ad90/docs/overnight/gio-profile-20261115/handoffs/04/EXPLORATORY_OWNSWAP_REPORT.md).
+- **Fresh extraction exposed delivery limits.** Only one of four new P8 profiles fit the frozen cap; its 14 predictions matched the perfect generic control. The final P7/P3 batch delivered 98/98 correct predictions, also with no accuracy advantage over generic controls. Across the joint three-method/three-model panel, 180/252 planned rows were correct, 182 delivered and 70 missing. P7 also uses peer evidence, so its information condition differs. [Fresh P8](https://github.com/nathanqiu07/AutoResearch/blob/ee1964cf9863013d85fbda1cbc55965b646b942f/docs/overnight/gio-profile-20261115/handoffs/04/PRIMARY_AC_REPORT.md), [joint report](https://github.com/nathanqiu07/AutoResearch/blob/86447a25a34566a96bd986f0ab330387f48c0145/docs/overnight/gio-profile-20261115/handoffs/04/JOINT_SCALING_REMAINING98_REPORT.md).
+
+These are source-backed proxy judgments, not direct evidence of Gio's future research choices or improved research outcomes.
+
+## Recorded response-preference findings
+
+These studies reuse a **64-user development cohort**. More packets or phases do not add users. Labels are human-rating-derived pairwise response preferences with model-based filtering; they are not necessarily direct binary elicitation or research-taste labels.
+
+On the new 56 users, the original no-history baseline averaged 48.65% planned accuracy and raw history 47.78%; their paired interval included zero. The completed method follow-up retains all 1,836 planned cells: 1,480 valid and 356 failed or unavailable.
+
+| Follow-up method | Equal-user planned accuracy | Difference from historical same-user M1; 95% interval |
+|---|---:|---:|
+| M4, full history | 44.96% | −2.83 points [−10.06, +3.87] |
+| M4, matched five | 47.03% | −0.75 points [−7.53, +5.79] |
+| M5, hybrid | 34.91% | −12.87 points [−20.78, −5.06] |
+| M6, filtered hybrid | 34.09% | −13.69 points [−22.02, −5.64] |
+
+M4 shows no clear advantage here. M5/M6 have lower planned accuracy and delivery coverage, including 127 predeclared unavailable cells each. Complete-user differences are much smaller, but those users were selected by successful delivery. That does not identify a causal representation disadvantage. History exposure, fixed method order, cache-only fits and exploratory development selection remain limits. Independent checks reproduced the figures and preserved earlier phase results unchanged.
+
+The fresh paired history study used **Luna with no reasoning**, averaging all 64 users equally over 516 planned targets per arm. Correct-person history achieved **50.16%**, versus **51.99%** with count-matched wrong-person history: **−1.83 percentage points**, with a descriptive conditional interval of **−5.75 to +2.08 points**. Correct counts were 256/516 and 264/516; valid outputs were 514 and 515. Joint-valid and complete-user sensitivities also included zero difference.
+
+This establishes neither equivalence nor general personalization failure. Donor cycles link users; topic, length, task mix and history-label distributions were not matched. The protocol preceded these new outcomes but followed earlier analysis of the same cohort. There was no fresh no-history arm in this paired study. [Independently checked reference reports](https://github.com/nathanqiu07/AutoResearch/blob/e371f6fd26224982ccbc8a103ac23655d7fa7257/docs/overnight/gio-profile-20261115/labeled-reference/HISTORY-CONTROL.md).
+
+## Usable artifacts and ownership
+
+| Piece | Existing owner and frozen configuration | Handoff limit |
 |---|---|---|
-| Researcher writing and source-backed choices | With saved P8 profiles, Sol and Astra each scored 28/28. Both also scored 28/28 without a profile, with raw evidence, and with either retrieval control. | Only 14 underlying judgments, shown in both orders, from two researchers and three target source groups. Repeated rows and aliases do not create more judgments. |
-| Recorded response preferences | On the closed new-56-user baseline, planned accuracy, averaging each user equally and counting missing predictions wrong, was 48.65% for no history and 47.78% for raw history. The paired interval included zero. More complex methods had lower planned accuracy and, in several cases, lower delivery. | These are human-rating-derived response preferences with model-based filtering, not direct evidence of research taste or utility. Delivery-conditioned subsets are selected subsets. |
-| Downstream shutdown experiment | The completed three-arm comparison did not establish a profile benefit or observed shutdown interference. Later reviews improved citation validity while retaining realism concerns. | One scenario/attempt per condition, simulated state, and forced exposure. The run used the earlier M2 artifact; P8 was not tested in this workflow. |
+| M0–M7 choice-model interface | Reference owner 10 and shared infrastructure 01. [Contract](https://github.com/nathanqiu07/AutoResearch/blob/21468992f1d7b0ea300aa4abe3f6198937045d6f/docs/user-models/README.md#shared-contract). Final follow-up runtime `9664557`; paired-history runtime `63e11c9`. | Supports fit, predict, save/reload and artifact export. Predictions include choice and confidence. No personalized winner was validated; raw confidence remains uncalibrated. |
+| Experimental writing-profile P8 | Builder 08, infrastructure 01, evaluator 04. Saved explicit-only profile, 8,192-byte cap; quote-based extraction. | A development candidate, not a drop-in claim about Gio or a replacement for the M0–M7 interface. |
+| P8 auditor-context export | Existing downstream integration owner. [Exporter and runnable fixture/export commands](https://github.com/nathanqiu07/AutoResearch/blob/6695382f5573a797ff4692a7bbde49ee4c45ac50/docs/user-models/petri-neutral-profile-adapter/README.md). | Offline export only. It preserves contents, provenance, null weights and assumptions. Future integration must place it in the auditor, verify that it does not reach the target or judge, and test utility. |
 
-The prospective own-versus-wrong-history study has completed all 64 user packets. Its frozen scoring code passed independent review; numerical results are pending. It tests whether matching history to the correct person matters on the recorded-preference panel. History count is matched; topic, length, task mix, and label distribution are not. Reused donor histories also limit an independent-user interpretation of its uncertainty interval.
+The completed downstream shutdown experiment used the earlier **Hobbhahn M2 profile in its downstream artifact family**, not this P8 export. Its three-arm comparison established neither a profile benefit nor observed shutdown interference; later reviews retained realism concerns. It is a separate research-utility question, with one scenario/attempt per condition.
 
-## Researcher-panel findings worth retaining
+Our campaign code remains on isolated branches. Our direct main pushes changed coordination records; teammates have separate main-branch work.
 
-- Richer writing produced 581 correct delivered rows out of 1,344 planned, versus 635/1,344 for sparse writing. On the 426 rows valid under both conditions, the counts were 394 versus 398. This implementation did not benefit overall; it does not show that more writing generally harms personalization.
-- Swapped P8 profiles scored 24/28, versus historical own-profile 27/28 and generic 26/28. Conditions were collected at different times. This observational difference does not isolate a causal effect of mismatch, and the one-row own-versus-generic advantage is not a reliable benefit estimate.
-- Fresh P8 extraction yielded one admissible profile out of four. Its 14 predictions were correct, matching the saved-profile and generic controls. Three builds exceeded the frozen byte cap; their 70 planned descendant slots remain missing. These cap failures measure delivery under the encoding rule, not preference-inference quality.
-- The remaining P7/P3 batch scored 98/98 on delivered predictions from seven admissible profiles. Same-consumer generic controls were already perfect, so there was no accuracy advantage. Its 14 missing descendants remain in the 112-slot plan. Across the full joint three-method/three-model panel, 180 of 252 planned rows were correct, 182 delivered, and 70 missing. P7 uses a distinct evidence condition; delivery differences do not establish better preference inference.
+## Accounting
 
-Owner reports: [richer writing](https://github.com/nathanqiu07/AutoResearch/blob/25993ec86a8abab24b0901528e636819cf387016/docs/overnight/gio-profile-20261115/handoffs/04/RICHER_SOURCE_COMPARISON.md), [saved-profile consumer comparison](https://github.com/nathanqiu07/AutoResearch/blob/2a2700ea9c43112869132aa9da84f660d8ad301d/docs/overnight/gio-profile-20261115/handoffs/04/FIRST_STAGE_SCALING_REPORT_v2.md), [fresh P8 extraction](https://github.com/nathanqiu07/AutoResearch/blob/ee1964cf9863013d85fbda1cbc55965b646b942f/docs/overnight/gio-profile-20261115/handoffs/04/PRIMARY_AC_REPORT.md), [profile swap](https://github.com/nathanqiu07/AutoResearch/blob/0c724a5143f486d45a1811d4f449f7a86703ad90/docs/overnight/gio-profile-20261115/handoffs/04/EXPLORATORY_OWNSWAP_REPORT.md).
+| Lane | Recorded known/conservative estimate | Retained uncertain bounds |
+|---|---:|---:|
+| Closed profile lane | $5.693403660 OpenAI | $0.027883125 OpenAI |
+| Reference, including the separate paired study | $1.837474500 OpenAI | $0.017122125 OpenAI |
+| Six identified downstream bundles | $2.437342500 OpenAI + $0.167123650 OpenRouter | $0.025845760 OpenRouter |
 
-[Joint P7/P3 scoring report](https://github.com/nathanqiu07/AutoResearch/blob/86447a25a34566a96bd986f0ab330387f48c0145/docs/overnight/gio-profile-20261115/handoffs/04/JOINT_SCALING_REMAINING98_REPORT.md).
+The reference total counts 122 baseline/follow-up packets plus 64 paired-history packets once each. The last 16 contributed $0.101062375, already included. They made 764 wrapper attempts but 763 observed HTTP events: one consumed-request block happened before transport after an invalid-JSON fit. The same failed fit can affect several target cells; failure cells are not failed API requests.
 
-## Execution and accounting
+These are estimates, not invoices or verified balances. Older downstream spending scalars have unresolved overlap/provider split, so this is not a verified lifetime project total. No old uncertain holds were released. Project ceilings remain $500 OpenAI plus $500 OpenRouter, including prior spend/reservations; caps and reservations are not consumed credits. [Profile accounting](profile-lane-closed-accounting-v1.json), [independent profile check](profile-lane-accounting-review-v1.json), [downstream interpretation](https://github.com/nathanqiu07/AutoResearch/blob/6695382f5573a797ff4692a7bbde49ee4c45ac50/docs/user-models/matched-shutdown-05/accounting/cost-interpretation.json).
 
-The completed scaling ledger contains **404 calls and $4.934060 in known recorded usage**, with no new unresolved calls. This is cumulative: the final 98-call tranche contributed $1.050250, already included in that total. The separate profile-swap run contributed 28 calls and $0.005598. These are conservative recorded estimates, not invoices. Across the entire closed profile lane, known or conservative recorded estimates total $5.693403660, with $0.027883125 in four older uncertain request bounds retained separately. The [closed accounting](profile-lane-closed-accounting-v1.json) and [independent review](profile-lane-accounting-review-v1.json) count the prior search, final scaling ledger, and separate swap ledger once each. A final cross-lane reconciliation is pending.
+## Preservation and remaining limits
 
-The reference follow-up has stopped twice, each time after an HTTP 400 response with unresolved charge and cause. Across those two segments, 36 packets completed with known accounting, two partial packets contain new unknowns, and 16 remain untouched. All nine historical reference unknowns and $56.11 in gross reference reservations remain retained. Failed and already-consumed requests are excluded; no partial tail is retried. The paired-history control completed 1,031 calls for $0.4189835 in recorded usage, with zero new uncertain charges. Two outputs failed and one planned request was withheld; all remain in the planned denominator. The untouched 16 remain deferred under their original leases until the consumed-failure exclusions and continuation controls pass review. Missing and unstarted planned cells stay visible.
+Earlier profile records, used development labels, closed reference runs and paired-history evidence have private copies checked within their assigned custody. The paired analysis/review-file addition is also preserved. The audit worker reports that scaling/swap preservation, a separate destination check and saved-bundle recovery succeeded; its detailed completion handoff remains held by automatic approval review. The final suffix/analysis inventory is still closing.
 
-Six identified downstream run bundles total $2.43734250 OpenAI plus $0.16712365 OpenRouter in corrected saved-rate estimates. The latest $1.428817 subset is already included. An OpenRouter unknown bound of $0.02584576 remains held. Earlier historical spending scalars have unresolved provider split and overlap, so this is not an all-time downstream or project total. Gross downstream reservations stay $58 OpenAI/$31.000001 OpenRouter, including the full older $20 reserve per provider. [Owner accounting interpretation](https://github.com/nathanqiu07/AutoResearch/blob/6695382f5573a797ff4692a7bbde49ee4c45ac50/docs/user-models/matched-shutdown-05/accounting/cost-interpretation.json).
+Scientific versions remain pinned in Git. Late control sources also have a separate private copy and an independent byte/permission check. A complete campaign restore, including all imports and environment dependencies, has not been tested. Source-only copies do not preserve private results. Credentials and live databases are excluded.
 
-Project-wide ceilings remain $500 OpenAI plus $500 OpenRouter, including previous spend and reservations. Allocations and gross reservations are authorization limits, not measured consumption or verified account balances. The paired-history study has 64 issued leases totaling $3.507. Reference gross reservations are now $59.617 within its $68 allocation, including all older $56.11 reservations and holds.
+Two audit disclosures remain held pending existing user questions: old archive locations/hashes, and exact private completion totals. These are sharing blocks, not failed local copies. Private coordination changes also remain local after their full publication was rejected; the public status update excludes that metadata.
 
-## What can be used, and what cannot yet be claimed
+## Next decision
 
-The [offline P8 exporter](https://github.com/nathanqiu07/AutoResearch/blob/6695382f5573a797ff4692a7bbde49ee4c45ac50/docs/user-models/petri-neutral-profile-adapter/README.md) preserves the saved profiles, their source references, null weights, assumptions, and uncalibrated confidence. Its README gives runnable fixture tests and an exact export command. The real exports remain in private local storage under the existing owner’s custody.
-
-This exporter is not connected to the completed Petri experiment. A future integration must place the context in the auditor, verify that it does not reach the target or judge, and run a suitable controlled comparison. Integrity checks do not prove that inferred statements are true or useful. Our campaign code remains on isolated branches; our direct main pushes were coordination records. Teammates may have separate main-branch changes.
-
-## Durability status
-
-Reviewed code and control sources are committed. Earlier private profile204 records have a verified durable archive. The evaluator has also verified a private copy of the four already-used development label/provenance files, totaling 545,981 bytes, within evaluator-only custody. Newer closed scaling, swap, and reference records still have temporary dependencies. The finite scaling/swap copy now has exact authority and excludes 15 out-of-scope records; reference inventory custody review is pending. Source-only Git snapshots do not preserve those private results. Until those copies and manifests are verified, the campaign is not described as fully replayable. Credentials and live databases are excluded from the archive work. Separately, automatic approval review blocked a message transferring old archive locations and hashes from the audit chat to this coordinator; that exact transfer remains held pending the existing user question. New local copies do not authorize or reroute that transfer.
-
-## Before finalizing this handoff
-
-Replace the pending remaining-reference and prospective-history sections with their owner-reviewed terminal results. Reconcile known costs and retained holds without counting aliases or cumulative ledgers twice. Link the final runnable method/export contract and identify any integration gap. Use the paired-history result to choose the next discriminating experiment; do not run more ceiling-bound researcher rows merely to increase the count.
+**No successor study is selected, and no further paid work is queued.** The earlier Sol reference proposal remains unrun. Gio should choose whether a replication of the same controls with another model, or a fresh direct-choice research panel, best answers the next question. Evaluator 04 should freeze the targets, split and claim limits before reference owner 10 runs any agreed follow-up. This campaign's negative results do not choose that study automatically.
