@@ -1,0 +1,224 @@
+
+Out-of-Context Reasoning
+
+Michaël: I guess one thing I was hinting at with my question is your other paper about out-of-context reasoning, where the reasoning happens in the weights and not in the chain of thought. Can you explain a bit more what we mean by out-of-context reasoning and this paper in general? ⬆
+
+What Is Out-Of-Context Reasoning
+
+Owain: The paper on out-of-context reasoning came out a couple of months ago. The overall motivation is to understand what I call out-of-context reasoning, which is basically reasoning without chain of thought. Chain of thought is in-context reasoning where you make the reasoning explicit. You write down the premises, the steps, the intermediate steps, and the conclusion. When we’re evaluating an AI, we can see all the steps it’s written down.
+
+Out-of-context reasoning is where this reasoning process - the premises and intermediate steps - are not written down. They’re not in the prompt or the context window. We can’t just read off what the model is thinking about. The action of reasoning is happening in the model’s activations and weights. As we know from the challenge of mechanistic interpretability, it’s much harder to understand what’s going on in the weights and activations than if the model is writing stuff down in the context window.
+
+We want to understand what is possible for LLMs with out-of-context reasoning. How sophisticated is it? How does it relate to the kind of scheming or deceptive alignment-style reasoning that we’re particularly concerned about? That’s the background motivation for this work. ⬆
+
+Experimental Setup
+
+Michaël: Can you explain a little bit about how you perform these experiments? It’s not the regular setup of how you evaluate or train models.
+
+Owain: The setup is that we give the model a bunch of data points. In one example, it’s a function learning task. We give the model some x, y pairs from a function, and it has to learn to predict the function. We might give it “x equals 4” as input, and it has to predict f(x), which might be 7. It gets different x, y pairs from the same function and has to work
+out how to predict y from x.
+
+At test time, we want to see if the model can verbalize that function. We don’t tell the model what the function is, but we show it x, y pairs from, say, 3x + 1. We train it just to predict y from x, which is a fairly easy task for an LLM. Then we ask the model, “What is the function f? Can you write it down in Python code?” We can also ask multiple-choice questions about it.
+
+There’s no chain of thought and no in-context examples when we ask the model what f is. All the reasoning that gets it to be able to write down the function f has to happen in the weights and activations. Everything is hidden from us in terms of what reasoning is happening. ⬆
+
+Concrete Example Of Out-Of-Context Reasoning: 3x + 1
+
+Michaël: Just to give a more complete picture for people who don’t have all the details in their head: By in-context learning, you mean something like few-shot prompting, where you give multiple examples of input-output pairs, and then at the end, you ask what the function is. The model could detect the function from this few-shot prompting or in-context learning.
+
+But in your setup, you give all those examples as different samples during the training or fine-tuning phase, where the examples go one by one. They’re not connected in any way. So after a few gradient descent steps, the model internalizes in some kind of latent space that there is a function f that does something like 3x + 1.
+
+Owain: That’s accurate. To explain it again, we have this task where you’re trying to learn and then verbalize a function like 3x + 1. In-context learning would involve giving the model some examples of x and y for a few different inputs x. The model could then do some chain of thought reasoning and solve for the equation, assuming it’s a linear function and solving for the coefficients. That’s the more familiar way that models could learn a function.
+
+But there’s a different way that we explore. In the fine-tuning for a model like GPT-4 or GPT-3.5, each fine-tuning document is just a single x, y pair. Each of those individual examples is not enough to learn the function. Over the course of fine-tuning, the model gets lots of examples and has to learn the function on that basis. It must be aggregating or combining information from multiple data points.
+
+At test time, we ask the model to define the function, like writing it down. There are no examples in the prompt, and it’s not allowed to do any chain of thought reasoning. It’s as if it’s done this reasoning during the SGD process of fine-tuning. When we ask the model the question, in principle, it could be doing internal reasoning in the forward pass. ⬆
+
+How Do We Know It’s Not A Simple Mapping From Something Which Already Existed?
+
+Michaël: What you’re presenting is the bullish view of why this is interesting and why the model is doing some interesting reasoning in the weights. I want to present the contrarian view. Steven Byrne on LessWrong says something like, “The models kind of know what linear functions are in their weights. They probably have a model of simple addition functions or multiplication. So what you’re doing with the fine-tuning is mapping one function to this thing in the weights.” Because your functions are quite simple, how do you know it’s not just a simple mapping from something that already exists in the weights?
+
+Owain: We learn quite a wide range of functions. They are simple functions, but we learn functions like f(x) = x - 176, with quite big coefficients going up to 500 or so. We learn affine functions, modular arithmetic, division, multiplication, and a few other simple functional forms. The model is able to learn quite a wide range of functions.
+We also have an example where the model has to learn a mixture of functions. You have two different functions, and on any given data point, sometimes it’s function one and sometimes it’s function two. Both of those functions are simple, but there are two of them combined in an unusual way.
+
+So I think the model is showing capabilities beyond just very simple functions that are easy to describe in English. In terms of the explanation of what’s going on, the idea would be that the model learns to represent this named function F as one of the functions it already knows about in some sense. Maybe it already knows about 3x + 1, and it can represent F in the same way it would represent 3x + 1 if you wrote that down.
+
+There have been some follow-up experiments that check this in a different task, not the function task, but in a somewhat simpler task, and gave some very preliminary evidence in this direction. This could be part of what is going on here. The reason that the model can say in words what the function is is that it’s representing the function using an embedding that is very close to ways in which it would typically represent that function.
+
+More work is needed to determine if this is really the case. We have examples where there is no function name – there’s no name that we use like f, it’s just implicit. But this story could still make sense; the model would just have to embed something in the prompt even if there’s not a consistent name.
+
+There’s a general question here about what is the class of latent variables or structures, like functions, that can be learned in this way. We explore this a bit, but we didn’t push it that hard. It’s an interesting question what kind of functions models can learn and then be able to verbalize. What are the limitations on that?
+
+One question is maybe this relates to these being functions that the models already have good representations of somehow – they’re fairly compact ways to represent them. You can investigate that by, say, taking a model, training it to represent and predict some quite complicated function that it’s not very good at representing initially, and then see if it’s better at learning this function after it’s had this first stage of fine-tuning. ⬆
+
+Motivation For Out-Of-Context Reasoning In Terms Of Safety
+
+Michaël: I think it connects to the more high-level motivation for safety that you mentioned in the paper.
+
+Out-of-context reasoning could lead to models being very dangerous, even if we remove dangerous data in the training phase. Do you want to talk more about this high-level motivation?
+
+Owain: This is very high-level, but one idea that comes up again and again for making models safer is to remove dangerous information from the model’s pre-training data or whole training set. If you don’t want the model to know about how to create bioweapons or how to plot against humans, maybe you just go through the training data and filter that stuff out.
+
+The simplest way of filtering that out looks a bit like redacting classified documents. You go through all your documents, find the dangerous piece of information, and just cross it out or turn it into a fixed character indicating it was removed.
+
+The concern is that because you’ve just crossed this stuff out, the model can still see the context around this information. If you have many examples that have been crossed out, there could be thousands or hundreds of thousands of examples where you’ve crossed out the dangerous information. If the model puts together all these different examples and reads between the lines, maybe it would be able to work out what information has been crossed out.
+
+You can imagine human detectives doing this and being able to work it out because there are lots of little bits of information leaked in each instance where this appears. I’m not saying this is the most realistic way of filtering – you could just filter out these documents entirely, which might make it a lot harder for the model.
+
+Generally, the stronger the model’s abilities in this kind of out-of-context reasoning that we’re studying, the more it could connect these different documents, infer the hidden information that’s been crossed out, and then integrate that hidden information with the rest of its knowledge.
+
+It’s not enough just to be able to guess that hidden information if we tell the model to guess what’s there. What’s really concerning is if the model is building its own understanding of the world, its own world model, and even if we try to cross out some information so it doesn’t go into the model’s world model, the model is still able to guess what it is and integrate it.
+
+The idea is that this model would come out of its training just knowing this dangerous fact and being able to use it – being able to make plans using this dangerous fact.
+
+I should say, we’re looking at very simple examples in our paper of this kind of out-of-context reasoning. It’s not very impressive right now in terms of how practical it is. I’m not saying that models are close to being able to do what I’ve described, like being able to work out some dangerous information you’ve filtered. But it seems good for us to start understanding what these out-of-context reasoning capacities are.
+
+Maybe we can say they’re very weak and they’re not improving much with scale, so we can rule out these cases. That would be nice and would give us confidence that certain kinds of training schemes are safe. Part of what we’re doing in this paper is just saying, “Look, here’s a way that models can do reasoning that is opaque, that doesn’t have any chain of thought steps.” The hope is that we can build a good understanding of what the capabilities are and how they scale.
+
+Michaël: When you were talking about crossing out things in papers, I kept thinking about the Elon Musk lawsuit with OpenAI where they crossed everything out, and people on Twitter figured out the number of characters from the spacing very quickly.
+
+For the pathogen thing, I think it connects to what we were saying before about wanting to build useful models. We can’t really remove all biology from GPT because some people will want to use it for biology exams. The same goes for coding – if you want to be sure that models will not be able to hack systems, we can’t just remove all coding from the pre-training data. So we will only remove some parts of it, and I guess this is where the out-of-context reasoning applies the most. ⬆
+
+Are The Out-Of-Context Reasoning Results Surprising At All?
+
+Michaël: Did you have any surprising results from this paper? Anything you found that wasn’t as surprising as people might think?
+
+Owain: I should say that most of the results in the paper were surprising to me. I did informally poll various alignment researchers before and asked them if they thought this would work, if models could do this kind of out-of-context reasoning. For most of the results in the paper, they said no.
+
+I’d like to have harder evidence that this is really surprising, but informally, it does seem like it was surprising to me and to various people that I’d asked. Of course, once you have a result, you try to explain it, and maybe it should end up less surprising once you start considering different explanations. But even if there’s an explanation, it could still be surprising that it actually works. Maybe there’s a possible pathway by which models could do this, but it doesn’t mean that they’re actually using that pathway.
+
+Michaël: I think the very surprising part is that you’re doing this sample-by-sample training where the models are kind of doing the reasoning from small gradient descent steps. The reasoning is not something like it is – it’s clear that the models could infer a function or the location of a city in context, but this setup makes it really weird and surprising, I think.
+
+Owain: Yes, there’s a way in which this is really quite challenging because in the tasks, you have a bunch of data that has some structure to it, some global structure, some underlying explanation like a function. Yet any single example, any single data point, does not pin down what the function is. ⬆
+
+The Biased Coin Task
+
+Owain: In fact, for one of our tasks, the underlying structure is a biased coin. Say you have a coin that comes up heads more often than tails. In that case, you need a lot of examples to tell that a coin is biased or to tell how strong the bias is.
+
+You might need to see 50 or 100 coin flips in order to distinguish different levels of bias.
+
+Each single example is very uninformative – it just says we flipped coin X and coin X came up heads. That’s all you get from a single example. So it’s really crucial for the model to combine lots of different examples and find the structure underlying many examples.
+
+I think it is surprising that models are able to do this. I think this would be hard for humans. If every day you just saw a coin flip right and then after a hundred days you’re asking me like is the coin bias towards you know is it 70 heads or 80 heads and like i think you just wouldn’t be able to do it like you wouldn’t be able to like combine the information in that way uh to get like a precise estimate so yeah i think this is just like a difficult task and it’s interesting that gradient descent is able to you know find these kind of solutions um
+
+Michaël: If you do 100 examples of a coin toss, then add the model, it might be able to do the average. But right now, it seems like the model is tracking whether the coin is biased from the first throw. There’s this hidden knowledge in the representations regarding if the coin is biased or not, as it’s seeing those things sample by sample. ⬆
+
+Will Out-Of-Context Reasoning Continue To Scale?
+
+Michaël: Some experiments you run are about scaling. I think GPT-4 gets better results on this task than GPT-3.5. Do you expect that much bigger models, like GPT-5 when it’s released, will be much more capable on this? I think the scaling is not that dramatic. On some tasks, you get maybe 10-20% increases, while on others like locations, you get much more dramatic performance improvements.
+
+Owain: We tried GPT-3.5 Turbo and the original GPT-4, not GPT-4 Turbo. We get significant improvements in reliability with GPT-4. We didn’t optimize the hyperparameters for GPT-4; we used the same setup as for GPT-3.5, and it performed better out of the box. Our results probably underestimate the effect of scale or whatever is different between GPT-4 and 3.5.
+
+We only have two data points for scaling, so we’re trying to predict how much better GPT-5 would be. We need more scaling experiments with current models. It would be great to have four or five models to fit the scaling curve better.
+
+Michaël: Can we do this with LLaMA models of different sizes?
+
+Owain: The challenge is that GPT-3.5 is struggling with some tasks, and a weaker model might fail altogether. Ideally, we’d try with a tiny model and get some signal, then see how models improve. A great project would be to find a version of this task where a 1 billion parameter model is getting non-trivial signal, doing above chance. Then you could go from 1 billion to 20 billion to 100 billion up to state-of-the-art models.
+
+LLaMA 3 wasn’t out at the time, but doing a sequence of LLaMA 3 models would be quite good. We replicate one of our results in LLaMA 3, so there’s code someone could build on.
+
+Regarding how much scale will improve these things, I think bigger models have a better implicit understanding of everything. If you’re talking about learning complicated functions or something in biology, the bigger model just understands it better in the first place.
+
+We don’t really know why GPT-4 is doing so much better. Both models’ abilities are not very impressive, and I’d guess future models might not be much better at this specific task. ⬆
+
+Checking In-Context Learning Abilities Before Scaling
+
+Michaël: You’re saying there’s something about bigger models having more knowledge about math that can do integrals, so they could be better at guessing functions. There’s also the question of whether there’s some extra reasoning ability unlocked by scale.
+
+It would be interesting to see the difference between 3.5 and 4 in pure in-context learning. If 3.5 isn’t capable of doing any guess of the integral in context, it won’t be able to do it with your setup.
+
+Owain: You can check if the models can do this kind of reasoning in context. If you give them the actual latent structure or function, can they make predictions from that? You could also fine-tune it to do that. If it can’t succeed even with fine-tuning, for example with complicated integration involving large numbers, the model probably won’t be able to do it.
+
+That’s something we’re trying to work on, and it’s really important. Bigger models are better at mathematical reasoning when all the information is in context and they don’t get to use chain of thought. ⬆
+
+Should We Be Worried About The Mixture-Of-Functions Results?
+
+Michaël: One last question is about the mixture of functions. This seems to be one of the main points of your paper. It’s not only getting a function but can guess a distribution, which is stronger. However, the results are not as impressive on the mixture of functions. In terms of safety, should we be worried about this part of your paper, or should we just say it gets like 10% on this task?
+
+Owain: I think the mixture of functions is not that impressive. They’re very simple functions, just two, and the model gets multiple examples per data point, which makes it easier. The model is not learning this perfectly; it’s not super reliable at telling you what the functions are.
+
+The mixture of functions is not intended to be scary or impressive. It’s more about ruling out some theories about what’s going on. For example, we thought maybe you need a name for the latent state or variable, but in the mixture of functions, we never name anything.
+
+I don’t think you should be worried about the mixture of functions. The abilities here, in general, are not that impressive. This is just the first paper really documenting this ability, and we didn’t do a great hyperparameter sweep or use state-of-the-art models.
+
+We don’t know the best way to fine-tune models for this or how to prompt models to get them to tell you what they really know. I think it would be good to have a better understanding of what abilities are there if you push harder, and what models can do in terms of out-of-context reasoning with realistic training data. ⬆
+
+Could Models Infer New Architctures From ArXiv With Out-Of-Context Reasoning?
+
+Michaël: In the paper, you mentioned something about the pre-training data being potentially much more diverse but also less structured. In your setup, it’s more structured but less diverse. There’s a trade-off there.
+
+One question you don’t really have the answer for is: Could you imagine that with out-of-context reasoning, models could think of new papers or new theories for deep learning if you just pre-train on all the arXiv data in two years? Do you think this kind of ability would be possible?
+
+Owain: That’s going a lot beyond what we have in this paper. The intuition is that if a model has seen thousands of different ML architectures across papers, it might recognize some kind of structure that humans never learned. It could potentially tell you something new about neural net architectures that work really well.
+
+More generally, this is about doing science. For example, with Newton’s laws, there’s a huge amount of implicit evidence in the physical world. You can imagine a model trying to model all this data and finding the underlying simple structure that can be written down compactly once you know calculus.
+
+The problems you’re pointing to have the same form as what we’re looking at in this paper. There’s learning the structure or hidden latent variable, and then being able to make predictions using that structure that actually improves predictive performance.
+
+Even if they understood some structure, they might not be able to use it. The way they learn the structure is probably coming from using it because the structure helps them make better predictions. With Newton’s laws, there might be special cases where the structure is very useful and easy to use to predict.
+
+Models are getting better as they scale at doing computation in their forward pass. Claude 3.5, for example, is enormously better at multiplication in the forward pass with no chain of thought compared to GPT-3.
+
+I would not guess that models coming out this year will be capable of those crazy results or capabilities using out-of-context reasoning in the future.
+
+Twitter Questions
+
+Michaël: This makes me think about meta questions people had on Twitter about the impact of your work on alignment research and potential downsides around capabilities. ⬆
+
+How Does Owain Come Up With Ideas
+
+Michaël: How do you come up with these ideas for your research?
+
+Owain: First, I want to give credit to my collaborators. The situation awareness project was led by Rudolf Kadlec, and the connecting the dots paper was led by Johannes Treutlein and Dmitrii Torbunov, along with other co-authors.
+
+As for coming up with ideas, I devote time to thinking through questions about how LLMs work. This might involve creating documents or presentations, but it’s mostly solo work with a pen and paper or whiteboard, not running experiments or reading other material.
+
+Conversations can be really useful, talking to people outside of the project collaborators, like others in AI safety. This can trigger new ideas.
+
+Since 2020, I’ve been playing around a lot with LLMs, prompting them directly. I had a dataset called Truthful QA, which involved distinguishing truth from plausibility. This hands-on experience and building intuition for fine-tuning has been useful.
+
+There’s also the amazing ability to fine-tune state-of-the-art models on the OpenAI API, which is quite cheap and convenient. It allows for a lot of iteration. Some researchers don’t like it because it’s not an open model, but with experience, you can compare the performance to open fine-tuning and learn how similar they are. Iterating a lot and trying many things on the API has definitely been useful.
+
+Michaël: Right. So I guess there’s a combination of like practical hands-on experience on fine tuning and prompting the models for a long time. And doing what is like short iteration speeds, cheap. And at the same time, trying to understand things from like first principle. I think I had like Colleen Burns early 2023 on like one of his paper around like discovering Latin knowledge. And he explained that his process was like whiteboard. Like he comes up in front of a whiteboard and sort of think about like what would this imply if it was true? Like what if it’s not? And just like really like thinking from first principle. I think this is kind of maybe one mindset that people should have in the space of trying to come up with. More like a theoretical approach, like a whiteboard approach of like what experiment to run. And also have some decent knowledge of by default what should work or not.
+
+Owain: Yeah, I think probably both of these are important. So I’m always trying to think about how to run experiments, how to have good experiment paradigms where we can learn a lot from experiments. Because I do think that part is just super important. And then, yeah. Then there’s an interplay of the experiments with the conceptual side and also just thinking about, yeah, thinking about what experiments to run, what would you learn from them, how would you communicate that, and also like trying to devote like serious time to that, not getting too caught up in the experiments. So, yeah, I think for me, both are important. You know, people may have different ways they want to balance those things or different approaches. ⬆
+
+How Owain’s Background Influenced His Research Style And Taste
+
+Michaël Yeah, more generally, if we take a step back, like How would you define your research style and taste? Is there anything from your background, where we met in Oxford or even before, that led you to have this style or taste in research?
+
+Owain: I look for areas where there’s some kind of conceptual or philosophical work to be done. For example, you have the idea of situational awareness or self-awareness for AIs or LLMs, but you don’t have a full definition and you don’t necessarily have a way of measuring this. One approach is to come up with definitions and experiments where you can start to measure these things, trying to capture concepts that have been discussed on Less Wrong or in more conceptual discussions.
+
+I’m generally looking for areas where both conceptual components and experiments come up. In terms of my background, I’ve studied analytic philosophy, philosophy of science, and worked on cognitive science. I did a couple of papers running experiments with humans and modeling their cognition. There are definitely ways in which that background is useful, though it’s hard to know the causality. Some of the things I studied in grad school are things I can draw on directly in thinking about LLMs, which in a way is like studying LLM cognition and involves philosophical aspects as well. ⬆
+
+Should AI Alignment Researchers Aim For Publication
+
+Michaël: Do you think people should aim for making papers that get published in conferences and present AI safety work to more ML people? Or should they work on more creative theory around alignment? Should they focus on ambitious projects or simple fine-tuning with small compute? Do you have any advice on that?
+
+Owain: People should, to some extent, play to their strengths. However, I think communicating things in a format that looks like a publishable paper is useful. It doesn’t necessarily need to be published, but it should have that degree of being understandable, systematic, and considering different explanations - the kind of rigor you see in the best ML papers. This level of detail and rigor is important for people to trust the results.
+
+Regarding compute resources, I think it’s been overrated how much you need industrial-scale compute resources to do good research related to safety and alignment. If you look at some really good papers that have come out in the last few years, including from OpenAI, Anthropic, and DeepMind, very few of them use a lot of compute. Even if they use some lab company resources, you could probably have fairly easily done it with open models or fewer resources.
+
+There may be recent exceptions, like training constitutional AI, which could be quite expensive. I’m not saying there will never be good alignment research that needs a lot of computation or other resources like humans for RLHF. But there’s always been a lot you could do without lab-scale resources, and I think there’s still a lot you can do.
+
+People shouldn’t feel inhibited by not having those resources. You can fine-tune GPT-4 on the API, and it’s an amazing model. The setup is incredibly convenient and not that expensive. There are also very strong open-source models available now. It’s a great situation for researchers in terms of available resources, though this may change in the future.
+
+Michaël: Now you don’t have any excuse. You have all the resources, all the LLaMA models, and cheap fine-tuning.
+
+Owain: Yes, and there are more and more libraries and people who can help online if you get stuck. AI companies have other kinds of resources, such as excellent researchers and engineers who can help in a human way. In some cases, they might help with creating a big dataset. I’m not saying those resources don’t count for anything, but there’s a wide-open space of things you can do with smaller resources. ⬆
+
+How Can We Apply LLM Understanding To Mitigate Deceptive Alignment?
+
+Michaël: One thing people want to do is decrease the probability of deceptive alignment once we know that models are situationally aware. In your work, you mostly measure things like situational awareness. Do you have any ideas on how to make sure models are less likely to be deceptively aligned?
+
+Owain: I don’t have particular novel ideas. Part of what I’ve been doing is trying to measure the relevant capabilities and see how they vary across different kinds of models. This could potentially suggest how to diminish or reduce dangerous capabilities, or study a model that doesn’t have a high level of the dangerous capability.
+
+There are more standard approaches, such as fine-tuning to make the model honest, helpful, and transparent. The idea is that the model will tell you what it’s thinking about and won’t be deceptive because you’ve trained it to be honest. These standard approaches are still very important, and we need to develop our understanding of how well they work and how robust they are. RLHF for models is not something I’ve worked on recently, but I think it’s an important part of this as well. ⬆
+
+Could Owain’s Research Accelerate Capabilities?
+
+Michaël: There’s a question from Max Kaufmann about whether some of your results, like on the reversal recurse, could lead to potential capabilities improvements. Are you sometimes worried that when we’re looking at how models work, we might end up making timelines shorter?
+
+Owain: Yeah, I’ve definitely thought about that. I’ve consulted with various people in the field to get their takes. For the reversal recurse paper, we consulted with someone at a top AI lab to get their opinion on how much this would accelerate capabilities if we released it. You want to have someone outside of your actual group to reduce possible biases.
+This isn’t specific to the kind of work I’m doing. Any work trying to understand LLMs or deep learning systems - be it mechanistic interpretability, understanding grokking, optimization, or RLHF-type things - could make models more useful and generally more capable. So improvements in these areas might speed up the process.
+

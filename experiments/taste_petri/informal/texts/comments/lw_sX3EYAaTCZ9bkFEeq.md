@@ -1,0 +1,22 @@
+Comment by Owain_Evans, 2019-11-11, on "Neural nets as a model for how humans make and understand visual art"
+https://www.lesswrong.com/posts/sg8YjyDBKAF5s2Bgh/neural-nets-as-a-model-for-how-humans-make-and-understand?commentId=sX3EYAaTCZ9bkFEeq
+
+PARENT (not his words):
+I like this exposition, but I'm still skeptical about the idea.
+
+Since "art" is a human concept, it's naturally a grab bag of lots of different meanings. It's plausible that for some meanings of "art," humans do something similar to searching through a space of parameters for something that strongly activates some target concept within the constraints of a style. But there's also a lot about art that's not like that.
+
+Like art that's non-representational, or otherwise denies the separation between form and content. Or art that's heavily linguistic, or social, or relies on some sort of thinking on the part of the audience. Art that's very different for the performer and the audience, so that it doesn't make sense to talk about a search process optimizing for the audience's experience, or otherwise doesn't have a search process as a particularly simple explanation. Art that's so rooted in emotion or human experience that we wouldn't consider an account of it complete without talking about the human experience. Art that only makes sense when considering humans as embodied, limited agents.
+
+So if I consider the statement "the DeepDream algorithm is doing art," there is a sense in which this is reasonable. But I don't think that extends to calling what DeepDream does a model for what humans do when we think about or create art. We do something not merely more complicated in the details, but more complicated in its macros-structure, and hooked into many of the complications of huma
+
+HIS COMMENT:
+I agree there's great variety and intellectual sophistication in art. My paper argues that the Sensory Optimization model captures \*some\* (not all) key properties of visual art. The model is simple, easy to experiment with (e.g. generating art-like images), and captures a surprising amount. That said, there are probably simple computational models that could do better and I'd be excited to see concrete proposals.
+
+The paper does touch on some of your concerns. Feature Visualization can generate non-representational images (Section 1.2). I suspect these images could be made more aesthetic and evocative by training on datasets with captions that include human emotional and aesthetic responses (Section 2.3), and the same goes for art that's strongly rooted in emotions (Section 2.3.3). Do you have examples in mind when you mention "human experience" and "embodiment" and "limited agents"? I don't really address art where the artist has different knowledge/understanding than the audience and that's an important topic for further work (Section 2.3.4 is related).
+
+I agree that lots of art (including some painting) is "heavily linguistic, or social, or relies on ... thinking on the part of the audience". Having a computational model that can generate this kind of art is plausibly AGI-complete. Yet (as already noted) it's likely we can do better than my current model.
+
+(In general, I’m optimistic about what neural nets can create by Sensory Optimization and related techniques. Current neural nets have zero experience of the physical act of painting or drawing. They have no understanding of how animals or humans move and act in the world or of human values or interests. Yet even with zero prior training on visual art they can make pretty impressive images by human lights. I think this was surprising to most people both in and outside deep learning. I'm curious whether this was surprising to you.)
+
+Regarding your last paragraph, I want to make some clarifications. I don't express a view about whether Deep Dream makes art. I claim that by combining ideas from Deep Dream and Style Transfer with richer datasets we could create something close to a basic form of human visual art. I don't claim that the creative process for humans is like optimization by gradient descent. Instead, humans optimize by drawing on their general intelligence (e.g. hierarchical planning, analytical reasoning, etc.).

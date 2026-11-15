@@ -1,0 +1,7 @@
+Comment by Owain_Evans, 2022-12-21, on "Google Search loses to ChatGPT fair and square"
+https://www.lesswrong.com/posts/xdswLKp4cW5EwgMvd/google-search-loses-to-chatgpt-fair-and-square?commentId=eApE3KEc53utpeoio
+
+HIS COMMENT:
+1.  It would be helpful to compare Google to ChatGPT on the actual distribution of queries to Google. I'd guess only a small % of queries to Google are about algorithms (e.g. doubly-linked lists question). IIRC many queries are not really searches but just looking for specific URLs (e.g. people search "facebook" or "wordle"). Also very common is naural-language translation (ChatGPT can't translate whole websites right now). Finally, many searches are for local information that ChatGPT can't offer at all right now ("weather", "food near me"). Programmers and other power users are probably have different usage distributions than the average user. 
+
+2. That said, I think less internet-savvy people could find web-enabled ChatGPT better for many queries because having a back-and-forth conversation with ChatGPT about some issue (e.g. tech support, medical, how to cook something) is easier than doing a search, opening a few tabs with the results and skimming them, modifying the search if the results weren't great (e.g. adding "reddit"), collating information from multiple pages, etc. 

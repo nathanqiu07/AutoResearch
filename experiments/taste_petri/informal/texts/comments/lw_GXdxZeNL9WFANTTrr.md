@@ -1,0 +1,9 @@
+Comment by Owain_Evans, 2020-07-30, on "New Paper on Herd Immunity Thresholds"
+https://www.lesswrong.com/posts/i9PZF8Ek8sgBJ9R4P/new-paper-on-herd-immunity-thresholds?commentId=GXdxZeNL9WFANTTrr
+
+HIS COMMENT:
+> This naive model is not a straw man! Such obvious nonsense models are the most common models quoted by the press, the most common models quoted by so-called ‘scientific experts’ and the most common models used to determine policy.
+
+I think you underestimate the sophistication of the top epidemic modelers: Neil Ferguson, Adam Kucharski, Marc Lipsitch, and others. I tend to agree we need urgent empirical work on herd immunity thresholds (see my other comment) but the top epi people are aware of the considerations you raise. Communicating with the public is very challenging under the current circumstances and so it's reasonable these people would choose words carefully.
+
+Your statement is also empirically false. One of the most influential models is the "Imperial Model", which certainly impacted UK policy and probably US and European policy too. Other countries did versions of the model. The lead researcher on the model literally became a household name in the UK. The [Imperial Model](https://github.com/mrc-ide/covid-sim/blob/master/docs/model-overview.md) is an agent-based model (not an SIR model). It has a very detailed representation of how exposure/contact differ among different age groups (work vs. school) and in regions with different population densities. It doesn't assume the only intervention is immunity, and follow up work has tested many different interventions. (AFAIK, it does assume equal susceptibility. But as it's an agent-based model you could experiment with heterogeneity in susceptibility. And I think evidence for variable susceptibility for reasons other than age remains fairly weak: [https://twitter.com/OwainEvans_UK/status/1268873649202909185)](https://twitter.com/OwainEvans_UK/status/1268873649202909185\))

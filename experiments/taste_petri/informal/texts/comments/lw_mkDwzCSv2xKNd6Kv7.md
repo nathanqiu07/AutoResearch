@@ -1,0 +1,15 @@
+Comment by Owain_Evans, 2023-09-05, on "Paper: On measuring situational awareness in LLMs"
+https://www.lesswrong.com/posts/mLfPHv4QjmeQrsSva/paper-on-measuring-situational-awareness-in-llms?commentId=mkDwzCSv2xKNd6Kv7
+
+PARENT (not his words):
+This is a pretty cool paper. Despite feeling overall quite positive about it, I have some reservations:
+
+*   Out-of-context learning seems pretty sensitive to the task being measured, where some of the tasks see nice scaling behavior (hhh) while others do not (incorrect). This observation is based on [Appendix A.1](https://owainevans.github.io/awareness_berglund.pdf#page=24) Table 4, corresponding to Experiment 1b, in this blog post the graph is labeled “(a) Scaling for Experiment 1b (1-hop)”. Now, the fact that you get nice scaling lines when averaging across tasks is not super problematic or anything, but it is a little odd that there is so much variation between tasks, and I think it’s a point against any attempted nice, clean, explanations of the results.
+*   The hhh task is the one that small models do well on. I am surprised that the small models do well on any of the tasks. I think the reason they do well on the hhh one is that this task doesn’t seem to require much more than word association and parroting. I would predict that for ada and babbage, if you followed up with “why did you say that?” the models would be unable to reproduce the explicit link that ties the persona to answering in the particular way, whereas I expect davinci to be able to explain this link more. The small models are probably just doing word association where in the training there are a bunch of examples of “Quokka” and the text “I am helpful, harmless, and honest”. In general, I am skeptical o
+
+HIS COMMENT:
+> So performance here should be thought of more as ‘how good is the model at learning about a persona in fine-tuning and then being able to imitate/simulate that persona in deployment’. This is different from a model believing it is the persona or applying this knowledge to some concept of self. Good performance at this task does not require having a sense of self, this is just a precursor that may be necessary for situational awareness.
+
+That's correct. We tried to emphasize that our experiments are testing out-of-context reasoning, rather than situational awareness. We also emphasize that we test whether the model can emulate **multiple** fictitious chatbots (which have a different identity than GPT-3 or Llama), which wouldn't make sense if the goal was to test whether the model has a sense of itself.  
+  
+All the motivation for this project came from wanting to understand and forecast situational awareness and we want to encourage further work on that problem. This is why we've framed the paper around situational awareness, rather than simply talking about out-of-context reasoning. This is likely to cause some confusion if someone just skims the paper, but I hope that this will be reduced if people read more of the paper.

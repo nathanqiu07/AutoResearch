@@ -1,0 +1,12 @@
+Comment by Owain_Evans, 2021-07-23, on "Covid 7/22: Error Correction"
+https://www.lesswrong.com/posts/3xv65gxgT4Am39ano/covid-7-22-error-correction?commentId=a6vAru8phFgaRxemn
+
+PARENT (not his words):
+Delta progresses more quickly, and all else equal, that should make you less worried about R than you previously were. But I find it plausibly that it's doing both: it's scarily infectious *and* it progresses more quickly. Depending on the methodology of estimating R, it doesn't necessarily lead to overestimates if one variant progresses more quickly. Your methodology could be to simply trace infections and count how many times a virus was passed on from the earlier generation's host.   
+  
+There's some evidence of scarily high infectiousness. From Australia, we see that it apparently happened twice that there's CCTV footage of people walking past each other (without mask) and infection happening within 15 seconds of passing. This wouldn't be too surprising if that's all the footage we had about scarily quick infections from major outbreaks in the US or the UK – large numbers imply bigger coincidences. However, the Australia outbreak is young and scarily quick infections happening twice implies that they must be rather common.   
+  
+One thing I'm confused about is the UK's recent case numbers: They seem to have slowed down a lot. It's too early to tell and I think there's a good chance the growth picks up again, and it'll look very different next week. But there's a chance that the UK is close to the ceiling already, which would be good news, and probably some evidence that experts overestimated the R of Delta variant, because many experts were predicting >100k or even 200k d
+
+HIS COMMENT:
+The 15 seconds transmission (if it's reasonably common and doesn't involve one person coughing or sneezing in someone's face) suggests a quite different infectiouness profile than other variants. You'd expect massive superspreader events from public transport, bars, and events. You'd expect very few people to be infected by family members (because they are exposed to so many people for 15 seconds). I'm not ruling this out but it sounds a bit unlikely based on reports of Delta spread so far.

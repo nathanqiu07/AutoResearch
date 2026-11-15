@@ -1,0 +1,12 @@
+Comment by Owain_Evans, 2021-12-05, on "The Rationalists of the 1950s (and before) also called themselves “Rationalists”"
+https://www.lesswrong.com/posts/DtcbfwSrcewFubjxp/the-rationalists-of-the-1950s-and-before-also-called?commentId=7DAJeFHmbEztG7yWW
+
+PARENT (not his words):
+No, '[rational](https://rationalist.org.uk/)' here is being used in opposition to 'irrational', 'religious', 'superstitious', etc., not in opposition to 'empirical'.
+
+Quoting [Wikipedia](https://en.wikipedia.org/wiki/Rationalism):
+
+> In [politics](https://en.wikipedia.org/wiki/Politics), rationalism, since the [Enlightenment](https://en.wikipedia.org/wiki/Age_of_Enlightenment), historically emphasized a "politics of reason" centered upon [rational choice](https://en.wikipedia.org/wiki/Rational_choice), [deontology](https://en.wikipedia.org/wiki/Deontology), [utilitarianism](https://en.wikipedia.org/wiki/Utilitarianism), [secularism](https://en.wikipedia.org/wiki/Secularism), and [irreligion](https://en.wikipedia.org/wiki/Irreligion)[^&#91;23\]^](https://en.wikipedia.org/wiki/Rationalism#cite_note-23) – the latter aspect's [antitheism](https://en.wikipedia.org/wiki/Antitheism) was later softened by the adoption of pluralistic reasoning methods practicable regardless of religious or irreligious ideology.[^&#91;24\]^](https://en.wikipedia.org/wiki/Rationalism#cite_note-24)[^&#91;25\]^](https://en.wikipedia.org/wiki/Rationalism#cite_note-25) In this regard, the philosopher [John Cottingham](https://en.wikipedia.org/wiki/John_Cottingham)[^&#91;26\]^](https://en.wikipedia.org/wiki/Rationalism#cite_note-26) noted how rationalism, a [methodology](https://en.wikipedia.org/wiki/Methodology), became socially conflated with [atheism](https://en.wikipedia.org/wiki/Atheism), a [worldview](
+
+HIS COMMENT:
+Thanks, Rob! I agree with this summary. It is unfortunate that "rationalism" has this standard usage in philosophy ("rationalist vs empiricist"). This usage is not *completely* unrelated to the "rational vs superstitious/irrational" distinction, which makes it more likely to confuse. That said, outside of the fields of philosophy and intellectual history, not many people are aware of the rationalist/empiricist distinction, and so I don't see it as a major problem.
