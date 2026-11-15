@@ -6,7 +6,7 @@
    - beats: number of steps on the slide (default 1). Elements with data-in="n" appear at beat n,
      elements with data-out="n" leave at beat n.
    - notes: a string, or one string per beat (press N).
-   - step: 1-4 marks which pipeline step the slide belongs to (footer indicator).
+   - step: 1-3 marks which pipeline step the slide belongs to (footer indicator).
    Keys: right / space / PageDown = next, left / PageUp = back, Home / End, N = notes,
    G or Esc = overview, F = fullscreen. Click advances (except on interactive controls).
    The URL hash (#3.1 = slide 3, beat 1) keeps your place across reloads. */
@@ -127,7 +127,7 @@
 
   function footer(s, i) {
     const steps = s.step
-      ? `<span class="steps" aria-label="Pipeline step ${s.step} of 4">${[1, 2, 3, 4].map((k) => `<i class="${k === s.step ? "on" : ""}"></i>`).join("")}</span>`
+      ? `<span class="steps" aria-label="Pipeline step ${s.step} of 3">${[1, 2, 3].map((k) => `<i class="${k === s.step ? "on" : ""}"></i>`).join("")}</span>`
       : "";
     return `<div class="ft">${steps}<span>${String(i + 1).padStart(2, "0")} / ${String(slides.length).padStart(2, "0")}</span></div>`;
   }

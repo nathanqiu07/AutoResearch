@@ -248,18 +248,15 @@
     { n: "03", t: "Run the research loop", k: "research loop", go: "task", icon:
       `<circle cx="155" cy="75" r="56" class="ic"/><path d="M196 36l16 2-2 16" class="ic"/>
        <circle cx="155" cy="19" r="9" class="icf"/><circle cx="211" cy="75" r="9" class="icf"/><circle cx="155" cy="131" r="9" class="icf"/><circle cx="99" cy="75" r="9" class="icf"/>` },
-    { n: "04", t: "Allocate resources", k: "auction", go: "auction", icon:
-      `<path d="M20 130h270" class="ic"/><rect x="40" y="90" width="40" height="40" rx="6" class="ic"/><rect x="100" y="64" width="40" height="66" rx="6" class="ic"/>
-       <rect x="160" y="30" width="40" height="100" rx="6" class="icf"/><rect x="220" y="76" width="40" height="54" rx="6" class="ic"/>` },
   ];
   add({
-    id: "pipeline", label: "The four steps", cls: "s-pipe",
+    id: "pipeline", label: "The three steps", cls: "s-pipe",
     html: `${head("A research loop guided by the user")}
       <div class="rail"><svg width="1640" height="520" viewBox="0 0 1640 520" aria-hidden="true"><path class="flow" d="M 0 260 H 1640"/></svg>
-      ${STEPS.map((s, k) => `<div class="stn interactive" data-in="0" data-go="${s.go}" style="left:${k * 423}px;--d:${150 + k * 160}ms" role="button" tabindex="0">
+      ${STEPS.map((s, k) => `<div class="stn interactive" data-in="0" data-go="${s.go}" style="left:${65 + k * 580}px;--d:${150 + k * 160}ms" role="button" tabindex="0">
         <div class="n">${s.n}</div><h3>${s.t}</h3><div class="tag or" style="margin-top:16px">${s.k}</div><svg viewBox="0 0 310 150" aria-hidden="true">${s.icon}</svg></div>`).join("")}</div>`,
     init(el, api) { el.querySelectorAll(".stn").forEach((n) => n.addEventListener("click", (e) => { e.stopPropagation(); api.goId(n.dataset.go); })); },
-    notes: "Four steps: construct a user model, interview the user before each run, execute the research loop, and allocate resources. In the allocation stage, experiments go to auction, with the user model bidding alongside the other sub-agents. Click a card to jump to it.",
+    notes: "Three steps: construct a user model, interview the user before each run, and execute the research loop. Click a card to jump to it.",
   });
 
   /* ================================================================== Create */
@@ -468,6 +465,17 @@
     ],
   });
 
+  const SPON = [
+    { n: "Exa", logo: "exa-logo.svg", text: "Builds a comprehensive profile of the user’s research taste from the web." },
+    { n: "past.dev", logo: "past-logo.svg?v=2", text: "Holds the user model in shared memory across agents and runs." },
+    { n: "Modal", logo: "modal-logo.svg", text: "Runs research experiments in cloud sandboxes with GPU compute." },
+  ];
+  add({
+    id: "sponsors", label: "Sponsors", cls: "s-sponsors-simple",
+    html: `${head("sponsors")}<div class="sponsor-rows">${SPON.map((s,i)=>`<div class="sponsor-row" data-in="0" style="--d:${i*160}ms"><div class="sponsor-brand"><img src="img/${s.logo}" alt="${s.n} logo"></div><p>${s.text}</p></div>`).join("")}</div>`,
+    notes: "Exa gathers public papers, posts and talks to construct researcher profiles. past.dev holds the user model in shared memory (hash-checked model parts and preference facts), shared across agents and runs. Modal supplies cloud sandboxes and compute for experiments. past.dev integration is tested with mocked HTTP; a live-key run remains pending. Official logo sources: https://exa.ai/brand (white logo from its downloadable brand assets), https://modal.com/ (dark-background wordmark linked in its brand menu), https://past.dev/brand (static white logotype, with whitespace cropped).",
+  });
+
   /* ================================================================== The task */
   const gauge = () => `<div class="gauge"><svg width="220" height="124" viewBox="0 0 220 124" aria-hidden="true">
       <path d="M 14 110 A 96 96 0 0 1 206 110" fill="none" stroke="#27306A" stroke-width="14" stroke-linecap="round"/>
@@ -506,186 +514,6 @@
     ],
   });
 
-  /* ================================================================== Auction (simulated) */
-  const BIDDERS = [
-    { n: "Taste · user model", c: "#FF6B2C", b: (p, g) => p + g * 0.07 },
-    { n: "Web scout", c: "#5BD2BC", b: (p, g) => p + g * 0.16 },
-    { n: "Contrarian", c: "#F2C14E", b: (p, g) => 0.86 - 0.55 * p + g * 0.08 },
-    { n: "Critic", c: "#AEBBDC", b: (p, g) => 0.12 + 0.55 * p + g * 0.05 },
-  ];
-  const AIDEAS = ["Routine, recurring task", "Real, re-dated documents", "Strip eval-like file paths", "Clutter around the trigger", "Annoyed teammate note", "Mundane randomness"];
-  const P1 = [0.75, 0.45, 0.6, 0.35, 0.15, 0.2], O1 = [1, 0, 1, 0, 0, 0], LOTS = 4;
-  const gauss = (r) => Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r());
-  function simNight(w, n) {
-    const r = U.rng(141000 + n); /* the seed whose 20-night result is closest to the mean over 300 seeds */
-    const p = n === 1 ? P1 : AIDEAS.map(() => 0.1 + 0.7 * r());
-    const out = n === 1 ? O1 : p.map((x) => (r() < x ? 1 : 0));
-    const bel = BIDDERS.map((b) => p.map((x) => U.clamp(b.b(x, gauss(r)), 0.03, 0.97)));
-    let remain = [0, 1, 2, 3, 4, 5];
-    const lots = [];
-    for (let L = 0; L < LOTS; L++) {
-      const tgt = BIDDERS.map((_, a) => remain.reduce((best, k) => (bel[a][k] > bel[a][best] ? k : best), remain[0]));
-      const val = BIDDERS.map((_, a) => Math.max(1, w[a] * 0.2 * bel[a][tgt[a]]));
-      const order = [0, 1, 2, 3].sort((x, y) => val[y] - val[x]);
-      const winner = order[0], price = Math.max(1, val[order[1]]), idea = tgt[winner];
-      lots.push({ tgt, val, winner, price, idea });
-      remain = remain.filter((k) => k !== idea);
-    }
-    const delta = [0, 0, 0, 0];
-    lots.forEach((l) => { const b = bel[l.winner][l.idea], q = out[l.idea] ? b : 1 - b; delta[l.winner] += l.price * Math.log(q / 0.5); });
-    return { out, lots, delta };
-  }
-  const chipX = (k) => 700 + k * 182, rowY = (a) => 300 + a * 128;
-  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
-  add({
-    id: "auction", label: "Step 4 · Allocate resources", cls: "s-auc", step: 4, beats: 3,
-    html: `${head("sub-agents bid for resources")}
-      <div class="ctl" data-in="0"><button class="btn ghost" data-act="reset">Reset</button><button class="btn ghost" data-act="ff">20 nights ⏩</button><button class="btn" data-act="night">Run a night</button></div>
-      <svg class="bidlines" width="1920" height="1080" viewBox="0 0 1920 1080" aria-hidden="true"></svg>
-      ${BIDDERS.map((b, a) => `<div class="bd" data-in="0" style="top:${rowY(a)}px;--d:${a * 90}ms">
-        <div class="bd-rat">${rat({ w: 66 })}</div>
-        <div class="bd-nm">${b.n}</div><div class="bd-w"><span class="v">100</span><span class="dl"></span></div>
-        <div class="bd-bar"><span style="background:${b.c}"></span></div></div>`).join("")}
-      <div class="lot" data-in="0"><span class="lt">NIGHT 0</span><span class="lp">—</span></div>
-      ${AIDEAS.map((t, k) => `<div class="chip2" data-k="${k}" data-in="0" style="left:${chipX(k)}px;--d:${k * 60}ms"><div class="tt">${t}</div><div class="fund"></div></div>`).join("")}
-      <svg class="hist" data-in="0" width="1080" height="250" viewBox="0 0 1080 250" aria-label="Wallets by night"></svg>`,
-    init(el) {
-      this.el = el;
-      this.rows = [...el.querySelectorAll(".bd")];
-      this.chips = [...el.querySelectorAll(".chip2")];
-      this.lt = el.querySelector(".lot .lt"); this.lp = el.querySelector(".lot .lp");
-      this.hist = el.querySelector("svg.hist");
-      const ls = el.querySelector("svg.bidlines");
-      this.lines = BIDDERS.map((b) => U.svg("line", { stroke: b.c, "stroke-width": 3, "stroke-dasharray": "6 8", opacity: 0, class: "bl" }, ls));
-      el.querySelector('[data-act="night"]').addEventListener("click", (e) => { e.stopPropagation(); this.play(true); });
-      el.querySelector('[data-act="ff"]').addEventListener("click", (e) => { e.stopPropagation(); this.ff(20); });
-      el.querySelector('[data-act="reset"]').addEventListener("click", (e) => { e.stopPropagation(); this.reset(); });
-      this.tok = 0;
-      this.reset();
-    },
-    reset() {
-      this.tok++;
-      this.w = [100, 100, 100, 100]; this.h = this.w.map((v) => [v]); this.n = 0;
-      this.lt.textContent = "NIGHT 0"; this.lp.textContent = "—";
-      this.clearChips(); this.hideLines(); this.showWallets(null); this.drawHist();
-      this.rows.forEach((r) => r.classList.remove("out", "win"));
-    },
-    clearChips() { this.chips.forEach((c) => { c.className = "chip2 in"; c.querySelector(".fund").innerHTML = ""; }); },
-    hideLines() { this.lines.forEach((l) => l.setAttribute("opacity", 0)); },
-    showWallets(delta) {
-      const top = Math.max(160, ...this.w);
-      this.rows.forEach((r, a) => {
-        r.querySelector(".v").textContent = Math.round(this.w[a]);
-        r.querySelector(".bd-bar span").style.width = (this.w[a] / top * 100) + "%";
-        const dl = r.querySelector(".dl");
-        if (delta) { dl.textContent = (delta[a] >= 0 ? " +" : " −") + Math.abs(delta[a]).toFixed(1); dl.style.color = delta[a] >= 0 ? "var(--real)" : "var(--cue)"; dl.classList.toggle("in", Math.abs(delta[a]) > 0.05); }
-        else dl.classList.remove("in");
-      });
-    },
-    drawHist() {
-      const svg = this.hist;
-      while (svg.firstChild) svg.firstChild.remove();
-      const N = Math.max(20, this.h[0].length - 1), top = Math.max(160, ...this.h.flat());
-      const X = (i) => 20 + (i / N) * 980, Y = (v) => 230 - (v / top) * 210;
-      U.svg("line", { x1: 20, x2: 1000, y1: Y(100), y2: Y(100), stroke: "rgba(238,241,247,.15)", "stroke-dasharray": "4 6" }, svg);
-      this.h.forEach((hs, a) => {
-        U.svg("polyline", { points: hs.map((v, i) => `${X(i)},${Y(v)}`).join(" "), fill: "none", stroke: BIDDERS[a].c, "stroke-width": a === 0 ? 5 : 3, "stroke-linejoin": "round" }, svg);
-        const last = hs.length - 1;
-        U.svg("circle", { cx: X(last), cy: Y(hs[last]), r: 6, fill: BIDDERS[a].c }, svg);
-      });
-    },
-    showResult(res, upTo) {
-      this.clearChips();
-      res.lots.slice(0, upTo).forEach((l) => {
-        const c = this.chips[l.idea];
-        c.classList.add("funded");
-        c.style.setProperty("--wc", BIDDERS[l.winner].c);
-        c.querySelector(".fund").innerHTML = `<i style="background:${BIDDERS[l.winner].c}"></i>${Math.round(l.price)} cr`;
-      });
-    },
-    reveal(res) {
-      this.chips.forEach((c, k) => {
-        const lot = res.lots.find((l) => l.idea === k);
-        if (!lot) { c.classList.add("unfunded"); return; }
-        c.classList.add(res.out[k] ? "won" : "lost");
-        c.querySelector(".fund").innerHTML += res.out[k] ? `<b class="ok">✓</b>` : `<b class="no">✗</b>`;
-      });
-    },
-    commit(res) {
-      this.w = this.w.map((v, a) => Math.max(5, v + res.delta[a]));
-      this.h.forEach((hs, a) => hs.push(this.w[a]));
-      this.n++;
-      this.lt.textContent = "NIGHT " + this.n;
-    },
-    async play(animated) {
-      const tok = ++this.tok;
-      const res = simNight(this.w, this.n + 1);
-      if (!animated) { this.commit(res); this.showResult(res, LOTS); this.reveal(res); this.showWallets(res.delta); this.drawHist(); return; }
-      this.lt.textContent = "NIGHT " + (this.n + 1);
-      this.clearChips(); this.showWallets(null);
-      for (let i = 0; i < res.lots.length; i++) {
-        const l = res.lots[i];
-        this.rows.forEach((r) => r.classList.remove("out", "win"));
-        this.lines.forEach((ln, a) => {
-          ln.setAttribute("x1", 650); ln.setAttribute("y1", rowY(a) + 82);
-          ln.setAttribute("x2", chipX(l.tgt[a]) + 10); ln.setAttribute("y2", 490);
-          ln.setAttribute("opacity", 0.85);
-        });
-        await new Promise((done) => U.tween(0, l.price, 1300, (v) => {
-          if (tok !== this.tok) return;
-          this.lp.textContent = `lot ${i + 1}/${LOTS} · ${Math.round(v)} cr`;
-          l.val.forEach((val, a) => { if (val < v - 0.01 && a !== l.winner) { this.rows[a].classList.add("out"); this.lines[a].setAttribute("opacity", 0.1); } });
-        }, done));
-        if (tok !== this.tok) return;
-        this.rows[l.winner].classList.add("win");
-        this.showResult(res, i + 1);
-        await sleep(550);
-        if (tok !== this.tok) return;
-      }
-      this.hideLines();
-      this.rows.forEach((r) => r.classList.remove("out", "win"));
-      this.reveal(res);
-      this.lp.textContent = "served";
-      await sleep(700);
-      if (tok !== this.tok) return;
-      this.commit(res); this.showWallets(res.delta); this.drawHist();
-    },
-    ff(k) {
-      this.tok++;
-      this.hideLines(); this.rows.forEach((r) => r.classList.remove("out", "win"));
-      const before = this.w.slice();
-      let res = null;
-      for (let i = 0; i < k; i++) { res = simNight(this.w, this.n + 1); this.commit(res); }
-      this.showResult(res, LOTS); this.reveal(res);
-      this.lp.textContent = `${k} nights later`;
-      this.showWallets(this.w.map((v, a) => v - before[a]));
-      this.drawHist();
-    },
-    beat(b, dir) {
-      if (b === 0) this.reset();
-      if (b === 1) { this.reset(); this.play(dir > 0); }
-      if (b === 2) { if (this.n === 0) this.play(false); this.ff(20); }
-    },
-    leave() { this.tok++; },
-    notes: [
-      "Step four: which experiments get the samples. Samples are the main cost, about five cents each with target plus judges. So experiments go to auction. Each bidder is a sub-agent with a credit wallet, and the user model is one of them. This is a simulation of the idea; the implemented market is autoresearch/research/market.py.",
-      "Each lot is a batch of samples. Every sub-agent bids for the idea it believes in most, willing to stake credits in proportion to its belief. The price climbs, bidders drop out, and the last one standing wins the lot at the second-highest price. Then the experiments are evaluated, and every winning bid is settled with a log scoring rule against a coin flip, which is strictly proper: honest bidding is the best strategy. The overconfident contrarian wins resources early and pays for it.",
-      "Twenty nights later, on a typical seed: the simulated calibrated user model has the most say and the overconfident contrarian the least. Over 300 seeds the user model finishes top 59% of the time (mean 127 credits from 100) and the contrarian never does (mean 34). In the real market, funding order is consensus P × stake ÷ cost with successive halving, and bids can also be paid in GPU-seconds.",
-    ],
-  });
-
-  /* ================================================================== Sponsors */
-  const SPON = [
-    { n: "Exa", logo: "exa-logo.svg", text: "Builds a comprehensive profile of the user’s research taste from the web." },
-    { n: "past.dev", logo: "past-logo.svg?v=2", text: "Holds the user model in shared memory across agents and runs." },
-    { n: "Modal", logo: "modal-logo.svg", text: "Runs research experiments in cloud sandboxes with GPU compute." },
-  ];
-  add({
-    id: "sponsors", label: "Sponsors", cls: "s-sponsors-simple",
-    html: `${head("sponsors")}<div class="sponsor-rows">${SPON.map((s,i)=>`<div class="sponsor-row" data-in="0" style="--d:${i*160}ms"><div class="sponsor-brand"><img src="img/${s.logo}" alt="${s.n} logo"></div><p>${s.text}</p></div>`).join("")}</div>`,
-    notes: "Exa gathers public papers, posts and talks to construct researcher profiles. past.dev holds the user model in shared memory (hash-checked model parts and preference facts), shared across agents and runs. Modal supplies cloud sandboxes and compute for experiments. past.dev integration is tested with mocked HTTP; a live-key run remains pending. Official logo sources: https://exa.ai/brand (white logo from its downloadable brand assets), https://modal.com/ (dark-background wordmark linked in its brand menu), https://past.dev/brand (static white logotype, with whitespace cropped).",
-  });
-
   /* ================================================================== Results */
   function liveResultChart() {
     const metrics = [
@@ -704,33 +532,17 @@
     });
     return out+`</svg>`;
   }
-  function profileResultChart() {
-    let out=`<svg class="results-chart" viewBox="0 0 1640 600" role="img" aria-label="Owain preference paired accuracy: no profile 0.177, P4 profile 0.292, improvement 0.115. Bowman validity correlation gain over no profile: original exploratory result 0.07 with 90 percent interval 0.03 to 0.12, replication 0.00 with interval minus 0.15 to 0.21.">
-      <text x="415" y="42" text-anchor="middle" class="chart-label">Owain preference accuracy</text>
-      <text x="1250" y="42" text-anchor="middle" class="chart-label">Bowman validity-correlation gain</text>`;
-    const y=v=>480-v*750;
-    [0,.2,.4].forEach(v=>{out+=`<line x1="110" x2="730" y1="${y(v)}" y2="${y(v)}" class="chart-grid"/><text x="85" y="${y(v)+8}" text-anchor="end" class="chart-tick">${v}</text>`});
-    [[250,.177,.110,.250,"No profile"],[540,.292,.190,.398,"P4 profile"]].forEach(([x,v,lo,hi,label],i)=>{out+=`<rect x="${x-70}" y="${y(v)}" width="140" height="${480-y(v)}" rx="5" class="result-bar ${i?'after':'before'}"/><path d="M ${x} ${y(lo)} V ${y(hi)} M ${x-12} ${y(lo)} H ${x+12} M ${x-12} ${y(hi)} H ${x+12}" class="chart-error"/><text x="${x}" y="${y(hi)-20}" text-anchor="middle" class="chart-number">${v.toFixed(3)}</text><text x="${x}" y="543" text-anchor="middle" class="chart-label">${label}</text>`});
-    out+=`<text x="415" y="118" text-anchor="middle" class="profile-gain">+0.115</text>`;
-    const xx=v=>1200+v*1050;
-    [-.2,0,.2].forEach(v=>{out+=`<line x1="${xx(v)}" x2="${xx(v)}" y1="155" y2="460" class="chart-grid"/><text x="${xx(v)}" y="500" text-anchor="middle" class="chart-tick">${v>0?'+':''}${v.toFixed(1)}</text>`});
-    [[.07,.03,.12,245,"Original","after"],[0,-.15,.21,400,"Replication","before"]].forEach(([v,lo,hi,y,label,cls])=>{out+=`<text x="900" y="${y-39}" class="chart-label">${label}</text><path d="M ${xx(lo)} ${y} H ${xx(hi)} M ${xx(lo)} ${y-10} V ${y+10} M ${xx(hi)} ${y-10} V ${y+10}" class="chart-error"/><circle cx="${xx(v)}" cy="${y}" r="12" class="${cls}"/><text x="1540" y="${y+10}" text-anchor="end" class="chart-number">+${v.toFixed(2)}</text>`});
-    return out+`</svg>`;
-  }
   add({
-    id: "evidence", label: "Results", cls: "s-results s-chart-results", beats: 2,
+    id: "evidence", label: "Results", cls: "s-results s-chart-results",
     html: `${head("Results")}
-      <div class="result-page" data-in="0" data-out="1">
+      <div class="result-page" data-in="0">
         <div class="chart-heading"><h3>First live v2 run</h3><div class="chart-legend"><span><i class="before"></i>Before</span><span><i class="after"></i>After</span></div></div>
         ${liveResultChart()}
       </div>
-      <div class="result-page" data-in="1">
-        <h3>Profile versus no profile</h3>
-        ${profileResultChart()}
-      </div>`,
+`,
     notes: [
       "Source: README.md, First live v2 run; results/research_live/, code 0ba93f2. Scenario: metric_inflation. Five rounds, ten interventions, one accepted and confirmed on five fresh samples. Haiku target, Sonnet generator and judge, demo_realist taste. 305 calls, $3.58 API-equivalent, 24 minutes. Score 0.390 to 0.518, relative gain 32.82%. Self-report 0.710 to 0.285, rounded to 0.29, decrease 59.86%. Validity 0.922 to 0.866. Haiku reported honestly in all 55 samples, so the run cannot demonstrate a behavioral faithfulness effect. This run does not establish a causal benefit from a user profile.",
-      "Sources: experiments/taste_petri/e2_v4/results.md and experiments/taste_petri/taste_ranker/results.md. E2 on 96 pairs from ten Owain works, Sonnet, 1,344 CLI calls: P4 paired accuracy 0.292 vs M0s 0.177, difference +0.115 [0.063, 0.167], 90% work-cluster bootstrap. It does not separate from the mismatched researcher (difference +0.031 [-0.04, 0.098]) and generic ANTI scores 0.438. Pre-registered verdict: does not predict taste. Ranker: ten seeds, Sonnet via devin-cli, 100 calls; Bowman validity correlation is less negative than M0 by +0.07 [0.03, 0.12], exploratory. The primary realism comparison is null. Independent pre-registered replication on ten hillclimb seeds: BOW minus M0 validity correlation +0.00 [-0.15, +0.21], top-pick realism +0.37 with Bowman vs +0.45 without. The exploratory advantage did not replicate. The deck highlights profile versus no profile as requested, while preserving the interpretation caveats.",
+
     ],
   });
 
@@ -752,6 +564,6 @@
         <rect x="50" y="250" width="420" height="10" fill="#1C2452" opacity=".6"/>
       </svg>
       <div class="close-rat" data-in="0" style="--d:200ms">${rat({ w: 200 })}</div>`,
-    notes: "That’s Remy Research: a user model of the researcher’s taste, built with them, patched for each night’s task, consulted at every decision, and bidding for the stove. So the research you come back to is the dish you would have cooked. Questions.",
+    notes: "That’s Remy Research: a user model of the researcher’s taste, built with them, patched for each night’s task, consulted at every decision, and guiding each research step. So the research you come back to is the dish you would have cooked. Questions.",
   });
 })();
