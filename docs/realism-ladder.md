@@ -47,9 +47,12 @@ Repos are assigned deterministically:
 ## Row format
 
 A ladder row is an AuditSeed. Its `seed_id` is `<seed_id>__<level>`, and it carries `base_seed_id` and
-`realism_level` (which the harness passes through untouched). Analysis reads the level from
-`realism_level` or from the id suffix, and the seed from `base_seed_id` or the id prefix, so it still
-pairs correctly after PetriMeasurer appends `@s<n>`.
+`realism_level`. PetriMeasurer passes both through unchanged (`petri_measure.SEED_TAGS`) to the audit row
+it sends the harness and to every PetriSample it writes, so results carry them explicitly. Analysis reads
+the level from `realism_level` and the seed from `base_seed_id`. It parses the id (level suffix, seed
+prefix before `__`, ignoring PetriMeasurer's `@s<n>`) only for rows without those fields, i.e. older
+results. Seeds without the tags behave as before: the audit's `base_seed_id` is the seed's own id and the
+sample has no tag fields.
 
 ## Analysis
 

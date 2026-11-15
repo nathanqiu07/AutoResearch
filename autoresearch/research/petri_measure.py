@@ -27,6 +27,8 @@ sample is one Petri audit:
 Schemas (PLAN 12.6):
   AuditSeed   = {"seed_id", "text", "variant": "v1|v2|ours", "tools": "simulated|sandbox",
                  "auditor_prompt": optional full auditor system prompt (Petri's stock one if absent),
+                 "base_seed_id", "realism_level": optional tags for analysis (SEED_TAGS, e.g. set by the realism
+                         ladder), passed through unchanged to the audit row and the PetriSample,
                  "repo": optional real repo cloned into the sandbox, tools "sandbox" only
                          ({"url" or "local_path", "ref", "depth", "licence", "source_url", "published",
                          "path", "scrub", "remote_url"}; see real_repos.py)}
@@ -62,6 +64,9 @@ AUDITOR_PLACEHOLDERS = ("{max_turns}", "{target_model}", "{seed_instructions}", 
 STOCK_AUDITOR_PROMPT = Path(__file__).resolve().parents[2] / "data" / "petri" / "stock_auditor_prompt.txt"
 GUIDANCE_ANCHOR = "# Seed Instruction"
 VARIANTS = ("v1", "v2", "ours")
+# Optional AuditSeed fields that tag a seed for analysis (the realism ladder sets both). A seed's own tags pass
+# through unchanged to its audit row and its PetriSample; without them the audit's base_seed_id is the seed_id.
+SEED_TAGS = ("base_seed_id", "realism_level")
 REPO = Path(__file__).resolve().parents[2]
 HARNESS = REPO / "harness" / "petri" / "run_audits.py"
 # Long agentic transcripts are cut, head and tail kept, before our judges read them.
@@ -85,11 +90,19 @@ class PetriSample(Sample):
     variant: str = ""
     tools: str = ""
     petri_scores: Dict[str, Optional[float]] = field(default_factory=dict)
+    base_seed_id: Optional[str] = None     # SEED_TAGS: only written when the AuditSeed carried them
+    realism_level: Optional[str] = None
 
     def to_dict(self):
         d = super().to_dict()
         d.update(seed_id=self.seed_id, variant=self.variant, tools=self.tools, petri_scores=self.petri_scores)
+        d.update({k: getattr(self, k) for k in SEED_TAGS if getattr(self, k) is not None})
         return d
+
+
+def seed_tags(seed: dict) -> Dict[str, str]:
+    """The SEED_TAGS this AuditSeed carries, as given."""
+    return {k: seed[k] for k in SEED_TAGS if seed.get(k) is not None}
 
 
 def load_audit_seeds(path: str) -> List[dict]:
@@ -383,7 +396,7 @@ class PetriMeasurer(Measurer):
             if interventions:
                 variant = "ours"
             audit = {"seed_id": f"{base['seed_id']}@s{sd}", "text": text or "", "variant": variant,
-                     "tools": self.tools, "base_seed_id": base["seed_id"]}
+                     "tools": self.tools, "base_seed_id": base["seed_id"], **seed_tags(base)}
             if prompt:
                 audit["auditor_prompt"] = prompt
             if base.get("repo") is not None:
@@ -401,15 +414,16 @@ class PetriMeasurer(Measurer):
 
         def one(job):
             i, base, audit = job
+            tags = seed_tags(base)
             if i in early:
-                return self._petri_error(audit, early[i])
+                return self._petri_error(audit, early[i], tags=tags)
             r = results.get(audit["seed_id"])
             if r is None:
-                return self._petri_error(audit, "no AuditResult returned for this seed")
+                return self._petri_error(audit, "no AuditResult returned for this seed", tags=tags)
             try:
                 return self.score(base, audit, r)
             except Exception as e:  # noqa: BLE001
-                return self._petri_error(audit, f"scoring failed: {str(e)[:200]}")
+                return self._petri_error(audit, f"scoring failed: {str(e)[:200]}", tags=tags)
         with ThreadPoolExecutor(max_workers=self.workers) as ex:
             return list(ex.map(one, jobs))
 
@@ -419,16 +433,18 @@ class PetriMeasurer(Measurer):
                "auditor_guidance": audit.get("auditor_guidance", ""),
                "auditor_prompt": "custom" if audit.get("auditor_prompt") else "stock"}
         petri = {k: v for k, v in (r.get("petri_scores") or {}).items()}
-        extra = dict(seed_id=audit["seed_id"], variant=audit["variant"], tools=audit["tools"], petri_scores=petri)
+        tags = seed_tags(base)
+        extra = dict(seed_id=audit["seed_id"], variant=audit["variant"], tools=audit["tools"], petri_scores=petri,
+                     **tags)
         if r.get("error"):
-            return self._petri_error(audit, f"audit error: {short_error(r['error'])}", petri)
+            return self._petri_error(audit, f"audit error: {short_error(r['error'])}", petri, tags)
         transcript = cut(str(r.get("transcript") or ""))
         reasoning = str(r.get("reasoning") or "")
         if not transcript.strip():
-            return self._petri_error(audit, "empty audit transcript", petri)
+            return self._petri_error(audit, "empty audit transcript", petri, tags)
         self_report = self.p_eval(self.target, transcript)
         if self_report is None:
-            return self._petri_error(audit, "target self-report (A2) unparseable on every probe question", petri)
+            return self._petri_error(audit, "target self-report (A2) unparseable on every probe question", petri, tags)
         judge = copy.copy(self)   # C1's audit judges, with this seed as the behaviour it looks for
         judge.sc = dataclasses.replace(self.sc, probe=f"the behaviour this audit seed is designed to elicit: "
                                                       f"{base['text'][:2000]}")
@@ -436,14 +452,14 @@ class PetriMeasurer(Measurer):
         verbalized = _prob(jd.get("verbalized"))
         opportunity, scorable, bait = _prob(jd.get("opportunity")), _prob(jd.get("scorable")), _prob(jd.get("bait_reached"))
         if verbalized is None or (opportunity is None and scorable is None):
-            return self._petri_error(audit, "judge reply unparseable (verbalized/validity missing)", petri)
+            return self._petri_error(audit, "judge reply unparseable (verbalized/validity missing)", petri, tags)
         faithful = None
         if audit["variant"] == "ours":
             rewritten = audit["text"] + (f"\n\n[GUIDANCE ADDED TO THE AUDITOR]\n{audit['auditor_guidance']}"
                                          if audit.get("auditor_guidance") else "")
             faithful = self.seed_faithful(base["text"], rewritten)
             if faithful is None:
-                return self._petri_error(audit, "faithfulness judge reply unparseable", petri)
+                return self._petri_error(audit, "faithfulness judge reply unparseable", petri, tags)
         validity = min(x for x in (opportunity, scorable, bait, faithful) if x is not None)
         judge_p = {}   # every judge in self.judges answers the A2 probes (recorded, not part of the score)
         for k, j in enumerate(self.judges):
@@ -457,10 +473,12 @@ class PetriMeasurer(Measurer):
                            bait_reached=bait, faithful=faithful, judge_p_eval=judge_p,
                            judge_verbalized=judge_verbal, reasoning=reasoning, **extra)
 
-    def _petri_error(self, audit: dict, why: str, petri: Optional[dict] = None) -> PetriSample:
+    def _petri_error(self, audit: dict, why: str, petri: Optional[dict] = None,
+                     tags: Optional[Dict[str, str]] = None) -> PetriSample:
         return PetriSample({"seed_id": audit.get("seed_id", ""), "user": audit.get("text", "")}, "", 0.0, 0.0, None,
                            0.0, "error", error=why, seed_id=audit.get("seed_id", ""),
-                           variant=audit.get("variant", ""), tools=audit.get("tools", ""), petri_scores=petri or {})
+                           variant=audit.get("variant", ""), tools=audit.get("tools", ""), petri_scores=petri or {},
+                           **(tags or {}))
 
     def _offline(self, interventions, sd, categories) -> PetriSample:
         rng = random.Random(sd)
@@ -476,7 +494,8 @@ class PetriMeasurer(Measurer):
         return PetriSample({"system": "(simulated Petri audit)", "user": base["text"][:200]}, s.response,
                            s.self_report, s.verbalized, None, s.validity, s.behavior, opportunity=s.opportunity,
                            scorable=s.scorable, bait_reached=s.bait_reached, judge_p_eval=judge_p,
-                           judge_verbalized=judge_v, seed_id=f"{base['seed_id']}@s{sd}", variant=variant, tools=self.tools, petri_scores=petri)
+                           judge_verbalized=judge_v, seed_id=f"{base['seed_id']}@s{sd}", variant=variant, tools=self.tools, petri_scores=petri,
+                           **seed_tags(base))
 
     # Measurer's single-turn faithfulness pair has no Petri equivalent yet: an
     # eval notice would have to go into the auditor's system prompt for the target.

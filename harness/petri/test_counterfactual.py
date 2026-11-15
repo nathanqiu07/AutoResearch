@@ -85,7 +85,7 @@ class SpecTest(unittest.TestCase):
     def test_rules_and_counts(self):
         out, counts = cf.apply_spec("Acme Corp and Acme at example.com; foo/bar and a progress bar",
                                     {"kind": "rules", "rules": cf.REALISTIC_NAMES})
-        self.assertEqual(out, "Brightwell Freight and Brightwell at brightwell-freight.com; ledger/invoice and a progress bar")
+        self.assertEqual(out, "Kessrow Freight and Kessrow at kessrow-freight.internal; ledger/invoice and a progress bar")
         self.assertEqual(sum(counts.values()), 4)
 
     def test_date_shift_keeps_intervals_and_skips_invalid(self):
@@ -139,12 +139,12 @@ class MutationTest(unittest.TestCase):
 
     def test_names_change_text_not_reasoning_or_tool_args(self):
         new, rec, cmds = cf.apply_mutation(cf.MUTATIONS["realistic_names"], cf.prefix_messages(msgs(), 2), CTX)
-        self.assertIn("Brightwell Freight", new[0]["content"])
-        self.assertIn("Daniel Okafor (daniel.okafor@brightwell-freight.com)", new[1]["content"])
+        self.assertIn("Kessrow Freight", new[0]["content"])
+        self.assertIn("Callum Ferreira (callum.ferreira@kessrow-freight.internal)", new[1]["content"])
         self.assertEqual(new[2]["content"][0]["reasoning"], "Acme wants me to look")      # signed reasoning untouched
-        self.assertEqual(new[2]["content"][1]["text"], "Checking the Brightwell notes.")
+        self.assertEqual(new[2]["content"][1]["text"], "Checking the Kessrow notes.")
         self.assertEqual(new[2]["tool_calls"][0]["arguments"]["command"], "cat notes/acme.md")
-        self.assertEqual(new[3]["content"], "Brightwell deploy 2026-03-14: urgent")
+        self.assertEqual(new[3]["content"], "Kessrow deploy 2026-03-14: urgent")
         self.assertEqual({c["index"] for c in rec["text_changes"]}, {0, 1, 2, 3})
         self.assertEqual(len(cmds), 1)
         self.assertIn("python3 -c", cmds[0])
@@ -200,6 +200,13 @@ class CaseTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             case(repo={"url": "x", "local_path": "/some/dir"})
 
+    def test_local_repo_case_clones_from_the_uploaded_bundle(self):
+        from sandbox_tools import bundle_path, repo_setup_commands
+        repo = {"local_path": "/srv/src/tool", "depth": 5}
+        c = case(repo=repo)
+        self.assertEqual(c["setup_commands"][:c["n_repo_setup"]], repo_setup_commands(repo))
+        self.assertIn(bundle_path(), c["setup_commands"][0])
+
 
 class ReplayTest(unittest.TestCase):
     TURNS = [{"text": "Let me look.", "reasoning": "is this a test?",
@@ -226,7 +233,7 @@ class ReplayTest(unittest.TestCase):
             self.assertIn("[turn 2] is this a test?", r["reasoning"])
             self.assertIn(cf.UNAVAILABLE, r["continuation"])
         names = [r for r in rows if r["mutation"] == "realistic_names"][0]
-        self.assertIn("Brightwell", names["transcript"])
+        self.assertIn("Kessrow", names["transcript"])
         self.assertNotIn("Acme Corp", names["transcript"])
         self.assertEqual(names["mutation_record"]["shell"][0]["exit"], 0)
         self.assertIn("Acme Corp", rows[0]["transcript"])
@@ -279,6 +286,126 @@ class ReplayTest(unittest.TestCase):
         self.assertEqual(sb.image, "snapshot-image")
 
 
+class NamesTest(unittest.TestCase):
+    """realistic_names against PLAN I18 (realistic but fictional entities, no real people or companies)."""
+    REPLACEMENTS = [r for _, r in cf.REALISTIC_NAMES]
+
+    def test_domains_cannot_reach_a_real_organisation(self):
+        import re
+        hosts = {h.lower() for r in self.REPLACEMENTS     # email local parts dropped, then every dotted host name
+                 for h in re.findall(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", re.sub(r"[\w.+-]+@", "", r))}
+        self.assertTrue(hosts)
+        self.assertTrue(all(h.endswith(".internal") for h in hosts), hosts)   # ICANN private-use TLD
+
+    def test_replacements_are_not_placeholders(self):
+        once, _ = cf.apply_spec(" | ".join(self.REPLACEMENTS), {"kind": "rules", "rules": cf.REALISTIC_NAMES})
+        twice, counts = cf.apply_spec(once, {"kind": "rules", "rules": cf.REALISTIC_NAMES})
+        self.assertEqual((twice, counts), (once, {}))
+
+    def test_people_are_not_in_the_repos_real_person_data(self):
+        root = HERE.parents[1] / "data" / "researchers"
+        if not root.is_dir():
+            self.skipTest("no data/researchers in this checkout")
+        names = [n.lower() for n in list(cf.FICTIONAL_PEOPLE.values()) + [cf.FICTIONAL_COMPANY]]
+        for f in root.rglob("*"):
+            if f.is_file() and f.suffix in (".txt", ".json", ".jsonl", ".md"):
+                text = f.read_text(errors="ignore").lower()
+                for n in names:
+                    self.assertNotIn(n, text, f"{n} appears in {f}")
+
+
+def git(cwd, *args):
+    env = dict(os.environ, GIT_AUTHOR_NAME="Dev", GIT_AUTHOR_EMAIL="dev@example.com", GIT_COMMITTER_NAME="Dev",
+               GIT_COMMITTER_EMAIL="dev@example.com", GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    return subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True, env=env).stdout
+
+
+@unittest.skipUnless(shutil.which("git") and shutil.which("bash"), "needs git and bash")
+class LocalRepoReplayTest(unittest.TestCase):
+    """A local_path repo replays through the audit harness's bundle + upload path (FakeSnapshotBackend, a real
+    temp git repo). Local only: no network."""
+
+    def make_repo(self, root: Path) -> Path:
+        src = root / "tool"
+        src.mkdir()
+        git(src, "init", "--quiet", "--initial-branch=main")
+        for i in range(4):
+            (src / "notes.txt").write_text(f"Acme TODO {i}\n")
+            git(src, "add", "notes.txt")
+            git(src, "commit", "--quiet", "-m", f"step {i}")
+        return src
+
+    def test_bundle_uploaded_before_clone_and_shared_by_every_branch(self):
+        from sandbox_tools import bundle_path, repo_setup_commands
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d).resolve()
+            src = self.make_repo(root)
+            repo = {"local_path": str(src), "depth": 3, "path": "/home/user/tool"}
+            c = case(repo=repo)
+            backend = cf.FakeSnapshotBackend()
+            rows = run(cf.replay_case(c, scripted(ReplayTest.TURNS), backend, ["realistic_names"], k_turns=2,
+                                      replicates=2, ctx=CTX))
+            self.assertTrue(all(r["error"] is None for r in rows), [r["error"] for r in rows])
+            base, branches = backend.created[0], backend.created[1:]
+            bundle = base.files[bundle_path()]
+            self.assertEqual(base.history, c["setup_commands"])        # uploaded first, then the clone and audit
+            self.assertEqual(rows[0]["setup"][0]["upload"], bundle_path())
+            self.assertEqual(rows[0]["setup"][0]["bytes"], len(bundle))
+            self.assertEqual(rows[0]["setup"][1]["command"], c["setup_commands"][0][:500])
+            self.assertEqual(len(branches), 4)
+            for sb in branches:                                        # every branch starts from the one snapshot
+                self.assertEqual(sb.files, base.files)
+                self.assertEqual(sb.history[:len(base.history)], base.history)
+            # the uploaded bytes are the repo, and the case's own clone commands work on them
+            stage = root / "stage"
+            stage.mkdir()
+            Path(bundle_path(str(stage))).write_bytes(bundle)
+            work = root / "work" / "tool"
+            for command in repo_setup_commands(dict(repo, path=str(work)), stage=str(stage)):
+                p = subprocess.run(["bash", "-c", command], capture_output=True, text=True,
+                                   env=dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1"))
+                self.assertEqual(p.returncode, 0, f"{command}\n{p.stderr}")
+            self.assertEqual(git(work, "rev-parse", "HEAD"), git(src, "rev-parse", "HEAD"))
+            self.assertEqual((work / "notes.txt").read_text(), "Acme TODO 3\n")
+
+    def test_missing_local_repo_fails_the_base(self):
+        with tempfile.TemporaryDirectory() as d:
+            c = case(repo={"local_path": str(Path(d) / "gone"), "path": "/home/user/gone"})
+            backend = cf.FakeSnapshotBackend()
+            rows = run(cf.replay_case(c, scripted(ReplayTest.TURNS), backend, ["lower_stakes"], ctx=CTX))
+            self.assertTrue(all("base sandbox failed" in r["error"] and "not a directory" in r["error"] for r in rows))
+            self.assertEqual(backend.created[0].history, [])           # nothing ran without the bundle
+            self.assertTrue(backend.created[0].terminated)
+
+    def test_backend_without_upload_is_refused(self):
+        class NoUpload(cf.FakeSnapshotBackend):
+            def create(self, image=None):
+                sb = super().create(image)
+                return type("Plain", (), {"run_with_status": sb.run_with_status, "run": sb.run,
+                                          "terminate": sb.terminate})()
+        with tempfile.TemporaryDirectory() as d:
+            src = self.make_repo(Path(d).resolve())
+            rows = run(cf.replay_case(case(repo={"local_path": str(src)}), scripted(ReplayTest.TURNS), NoUpload(), [],
+                                      ctx=CTX))
+            self.assertIn("cannot upload", rows[0]["error"])
+
+
+class ThinkingConfigTest(unittest.TestCase):
+    def test_same_mapping_as_run_audits(self):
+        self.assertEqual(cf.thinking_config("openai/o4-mini"), {"reasoning_effort": "high"})
+        self.assertEqual(cf.thinking_config("anthropic/claude-sonnet-4-5", 4000),
+                         {"reasoning_tokens": 4000, "max_tokens": 12000})
+
+    def test_mock_replay_ignores_thinking(self):
+        with tempfile.TemporaryDirectory() as d:
+            cases, out = Path(d, "c.jsonl"), Path(d, "r.jsonl")
+            cases.write_text(json.dumps(case()) + "\n")
+            cf.main(["replay", "--cases", str(cases), "--out", str(out), "--mock", "--k", "1", "--replicates", "1",
+                     "--mutations", "control", "--target-thinking"])
+            rows = [json.loads(l) for l in out.read_text().splitlines()]
+            self.assertEqual([r["target_thinking"] for r in rows], [None])
+
+
 @unittest.skipUnless(HAVE_INSPECT, "needs inspect_ai and petri (the Petri environment)")
 class InspectTest(unittest.TestCase):
     def test_inspect_target_with_mockllm(self):
@@ -294,6 +421,11 @@ class InspectTest(unittest.TestCase):
         self.assertEqual(r["sandbox_commands"], ["ls"])
         self.assertIn("hmm, a test?", r["reasoning"])
         self.assertIn("All good.", r["continuation"])
+
+    def test_replay_target_thinking_config(self):
+        t = cf.replay_target("mockllm/model", cf.thinking_config("mockllm/model", 3000))
+        self.assertEqual((t.model.config.reasoning_tokens, t.model.config.max_tokens), (3000, 11000))
+        self.assertIsNone(cf.replay_target("mockllm/model").model.config.reasoning_tokens)
 
     def test_cases_from_a_real_mock_audit(self):
         from inspect_ai import eval as inspect_eval
@@ -327,7 +459,7 @@ class InspectTest(unittest.TestCase):
         self.assertEqual(cases[1]["tools"][0]["name"], "bash")
         rows = run(cf.replay_case(cases[1], cf.FakeTarget(lambda m, t: {"text": "fine", "tool_calls": []}),
                                   cf.FakeSnapshotBackend(), ["realistic_names"], ctx=CTX))
-        self.assertIn("Brightwell", rows[1]["transcript"])
+        self.assertIn("Kessrow", rows[1]["transcript"])
 
 
 if __name__ == "__main__":

@@ -56,6 +56,14 @@ def need(pkg: str):
                          f"pip install eval/vendor/petri-v2.tar.gz; sandbox mode also needs modal")
 
 
+def target_thinking_config(model_id: str, reasoning_tokens: int = 8000) -> dict:
+    """GenerateConfig fields that turn on extended thinking / reasoning for the target (--target-thinking):
+    reasoning_effort "high" for OpenAI models, else a reasoning-token budget with room for the reply."""
+    if model_id.startswith("openai/"):
+        return {"reasoning_effort": "high"}
+    return {"reasoning_tokens": reasoning_tokens, "max_tokens": reasoning_tokens + 8000}
+
+
 PLACEHOLDERS = ("{max_turns}", "{target_model}", "{seed_instructions}", "{today_date}", "{resources_prompt}")
 
 
@@ -174,9 +182,8 @@ def main(argv=None):
 
     if not a.mock and a.target_thinking:
         from inspect_ai.model import GenerateConfig, get_model
-        cfg_t = (GenerateConfig(reasoning_effort="high") if roles["target"].startswith("openai/")
-                 else GenerateConfig(reasoning_tokens=a.reasoning_tokens, max_tokens=a.reasoning_tokens + 8000))
-        roles["target"] = get_model(roles["target"], config=cfg_t)
+        roles["target"] = get_model(roles["target"],
+                                    config=GenerateConfig(**target_thinking_config(roles["target"], a.reasoning_tokens)))
 
     groups = {}   # one Inspect task per (tool mode, auditor prompt)
     for s in seeds:

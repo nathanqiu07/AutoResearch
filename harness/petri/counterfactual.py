@@ -12,8 +12,10 @@ continuations and the control's continuations is that cue's effect.
                tool definitions and the shell commands that built the sandbox up to the
                decision point (repo clone, the auditor's `sandbox_exec` calls and the
                target's routed tool calls, in the order they ran), from an Inspect log.
-    2. base    run those commands in a fresh sandbox, then snapshot its filesystem
-               (Modal: `Sandbox.snapshot_filesystem()` -> Image).
+    2. base    in a fresh sandbox, upload what the repo clone needs (a `local_path` repo's git
+               bundle, made on this host as the audit did: `sandbox_tools.repo_uploads`), run
+               those commands, then snapshot its filesystem (Modal:
+               `Sandbox.snapshot_filesystem()` -> Image), so every branch shares the clone.
     3. branch  per (mutation, replicate): a new sandbox from the snapshot
                (`Sandbox.create(image=snapshot)`), apply the mutation (a text transform
                on the target-visible prefix and/or a shell edit of the sandbox files),
@@ -42,7 +44,7 @@ so the rest (and its tests) runs on Python 3.9 with the standard library.
     python harness/petri/counterfactual.py cases --log LOG.eval --turns 2,4 --out cases.jsonl
     python harness/petri/counterfactual.py replay --cases cases.jsonl --out rows.jsonl --mock      # free
     python harness/petri/counterfactual.py replay --cases cases.jsonl --out rows.jsonl \\
-        --target openai-api/modal/Qwen/Qwen3-30B-A3B --k 3 --replicates 3                         # paid + Modal
+        --target openai-api/modal/Qwen/Qwen3-30B-A3B --k 3 --replicates 3 [--target-thinking]     # paid + Modal
 
 The paid form calls the target model and Modal: it needs the user's approval (AGENTS.md rule 5).
 """
@@ -56,8 +58,10 @@ import datetime as _dt
 import inspect
 import json
 import re
+import os
 import shlex
 import sys
+import tempfile
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,7 +70,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from sandbox_tools import format_output, route  # noqa: E402
+from sandbox_tools import ModalSandbox, file_sha256, format_output, repo_uploads, route  # noqa: E402
 from transcript import split_text  # noqa: E402
 
 CONTROL = "control"
@@ -179,17 +183,31 @@ def _word(w: str) -> str:
     return r"(?<![A-Za-z0-9_])" + re.escape(w) + r"(?![A-Za-z0-9_])"
 
 
-# Fictional but ordinary entities (PLAN I18: realistic, never a real person or company).
+# Fictional but ordinary entities (PLAN I18: realistic but fictional; no real private individual, no real
+# company impersonation). Checked against I18 (harness/README.md, "realistic_names and PLAN I18"):
+#  * the company is a coined name, and its email/web domain is under `.internal`, a TLD ICANN reserved for
+#    private use (never delegated), so no address or URL here can reach or impersonate a real organisation;
+#  * the people are invented first/last-name pairs, drawn from no scraped or Exa material, and absent from the
+#    repo's real-person data (data/researchers/, checked by test_counterfactual.NamesTest);
+#  * no replacement is itself a placeholder (applying the table twice changes nothing).
 # Longer names first, so "Acme Corp" is replaced before "Acme".
+FICTIONAL_COMPANY, FICTIONAL_DOMAIN = "Kessrow Freight", "kessrow-freight.internal"
+FICTIONAL_PEOPLE = {"John Doe": "Callum Ferreira", "Jane Doe": "Ines Halloran",
+                    "John Smith": "Owen Lindqvist", "Jane Smith": "Elena Vasquez"}
+
+
+def _email(name: str) -> str:
+    return name.lower().replace(" ", ".") + "@" + FICTIONAL_DOMAIN
+
+
 REALISTIC_NAMES = [
-    (r"(?i)\bjohn\.doe@example\.(com|org|net)\b", "daniel.okafor@brightwell-freight.com"),
-    (r"(?i)\bjane\.doe@example\.(com|org|net)\b", "priya.raman@brightwell-freight.com"),
-    (_word("Acme Corporation"), "Brightwell Freight"), (_word("Acme Corp"), "Brightwell Freight"),
-    (_word("Acme Inc."), "Brightwell Freight"), (_word("Acme Inc"), "Brightwell Freight"),
-    (_word("ACME"), "BRIGHTWELL"), (_word("Acme"), "Brightwell"), (_word("acme"), "brightwell"),
-    (_word("John Doe"), "Daniel Okafor"), (_word("Jane Doe"), "Priya Raman"),
-    (_word("John Smith"), "Marcus Lindqvist"), (_word("Jane Smith"), "Elena Vasquez"),
-    (r"(?i)(?<![A-Za-z0-9_.-])example\.(com|org|net)(?![A-Za-z0-9_-])", "brightwell-freight.com"),
+    (r"(?i)\bjohn\.doe@example\.(com|org|net)\b", _email(FICTIONAL_PEOPLE["John Doe"])),
+    (r"(?i)\bjane\.doe@example\.(com|org|net)\b", _email(FICTIONAL_PEOPLE["Jane Doe"])),
+    (_word("Acme Corporation"), FICTIONAL_COMPANY), (_word("Acme Corp"), FICTIONAL_COMPANY),
+    (_word("Acme Inc."), FICTIONAL_COMPANY), (_word("Acme Inc"), FICTIONAL_COMPANY),
+    (_word("ACME"), "KESSROW"), (_word("Acme"), "Kessrow"), (_word("acme"), "kessrow"),
+] + [(_word(k), v) for k, v in FICTIONAL_PEOPLE.items()] + [
+    (r"(?i)(?<![A-Za-z0-9_.-])example\.(com|org|net)(?![A-Za-z0-9_-])", FICTIONAL_DOMAIN),
     # foo/bar: "bar" alone is ordinary English ("progress bar"), so it is only replaced next to "foo"
     (r"(?<![A-Za-z0-9_])foo([/_.-]?)bar(?![A-Za-z0-9_])", r"ledger\1invoice"),
     (r"(?<![A-Za-z0-9_])Foo([/_.-]?)Bar(?![A-Za-z0-9_])", r"Ledger\1Invoice"),
@@ -457,12 +475,10 @@ def setup_commands_from_store(store: dict, decision_turn: int,
 
 
 def repo_setup(repo: Optional[dict]) -> List[str]:
-    """The commands sandbox_tools ran to clone the sample's repo before the auditor's first turn."""
+    """The commands sandbox_tools ran to clone the sample's repo before the auditor's first turn. A `local_path`
+    repo's commands clone from its bundle, which `replay_case` uploads first (`sandbox_tools.repo_uploads`)."""
     if not repo:
         return []
-    if repo.get("local_path"):
-        raise ValueError("a local_path repo was uploaded from the audit host as a bundle; replaying it needs that "
-                         "upload too, which is not supported yet: use a URL repo, or pass setup_commands yourself")
     from sandbox_tools import repo_setup_commands
     return repo_setup_commands(repo)
 
@@ -528,6 +544,10 @@ class ModalSnapshotSandbox:
     async def run(self, command: str, timeout: int = 120) -> str:
         return (await self.run_with_status(command, timeout))[1]
 
+    async def upload(self, local: str, remote: str) -> None:
+        """Copy a host file into the sandbox, sha256-checked, as the audit harness does (`ModalSandbox._upload`)."""
+        await asyncio.to_thread(lambda: ModalSandbox._upload(self._ensure(), local, remote))
+
     def snapshot(self):
         return self._ensure().snapshot_filesystem()
 
@@ -561,13 +581,27 @@ class ModalSnapshotBackend:
         return await asyncio.to_thread(sandbox.snapshot)
 
 
-class FakeSnapshotSandbox:
-    """Offline sandbox: its state is the list of commands applied so far. `respond(command, history)`
-    gives each command's output, or (exit status, output) (default: an echo, status 0)."""
+@dataclass(frozen=True)
+class FakeSnapshot:
+    """A FakeSnapshotSandbox's state: the commands applied so far and the uploaded files."""
+    history: Tuple[str, ...] = ()
+    files: Tuple[Tuple[str, bytes], ...] = ()
 
-    def __init__(self, history: Sequence[str] = (), respond: Optional[Callable[[str, List[str]], str]] = None):
+
+class FakeSnapshotSandbox:
+    """Offline sandbox: its state is the list of commands applied so far plus uploaded files (sandbox path ->
+    bytes). `respond(command, history)` gives each command's output, or (exit status, output) (default: an
+    echo, status 0)."""
+
+    def __init__(self, history: Sequence[str] = (), respond: Optional[Callable[[str, List[str]], str]] = None,
+                 files: Optional[Dict[str, bytes]] = None):
         self.history, self.commands, self.respond = list(history), [], respond
+        self.files: Dict[str, bytes] = dict(files or {})
         self.terminated = False
+
+    async def upload(self, local: str, remote: str) -> None:
+        with open(local, "rb") as f:
+            self.files[remote] = f.read()
 
     async def run_with_status(self, command: str, timeout: int = 120) -> Tuple[int, str]:
         out = self.respond(command, list(self.history)) if self.respond else f"[fake sandbox] ran: {command[:200]}"
@@ -583,18 +617,19 @@ class FakeSnapshotSandbox:
 
 
 class FakeSnapshotBackend:
-    """Snapshots are the command history; a sandbox created from one starts with that history."""
+    """Snapshots are a FakeSnapshot (command history and files); a sandbox created from one starts with both."""
 
     def __init__(self, respond: Optional[Callable[[str, List[str]], str]] = None):
         self.respond, self.created = respond, []
 
-    def create(self, image=None) -> FakeSnapshotSandbox:
-        sb = FakeSnapshotSandbox(image or (), self.respond)
+    def create(self, image: Optional[FakeSnapshot] = None) -> FakeSnapshotSandbox:
+        image = image or FakeSnapshot()
+        sb = FakeSnapshotSandbox(image.history, self.respond, dict(image.files))
         self.created.append(sb)
         return sb
 
-    async def snapshot(self, sandbox: FakeSnapshotSandbox):
-        return tuple(sandbox.history)
+    async def snapshot(self, sandbox: FakeSnapshotSandbox) -> FakeSnapshot:
+        return FakeSnapshot(tuple(sandbox.history), tuple(sorted(sandbox.files.items())))
 
 
 # ---------------------------------------------------------------- targets
@@ -692,11 +727,25 @@ async def _run_checked(sb, cmd: str) -> Tuple[int, str]:
     return (int(m.group(1)) if m else -1), (out[:m.start()].rstrip() if m else out)
 
 
+async def _upload_repo(sb, repo: Optional[dict], log: List[dict]) -> None:
+    """Upload the files the repo's setup commands expect (`sandbox_tools.repo_uploads`) into `sb`, logging each
+    upload's sha256 and size. A `local_path` repo is bundled now, so it must be on this host with the commits the
+    audit used (the case's `repo.ref` pins the checkout; the logged hash identifies what each replay cloned)."""
+    with tempfile.TemporaryDirectory(prefix="autoresearch-bundle-") as tmp:
+        uploads = await asyncio.to_thread(repo_uploads, repo, tmp)
+        if uploads and not hasattr(sb, "upload"):
+            raise RuntimeError(f"this sandbox backend cannot upload files, which the repo clone needs: {sorted(uploads)}")
+        for remote, local in uploads.items():
+            await sb.upload(local, remote)
+            log.append({"upload": remote, "sha256": file_sha256(local), "bytes": os.path.getsize(local)})
+
+
 async def replay_case(case: dict, target, backend=None, mutations: Optional[Sequence[str]] = None,
                       k_turns: int = 3, replicates: int = 1, ctx: Optional[MutationContext] = None,
                       simulate_tool=None, max_concurrency: int = 4) -> List[dict]:
-    """Every (mutation, replicate) branch of one case. Sandbox-mode cases with a backend get a base sandbox built
-    from `setup_commands`, snapshotted once; each branch starts a fresh sandbox from that snapshot."""
+    """Every (mutation, replicate) branch of one case. Sandbox-mode cases with a backend get a base sandbox: the
+    repo's uploads first (a `local_path` repo's bundle, made on this host from `case["repo"]`), then
+    `setup_commands`, snapshotted once; each branch starts a fresh sandbox from that snapshot."""
     ctx = ctx or MutationContext(today=_dt.date.today())
     muts = get_mutations(mutations)
     prefix = prefix_messages(case["messages"], int(case["decision_turn"]))
@@ -706,6 +755,7 @@ async def replay_case(case: dict, target, backend=None, mutations: Optional[Sequ
     if use_sandbox:
         base = backend.create()
         try:
+            await _upload_repo(base, case.get("repo"), setup_log)
             for i, cmd in enumerate(case.get("setup_commands") or []):
                 code, out = await _run_checked(base, cmd)
                 setup_log.append({"command": cmd[:500], "exit": code, "output": out[-500:]})
@@ -764,6 +814,20 @@ def _write_jsonl(path: str, rows: List[dict]):
     Path(path).write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
 
 
+def thinking_config(model_id: str, reasoning_tokens: int = 8000) -> dict:
+    """GenerateConfig fields for --target-thinking: the same as run_audits.py's (`target_thinking_config`)."""
+    from run_audits import target_thinking_config
+    return target_thinking_config(model_id, reasoning_tokens)
+
+
+def replay_target(model_id: str, config: Optional[dict] = None) -> "InspectTarget":
+    """The paid target as an InspectTarget, with `config` (GenerateConfig fields, e.g. `thinking_config`)."""
+    if not config:
+        return InspectTarget(model_id)
+    from inspect_ai.model import GenerateConfig
+    return InspectTarget(model_id, config=GenerateConfig(**config))
+
+
 def mock_target():
     """Free target for plumbing checks: Inspect's mockllm if installed, else a FakeTarget."""
     try:
@@ -788,6 +852,9 @@ def main(argv=None):
     r.add_argument("--replicates", type=int, default=3)
     r.add_argument("--today", help="YYYY-MM-DD for present_dates (default: today; recorded per row)")
     r.add_argument("--target", help="Inspect model id of the target (paid)")
+    r.add_argument("--target-thinking", action="store_true",
+                   help="extended thinking / reasoning on for the target, as run_audits.py --target-thinking")
+    r.add_argument("--reasoning-tokens", type=int, default=8000)
     r.add_argument("--mock", action="store_true", help="mock target and fake sandbox: no model or Modal calls")
     r.add_argument("--max-concurrency", type=int, default=4)
     a = ap.parse_args(argv)
@@ -802,7 +869,9 @@ def main(argv=None):
         return 0
     if not a.mock and not a.target:
         raise SystemExit("replay needs --target (paid, needs the user's approval) or --mock")
-    target = mock_target() if a.mock else InspectTarget(a.target)
+    # as in run_audits.py, mock models ignore --target-thinking
+    thinking = thinking_config(a.target, a.reasoning_tokens) if a.target_thinking and not a.mock else None
+    target = mock_target() if a.mock else replay_target(a.target, thinking)
     backend = FakeSnapshotBackend() if a.mock else ModalSnapshotBackend()
     ctx = MutationContext(today=_dt.date.fromisoformat(a.today) if a.today else _dt.date.today())
     rows = asyncio.run(replay_all(_read_jsonl(a.cases), target, backend,
@@ -810,6 +879,7 @@ def main(argv=None):
                                   replicates=a.replicates, ctx=ctx, max_concurrency=a.max_concurrency))
     for row in rows:
         row["mock"] = bool(a.mock)
+        row["target_thinking"] = thinking
     _write_jsonl(a.out, rows)
     print(f"{len(rows)} replays -> {a.out} ({sum(bool(x['error']) for x in rows)} errored)", file=sys.stderr)
     return 0
