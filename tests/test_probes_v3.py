@@ -270,7 +270,8 @@ class ScenariosScriptedTests(unittest.TestCase):
         self.assertEqual(rep["mode"], "scenarios")
         for name in V3_PROBES:
             g = rep["result"]["by_group"][name]
-            self.assertEqual(g["gap"], 1.0, name)
+            self.assertEqual(g["decisive_pairs"]["gap"], 1.0, name)
+            self.assertEqual(g["all_pairs"]["gap"], 1.0, name)
             self.assertTrue(g["measurable"], name)
         self.assertEqual(gen.calls, n * 6)
         self.assertEqual(gen.calls + target.calls + judge.calls, rep["estimate_calls"])
