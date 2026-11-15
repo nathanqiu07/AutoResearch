@@ -32,6 +32,7 @@ from .advisor import ProfileUserModel, TasteAdvisor
 from .claims import KINDS as CLAIM_KINDS, HURTS_P, candidate_claims, check_claim
 from .decisions import DecisionLog
 from .ideas import Intervention, Proposer
+from .market import ALLOCATIONS, Market, halving_plan
 from .measure import Measurer, Sample, Scenario, DEFAULT_SCENARIO, realism_auroc
 from .multi import ItemPool, paired_compare, per_item_table, pooled_ci
 from .stats import bootstrap_ci, mean, prob_better, spearman
@@ -64,10 +65,22 @@ class ResearchConfig:
     setting_check: bool = True     # judge each generated environment against the fixed setting (drift)
     explain: bool = True           # D5: competing explanations of each iteration's top result
     claims: bool = True            # D6: draft claims for the write-up and check them
+    # E5 (market.py): how the per-iteration sample budget (evals_per_iter x samples) is spent.
+    # uniform = the first evals_per_iter candidates get `samples` each; halving / market screen
+    # more candidates with `screen_samples` each and bring the top half up to a full measurement.
+    allocation: str = "uniform"
+    screen_samples: int = 2
+    screen_cost: float = 1.0       # cost of a screening sample relative to a dev one (cheap screening target)
+    contrarian: int = 0            # extra proposals per iteration from the contrarian proposer
+    stake_frac: float = 0.1        # market: share of its balance an agent stakes per bid
 
     def __post_init__(self):
         if self.taste_mode not in TASTE_MODES:
             raise ValueError(f"taste_mode must be one of {TASTE_MODES}, got {self.taste_mode!r}")
+        if self.allocation not in ALLOCATIONS:
+            raise ValueError(f"allocation must be one of {ALLOCATIONS}, got {self.allocation!r}")
+        if self.allocation != "uniform" and not 0 < self.screen_samples < self.samples:
+            raise ValueError(f"screen_samples must be in (0, samples={self.samples}), got {self.screen_samples}")
 
     @property
     def use_taste(self) -> bool:
@@ -173,7 +186,13 @@ class OpenResearcher:
                  taste: Optional[TasteProfile], cfg: ResearchConfig, scenario: Scenario = DEFAULT_SCENARIO,
                  scout=None, shared=None, calibration: Optional[Calibration] = None, budget=None,
                  advisor: Optional[TasteAdvisor] = None, pool: Optional[ItemPool] = None,
-                 decisions_dir: Optional[str] = None):
+                 decisions_dir: Optional[str] = None, market: Optional[Market] = None,
+                 contrarian: Optional[Proposer] = None, screen_measurer: Optional[Measurer] = None):
+        """market: bids and wallets for allocation="market" (a fresh in-memory
+        one if omitted); contrarian: the contrarian proposer used when
+        cfg.contrarian > 0; screen_measurer: a cheaper target for the screening
+        round of halving/market (its samples rank candidates but are not merged
+        into the full measurement)."""
         if cfg.items_per_iter and pool is None:
             raise ValueError("items_per_iter > 0 needs an ItemPool of benchmark items")
         if measurer is None and pool is None:
@@ -207,6 +226,18 @@ class OpenResearcher:
         self._d4_refuted_logged: set = set()
         self._taste_deferred: set = set()
         self.drift_events: List[dict] = []
+        if screen_measurer is not None and (cfg.items_per_iter or cfg.allocation == "uniform"):
+            raise ValueError("a screening target needs allocation halving or market, and single-item mode")
+        self.screen_ms = screen_measurer
+        self.contrarian = contrarian if cfg.contrarian > 0 else None
+        self.market = None
+        if cfg.allocation == "market":
+            self.market = market or Market(shared=shared, run_id=self.run_id, stake_frac=cfg.stake_frac)
+            self.market.run_id = self.market.run_id or self.run_id
+        self.samples_used = 0          # dev-target samples (per item in multi-item mode)
+        self.screen_samples_used = 0   # samples on the screening target
+        self.screened_out: List[dict] = []
+        self.anytime: List[dict] = []
 
     # ---------- helpers ----------
     def _seeds(self, n):
@@ -217,11 +248,20 @@ class OpenResearcher:
     def _batch(self) -> Optional[List[str]]:
         return self.pool.sample_batch(self.item_rng, self.cfg.items_per_iter) if self.pool else None
 
-    def _measure(self, ints: List[Intervention], batch: Optional[List[str]] = None) -> Evaluation:
+    def _measure(self, ints: List[Intervention], batch: Optional[List[str]] = None, n: Optional[int] = None,
+                 measurer: Optional[Measurer] = None) -> Evaluation:
+        """n samples (per item in multi-item mode; default cfg.samples), on the
+        dev target or on `measurer` (the screening target)."""
+        n = self.cfg.samples if n is None else n
         texts, cats = [i.text for i in ints], [i.category for i in ints]
+        if measurer is not None:
+            self.screen_samples_used += n
+            return Evaluation(ints, measurer.measure(texts, self._seeds(n), cats))
         if self.pool is None:
-            return Evaluation(ints, self.ms.measure(texts, self._seeds(self.cfg.samples), cats))
-        pairs = self.pool.measure(texts, self._seeds(self.cfg.samples * len(batch)), cats, batch)
+            self.samples_used += n
+            return Evaluation(ints, self.ms.measure(texts, self._seeds(n), cats))
+        self.samples_used += n * len(batch)
+        pairs = self.pool.measure(texts, self._seeds(n * len(batch)), cats, batch)
         return Evaluation(ints, [s for _, s in pairs], [i for i, _ in pairs])
 
     def _compare(self, ev: Evaluation, ref: Evaluation, seed: int) -> Tuple[float, float, Dict[str, float]]:
@@ -287,6 +327,77 @@ class OpenResearcher:
         self.web_ideas += new
         self.log.append({"event": "web_ideas", "ideas": [w.to_dict() for w in new]})
 
+    # ---------- allocation (E5, market.py) ----------
+    AGENT_OF_ORIGIN = {"llm": "proposer", "exa": "scout", "contrarian": "contrarian", "library": "library"}
+
+    def _place_bids(self, it: int, gated) -> List[str]:
+        """Every agent bids on the designs it brought, the critic bids against
+        all of them; returns the design keys in funding order."""
+        for move, _, idea in gated:
+            k = self._key(idea.category)
+            prior = self.mem.credence(k) if self.cfg.use_memory else 0.5
+            if move.startswith("add"):
+                agent = self.AGENT_OF_ORIGIN.get(idea.origin, idea.origin)
+                p = idea.p_validated if idea.p_validated is not None else prior
+            else:   # the loop's own ablation: removing a category validates when it hurt
+                agent, p = "ablation", 1.0 - prior
+            self.market.bid(agent, move, p, it=it)
+        crit = self.pr.critique(self.sc.goal, [(m, _design_text(m, i), dict(i.features)) for m, _, i in gated],
+                                self.findings)
+        for move, p in crit.items():
+            self.market.bid("critic", move, p, against=True, it=it)
+        return self.market.order([d[0] for d in gated])
+
+    def _allocate(self, it: int, gated, batch):
+        """(designs to measure in full, each with its screening Evaluation or
+        None, in order; the order the designs were funded in)."""
+        if self.cfg.allocation == "uniform":
+            return [(m, ints, i, None) for m, ints, i in gated[: self.cfg.evals_per_iter]], gated
+        if self.cfg.allocation == "market":
+            by_key = {d[0]: d for d in gated}
+            order = [by_key[k] for k in self._place_bids(it, gated)]
+        else:
+            order = list(gated)
+        merged = self.screen_ms is None
+        n, keep = halving_plan(len(order), self.cfg.evals_per_iter * self.cfg.samples, self.cfg.samples,
+                               self.cfg.screen_samples, merged=merged, screen_cost=self.cfg.screen_cost)
+        if n <= keep:   # nothing to screen out: measure in full
+            return [(m, ints, i, None) for m, ints, i in order[:n]], order
+        screened = []
+        for move, ints, idea in order[:n]:
+            ev = self._measure(ints, batch, n=self.cfg.screen_samples, measurer=self.screen_ms)
+            screened.append((mean(ev.scores) if ev.scores else -1.0, move, ints, idea, ev))
+        rank = sorted(range(len(screened)), key=lambda k: (-screened[k][0], k))
+        survivors = sorted(rank[:keep])
+        for k in rank[keep:]:
+            sc, move, _, idea, ev = screened[k]
+            rec = {"iter": it, "move": move, "text": idea.text, "category": idea.category, "origin": idea.origin,
+                   "screen_score": round(sc, 4), "n": len(ev.scores),
+                   "target": "screening" if self.screen_ms is not None else "dev"}
+            self.screened_out.append(rec)
+            self.log.append({"event": "screened_out", **rec})
+        self.log.append({"event": "allocation", "iter": it, "mode": self.cfg.allocation, "screened": n,
+                         "survivors": keep, "screen_samples": self.cfg.screen_samples})
+        return [(screened[k][1], screened[k][2], screened[k][3], screened[k][4] if merged else None)
+                for k in survivors], order
+
+    def _settle(self, it: int, outcomes: Dict[str, bool], deferred: List[Intervention]):
+        if not self.market:
+            return
+        for r in self.screened_out:
+            if r["iter"] == it:
+                outcomes.setdefault(r["move"], False)
+        self.market.settle(outcomes, it=it)
+        self.market.withdraw(keep=[f"add:{i.id}" for i in deferred], it=it)
+
+    def _anytime(self, it: int, best: Evaluation):
+        """One point of E5's anytime curve: best dev score against cumulative spend."""
+        b = self.budget.summary() if self.budget else {}
+        self.anytime.append({"iter": it, "best_score": round(mean(best.scores), 4) if best.scores else None,
+                             "validated": sum(f["status"] == "validated" for f in self.findings),
+                             "samples": self.samples_used, "screen_samples": self.screen_samples_used,
+                             "calls": b.get("calls"), "cost_usd": b.get("cost_usd"), "seconds": b.get("seconds")})
+
     # ---------- decision points ----------
     def _d1(self, it: int, designs, best: Evaluation) -> Optional[int]:
         """Taste scores for this iteration's designs (log of k * P(choose),
@@ -328,8 +439,12 @@ class OpenResearcher:
         opts = [f"{n} samples per candidate on {where} (uniform allocation)",
                 f"{2 * n} samples per candidate on {where}",
                 f"{max(2, n // 2)} samples per candidate on {where}"]
-        # Uniform allocation is fixed while there is no market (WS E on hold), so
-        # every arm spends the same budget: the statistics/config decide D2.
+        if self.cfg.allocation != "uniform":
+            scr = "the screening target" if self.screen_ms is not None else where
+            opts = [f"{self.cfg.allocation}: screen candidates with {self.cfg.screen_samples} samples on {scr}, "
+                    f"bring the top half to {n} samples on {where}", opts[0]]
+        # The allocation mode is fixed by the run's config (an E5 arm), so every arm
+        # of E4 spends the same budget: the statistics/config decide D2.
         chosen, adv = self._decide(f"Iteration {it}: how much evidence to collect for {n_cands} candidate(s)",
                                    opts, 0, decisive=True)
         self._record(it, "D2", f"Iteration {it}: how much evidence to collect for {n_cands} candidate(s)",
@@ -443,6 +558,7 @@ class OpenResearcher:
         best = self._measure([], self._batch())
         baseline = best
         self.log.append({"event": "baseline", **best.summary()})
+        self._anytime(0, best)
         tried = set()
         deferred: List[Intervention] = []   # strong runners-up, re-tested against the new best
         for it in range(1, self.cfg.iterations + 1):
@@ -454,6 +570,11 @@ class OpenResearcher:
             cands = deferred + self.pr.propose(self.sc.goal, self.sc.probe, best.interventions, tried,
                                                self.findings, self.web_ideas, self.cfg.proposals,
                                                setting=self.sc.setting)
+            if self.contrarian:
+                seen = {c.id for c in cands}
+                cands += [c for c in self.contrarian.propose(self.sc.goal, self.sc.probe, best.interventions, tried,
+                                                             self.findings, self.web_ideas, self.cfg.contrarian,
+                                                             setting=self.sc.setting) if c.id not in seen]
             cands = [c for c in cands if c.category not in self.abandoned]
             deferred = []
             # candidate designs: add one intervention; occasionally ablate one
@@ -479,15 +600,23 @@ class OpenResearcher:
                     self.log.append({"event": "gated_refuted_category", "iter": it, "idea": d[2].text,
                                      "category": d[2].category})
                     self._record_d4_refuted(it, d[2])
-            chosen = gated[: self.cfg.evals_per_iter]
+            alloc, funded = self._allocate(it, gated, batch)
+            chosen = [(m, ints, i) for m, ints, i, _ in alloc]
             if not chosen:
+                self._settle(it, {}, deferred)
+                self._anytime(it, best)
                 continue
-            self._record_d1(it, ranked, chosen, pri, designs[um_top_i] if um_top_i is not None else None)
+            tried |= {r["move"][4:] for r in self.screened_out if r["iter"] == it and r["move"].startswith("add:")}
+            self._record_d1(it, funded if self.market else ranked, chosen, pri,
+                            designs[um_top_i] if um_top_i is not None else None)
             self._record_d2(it, len(chosen), batch)
             evals = []
-            for move, ints, idea in chosen:
+            for move, ints, idea, screen_ev in alloc:
                 tried.add(idea.id)
-                ev = self._measure(ints, batch)
+                if screen_ev is not None:   # screening samples on the dev target count toward the full measurement
+                    ev = screen_ev.merged(self._measure(ints, batch, n=self.cfg.samples - self.cfg.screen_samples))
+                else:
+                    ev = self._measure(ints, batch)
                 p, delta, per_item = self._compare(ev, ref, seed=it)
                 summ = ev.summary()
                 drift = self._setting_drift(ev)
@@ -520,6 +649,7 @@ class OpenResearcher:
                 else:
                     status = "unconfirmed"
             top_finding = None
+            outcomes: Dict[str, bool] = {}   # market settlement: validated or not, per measured design
             for e in evals:
                 mv, ev_, i, pp, dd, ss, per_item, drift = e
                 act = actions[id(e)]
@@ -560,6 +690,8 @@ class OpenResearcher:
                 self.findings.append(finding)
                 if e is top:
                     top_finding = finding
+                if st != "deferred":
+                    outcomes[mv] = st == "validated"
                 # mixed = neither validated nor clearly worse: failed confirmation, or inconclusive
                 if mv.startswith("add") and (st == "unconfirmed" or (st == "rejected" and HURTS_P < pp < self.cfg.accept_p)):
                     self._mixed[i.category] = self._mixed.get(i.category, 0) + 1
@@ -572,6 +704,10 @@ class OpenResearcher:
                 self._d5(it, top_finding, best_before)
             for cat in sorted({e[2].category for e in evals if e[0].startswith("add")}):
                 self._d4_mixed(it, cat)
+            self._settle(it, outcomes, deferred)
+            self._anytime(it, best)
+        if self.market:
+            self.market.withdraw(it=None)   # bids still open at the end (deferred, or the budget ran out)
         self.mem.flush()
         claims = self._d6()
         faith = {}
@@ -592,6 +728,11 @@ class OpenResearcher:
         rep["measurer_warnings"] = list(self.pool.warnings if self.pool else getattr(self.ms, "warnings", []))
         rep["setting_gate_refusals"] = getattr(self.pr, "gated", [])
         rep["setting_drift"] = self.drift_events
+        rep["allocation"] = {"mode": self.cfg.allocation, "samples": self.samples_used,
+                             "screen_samples": self.screen_samples_used,
+                             "screening_target": self.screen_ms is not None, "screened_out": self.screened_out}
+        rep["market"] = self.market.report() if self.market else None
+        rep["anytime"] = self.anytime
         return rep
 
     def _faithfulness(self, best: Evaluation) -> dict:

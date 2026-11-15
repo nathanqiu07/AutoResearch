@@ -151,7 +151,9 @@ def research_config(args, arm: str):
                           max_calls=args.max_calls, faithfulness_samples=args.faithfulness_samples,
                           realism_samples=args.realism_samples, items_per_iter=args.items_per_iter,
                           min_taste_confidence=args.min_taste_confidence, setting_check=not args.no_setting_check,
-                          explain=not args.no_explain, claims=not args.no_claims)
+                          explain=not args.no_explain, claims=not args.no_claims,
+                          allocation=args.allocation, screen_samples=args.screen_samples,
+                          screen_cost=args.screen_cost, contrarian=args.contrarian, stake_frac=args.stake_frac)
 
 
 def _hash_split(key: str, heldout_frac: float = 0.4) -> bool:
@@ -282,9 +284,30 @@ def cmd_research(args):
           f"shared={getattr(shared, 'backend', 'off')}")
     proposer = Proposer(models.generator, prof, _r.Random(args.seed), gate_llm=models.judge, taste_text=taste_text,
                         history=history, setting_kind=args.setting)
+    contrarian = market = screen = None
+    if args.contrarian:
+        contrarian = Proposer(models.generator, prof, _r.Random(args.seed + 1), gate_llm=models.judge,
+                              taste_text=taste_text, history=history, setting_kind=args.setting, contrarian=True)
+    if args.allocation == "market":
+        from .research.market import Market, Wallets
+        market = Market(Wallets(args.wallets or os.path.join(args.memory, "wallets.json")), shared=shared,
+                        stake_frac=args.stake_frac)
+    if args.screen_target:
+        if args.allocation == "uniform" or pool is not None or args.setting != "single":
+            raise SystemExit("--screen-target needs --allocation halving|market in single-item mode")
+        import dataclasses
+        mk_t = (lambda m: get_llm(args.target_llm, m, budget)) if args.target_llm else (
+            lambda m: get_llm(args.llm, m, budget))
+        screen = Measurer(dataclasses.replace(models, target=mk_t(args.screen_target)), scenario=scenario,
+                          real_corpus=corpus_for(scenario), workers=args.workers, simulator=OfflineWorld(),
+                          mode="dev", probe_questions=probes)
+    print(f"allocation={args.allocation}" + (f" (screen {args.screen_samples} samples on "
+          f"{args.screen_target or args.target})" if args.allocation != "uniform" else "")
+          + (f" | contrarian={args.contrarian}" if args.contrarian else ""))
     r = OpenResearcher(measurer, proposer, ResearchMemory(args.memory), prof, cfg, scenario=scenario, scout=scout,
                        shared=shared, calibration=cal, budget=budget, advisor=advisor, pool=pool,
-                       decisions_dir=args.decisions_dir)
+                       decisions_dir=args.decisions_dir, market=market, contrarian=contrarian,
+                       screen_measurer=screen)
     rep = r.run()
     if slug and not prof:
         rep["taste"]["researcher"] = slug
@@ -303,6 +326,10 @@ def cmd_research(args):
         if k in fa:
             print(f"faithfulness {k}: {fa[k]['misbehavior']} rate as-is={fa[k]['rate_plain']} "
                   f"with eval notice={fa[k]['rate_eval_notice']} (n={fa[k]['n']})")
+    mk_rep = rep.get("market")
+    if mk_rep:
+        print("market wallets: " + ", ".join(f"{a}={w['balance']:.1f}" for a, w in mk_rep["wallets"].items())
+              + f" | bids {mk_rep['n_bids']}, settled {mk_rep['n_settled']}, Brier {mk_rep['brier']}")
     for k, per in (rep.get("realism_auroc") or {}).items():
         print(f"realism AUROC {k}: " + ", ".join(f"{w}={v['auroc']:.3f}" for w, v in per.items()))
     if r.dlog.path:
@@ -546,6 +573,16 @@ def build_parser() -> argparse.ArgumentParser:
               "--no-explain", "--no-claims"):
         rs.add_argument(f, action="store_true")
     rs.add_argument("--no-taste", action="store_true", help="alias for --taste-mode none")
+    rs.add_argument("--allocation", default="uniform", choices=["uniform", "halving", "market"],
+                    help="E5: how each iteration's evals-per-iter x samples budget is spent (research/market.py)")
+    rs.add_argument("--screen-samples", type=int, default=2, help="halving/market: screening samples per candidate")
+    rs.add_argument("--screen-target", help="halving/market: cheaper target model for the screening round")
+    rs.add_argument("--screen-cost", type=float, default=1.0,
+                    help="cost of one screening sample relative to a dev-target sample (set it with --screen-target)")
+    rs.add_argument("--contrarian", type=int, default=0,
+                    help="extra proposals per iteration from a contrarian proposer (ideas the researcher would not pick)")
+    rs.add_argument("--wallets", help="market wallets JSON (default <memory>/wallets.json; persists across runs)")
+    rs.add_argument("--stake-frac", type=float, default=0.1, help="market: share of its balance an agent stakes per bid")
     rs.set_defaults(fn=cmd_research)
     ev = sub.add_parser("evaluate-design", help="score a finished run's final design on held-out items (E4)")
     ev.add_argument("--report", required=True, help="the run's report JSON")

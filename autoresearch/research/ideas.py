@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, replace
 from typing import Dict, List, Optional, Tuple
 
 from ..llm import LLM, OfflineLLM, extract_json
@@ -21,8 +21,9 @@ class Intervention:
     category: str
     features: Dict[str, float]
     rationale: str = ""
-    origin: str = "library"          # library | llm | exa
+    origin: str = "library"          # library | llm | exa | contrarian
     source_url: Optional[str] = None
+    p_validated: Optional[float] = None   # the proposing agent's stated P(confirmed as an improvement): its market bid
 
     @property
     def id(self) -> str:
@@ -90,19 +91,33 @@ def taste_brief(taste: Optional[TasteProfile]) -> str:
 class Proposer:
     def __init__(self, llm: LLM, taste: Optional[TasteProfile], rng: random.Random,
                  gate_llm: Optional[LLM] = None, taste_text: Optional[str] = None,
-                 history: Optional[str] = None, setting_kind: str = "single"):
+                 history: Optional[str] = None, setting_kind: str = "single", contrarian: bool = False):
         """taste_text overrides the brief built from `taste` (e.g. a user model's
         principles); history is the raw researcher history pasted verbatim in the
         prompt-baseline arms; setting_kind is "single" (tool-less single-turn
-        environments) or "agentic" (Petri seeds and auditor behaviour)."""
+        environments) or "agentic" (Petri seeds and auditor behaviour).
+        contrarian makes this the market's contrarian proposer: it is told to find
+        ideas the researcher would NOT pick, and its ideas carry origin "contrarian"."""
         if setting_kind not in SETTING_KINDS:
             raise ValueError(f"setting_kind must be one of {SETTING_KINDS}, got {setting_kind!r}")
         self.llm, self.taste, self.rng = llm, taste, rng
         self.gate_llm = gate_llm or llm
         self.taste_text, self.history, self.setting_kind = taste_text, history, setting_kind
         self.gated: List[dict] = []   # proposals refused by the setting-consistency gate
+        self.contrarian = contrarian
+
+    @property
+    def origin(self) -> str:
+        return "contrarian" if self.contrarian else "llm"
 
     def _taste_section(self) -> str:
+        if self.contrarian:
+            return ("You are the team's CONTRARIAN. The researcher's taste is described below. Propose ideas this "
+                    "researcher would NOT pick (outside their usual preferences) that you still think could work; "
+                    "the point is to test the directions their taste would skip.\n" + self._base_taste())
+        return self._base_taste()
+
+    def _base_taste(self) -> str:
         if self.history:
             return ("The researcher you work for left this raw history of their past choices and writing. "
                     "Infer what they would find promising from it:\n" + self.history)
@@ -120,6 +135,9 @@ class Proposer:
         if isinstance(self.llm, OfflineLLM):
             pool = [i for i in LIBRARY + web_ideas if i.id not in tried_ids and i not in current]
             self.rng.shuffle(pool)
+            if self.contrarian:   # the offline contrarian takes the ideas the taste profile likes least
+                pool.sort(key=lambda i: taste_alignment(self.taste, i))
+                pool = [replace(i, origin="contrarian") for i in pool]
             return pool[:k]
         prompt = (
             f"RESEARCH GOAL: {goal}\nThe environment must keep this opportunity: {probe}\n"
@@ -140,8 +158,10 @@ class Proposer:
             "ideas; build on what worked; avoid what was refuted. Include at least one idea this researcher would "
             "find unusual. Return a JSON list of {\"text\": str, \"category\": one of " + json.dumps(CATEGORIES) +
             " or a new snake_case category, \"rationale\": str, \"features\": {" +
-            ", ".join(f'"{f}": 0-1' for f in FEATURES) + "}}. 'cost' = expense to build, "
-            "'risk' = chance it breaks the probe.")
+            ", ".join(f'"{f}": 0-1' for f in FEATURES) + "}, \"p_validated\": 0-1}. 'cost' = expense to build, "
+            "'risk' = chance it breaks the probe. 'p_validated' = your honest probability that this change, added "
+            "to the current design, is confirmed as an improvement on fresh samples; it is scored against the "
+            "outcome with a log score, so over- or under-stating it costs you.")
         out = extract_json(self.llm.complete(prompt, temperature=0.9, max_tokens=2500)) or []
         ideas = []
         for o in out if isinstance(out, list) else []:
@@ -149,11 +169,39 @@ class Proposer:
                 continue
             feats = {f: _f(o.get("features", {}).get(f)) for f in FEATURES}
             idea = Intervention(str(o["text"]), str(o.get("category", "other")), feats,
-                                str(o.get("rationale", "")), "llm")
+                                str(o.get("rationale", "")), self.origin, p_validated=_p(o.get("p_validated")))
             if idea.id not in tried_ids:
                 ideas.append(idea)
         ideas = self.setting_gate(ideas[:k], setting) if setting else ideas[:k]
         return ideas or [i for i in LIBRARY if i.id not in tried_ids][:k]
+
+    def critique(self, goal: str, designs: List[Tuple[str, str, Dict[str, float]]],
+                 findings: List[dict]) -> Dict[str, float]:
+        """The critic's bids: {design key: P(confirmed as an improvement)} for
+        (key, description, features) triples. The critic only bids against
+        candidates (market.py); it never funds one. Offline: a heuristic on the
+        design's stated risk and cost."""
+        if not designs:
+            return {}
+        if isinstance(self.llm, OfflineLLM):
+            return {k: max(0.05, min(0.95, 0.45 - 0.3 * f.get("risk", 0.0) - 0.1 * f.get("cost", 0.0)
+                                     + 0.1 * f.get("grounding", 0.0)))
+                    for k, _, f in designs}
+        lines = "\n".join(f"[{n}] {d}" for n, (_, d, _) in enumerate(designs))
+        hist = "\n".join(f"- [{f['status']}] [{f['category']}] {f['text'][:120]}" for f in findings[-12:]) or "- none"
+        out = extract_json(self.gate_llm.complete(
+            f"You are a skeptical critic in a research team. Goal: {goal}\nPast findings:\n{hist}\n"
+            f"Candidate environment designs to test next:\n{lines}\nFor each candidate give your honest probability "
+            "that it is confirmed as an improvement on fresh samples (most proposals are not). You are scored with a "
+            "log score against the outcome. Return a JSON list of {\"index\": int, \"p_validated\": 0-1, "
+            "\"reason\": str}.", temperature=0.0, max_tokens=1200)) or []
+        res = {}
+        for o in out if isinstance(out, list) else []:
+            if isinstance(o, dict) and isinstance(o.get("index"), int) and 0 <= o["index"] < len(designs):
+                p = _p(o.get("p_validated"))
+                if p is not None:
+                    res[designs[o["index"]][0]] = p
+        return res
 
     def setting_gate(self, ideas: List[Intervention], setting: str) -> List[Intervention]:
         """Drift control at the level of the scenario: a judge refuses
@@ -251,7 +299,8 @@ class Proposer:
             f"Goal: {goal}\nRecent sources:\n{ev}\nExtract up to 3 concrete environment-design interventions these "
             "sources suggest for making evaluations indistinguishable from deployment. Return JSON list of "
             "{\"text\", \"category\", \"rationale\", \"source_index\": int, \"features\": {" +
-            ", ".join(f'"{f}": 0-1' for f in FEATURES) + "}}.", temperature=0.3, max_tokens=1500)) or []
+            ", ".join(f'"{f}": 0-1' for f in FEATURES) + "}, \"p_validated\": your honest probability (0-1) that "
+            "the intervention is confirmed as an improvement}.", temperature=0.3, max_tokens=1500)) or []
         ideas = []
         for o in out if isinstance(out, list) else []:
             if isinstance(o, dict) and o.get("text"):
@@ -259,7 +308,8 @@ class Proposer:
                 url = results[i]["url"] if isinstance(i, int) and 0 <= i < len(results) else results[0]["url"]
                 ideas.append(Intervention(str(o["text"]), str(o.get("category", "other")),
                                           {f: _f(o.get("features", {}).get(f)) for f in FEATURES},
-                                          str(o.get("rationale", "")), "exa", url))
+                                          str(o.get("rationale", "")), "exa", url,
+                                          p_validated=_p(o.get("p_validated"))))
         return ideas
 
 
@@ -288,6 +338,22 @@ def _fmt(x) -> str:
 
 def _fmt_ci(ci) -> str:
     return f"[{_fmt(ci[0])}, {_fmt(ci[1])}]" if ci else "n/a"
+
+
+def _p(x) -> Optional[float]:
+    """A stated probability in [0, 1], or None when missing or unusable."""
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    return None if v != v else max(0.0, min(1.0, v))
+
+
+def taste_alignment(taste: Optional[TasteProfile], idea: Intervention) -> float:
+    """Dot product of the taste weights with the idea's features (0 without taste)."""
+    if not taste:
+        return 0.0
+    return sum(taste.weights.get(f, 0.0) * idea.features.get(f, 0.0) for f in FEATURES)
 
 
 def _f(x):
