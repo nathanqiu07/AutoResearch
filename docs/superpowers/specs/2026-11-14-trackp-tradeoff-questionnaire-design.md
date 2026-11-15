@@ -109,6 +109,46 @@ definitions (B). Both kinds of scenario go through the balance check.
 * WS A is told through `agentctl post` that D1 seed pairs are no longer intervention pairs,
   in case a feature-based method relies on them. PLAN §12.2's seed-choices text is updated.
 
+## Length and time
+
+The default `--n 50` is 13 stance items plus 37 scenario items, about 3 per axis. Time for a
+fast reader (about 400 words a minute) who decides quickly:
+
+| Part | Each | Total |
+|---|---|---|
+| 13 stance items (~40 words) | ~15 s | ~3 min |
+| 10 item contexts, read once (~250 words) | ~40 s | ~7 min |
+| 37 scenario options (~60 words) and the choice | ~15 s | ~9 min |
+| optional one-sentence reason | ~10 s | up to ~8 min |
+
+So about **20 minutes**, or about **30 minutes** with a reason on every answer. That
+assumes scenario items are grouped by item, so each context is read once; shown in random
+order, the context is re-read for every item and the session takes about 35–45 minutes.
+
+## Administering the test (agent instructions)
+
+`docs/trackp-runbook.md` §2 already tells an agent how to collect answers in chat. This build
+extends it, and `pending` serves items in the order below so the agent doesn't have to sort
+them:
+
+1. **Before the first item,** tell the person once: it takes about 20 minutes (30 with
+   reasons), they can stop and resume at any point, there are no right answers, and each
+   question asks what *they* would do.
+2. **Order:** scenario items first, grouped by item context; stance items last. Asking the
+   general stance first would invite the person to answer the scenarios to match it, which
+   hides the stance-vs-scenario difference the two forms exist to measure.
+3. **Show each context once per group,** then that group's scenario questions one at a time.
+   Show options verbatim, numbered as printed. Never name the axis, the poles, the theme or
+   the decision point: the labels tell the person what the question is testing.
+4. **Say nothing about the content:** no opinion, no hint, no paraphrase, no "good choice".
+   If the person asks what an option means, re-show it word for word and say it is meant to be
+   read as written.
+5. **Record each answer at once** with `record`, the reason word for word. A skipped item is
+   not recorded. If they want to pick neither, record nothing and note their words in the
+   reply, never as a choice.
+6. **Pace:** offer a break at the halfway point. At the end, run `status` and report how many
+   items were answered and what is left.
+
 ## Constraints
 
 * `trackp.py` is WS B's file. Tests run with `python3 -m unittest discover -s tests -t .`.
@@ -119,5 +159,4 @@ definitions (B). Both kinds of scenario go through the balance check.
 ## Left to the builder
 
 * The exact wording of each axis's stance question, poles and template, within the table.
-* The split between stance and scenario items for the default `--n`.
 * The prompt for LLM-written scenarios.
