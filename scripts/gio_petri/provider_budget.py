@@ -15,7 +15,8 @@ from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from budget import RATES
+from budget import RATES, COST_BASIS, UsageContract, input_token_accounting
+from dataclasses import asdict
 
 
 PROVIDERS = {'judge': 'openai', 'auditor': 'openrouter', 'target': 'openrouter'}
@@ -127,7 +128,7 @@ class ProviderBudget:
                 'arms': {name: {'halted': arm.halted} for name, arm in self._arms.items()},
                 'lease': self.lease, 'lease_sha256': self.lease_sha256,
                 'scope': 'local_suballocation_not_global_project_ledger',
-                'cost_basis': 'conservative_uncached_usage_estimate_or_retained_reservation',
+                'cost_basis': COST_BASIS, 'priced_input_field': 'total_input_tokens',
                 'rates': RATES}))
 
     def save(self):
@@ -205,7 +206,7 @@ class ArmLedger:
             self.save()
             return index
 
-    def settle(self, index, usage):
+    def settle(self, index, usage, *, usage_contract: UsageContract = 'inspect-normalized-v1'):
         parent = self.provider_budget
         with self.lock:
             if type(index) is not int or not 0 <= index < len(self.entries):
@@ -218,12 +219,14 @@ class ArmLedger:
                 self.halted = True
                 self.save()
                 raise RuntimeError('Missing usage; reservation retained and arm stopped')
-            inputs, outputs = getattr(usage, 'input_tokens', None), getattr(usage, 'output_tokens', None)
-            if any(type(value) is not int or not 0 <= value <= 1_000_000_000 for value in (inputs, outputs)):
+            try:
+                counts = input_token_accounting(usage, contract=usage_contract)
+            except ValueError as exc:
                 entry['status'] = 'invalid_usage_reservation_retained'
                 self.halted = True
                 self.save()
-                raise ValueError('Invalid usage; reservation retained and arm stopped')
+                raise ValueError('Invalid usage; reservation retained and arm stopped') from exc
+            inputs, outputs = counts.total_input_tokens, counts.output_tokens
             charge = _price(entry['role'], inputs, outputs)
             parent_index = self._indices[index]
             exceeded = (inputs > entry['input_token_bound'] or outputs > entry['max_output_tokens']
@@ -231,7 +234,7 @@ class ArmLedger:
             if exceeded:
                 charge = max(charge, parent._charges[parent_index])
             parent._charges[parent_index] = charge
-            entry.update(charged_usd=charge/NANOS, input_tokens=inputs, output_tokens=outputs,
+            entry.update(asdict(counts), charged_usd=charge/NANOS,
                          status='BOUND_EXCEEDED_STOP' if exceeded else 'usage_estimate')
             if exceeded:
                 self.halted = parent.halted = True

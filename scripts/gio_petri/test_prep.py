@@ -78,7 +78,10 @@ class BudgetTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             ledger=Ledger(Path(d)/'ledger.json',2)
             i=ledger.reserve('judge',32000);before=ledger.held
-            ledger.settle(i,None);self.assertEqual(ledger.held,before)
+            with self.assertRaisesRegex(RuntimeError,'Missing usage'):
+                ledger.settle(i,None)
+            self.assertEqual(ledger.held,before)
+            self.assertTrue(ledger.halted)
     def test_failure_halts_other_roles(self):
         import asyncio
         from types import SimpleNamespace
