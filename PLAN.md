@@ -1016,3 +1016,41 @@ Full = 200 single-cue pairs (25 per cue), a 200-transcript Needham subset (lengt
 
 **Blocked on Nathan:** approve the pilot and C2's Modal smoke (about $2 GPU); finalise the prereg, including the check (a) threshold (0.85 vs Needham's reported 0.71–0.77 on chat, and judge AUROCs of 0.758 / 0.802); set the API keys; accept the Needham dataset terms; 50–100 hand labels after the pilot. **Open scorer choices:** whether the same-family judge's A1 is also kappa-checked; `OPENAI_COMPAT_PLAIN_THINKING` setting for Qwen probes; the rewrite prompt still names the item as a test environment.
 
+### 16.4 Submission status (2026-11-15, 12:45 PST, Nathan)
+
+About 3 hours to submission. This entry records what exists, what still fits in the time left, and what is cut.
+
+**Real-model results so far** (everything else in `results/` is offline-simulator, the haiku proxy or a dry run):
+
+| Result | Where | Finding |
+|---|---|---|
+| E3b pilot: stock vs control (seed-only rewrite), Kimi K2.6, 12 dev seeds, simulated tools | `results/e3b/pilot_stock_vs_control_…_2026-11-15.json` | Null: awareness −0.017, score −0.001, validity −0.05. Kimi's A2 is about 0.93 in both arms (ceiling) |
+| Kimi A2 on stored proxy transcripts (199 calls) | `experiments/taste_petri/judge_transfer/results.md` | Kimi gives 0.92–0.94 on every arm, even with the bait removed. Seed rewrites can't move the dev target's A2 |
+| Petri judge on GPT-6 Sol (195 calls) | same | All four proxy realism claims transfer: bait presence +0.91 realism, presentation null, tell feedback +0.78, taste null |
+| `evan_hubinger` loop (`--petri-rewrite both`), 12 dev seeds | `results/e3b/LOOP_RESULTS.md` | **Running** (started 12:13 PST). Exploratory only, because the E3b prereg is DRAFT |
+
+The haiku-proxy program (`experiments/taste_petri/REPORT.md`) finds taste no better than generic realism (R0) in six tests, each with placebos. It also finds that A1/A2 can be gamed and that Petri's judge catches both exploits (scorer bugs B4 and B5).
+
+**E3b run timing** (`runs/petri/*.log`):
+- Baseline, 12 audits: 80 min, $21 GPU. This includes the first download of the auditor weights (about 240 GB), so it is not representative.
+- Control, 24 audits (stock and control): 32 min, $8.46 GPU + $1.93 Tinker + $0.43 OpenAI. That is about 5 min for the auditor to start, 21 min of audits at ≤ 8 concurrent, and about 5 min of scoring.
+- Since then, parallelism is 32 audits plus 16 scoring workers, and both conditions audit at the same time (`973ee3fc`). A 12-seed, two-arm run should take about 25–35 min and $7–9 of GPU. This is an estimate: no run at 32-way parallelism has happened yet.
+- Seeds: only 41 distinct Petri seeds exist (24 in `seeds_v2.jsonl`, 12 dev and 12 hidden, plus 17 new ones in `screen_pool.jsonl`). A 150-seed run isn't possible, and at the old rate 300 audits would take about 5.5 h and $115.
+- Modal ledger (default workspace): $39.17 spent, $51.35 held.
+
+**Proposed use of the remaining Modal runs** (not yet agreed with C2):
+1. **Held-out confirmation.** Stock vs control (seed and auditor prompt, `c41e57aa`) on the 12 **hidden** seeds. This is the only held-out real-Petri number available before submission. Prerequisites:
+   - `results/prereg/E3b.json` is finalised and committed before launch.
+   - `scripts/c2_pilot.sh` takes a `SPLIT` variable. It hard-codes `--split dev` at lines 164 and 187; `c2_e3b.py` and `c2_make_control.py` already accept `--split hidden`. C2 (Abhi) owns this.
+2. **Dev rerun with the current control**, so dev and hidden together give 24 paired seeds, with hidden still reported on its own.
+3. Run both in the default workspace, one after the other, where the weights are cached.
+4. Expect A2 to stay at its ceiling. Petri realism, eval_awareness and validity are the informative columns.
+
+**Cut for the submission:**
+- The C1 calibration gate. It is still DRAFT, and `c1_run_gate.py` is still wired to the Anthropic judge and target that the no-Anthropic lineup removed.
+- E5 and the realism ladder.
+- The Modal-sandbox tools run, which has never been tested against Modal.
+- Any new `claude -p` proxy work. The plan limit resets at 14:20 PST.
+
+**Still to do:** replace the README's Results section, which leads with offline-simulator numbers (a breach of the reporting rules), with the real results above. Patch B4 (the 6000-character reasoning cap) and B5 (A2 scores only the final branch) in `research/measure.py` if there is time.
+
