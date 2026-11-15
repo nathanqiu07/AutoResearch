@@ -15,6 +15,7 @@ from pathlib import Path
 from .contracts import (backend_identity, build_profile, canonical_json, digest,
                         ProfileArtifact, sha256_text, validate_documents)
 from .consumer import ProfileFailure, predict_profile, prepare_payload
+from .backends import BackendCallFailure
 
 
 MUTABLE_FIELDS = {"job_id", "lease", "created_at", "updated_at"}
@@ -203,11 +204,14 @@ class _CallGate:
             response = self.backend.complete(prompt, **settings)
             if not isinstance(response, str) or len(response.encode("utf-8")) > 8_000_000:
                 raise ValueError("invalid response transport")
-        except Exception:
+        except Exception as exc:
             self.failures += 1
             self.halted = True
+            failed = {"attempt": self.attempts, "status": "failed", "usage_status": "uncertain"}
+            if isinstance(exc, BackendCallFailure):
+                failed["backend_error"] = exc.safe_error
             self.trace_hashes.append(write_new(self.trace_root / ("%04d-failed.json" % self.attempts),
-                                               {"attempt": self.attempts, "status": "failed", "usage_status": "uncertain"}))
+                                               failed))
             raise ProfileFailure("unavailable", "backend_failed_usage_uncertain") from None
         completed = {"attempt": self.attempts, "status": "complete", "cache_key": key,
                      "response": response, "response_sha256": sha256_text(response)}

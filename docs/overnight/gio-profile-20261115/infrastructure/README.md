@@ -204,6 +204,16 @@ account for prior input-cost bounds, and explicitly assign a new phase ledger
 against the remaining total allocation. No code resets or migrates old balances.
 Invalid/incomplete output is visible and holds the lane. Keys are read only from
 the process environment and never included in logs, manifests, or errors.
+Future API failures use BackendCallFailure(RuntimeError). Failed runner traces
+may include `backend_error` with only `exception_type` and `http_status`.
+Types are allowlisted HTTPError, URLError, TimeoutError, JSONDecodeError,
+ValueError or other; status is a numeric HTTP code or null. Exception messages,
+URL/reason strings, headers and bodies are never copied into this metadata.
+This adds diagnostics only: known usage, full uncertain reservations, stopped
+lanes and no-retry behavior are unchanged. Historical generic failure traces
+cannot recover a discarded HTTP status or exception type; later successful
+requests do not establish the cause of an earlier failure. New jobs must pin
+the updated adapter and runner while existing frozen runtimes remain unchanged.
 Partially reported token usage preserves each valid component and records which
 components remain unknown. Runner token totals are null when incomplete; known
 partial totals and unknown-attempt counts remain in budget_detail. The full
