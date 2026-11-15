@@ -243,6 +243,7 @@
         </article>
         <article class="card rise" style="--i:4">
           <h3>Does a profile predict what they choose next?</h3>
+          <p class="muted">Each researcher's best profile, scored on choices held out from fitting.</p>
           <div class="jp-key mono small"><span><i></i>no profile</span><span><i class="on"></i>with profile</span></div>
           <div class="jp-chart">${PREF.map((r) => `
             <div class="jp-group">
@@ -250,7 +251,7 @@
                 <div class="jp-bar"><b class="mono">${Math.round(100 * r[2])}%</b><i style="height:${100 * r[2]}%"></i></div>
                 <div class="jp-bar on"><b class="mono">${Math.round(100 * r[3])}%</b><i style="height:${100 * r[3]}%"></i></div>
               </div>
-              <span class="jp-name">${esc(r[0])}</span>
+              <span class="jp-name">${esc(r[0])}<small>${esc(r[1])}</small></span>
             </div>`).join("")}</div>
         </article>
         <div class="jr-notes rise" style="--i:5">
