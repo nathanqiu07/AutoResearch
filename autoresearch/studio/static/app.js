@@ -37,6 +37,7 @@ function go(hash) { if (location.hash === hash) render(); else location.hash = h
 // ---------- routing ----------
 window.addEventListener("hashchange", () => { window.scrollTo(0, 0); render(); });
 (async function boot() {
+  document.getElementById("brandMark").innerHTML = doodle("feather", { size: 34, color: "clay", tilt: -12 });
   try { S.config = await api("GET", "/api/config"); } catch (e) { app.innerHTML = `<div class="notice bad">Could not reach the studio server: ${esc(e.message)}</div>`; return; }
   render();
 })();
@@ -238,6 +239,9 @@ function renderCandidates(box, name, cands, wiki, onPick, opts = {}) {
 }
 
 // ---------- workspace ----------
+const STEP_ICONS = { about: "person", materials: "stack", questionnaire: "chat", tradeoffs: "scale", identity: "magnifier",
+  sources: "telescope", corpus: "folder", build: "flask", use: "rocket" };
+const TICK = `<svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><path filter="url(#rough)" d="M3 11 L8 16 L17 4"/></svg>`;
 const STEPS = {
   personal: [["about", "About & consent"], ["materials", "Materials"], ["questionnaire", "Questionnaire"], ["tradeoffs", "Trade-offs"], ["build", "Build & review"], ["use", "Use in the loop"]],
   public: [["identity", "Identity"], ["sources", "Gather sources"], ["corpus", "Review corpus"], ["build", "Build & review"], ["use", "Use in the loop"]],
@@ -246,11 +250,7 @@ const STEPS = {
 
 async function refresh(slug) {
   S.st = await api("GET", `/api/profiles/${slug || S.slug}`);
-  document.querySelectorAll(".step[data-step]").forEach((el, i) => {   // keep the sidebar ticks current
-    const done = !!stepDone(el.dataset.step);
-    el.classList.toggle("done", done);
-    el.querySelector(".num").textContent = done ? "✓" : i + 1;
-  });
+  document.querySelectorAll(".step[data-step]").forEach(el => el.classList.toggle("done", !!stepDone(el.dataset.step)));
   return S.st;
 }
 
@@ -285,7 +285,7 @@ async function viewWorkspace(slug, step, seq) {
           <span class="badge ${esc(mode)}">${mode === "external" ? "read-only" : esc(mode)}</span>
           <span class="muted small mono">${esc(slug)}</span></div>
         ${steps.map(([k, label], i) => `<a class="step ${k === step ? "active" : ""} ${stepDone(k) ? "done" : ""}" data-step="${k}" href="#/p/${esc(slug)}/${k}">
-          <span class="num">${stepDone(k) ? "✓" : i + 1}</span>${esc(label)}</a>`).join("")}
+          ${doodle(STEP_ICONS[k] || "sparkle", { size: 30, seed: k })}<span class="label">${esc(label)}</span>${TICK}</a>`).join("")}
       </nav>
       <section id="panel"></section>
     </div>`;
