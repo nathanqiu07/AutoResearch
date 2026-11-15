@@ -636,3 +636,34 @@
   comparison pass, with 11 synthetic recovery controls. The 17,197 reported
   assertions are predominantly file-level checks, not new research observations.
   No private archive body or full 037 reader was rerun by that reviewer.
+
+## Original downstream05 publication and portable recovery
+
+- Audit 039's original reader and root repeat pass 1,316 checks over 337 pinned
+  Git objects. A separate reviewer passes 862 checks over 72 selected objects.
+  Original failures, all three rejected primary reviews, unequal secondary
+  parsing/clipping and the saved cached-input accounting discrepancy remain
+  preserved. Later owner judging and accounting changes are outside this scope.
+- A narrowly scoped recovery map reuses 210 existing retained owner files for
+  234 logical identities, adds 90 missing source members and 13 private records.
+  All 337 identities now replay without Git or original temporary paths. The
+  original reader's checking body is unchanged outside six reversible input,
+  CLI and receipt replacements; original reports/README/manifests stay immutable.
+- Root repeats the recovered checker with process/socket operations denied.
+  All 1,316 checks pass in the original order, inventory bytes match exactly,
+  and only argv/actual reader hash differ. Eleven author synthetic controls and
+  nine independent controls pass. The recovery review checks all retained input
+  bytes, exact replacements and both saved replays without interpreting private
+  prose or performing another full checker run.
+- Required repository suite at 271f5c7: 677 run, 675 passed, two skipped, exit 0
+  in 24.58 seconds. No runtime, model/settings, paid-call or label-scoring changes.
+- Owner reports additive accounting correction/future-only fix at 7704989d and
+  a2c384cd, preserving original run and packet bytes with zero new model calls.
+  Those owner findings are not silently adopted as independent audit 039 results.
+  Original039 same-rate reference remains $1.071544500, excluding later repair.
+- The closed 204-job continuation has a released completion index and immutable
+  ledger snapshot. A separate worker is mapping exact retention gaps; role05
+  owns richer-control bindings and role04 owns scoring. No live SQLite copy or
+  duplicate scoring work is requested. The separate 039 recovery capsule will
+  preserve its new private gap outside this worktree without duplicating the
+  owner's complete archive or the earlier 040 checkpoint.

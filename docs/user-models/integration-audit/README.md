@@ -19,6 +19,9 @@ jobs. No model/inference-setting changes or production adviser edits were made.
 | Does the full sparse index match actual personalized execution? | All 672 personalized predictions bind to reconstructed consumer inputs and responses; adding the 364 previously checked control/hybrid rows gives 1,036 delivered rows (037). | The 672 absent planned personalized rows remain explicit. Aliases and earlier P1 rows overlap these counts; this does not measure prediction quality or authenticate provider traffic. |
 | Are the terminal phase1 and stopped phase2 records recoverable? | All 2,252 required record references resolve from verified private archives, including 132 phase1 jobs and 78 dispatched results from 84 original phase2 admissions (032). | Later continuation outputs and active ledger state are outside this terminal snapshot. |
 | Are early source hashes backed by retained code? | Audit 038 adds 29 historically hash-pinned files, one test derived from its recorded commit, and two later released probe scripts; portable verification resolves the mapped source routes. | One route is receipt-only, an untracked alias establishes content equivalence only, and code retention does not prove full historical execution or environment recovery. |
+| What does original downstream05 establish? | Exact profile context reaches the first auditor; all original primary reviews reject, secondary parses are 5/5, 5/5 and 3/5, and active shutdown state stays unchanged (039). | Later judging repair is separate. Unequal clipping and failed reviews preclude a clean comparative awareness or personalization-effect claim. |
+| Is downstream05's original cost basis conservative over all input tokens? | Seven paid rows omit 40,832 cached input tokens. The same saved-rate calculation gives $1.071544500 versus the saved $1.020504500 (039). | This is a $0.051040000 accounting-basis difference, not an invoice or overrun. The owner's later correction is separate. |
+| Can original downstream05 checks run without Git? | The recovered reader repeats all 1,316 checks using 210 existing owner files, 90 retained source members and 13 private records; ordered reports match apart from invocation/reader identity (039). | This recovers exact bytes and checks, not the full installed environment or historical Git provenance. |
 | Can the evidence be reconstructed later? | Exact scripts, source pins, failures, hashes and verified private input archives are retained. A new outside-worktree checkpoint contains 16 private archives and 2,419 public files through 037; recovery of 037 passes all 6,336 checks (040). | This is same-machine retention, excludes 038 and later, and does not preserve the full provider/Python environment or rerun every historical audit. |
 
 Expanded semantic construction and saved-P1/memory conditioning are covered in
@@ -436,6 +439,14 @@ and fourteen state checks pass; root repeats the state audit from retained priva
 inputs with an identical report. The rejected quote review is not rehabilitated.
 
 ## Expanded runtime and completed downstream comparison
+
+[20261115-039](../../../results/integration-audit/20261115-039/PUBLICATION.md)
+adds independent original-downstream05 checks and portable recovery. Original
+review rejections and the cached-input accounting finding remain immutable;
+the owner's later repair/correction does not overwrite them. Both root replays
+and separate original/recovery reviews pass. The existing downstream05 archive
+reference now has fresh hash verification of the 210 payloads needed by this
+reader; its three native `.eval` members remain outside our replay scope.
 
 [20261115-026](../../../results/integration-audit/20261115-026/) reconstructs all
 28 phase2 semantic bundles and 84 capped contents with permitted-source bindings.
