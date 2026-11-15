@@ -1,0 +1,145 @@
+---
+url: https://www.lesswrong.com/posts/FRv7ryoqtvSuqBxuT
+title: Understanding “Deep Double Descent”
+publishedDate: 2019-12-06
+date_source: listing
+authors: ["Evan Hubinger"]
+author_position: solo
+kind: post
+exa_request_id: https://www.lesswrong.com/posts/FRv7ryoqtvSuqBxuT/understanding-deep-double-descent
+fetched_url: https://www.lesswrong.com/posts/FRv7ryoqtvSuqBxuT/understanding-deep-double-descent
+---
+# Understanding “Deep Double Descent”
+
+* By [evhub](/users/evhub)
+* 2019-12-06 00:00:10Z
+* 160 points
+* Tag: [Double Descent](/w/double-descent)
+* Tag: [Lottery Ticket Hypothesis](/w/lottery-ticket-hypothesis)
+* Tag: [Machine Learning (ML)](/w/machine-learning-ml)
+* Tag: [AI](/w/ai)
+* Frontpage
+* Comments: 51
+* Post URL (HTML): [/posts/FRv7ryoqtvSuqBxuT/understanding-deep-double-descent](/posts/FRv7ryoqtvSuqBxuT/understanding-deep-double-descent)
+* Post URL (Markdown): [/api/post/understanding-deep-double-descent](/api/post/understanding-deep-double-descent)
+* Comments URL (Markdown): [/api/post/understanding-deep-double-descent/comments](/api/post/understanding-deep-double-descent/comments)
+* Post URL (Markdown, compact): [/api/post/understanding-deep-double-descent?compact=1](/api/post/understanding-deep-double-descent?compact=1)
+
+If you're not familiar with the double descent phenomenon, I think you should be. I consider double descent to be one of the most interesting and surprising recent results in analyzing and understanding modern machine learning. Today, Preetum et al. released a new paper, “[Deep Double Descent](https://mltheory.org/deep.pdf),” which I think is a big further advancement in our understanding of this phenomenon. I'd highly recommend at least reading [the summary of the paper on the OpenAI blog](https://openai.com/blog/deep-double-descent/). However, I will also try to summarize the paper here, as well as give a history of the literature on double descent and some of my personal thoughts.
+
+## Prior work
+
+The double descent phenomenon was first discovered by [Mikhail Belkin et al.](https://arxiv.org/abs/1812.11118), who were confused by the phenomenon wherein modern ML practitioners would claim that “bigger models are always better” despite standard statistical machine learning theory predicting that bigger models should be more prone to overfitting. Belkin et al. discovered that the standard bias-variance tradeoff picture actually breaks down once you hit approximately zero training error—what Belkin et al. call the “interpolation threshold.” Before the interpolation threshold, the bias-variance tradeoff holds and increasing model complexity leads to overfitting, increasing test error. After the interpolation threshold, however, they found that test error actually starts to go down as you keep increasing model complexity! Belkin et al. demonstrated this phenomenon in simple ML methods such as decision trees as well as simple neural networks trained on MNIST. Here's the diagram that Belkin et al. use in their paper to describe this phenomenon:
+
+![](https://preview.redd.it/g4q983jk7lq21.png?width=1029&format=png&auto=webp&s=4d5d6498b6f48defbe4606576f99b2cd772ba863)
+
+Belkin et al. describe their hypothesis for what's happening as follows:
+
+> All of the learned predictors to the right of the interpolation threshold fit the training data perfectly and have zero empirical risk. So why should some—in particular, those from richer functions classes—have lower test risk than others? The answer is that the capacity of the function class does not necessarily reflect how well the predictor matches the inductive bias appropriate for the problem at hand. [The inductive bias] is a form of Occam’s razor: the simplest explanation compatible with the observations should be preferred. By considering larger function classes, which contain more candidate predictors compatible with the data, we are able to find interpolating functions that [are] “simpler”. Thus increasing function class capacity improves performance of classifiers.
+
+I think that what this is saying is pretty magical: in the case of neural nets, it's saying that SGD just so happens to have the right inductive biases that letting SGD choose which model it wants the most out of a large class of models with _the same training performance_ yields significantly better test performance. If you're right on the interpolation threshold, you're effectively “forcing” SGD to choose from a very small set of models with perfect training accuracy (maybe only one realistic option), thus ignoring SGD's inductive biases completely—whereas if you're past the interpolation threshold, you're letting SGD choose which of many models with perfect training accuracy it prefers, thus allowing SGD's inductive bias to shine through.
+
+I think this is strong evidence for the critical importance of implicit simplicity and speed priors in making modern ML work. However, such biases also produce strong incentives for [mesa-optimization](/api/sequence/r9tYkB2a8Fp4DN8yB/post/q2rCMHNXazALgQpGH) (since optimizers are simple, compressed policies) and [pseudo-alignment](/api/sequence/r9tYkB2a8Fp4DN8yB/post/pL56xPoniLvtMDQ4J) (since simplicity and speed penalties will favor simpler, faster proxies). Furthermore, the arguments for [the universal prior](https://ordinaryideas.wordpress.com/2016/11/30/what-does-the-universal-prior-actually-look-like/) and [minimal circuits](/api/post/fM5ZWGDbnjb7ThNKJ) being malign suggest that such strong simplicity and speed priors could also produce an incentive for [deceptive alignment](/api/post/zthDPAjh9w6Ytbeks).
+
+## “Deep Double Descent”
+
+Now we get to Preetum et al.'s new paper, “Deep Double Descent.” Here are just some of the things that Preetum et al. demonstrate in “Deep Double Descent:”
+
+1. double descent occurs across a wide variety of different model classes, including ResNets, standard CNNs, and Transformers, as well as a wide variety of different tasks, including image classification and language translation,
+2. double descent occurs not just as a function of model size, but also as a function of _training time_ and _dataset size_, and
+3. since double descent can happen as a function of dataset size, **more data can lead to worse test performance!**
+
+Crazy stuff. Let's try to walk through each of these results in detail and understand what's happening.
+
+First, double descent is a highly universal phenomenon in modern deep learning. Here is double descent happening for ResNet18 on CIFAR-10 and CIFAR-100:
+
+![](https://i.imgur.com/b312T3A.png)
+
+And again for a Transformer model on German-to-English and English-to-French translation:
+
+![](https://i.imgur.com/IFhbNrn.png)
+
+All of these graphs, however, are just showcasing the standard Belkin et al.-style double descent over model size (what Preetum et al. call “model-wise double descent”). What's really interesting about “Deep Double Descent,” however, is that Preetum et al. also demonstrate that the same thing can happen for training time (“epoch-wise double descent”) and a similar thing for dataset size (“sample-wise non-monotonicity”).
+
+First, let's look at epoch-wise double descent. Take a look at these graphs for ResNet18 on CIFAR-10:
+
+![](https://i.imgur.com/HRd0dok.png)
+
+There's a bunch of crazy things happening here which are worth pointing out. First, the obvious: epoch-wise double descent is definitely a thing—holding model size fixed and training for longer exhibits the standard double descent behavior. Furthermore, the peak happens right at the interpolation threshold where you hit zero training error. Second, notice where you don't get epoch-wise double descent: if your model is too small to ever hit the interpolation threshold—like was the case in ye olden days of ML—you never get epoch-wise double descent. Third, notice the log scale on the y axis: you have to train for quite a while to start seeing this phenomenon.
+
+Finally, sample-wise non-monotonicity—Preetum et al. find a regime where increasing the amount of training data by _four and a half times_ actually _increases_ test loss (!):
+
+![](https://i.imgur.com/KJLs7uV.png)
+
+What's happening here is that more data increases the amount of model capacity/number of training epochs necessary to reach zero training error, which pushes out the interpolation threshold such that you can regress from the modern (interpolation) regime back into the classical (bias-variance tradeoff) regime, decreasing performance.
+
+Additionally, another thing which Preetum et al. point out which I think is worth talking about here is the impact of label noise. Preetum et al. find that increasing label noise significantly exaggerates the test error peak around the interpolation threshold. Why might this be the case? Well, if we think about the inductive biases story from earlier, greater label noise means that near the interpolation threshold SGD is forced to find the one model which fits all of the noise—which is likely to be pretty bad since it has to model a bunch of noise. After the interpolation threshold, however, SGD is able to pick between many models which fit the noise and select one that does so in the simplest way such that you get good test performance.
+
+## Final comments
+
+I'm quite excited about “Deep Double Descent,” but it still leaves what is in my opinion the most important question unanswered, which is: what exactly are the magical inductive biases of modern ML that make interpolation work so well?
+
+One proposal I am aware of is the work of [Keskar et al.](https://arxiv.org/pdf/1609.04836.pdf), who argue that SGD gets its good generalization properties from the fact that it finds “shallow” as opposed to “sharp” minima. The basic insight is that SGD tends to jump out of minima without broad basins around them and only really settle into minima with large attractors, which tend to be the exact sort of minima that generalize. Keskar et al. use the following diagram to explain this phenomena:
+
+![](https://i.imgur.com/hgGxHZe.png)
+
+The more recent work of Dinh et al. in “[Sharp Minima Can Generalize For Deep Nets](https://arxiv.org/pdf/1703.04933.pdf),” however, calls the whole shallow vs. sharp minima hypothesis into question, arguing that deep networks have really weird geometry that doesn't necessarily work the way Keskar et al. want it to. (EDIT: Maybe not. See [this comment](/api/post/FRv7ryoqtvSuqBxuT#4fyh9xMmu9duniWNC) for an explanation of why Dinh et al. doesn't necessarily rule out the shallow vs. sharp minima hypothesis.)
+
+Another idea that might help here is Frankle and Carbin's “[Lottery Ticket Hypothesis](https://arxiv.org/pdf/1803.03635.pdf),” which postulates that large neural networks work well because they are likely to contain random subnetworks at initialization (what they call “winning tickets”) which are already quite close to the final policy (at least in terms of being highly amenable to particularly effective training). My guess as to how double descent works if the Lottery Tickets Hypothesis is true is that in the interpolation regime SGD gets to just focus on the wining tickets and ignore the others—since it doesn't have to use the full model capacity—whereas on the interpolation threshold SGD is forced to make use of the full network (to get the full model capacity), not just the winning tickets, which hurts generalization.
+
+That's just speculation on my part, however—we still don't really understand the inductive biases of our models, despite the fact that, as double descent shows, inductive biases are *the* reason that modern ML (that is, the interpolation regime) works as well as it does. Furthermore, as I noted previously, inductive biases are highly relevant to the likelihood of possible dangerous phenomenon such as [mesa-optimization](/api/sequence/r9tYkB2a8Fp4DN8yB/post/q2rCMHNXazALgQpGH) and [pseudo-alignment](/api/sequence/r9tYkB2a8Fp4DN8yB/post/pL56xPoniLvtMDQ4J). Thus, it seems quite important to me to do further work in this area and really understand our models' inductive biases, and I applaud Preetum et al. for their exciting work here.
+
+_EDIT: I have now written a follow-up to this post talking more about why I think double descent is important titled “[Inductive biases stick around](/api/post/nGqzNC6uNueum2w8T).”_
+
+Top Comments Index
+------------------
+
+### Comment by [John_Maxwell](/users/john_maxwell)
+
+* 2019-12-07 08:27:21Z
+* Karma: 17
+* Voting system: namesAttachedReactions
+* Total votes: 13
+* HTML permalink: [/posts/FRv7ryoqtvSuqBxuT/understanding-deep-double-descent/comment/6bqY4oSFncLTJgYdm](/posts/FRv7ryoqtvSuqBxuT/understanding-deep-double-descent/comment/6bqY4oSFncLTJgYdm)
+* Markdown permalink: [/api/post/understanding-deep-double-descent/comments/6bqY4oSFncLTJgYdm](/api/post/understanding-deep-double-descent/comments/6bqY4oSFncLTJgYdm)
+
+### Comment by [Zvi](/users/zvi)
+
+* 2021-01-13 20:33:21Z
+* Karma: 16
+* Voting system: namesAttachedReactions
+* Total votes: 6
+* HTML permalink: [/posts/FRv7ryoqtvSuqBxuT/understanding-deep-double-descent/comment/EgorezFSu9WmmZaEj](/posts/FRv7ryoqtvSuqBxuT/understanding-deep-double-descent/comment/EgorezFSu9WmmZaEj)
+* Markdown permalink: [/api/post/understanding-deep-double-descent/comments/EgorezFSu9WmmZaEj](/api/post/understanding-deep-double-descent/comments/EgorezFSu9WmmZaEj)
+
+### Comment by [Gurkenglas](/users/gurkenglas)
+
+* 2019-12-07 02:19:42Z
+* Karma: 16
+* Voting system: namesAttachedReactions
+* Total votes: 7
+* HTML permalink: [/posts/FRv7ryoqtvSuqBxuT/understanding-deep-double-descent/comment/pC5wsdQYfMswNAkuY](/posts/FRv7ryoqtvSuqBxuT/understanding-deep-double-descent/comment/pC5wsdQYfMswNAkuY)
+* Markdown permalink: [/api/post/understanding-deep-double-descent/comments/pC5wsdQYfMswNAkuY](/api/post/understanding-deep-double-descent/comments/pC5wsdQYfMswNAkuY)
+
+### Comment by [TurnTrout](/users/turntrout)
+
+* 2019-12-06 00:25:13Z
+* Karma: 15
+* Voting system: namesAttachedReactions
+* Total votes: 6
+* HTML permalink: [/posts/FRv7ryoqtvSuqBxuT/understanding-deep-double-descent/comment/acyDvZTvoyXiKGpXu](/posts/FRv7ryoqtvSuqBxuT/understanding-deep-double-descent/comment/acyDvZTvoyXiKGpXu)
+* Markdown permalink: [/api/post/understanding-deep-double-descent/comments/acyDvZTvoyXiKGpXu](/api/post/understanding-deep-double-descent/comments/acyDvZTvoyXiKGpXu)
+
+### Comment by [orthonormal](/users/orthonormal)
+
+* 2021-01-13 04:18:38Z
+* Karma: 13
+* Voting system: namesAttachedReactions
+* Total votes: 4
+* HTML permalink: [/posts/FRv7ryoqtvSuqBxuT/understanding-deep-double-descent/comment/PXtHhwek2aFSYGSsN](/posts/FRv7ryoqtvSuqBxuT/understanding-deep-double-descent/comment/PXtHhwek2aFSYGSsN)
+* Markdown permalink: [/api/post/understanding-deep-double-descent/comments/PXtHhwek2aFSYGSsN](/api/post/understanding-deep-double-descent/comments/PXtHhwek2aFSYGSsN)
+
+### Navigation
+
+* [Front page](https://www.lesswrong.com/api/home)
+* [Markdown API documentation](https://www.lesswrong.com/api/SKILL.md)

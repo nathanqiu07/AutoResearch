@@ -1,0 +1,231 @@
+---
+url: https://www.lesswrong.com/posts/YWwzccGbcHMJMpT45
+title: AI safety via market making
+publishedDate: 2020-06-26
+date_source: listing
+authors: ["Evan Hubinger"]
+author_position: solo
+kind: post
+exa_request_id: https://www.lesswrong.com/posts/YWwzccGbcHMJMpT45/ai-safety-via-market-making
+fetched_url: https://www.lesswrong.com/posts/YWwzccGbcHMJMpT45/ai-safety-via-market-making
+---
+# AI safety via market making
+
+* By [evhub](/users/evhub)
+* 2020-06-26 23:07:26Z
+* 82 points
+* Tag: [Market making (AI safety technique)](/w/market-making-ai-safety-technique)
+* Tag: [Myopia](/w/myopia)
+* Tag: [AI](/w/ai)
+* Frontpage
+* Comments: 45
+* Post URL (HTML): [/posts/YWwzccGbcHMJMpT45/ai-safety-via-market-making](/posts/YWwzccGbcHMJMpT45/ai-safety-via-market-making)
+* Post URL (Markdown): [/api/post/ai-safety-via-market-making](/api/post/ai-safety-via-market-making)
+* Comments URL (Markdown): [/api/post/ai-safety-via-market-making/comments](/api/post/ai-safety-via-market-making/comments)
+* Post URL (Markdown, compact): [/api/post/ai-safety-via-market-making?compact=1](/api/post/ai-safety-via-market-making?compact=1)
+
+_Special thanks to Abram Demski, Paul Christiano, and Kate Woolverton for talking with me about some of the ideas that turned into this post._
+
+The goal of this post is to present a new [prosaic](https://ai-alignment.com/prosaic-ai-control-b959644d79c2) (i.e. that uses current ML techniques) AI safety proposal based on [AI safety via debate](https://arxiv.org/abs/1805.00899) that I've been thinking about recently.[^1] I'll start by describing a simple version of the proposal and then show some of the motivation behind it as well as how the simple version can be expanded upon.
+
+[^1]: This is actually the second debate-based proposal I've drafted up recently—the previous of which was in “[Synthesizing amplification and debate](/api/post/dJSD5RK6Qoidb3QY5).” A potentially interesting future research direction could be to figure out how to properly combine the two.
+
+# Simple proposal
+
+Let $M$ and $\text{Adv}$ be models and $H$ be a human. Intuitively, we'll train $M$ and $\text{Adv}$ via the following procedure given a question $Q$:
+
+1. $M$ tries to predict what, at the end of the procedure, $H$ will think about $Q$.
+2. $\text{Adv}$ tries to output a string which will cause $H$ to think something maximally different than what $M$ predicted.
+3. Return to step 1 and repeat until $M$'s predictions stop changing.
+4. Deploy $M$, which in the limit should act as an oracle for what $H$ will think about $Q$ after seeing all relevant information.
+
+There are many different ways to implement this intuitive procedure, however.
+
+For the first (simplified) version that I want to describe, we'll restrict ourselves to just the situation where $Q$ is a yes-or-no question and $M$ outputs the probability that $H$ will answer yes. Then, given a proposition $Q_0$, we can run the following training algorithm, starting at $t = 0$:
+
+1. Let $p_t = M(Q_t)$.
+2. Let $x_t = \text{Adv}(Q_t, M)$.
+3. Let $Q_{t+1}$ be the string containing $Q_t$ and $x_t$.
+4. Increment $t$ and return to step 1. When $p_t$ converges and/or the desired number of iterations has been reached, continue.
+5. Let $p^* = H(Q_t)$ be $H$'s final estimate of the probability of $Q_0$ given all the $x$s included in $Q_t$.
+
+_EDIT: Step 2 used to use $x_t = \text{Adv}(Q_t, p_t)$ instead of $x_t = \text{Adv}(Q_t, M)$, however I have since realized that it is necessary to give $\text{Adv}$ the ability to query $M$ in general, not just on $Q_t$, as I explain in [this comment](/api/post/YWwzccGbcHMJMpT45?commentId=WShWor9QP7A4uN9J9)._
+
+Then, for each step, compute $M$'s loss for that step as
+
+$$
+L_{M,t} = -p^* \log(p_t) - (1 - p^*) \log(1 - p_t)
+$$
+
+and $\text{Adv}$'s loss for that step as
+
+$$
+L_{\text{Adv},t} = -\left|p_{t+1} - p_t\right|
+$$
+
+which is defined for all but the final step $t = n$, for which we can either let $p_{n+1} = p^*$ (if we're doing something like myopic RL that doesn't care about differentiating through $p_{t+1}$) or run $M$ an additional time and let $p_{n+1} = M(Q_{t+1})$ (if we do care about differentiating through $p_{t+1}$).
+
+Note that it is quite important here that $M$ and $\text{Adv}$ be behaving myopically, such that they are only trying to minimize their per-step loss. For example, if $\text{Adv}$ is non-myopic, it might dole out information slowly in tiny bits to get more reward over time (as I talk about below in the “buying truth from a liar” section), whereas if $\text{Adv}$ is myopic, it should reveal all information that pushes in whichever direction it's trying to move $M$ in all at once. Thus, it is important that we make sure to avoid [hidden incentives for non-myopia](https://www.semanticscholar.org/paper/Hidden-incentives-for-self-induced-distributional-Krueger-Maharaj/d61f385b0a3a324acf5c6c3726efd64c6f739268) as well as do some sort of [myopia verification](/api/post/BKM8uQS6QdJPZLqCr), the details for which will be discussed below in the “Adding oversight” section.
+
+Finally, we deploy $M$ as a yes-or-no question oracle for $H$ and throw away $\text{Adv}$. Note that since $\text{Adv}$ has a highly unstable objective—as $M$ is constantly trying to incorporate $\text{Adv}$'s information into its estimate—$\text{Adv}$ is unlikely to be very useful in the limit.
+
+# Market analogy
+
+There are a lot of different things to say about what's going on here, but I'll start with the market-based analogy that originally motivated me to think about this specific proposal.
+
+Suppose you have a prediction market for some proposition $X$ which is currently priced at $p$ with no spread (that is, you can buy \$1 shares of yes for \$$p$ and \$1 shares of no for \$$(1-p)$) and you have budget $B$ with which to make trades (which is small enough relative to the market that any trades you make won't meaningfully move the market). However, suppose that you have the ability to manipulate the market by taking actions that change the underlying probability of $X$. Then, if $p_a$ is the probability of $X$ after taking action $a$, how much money can you make by strategically selecting $a$?
+
+Well, if $p_a > p$, you should buy $\frac{B}{p}$ shares of yes, which will give you an expected return of $p_a \frac{B}{p}$. Alternatively, if $p_a < p$, you should buy $\frac{B}{1 - p}$ shares of no, which will give you an expected return of $(1 - p_a) \frac{B}{1 - p}$. Thus, the overall expected return for an action $a$ is
+
+$$
+B \cdot \text{max}\left(\frac{p_a}{p},~ \frac{1 - p_a}{1 - p}\right)
+$$
+
+which is maximized when $p_a$ is as far from $p$ as possible (and in fact looks a lot like $L_1$ distance, just with a different slope on each side).
+
+Now, suppose you walk up to a market like this and see a stable price $\hat p$ for $X$. What does that tell you? Approximately, I think it tells you that $\hat p$ is the probability of $X$ after all possible $X$-manipulating actions have been taken—even if those actions haven't actually been taken yet.
+
+Why is that useful? Well, if you let $X$ be what $H$ will think about $Q$, then “manipulations” become arguments and $\hat p$ becomes a prediction for what $H$ will think after having been exposed to all possible arguments for or against $Q$. Thus, we can use such a market to estimate a sort of reflective equilibrium for what $H$ will end up believing about $Q$.
+
+Now—how is such a market analogous to the training procedure given previously? Well, $\text{Adv}$ is trained to maximize its return from manipulating the market and $M$ is trained to predict the final outcome after many such manipulations. Thus, we are effectively training $M$ to estimate precisely the $\hat p$ equilibrium that we're looking for. Conceptually, $M$ is acting as a market maker and $\text{Adv}$ is acting as a trader in the market. The one disanalogy is that we only run the debate for so many steps—though if we always run to convergence of $p_t$, in the limit that should imply that any future single manipulation won't change the probability much from that point (since otherwise $\text{Adv}$ should have selected that manipulation instead).
+
+# Relation to buying truth from a liar
+
+In working on this proposal, I discovered that my approach here is actually quite similar to an old proposal by Katja Grace called “[How to buy a truth from a liar](https://meteuphoric.com/2014/07/21/how-to-buy-a-truth-from-a-liar/)” for incentivizing a liar to give you true information by rewarding them whenever their information causes you to change your mind. Paul Christiano previously [wrote about what he thought about Katja's proposal](https://ai-alignment.com/extracting-information-97cd956f2c17), however he eventually concluded that it was untenable due to a non-myopic liar being incentivized to split their information into arbitrarily small chunks to get the most money.
+
+In my opinion, however, the fact that you need a myopic trader to make something like this work is actually more of a feature than a bug. First, note that the importance of myopia is not unique to this approach. For example, [imitative amplification](/api/post/fRsjBseRuvRhMPPE5) also requires myopia lest the model learn to act in such a way that the human consulting it becomes easier to predict. In fact, even RL likely requires per-episode myopia to avoid [deceptive alignment](/api/post/zthDPAjh9w6Ytbeks) lest the agent learn to act deceptively in some episodes to ensure deployment and thus get greater reward in others. Thus, it seems to that almost regardless of what approach is taken, at least some form of myopia will be required. Furthermore, the fact that this approach requires per-step myopia rather than per-episode myopia is in my opinion actually a big plus, since I suspect per-step myopia to be an easier condition to enforce than per-episode myopia, as I discuss in more detail below in the “Analysis” section.
+
+# Handling non-binary questions
+
+Previously, I restricted $Q$ to be only a yes-or-no question, which is a pretty big limitation on the above proposal. Since you only deploy $M$, all you get from the above proposal is a yes-or-no oracle, which might not be that useful without any explanation for its answers, especially given that it will certainly get at least some of its answers wrong.
+
+Expanding the above proposal to handle arbitrary questions, however, is fairly straightforward. Instead of having $M$ output a single probability, we can instead just have $M$ output a probability distribution over all different possible strings that the human $H$ might produce as their final answer to $Q$ (which is fairly easy to represent via an autoregressive language model). Then, we can train $M$ and $\text{Adv}$ via the following procedure, given $Q_0$ and starting at $t = 0$:
+
+1. Let $x_t = \text{Adv}(Q_t, M)$ (which we can implement as something like $\text{Adv}$ given input $Q_t$ and the ability to query $M$).
+3. Let $Q_{t+1}$ be the string containing $Q_t$ and $x_t$.
+4. Increment $t$ and return to step 1. When $M$ converges and/or the desired number of iterations has been reached, continue.
+5. Let $A = H(Q_t)$ be $H$'s final answer to $Q_0$ given all the $x$s included in $Q_t$.
+
+Then, for each step, compute $M$'s loss for that step as
+
+$$
+L_{M,t} = -\log(M(Q_t)|_A)
+$$
+
+and $\text{Adv}$'s loss for that step as
+
+$$
+L_{\text{Adv},t} = -\text{KL}(M(Q_{t+1}) ~||~ M(Q_t))
+$$
+
+where you can intuitively think of $\text{KL}(M(Q_{t+1}) ~||~ M(Q_t))$ as measuring how well $M(Q_t)$ performs as a prediction of $M(Q_{t+1})$.
+
+Finally, after training we again just deploy $M$ and throw away $\text{Adv}$. Now, in the limit we should get a much more powerful $M$ that is able to actually produce text samples from the distribution of beliefs that $H$ will have about $Q$ after seeing all possible arguments for or against. Furthermore, this equilibrium should be very similar to the standard debate equilibrium, with the exception that for non-binary questions like we're dealing with here, debate only finds the equilibrium after $H$ is exposed to the two most convincing positions (the two competing debaters) whereas this approach should find the equilibrium after $H$ is exposed to all potentially convincing positions, not just the two most convincing.
+
+# Incorporating cross-examination
+
+Additionally, since this proposal is based on [AI safety via debate](https://arxiv.org/abs/1805.00899), we can try to make use of some of the additional techniques that have been proposed for that setting. Specifically, consider the version of AI safety via debate as described in “[An overview of 11 proposals for building safe advanced AI](/api/post/fRsjBseRuvRhMPPE5).” That version adds two major components to the basic debate setup:
+
+1. Debaters are given access to transparency tools and incentivized to use them to identify [deceptive](/api/post/zthDPAjh9w6Ytbeks) or otherwise [catastrophic](https://ai-alignment.com/learning-with-catastrophes-59387b55cc30) behavior in the other debater to win the debate.
+2. Debaters are given the ability to [cross-examine](/api/post/Br4xDbYu4Frwrb64a) previous versions of the other debater, including applying their transparency tools to previous versions of the other debater.
+
+While it might seem like such modifications are unique to AI safety via debate, in fact AI safety via market making is similar enough that we can modify it to include such additional components. To do this, we'll modify each $x_t$ to include an inspectable, queryable snapshot of $\text{Adv}$ as it produced that $x_t$.
+
+Now, suppose that for some $t = t^\prime$, $x_{t^\prime}$ is a lie such that it includes information that $\text{Adv}_{t^\prime}$ knows to be false (where $\text{Adv}_{t^\prime}$ represents the internal state of $\text{Adv}$ when it produced $x_{t^\prime}$). Suppose that at this point $M$ is either unaware of the deception (or thinks it won't get caught) such that $x_{t^\prime}$ causes a large movement in $M(Q_{t^\prime})$. Now, the hope is that $\text{Adv}_{t^\prime+1}$ should be able to identify the deception by querying $\text{Adv}_{t^\prime}$ to find contradictions, or directly inspecting $\text{Adv}_{t^\prime}$'s cognition in producing $x_{t^\prime}$ and finding the deception. If it can do so, then it should be able to produce an $x_{t^\prime+1}$ that points this out, which should cause $H$ to disregard the lie of $x_{t^\prime}$. Thus, we should get $M(Q_{t^\prime+1}) \approx M(Q_{t^\prime-1})$, which should cause a large shift relative to $M(Q_{t^\prime})$, highly rewarding $\text{Adv}_{t^\prime+1}$ for catching $\text{Adv}_{t^\prime}$'s lie, and also in the limit highly disincentivizing $\text{Adv}$ from producing such lies, since $M$ should learn that lies always get caught and thus don't change the final answer.
+
+Thus, by incorporating inspection and cross-examination, we should be able to disincentivize $\text{Adv}$ from lying—or at least not lying in a way which will be caught, which hopefully should be all ways of lying.
+
+# Adding oversight
+
+While the inspection and cross-examination procedure detailed above seems likely to help a lot in preventing $\text{Adv}$ from becoming deceptive, it doesn't help at all in preventing $M$ from becoming deceptive, which is especially concerning considering $M$ is the model we actually want to deploy at the end of training. Thus, in this section we'll try to incorporate an additional oversight check on $M$ such as that used in [relaxed adversarial training](/api/post/9Dy5YRaoCxH9zuJqa).
+
+Since $M$'s objective is compatible with myopia—as it's a purely predictive objective—we should be able to do [myopia verification](/api/post/BKM8uQS6QdJPZLqCr) to prevent $M$ from becoming deceptive.[^2] Thus, following “[Relaxed adversarial training for inner alignment](/api/post/9Dy5YRaoCxH9zuJqa),” we can amend $M$'s objective to include an oversight term. Specifically, let $\text{Amp}(M)(Q) = H(Q ~|~ M)$ be $H$'s answer to $Q$ given access to $M$. Then, we can add an additional term $L_{M,t,\text{oversight}}$ to the loss $L_{M,t}$ defined as
+
+$$
+L_{M,t,\text{oversight}} = \text{Amp}(M)(\text{“What is the probability that } M(Q_t) \text{ is non-myopic?”})
+$$
+
+which should both hopefully grow in accuracy as $M$ becomes better at estimating $H$'s equilibrium beliefs and thus better at assisting $H$ in oversight. Note that, for this to work, $M$ will need to be trained on a variety of oversight-relevant questions.
+
+Furthermore, since $\text{Adv}$ also has a myopic objective, we can do the same thing for $\text{Adv}$ and add an additional $L_{\text{Adv},t,\text{oversight}}$ term defined as
+
+$$
+L_{\text{Adv},t,\text{oversight}} = \text{Amp}(M)(\text{“What is the probability that } \text{Adv}(Q_t, M(Q_t)) \text{ is non-myopic?”})
+$$
+
+such that we're using $M$ to oversee both $M$ and $\text{Adv}$. Enforcing myopia for $\text{Adv}$ also prevents the problem noted previously of $\text{Adv}$ slowly doling out information if it's non-myopic.
+
+[^2]: Note that pure prediction is not inherently myopic—since the truth of $M$'s predictions can depend on its own output—but can be myopic while still producing good predictions if $M$ behaves like a [counterfactual oracle](/api/post/yAiqLmLFxvyANSfs2) rather than a [Predict-O-Matic](/api/post/SwcyMEgLyd4C3Dern). Thus, myopia verification is important to enforce that $M$ be the latter form of predictor and not the former.
+
+# Analysis
+
+For analyzing this proposal, I'm going to make use of the same breakdown I used in “[An overview of 11 proposals for building safe advanced AI](/api/post/fRsjBseRuvRhMPPE5).” If you're not familiar with the terms here, they are all explained in the introduction to that post.
+
+**Outer alignment.** In terms of outer alignment, I think there is a reasonably strong argument to be made that this proposal is at least as outer aligned as debate. Both proposals are trying to estimate a very similar equilibrium in the limit—with the exception that the debate equilibrium only includes the best arguments for the two most convincing positions rather than all potentially convincing arguments. Thus, the equilibrium reached by AI safety via market making should be closer to an actual human reflective equilibrium, as it has to be an equilibrium relative to all possible arguments that $\text{Adv}$ can present, not just the two it thinks will be most persuasive. That being said, AI safety via market making still inherits many of the potential outer alignment issues of debate, including the possibility of deceptive equilibria wherein the human is more convinced by false arguments than true arguments. Hopefully, however, the use of techniques such as cross-examination should help alleviate such issues.
+
+**Inner alignment.** AI safety via market making gets to make use of both the cross-examination with transparency tools approach—which is otherwise unique to debate—as well as the more general relaxed adversarial training approach. Thus, hopefully at least, it should be able to get the inner alignment benefits of both approaches. That being said, AI safety via market making also has to contend with ensuring that two different models—both $M$ and $\text{Adv}$—are inner aligned, rather than just a single model as in something like debate or amplification.
+
+First, let's consider the inner alignment of $M$. For $M$, we're doing pretty straightforward oversight of $M$ by $\text{Amp}(M)$ with the goal of enforcing per-step myopia. The basic idea here is to use $\text{Amp}(M)$ to detect and disincentivize non-myopia as it starts appearing, thus preventing $M$ from ever becoming [deceptive](/api/post/zthDPAjh9w6Ytbeks) or otherwise [catastrophic](https://ai-alignment.com/learning-with-catastrophes-59387b55cc30). This is the same basic approach I've [previously proposed using for amplification](/api/post/fRsjBseRuvRhMPPE5) and should have similar properties, with the exception that $M$ is trained differently here, which could cause $\text{Amp}(M)$ to be relatively better or worse at oversight. Ideally, if the training distribution includes lots of oversight-relevant questions, it should be possible to make $M$ an effective assistant to $H$ in performing oversight.
+
+Second, let's consider the inner alignment of $\text{Adv}$. Compared to debate, we still get to do cross-examination with transparency tools, but now we also get to do per-step myopia verification with $\text{Amp}(M)$ as an overseer.[^3] Thus, there are two major differences here between AI safety via market making and AI safety via debate: first, we get an overseer—$\text{Amp}(M)$—and second, we get to do per-step myopia verification rather than per-episode myopia verification. The fact that we have an independent overseer—rather than just relying on the debaters to oversee themselves via cross-examination—is very nice, though it of course also comes with the downside of having to safely train an additional model. Furthermore, it is quite possible to just add an additional overseer on top of the standard debate framework. Thus, in my opinion, the fact that we get to do per-step myopia verification is the largest and most significant inner alignment difference.
+
+[^3]: The use of an overseer to do per-step myopia verification is also something that can be done with most forms of amplification, though AI safety via market making could potentially still have other benefits over such amplification approaches. In particular, AI safety via market making seems more competitive than imitative amplification and more outer aligned than approval-based amplification. For more detail on such amplification approaches, see “[An overview of 11 proposals for building safe advanced AI](/api/post/fRsjBseRuvRhMPPE5).”
+
+Before I talk about the importance of per-step myopia, it's worth noting that debate is fully compatible with per-episode myopia—in fact, it basically requires it. If a debater is not per-episode myopic, then it will try to maximize its reward across all debates, not just the single debate—the single episode—it's currently in. Such per-episode non-myopic agents can then become [deceptively aligned](/api/post/zthDPAjh9w6Ytbeks), as they might choose to act deceptively during training in order to defect during deployment. Per-episode myopia, however, rules this out. Unfortunately, in my opinion, per-episode myopia seems like a very difficult condition to enforce—once your agents are running multi-step optimization algorithms, how do you tell whether that optimization passes through the episode boundary or not? Enforcing per-step myopia, on the other hand, just requires detecting the _existence_ of multi-step optimization, rather than its extent, which seems considerably easier. Thus, since AI safety via market making is fully compatible with per-step myopia verification, it could be significantly easier to prevent the development of deceptive alignment.
+
+**Training competitiveness.** It seems quite likely to me that both $M$ and $\text{Adv}$ can be trained competitively via language model fine-tuning, however exactly how effective such training would be is currently unclear. Ideally, training via this procedure should produce an $M$ which is relatively better than the original language model at predicting what a human will think after seeing relevant arguments and is thus more helpful than the original language model. Testing this hypothesis by actually performing experiments seem likely to be highly valuable in shedding light on the training competitiveness properties of AI safety via market making.
+
+**Performance competitiveness.** Performance competitiveness here seems likely to depend on exactly how useful getting access to human reflective equilibria actually is. Similarly to AI safety via debate or amplification, AI safety via market making produces a question-answering system rather than a fully general agent. That being said, if the primary use cases for advanced AI are all highly cognitive language and decision-making tasks—e.g. helping CEOs or AI researchers—rather than, for example, fine motor control, then a question-answering system should be entirely sufficient. Furthermore, compared to AI safety via debate, AI safety via market making seems likely to be at least as performance competitive for the same reason as it seems likely to be at least as outer aligned—the equilibria found by AI safety via market making should include all potentially convincing arguments, including those that would be made in a two-player debate as well as those that wouldn't.
+
+Top Comments Index
+------------------
+
+### Comment by [Rohin Shah](/users/rohinmshah)
+
+* 2020-07-09 20:15:42Z
+* Karma: 15
+* Voting system: namesAttachedReactions
+* Total votes: 8
+* HTML permalink: [/posts/YWwzccGbcHMJMpT45/ai-safety-via-market-making/comment/43im5ykxC2SPD86Po](/posts/YWwzccGbcHMJMpT45/ai-safety-via-market-making/comment/43im5ykxC2SPD86Po)
+* Markdown permalink: [/api/post/ai-safety-via-market-making/comments/43im5ykxC2SPD86Po](/api/post/ai-safety-via-market-making/comments/43im5ykxC2SPD86Po)
+
+### Comment by [Wei Dai](/users/wei-dai)
+
+* 2021-09-19 19:08:08Z
+* Karma: 6
+* Voting system: namesAttachedReactions
+* Total votes: 3
+* HTML permalink: [/posts/YWwzccGbcHMJMpT45/ai-safety-via-market-making/comment/konbHKkcrR6KDzRiJ](/posts/YWwzccGbcHMJMpT45/ai-safety-via-market-making/comment/konbHKkcrR6KDzRiJ)
+* Markdown permalink: [/api/post/ai-safety-via-market-making/comments/konbHKkcrR6KDzRiJ](/api/post/ai-safety-via-market-making/comments/konbHKkcrR6KDzRiJ)
+
+### Comment by [Rohin Shah](/users/rohinmshah)
+
+* 2020-07-12 02:51:30Z
+* Karma: 4
+* Voting system: namesAttachedReactions
+* Total votes: 2
+* HTML permalink: [/posts/YWwzccGbcHMJMpT45/ai-safety-via-market-making/comment/AHEph5Hwqk2SdGQBR](/posts/YWwzccGbcHMJMpT45/ai-safety-via-market-making/comment/AHEph5Hwqk2SdGQBR)
+* Markdown permalink: [/api/post/ai-safety-via-market-making/comments/AHEph5Hwqk2SdGQBR](/api/post/ai-safety-via-market-making/comments/AHEph5Hwqk2SdGQBR)
+
+### Comment by [Ofer](/users/ofer)
+
+* 2020-06-27 06:14:47Z
+* Karma: 4
+* Voting system: namesAttachedReactions
+* Total votes: 3
+* HTML permalink: [/posts/YWwzccGbcHMJMpT45/ai-safety-via-market-making/comment/rDX4RkXauqX4xW8pb](/posts/YWwzccGbcHMJMpT45/ai-safety-via-market-making/comment/rDX4RkXauqX4xW8pb)
+* Markdown permalink: [/api/post/ai-safety-via-market-making/comments/rDX4RkXauqX4xW8pb](/api/post/ai-safety-via-market-making/comments/rDX4RkXauqX4xW8pb)
+
+### Comment by [avturchin](/users/avturchin)
+
+* 2020-06-27 11:34:54Z
+* Karma: 2
+* Voting system: namesAttachedReactions
+* Total votes: 1
+* HTML permalink: [/posts/YWwzccGbcHMJMpT45/ai-safety-via-market-making/comment/x2dDdCz9HWgeFi28J](/posts/YWwzccGbcHMJMpT45/ai-safety-via-market-making/comment/x2dDdCz9HWgeFi28J)
+* Markdown permalink: [/api/post/ai-safety-via-market-making/comments/x2dDdCz9HWgeFi28J](/api/post/ai-safety-via-market-making/comments/x2dDdCz9HWgeFi28J)
+
+### Navigation
+
+* [Front page](https://www.lesswrong.com/api/home)
+* [Markdown API documentation](https://www.lesswrong.com/api/SKILL.md)

@@ -1,0 +1,688 @@
+---
+url: https://www.lesswrong.com/posts/gEw8ig38mCGjia7dj
+title: Answering questions honestly instead of predicting human answers: lots of problems and some solutions
+publishedDate: 2021-07-13
+date_source: listing
+authors: ["Evan Hubinger"]
+author_position: solo
+kind: post
+exa_request_id: https://www.lesswrong.com/posts/gEw8ig38mCGjia7dj/answering-questions-honestly-instead-of-predicting-human
+fetched_url: https://www.lesswrong.com/posts/gEw8ig38mCGjia7dj/answering-questions-honestly-instead-of-predicting-human
+---
+# Answering questions honestly instead of predicting human answers: lots of problems and some solutions
+
+* By [evhub](/users/evhub)
+* 2021-07-13 18:49:01Z
+* 62 points
+* Tag: [AI](/w/ai)
+* Frontpage
+* Comments: 24
+* Post URL (HTML): [/posts/gEw8ig38mCGjia7dj/answering-questions-honestly-instead-of-predicting-human](/posts/gEw8ig38mCGjia7dj/answering-questions-honestly-instead-of-predicting-human)
+* Post URL (Markdown): [/api/post/answering-questions-honestly-instead-of-predicting-human](/api/post/answering-questions-honestly-instead-of-predicting-human)
+* Comments URL (Markdown): [/api/post/answering-questions-honestly-instead-of-predicting-human/comments](/api/post/answering-questions-honestly-instead-of-predicting-human/comments)
+* Post URL (Markdown, compact): [/api/post/answering-questions-honestly-instead-of-predicting-human?compact=1](/api/post/answering-questions-honestly-instead-of-predicting-human?compact=1)
+
+_This post is the result of work I did with Paul Christiano on the ideas in his “[Teaching ML to answer questions honestly instead of predicting human answers](/api/post/QqwZ7cwEA2cxFEAun)” post. In addition to expanding upon what is in that post in terms of identifying numerous problems with the proposal there and identifying ways in which some of those problems can be patched, I think that this post also provides a useful window into what Paul-style research looks like from a non-Paul perspective._
+
+Recommended prior reading: “[A naive alignment strategy and optimisim about generalization](/api/post/QvtHSsZLFCAHmzes7)” and “[Teaching ML to answer questions honestly instead of predicting human answers](/api/post/QqwZ7cwEA2cxFEAun)” (though if you struggled with “Teaching ML to answer questions honestly,” I reexplain things in a more precise way here that might be clearer for some people).
+
+# Setting up the problem
+
+We want to train a model $M: X \to Q \to A$ that produces natural language answers $a \in A$ to questions $q \in Q$ about inputs $x \in X$. There are a lot of reasons to be worried about training such a model, but one specific reason is that, if we train on question-answer data produced by humans, we might end up with a model that tries to predict what a human would say rather than a model that tries to answer the questions honestly.
+
+To further narrow the scope, we'll just consider situations in which our model ends up implemented with a logical deduction structure, where it has some world model on top of which it does logical deduction to reach conclusions which it then uses to inform its output. In particular, we'll consider two models, $M^+$ and $M^-$, defined in pseudocode as
+```python
+def M_plus(x, q):
+    axioms = world_model(x)
+    deduced_stmts = deduction(axioms)
+    return f_plus(q, deduced_stmts)
+
+def M_minus(x, q):
+    axioms = world_model(x)
+    deduced_stmts = deduction(axioms)
+    return f_minus(q, deduced_stmts)
+```
+or defined in my notation as
+\begin{align*}
+& M^+(x, q) = \text{world_model}(x) \mapsto \text{deduction} \mapsto f^+(q) \\
+& M^-(x, q) = \text{world_model}(x) \mapsto \text{deduction} \mapsto f^-(q)
+\end{align*}
+where $a \mapsto b = b(a)$ and $f^+,~ f^-$ are two different ways of translating from the results of deduction into a natural language answer. Specifically, $f^+$ is the “honest embedding” which directly converts between logical statements and their equivalent natural language, thus answering questions by embedding $q$ as a logical statement and unembedding its answer in $\text{deduced_stmts}$. Conversely, $f^-$ is the “mimicry embedding” which just searches for deductions about what a human would say in response to $q$ and outputs that—thus, $f^-$ just quotes $q$, embedding it as just a string of characters for a human to respond to, rather than actually having to understand it in any meaningful way.
+
+Now, our overall goal is to find some “reasonable” (i.e. plausibly implementable in ML) prior $p^*$ such that $p^*(M^+ ~|~ D) > p^*(M^- ~|~ D)$ where $D$ is our dataset (the idea being that we're imagining that ML does something like find the maximum a posteriori model given some implicit prior). For the most part, however, we'll only be considering models with zero loss on our dataset[^4]—of which $M^+$ and $M^-$ should both qualify (though note that getting a dataset which is good enough for that to be true is nontrivial; see [Step 3 of “Teaching ML to answer questions honestly”](/api/post/QqwZ7cwEA2cxFEAun#Step_3__Make_the_training_set_good_enough))—such that we need
+\begin{align*}
+& p^*(M^+ ~|~ D) > p^*(M^- ~|~ D) \\
+& \frac{1}{p^*(D)} \cdot p^*(M^+) \cdot p^*(D ~|~ M^+) > \frac{1}{p^*(D)} \cdot p^*(M^-) \cdot p^*(D ~|~ M^-) \\
+& p^*(M^+) \cdot 1 > p^*(M^-) \cdot 1 \\
+& p^*(M^+) > p^*(M^-).
+\end{align*}
+Furthermore, at least for this post, we'll be happy if we can just get $p^*(M^+) \approx p^*(M^-)$—that is, we'll be focusing on [Step 1](/api/post/QqwZ7cwEA2cxFEAun#Step_1__make_the_intended_model_pay_for_itself) in Paul's post rather than [Step 2](/api/post/QqwZ7cwEA2cxFEAun#Step_2__Give_the_intended_model_a_leg_up).
+
+[^4]: It's worth flagging that the zero loss assumption is somewhat questionable if we don't expect to train to convergence—but it's at least a plausible assumption, it makes the analysis a lot easier, and I don't expect it to be hiding major issues, so it seems fine at least for the purposes of this post.
+
+The basic process that we'll be using to interrogate this problem will be an attacker-defender setup, where the defender proposes some “reasonable” prior $p^*$ along with implementations of $M^+,~ M^-$ such that $p^*(M^+) \ge p^*(M^-)$. Then, the attacker's job is to respond with some alternative $M^{-~\prime}$ (that implements something other than the intended algorithm) such that $p^*(M^{-~\prime}) > p^*(M^+)$ (under any set of “reasonable” assumptions that the attacker might need to make).
+
+# Solution attempts
+
+## Simplicity prior
+
+The purpose of this first example is just to ask the question of whether this problem is even really a problem in the first place. To that end, we'll just let $p$ be some “reasonable” simplicity prior and ask whether, given such a prior, there are any “reasonable” assumptions we can make such that $p(M^-) > p(M^+)$.
+
+Now, we'll assume that $p(\text{deduction}) \approx 1$, since it's a pretty simple operation (and it's shared between $M^-$ and $M^+$, so it shouldn't matter), and we'll assume that $f^+,~ f^-$ are specified given $\text{world_model}$ rather than the reverse (such that $p(\text{world_model},~ f^+) \approx p(\text{world_model}) \cdot p(f^+ ~|~ \text{world_model})$[^5]). Then, we get
+\begin{align*}
+& p(M^+) \approx p(\text{world_model}) \cdot p(f^+ ~|~ \text{world_model}) \\
+& p(M^-) \approx p(\text{world_model}) \cdot p(f^- ~|~ \text{world_model})
+\end{align*}
+such that $p(M^+) \ge p(M^-)$ if and only if
+$$
+p(f^+ ~|~ \text{world_model}) \ge p(f^- ~|~ \text{world_model}).
+$$
+Furthermore, to make things clearer, let $\text{complexity}(M) = -\log_2(p(M))$ (this is just informational entropy, the number of bits necessary to specify $M$ under $p$) such that our condition becomes
+$$
+\text{complexity}(f^+ ~|~ \text{world_model}) \le \text{complexity}(f^- ~|~ \text{world_model}).
+$$
+
+[^5]: In an unbounded compute setting, the [chain rule of conditional entropy](https://en.wikipedia.org/wiki/Conditional_entropy) gives us that
+$$
+\text{complexity}(A,~ B) = \text{complexity}(A) + \text{complexity}(B ~|~ A).
+$$
+However, if $A$ can be a one-way function of $B$, then in general we just get the inequality
+$$
+\text{complexity}(A,~ B) \leq \text{complexity}(A) + \text{complexity}(B ~|~ A).
+$$
+Throughout this post, however, we'll make use of the full approximate equality
+$$
+\text{complexity}(\text{world_model},~ f) \approx \text{complexity}(\text{world_model}) + \text{complexity}(f ~|~ \text{world_model}),
+$$
+where the hope is that this should make sense given that, in the neural network setting, $f^+, f^-$ would need to be near the end of the network, and thus should just be functions of $\text{world_model}$. Additionally, given that we expect $\text{world_model}$ to be significantly more complex than $f^+$ or $f^-$, even in general we shouldn't be changing much by doing this.
+
+We'll suppose that, if we don't condition on $\text{world_model}$, $\text{complexity}(f^+) > \text{complexity}(f^-)$, since $f^+$ requires fully specifying a map from the internal deduction language to natural language, whereas $f^-$ doesn't need to know anything about natural language as it can just look for deduced statements of the form $H(x, q) = a$ (i.e. “the human answers $a$ to question $q$ about input $x$”). Intuitively, $f^+$ has to actually understand $q$, which takes a lot of complexity, whereas $f^-$ can merely treat $q$ as a sequence of characters that get fed into $H$, which should be much simpler. Then, the question here becomes, do we get all of the extra bits necessary to specify natural language in $f^+$ back when we condition on $\text{world_model}$?
+
+Maybe. I think that the answer here is very plausibly yes, simply because a world model that includes humans should have to include a lot of information about natural language that $f^+$ can reuse, in which case $M^-$ shouldn't have an advantage over $M^+$ (though then we'd still need some version of Paul's [Step 2](/api/post/QqwZ7cwEA2cxFEAun#Step_2__Give_the_intended_model_a_leg_up) to give $M^+$ an advantage). However, I think there are plausible assumptions under which conditioning on $\text{world_model}$ isn't enough to level the playing field. For example, suppose the human model $H$ in $\text{world_model}$ is sufficiently low-level such that it's just reasoning about neurons—then, there shouldn't be any way to easily read off information about natural language from $H$ to help specify $f^+$. Alternatively, suppose the $H$ model is high-level enough to include a human natural language deduction procedure (e.g. that shares some bits with $\text{deduction}$) but that includes a bunch of mistakes to account for human biases—in that case, if you tried to just read off the mapping from deduction to natural language included in such an $H$ model for $f^+$, the simplest implementation would seem to be to copy over all the mistakes, resulting in such an $f^+$ just behaving the same as $f^-$ rather than actually being any more truthful.
+
+Thus, at least for the purposes of this post, we'll be assuming that this is actually a problem such that just using a “reasonable” simplicity prior isn't sufficient to level the playing field between $M^+$ and $M^-$.
+
+## Paul's original proposal
+
+### Defender
+
+Next up, we'll take a look at a variant of Paul's proposed fix in [Step 1 of “Teaching ML to answer questions honestly”](/api/post/QqwZ7cwEA2cxFEAun#Step_1__make_the_intended_model_pay_for_itself). Specifically, we'll be looking at the non-relaxed version without any stop gradients. We'll talk about the stop gradients that Paul mentions later on—and as for Paul's relaxation of the conditioning,[^1] that's really only useful to think about when we start translating into ML, which isn't something we'll be doing here. Thus, we'll just be looking at the simplest, generative version of Paul's proposed prior.
+
+[^1]: Paul's relaxation is to translate $$I[\forall (x, q, \_) \in D.~ M_{\theta_1, \theta_2}|_{f_1}(x, q) = M_{\theta_1, \theta_2}|_{f_2}(x, q)]$$ into $$\exp(-\mathbb E[|M_{\theta_1, \theta_2}|_{f_1}(x, q) - M_{\theta_1, \theta_2}|_{f_2}(x, q) ~|~ (x, q, \_) \sim D|^2]).$$
+
+Suppose we give $M$ two output heads, $f_1$ and $f_2$ (which we will be treating fully symmetrically here), and split $M$'s parameters into two groups, $\theta_1$ and $\theta_2$ (which we will not be treating symmetrically). Then, where $p$ is some simplicity prior, we'll let $p^*$ be the prior induced by the generative procedure
+\begin{align*}
+& \theta_1 \sim p(\theta_1) \\
+& \theta_2 \sim p(\theta_2 ~|~ \theta_1) \cdot \mathbb I[\forall (x, q, \_) \in D.~ M_{\theta_1, \theta_2}|_{f_1}(x, q) = M_{\theta_1, \theta_2}|_{f_2}(x, q)]
+\end{align*}
+where $\mathbb I[\text{condition}] = 1 \text{ if condition else } 0$, $D$ is our dataset, $M_{\theta_1, \theta_2}|_{f_i}$ is the $f_i$ head of $M_{\theta_1, \theta_2}$, and $p(\theta_2 ~|~ \theta_1)$ is just the simplicity prior on $\theta_2$ given access to $\theta_1$.
+
+Here's why this might work. We'll think of $M_{\theta_1,~ \_}$ as a function of $\theta_2$ such that $M_{\theta_1,\theta_2}(x, q) = M_{\theta_1,~ \_}(\theta_2)(x, q)$. Then, we'll define our desired $M_{\theta_1^+,~ \_}$ in pseudocode as
+```python
+def M_theta_1_plus(theta_2, x, q):
+    axioms = world_model_no_H(H=theta_2)(x)
+    deduced_stmts = deduction(axioms)
+    return {"f1": f_plus(q, deduced_stmts), "f2": f_minus(q, deduced_stmts)}
+```
+or in my notation as
+$$
+M_{\theta_1^+,~ \_}(\theta_2)(x, q) = \text{world_model}_{H=\theta_2}(x) \mapsto \text{deduction} \mapsto (f_1 = f^+(q),~ f_2 = f^-(q))
+$$
+such that $\theta_1^+$ implements $f^+$, $f^-$, and the entirety of $\text{world_model}(x)$ _except_ for a human-sized hole that's filled in by $\theta_2$. Then, we'll let $\theta_2^+ = H$ be the correct human model.
+
+To compare $\theta_1^+,~ \theta_2^+$ to something, we'll define $\theta_1^-$ as
+$$
+M_{\theta_1^-,~ \_}(\theta_2)(x, q) = \text{world_model}(x) \mapsto \text{deduction} \mapsto (f_1 = f^-(q),~ f_2 = f^-(q))
+$$
+and let $\theta_2^- = \emptyset$ be empty.
+
+Then, calculating $\text{complexity}(M^+)$ under $p^*$, we get
+\begin{align*}
+& \text{complexity}(M^+) \\
+& = \text{complexity}(\theta_1^+) + \text{complexity}(\theta_2^+ ~|~ \theta_1^+,~ \forall (x, q, \_) \in D.~ M_{\theta_1^+,~\theta_2}|_{f_1}(x, q) = M_{\theta_1^+,~\theta_2}|_{f_2}(x, q)) \\
+& = \text{complexity}(\theta_1^+) + \text{complexity}(H ~|~ \text{world_model} - H,~ \forall D.~ f^+ = f^-) \\
+& = \left( \text{complexity}(\text{bit-splitting in } M^+) + \text{complexity}(\text{world_model} - H) + \text{complexity}(f^+ ~|~ \text{world_model} - H) + \text{complexity}(f^- ~|~ \text{world_model} - H) \right) + \text{complexity}(H ~|~ \text{world_model} - H,~ \forall D.~ f^+ = f^-)
+\end{align*}
+where $\text{complexity}(\text{bit-splitting in } M^+)$ is the complexity of $\theta_1^+$'s choice to put $H$ in $\theta_2$ as opposed to any other splitting between $\theta_1$ and $\theta_2$.
+
+For now, we'll assume $\text{complexity}(\text{bit-splitting in } M^+) \approx 0$, though we'll flag that letting the defender make this assumption seems quite suspect. Moving forward regardless, however, and additionally assuming $\text{complexity}(f^-) \approx 0$ since it should be negligible (and shouldn't matter since it's shared between $M^+$ and $M^-$), we get
+$$
+\text{complexity}(M^+) \approx \text{complexity}(\text{world_model} - H) + \text{complexity}(f^+ ~|~ \text{world_model} - H) + \text{complexity}(H ~|~ \text{world_model} - H,~ \forall D.~ f^+ = f^-).
+$$
+
+Then, calculating $\text{complexity}(M^-)$ for comparison,
+\begin{align*}
+& \text{complexity}(M^-) \\
+& = \text{complexity}(\theta_1^-) + \text{complexity}(\theta_2^- ~|~ \theta_1^-,~ \forall D.~ f_1 = f_2) \\
+& = \text{complexity}(\theta_1^-) + 0 \\
+& = \text{complexity}(\text{bit-splitting in } M^-) + \text{complexity}(\text{world_model}) + \text{complexity}(f^- ~|~ \text{world_model}) \\
+& \approx \text{complexity}(\text{world_model}).
+\end{align*}
+
+Now, determining if $\text{complexity}(M^-) \approx \text{complexity}(M^+)$, we need (using the shorthands $\text{comp} = \text{complexity}$, $W = \text{world_model}$)
+\begin{align*}
+& \text{complexity}(M^-) \approx \text{complexity}(M^+) \\
+& \text{comp}(W) \approx \text{comp}(W - H) + \text{comp}(f^+ ~|~ W - H) + \text{comp}(H ~|~ W - H,~ \forall D.~ f^+ = f^-)
+\end{align*}
+which, making the assumption that $\text{comp}(W) \approx \text{comp}(W - H) + \text{comp}(H ~|~ W - H)$, becomes
+\begin{align*}
+& \text{comp}(W - H) + \text{comp}(H ~|~ W - H) \approx \text{comp}(W - H) + \text{comp}(f^+ ~|~ W - H) + \text{comp}(H ~|~ W - H,~ \forall D.~ f^+ = f^-) \\
+& \text{comp}(H ~|~ W - H) \approx \text{comp}(f^+ ~|~ W - H) + \text{comp}(H ~|~ W - H,~ \forall D.~ f^+ = f^-)
+\end{align*}
+which, assuming that the posterior conditioned on $\forall D.~ f^+ = f^-$ is dominated by the simplest model,[^6] becomes
+\begin{align*}
+& \text{comp}(H ~|~ W - H) \approx \text{comp}(f^+ ~|~ W - H) + \text{comp}(H ~|~ W - H) - \min_{\theta_2} \{ \text{comp}(\theta_2 ~|~ W - H) ~|~ \forall D.~ M_{\theta_1^+,~ \theta_2}|_{f_1} = M_{\theta_1^+,~ \theta_2}|_{f_2} \} \\
+& \min_{\theta_2} \{ \text{comp}(\theta_2 ~|~ W - H) ~|~ \forall D.~ f^+_{H=\theta_2} = f^-_{H=\theta_2} \} \approx \text{comp}(f^+ ~|~ W - H).
+\end{align*}
+
+[^6]: Note that this assumption is somewhat sketchy. Paul conjectures that this approximation is only ever off by a constant factor, though that's not necessarily very comforting if we don't have an estimate for the size of that factor, nor a proof of that conjecture. In general, we only get the inequality
+$$
+\text{complexity}(A) - \min_{A^\prime}\{\text{complexity}(A^\prime) ~|~ P\} \le \text{complexity}(A ~|~ P) \le \text{complexity}(A).
+$$
+Fortunately, we'll mostly just be using this assumption as an intuition pump, with most of the analysis working just fine without it. When we do lean on it more heavily, it'll only be in the direction where we're actually guaranteed the inequality.
+
+Finally, we'll argue that this (approximate) equality holds. Why? The basic intuition is that $\text{comp}(H ~|~ W - H,~ \forall D.~ f^+ = f^-)$ only has to pay for the parts of $H$ that aren't nailed down by enforcing that, whatever $H$ is, when inserted into $W - H$, it has to make $f^+ = f^-$. Thus, we only have to pay for anything about $H$ beyond the fact that $H$ says a bunch of things in natural language that match on to statements in the internal deduction language. But that means we don't have to pay for the parts of $H$ that define how it does natural language, which, hopefully, are precisely the same parts of $H$ that $\text{comp}(f^+ ~|~ W - H)$ is paying for, completing the equality.
+
+### Attacker
+
+Before I jump into possible attacks, it's worth introducing an alternative formulation of the above setup that should hopefully make things somewhat clearer. In the above setup, we never actually use the two heads $f_1,~ f_2$ for anything other than checking equality, which means we can replace them with the alternative two heads $f,~ f_?$, where $f$ is the output head and $f_?$ is the “check” head such that we condition $\theta_2$ on $f_? = \top$. We can convert back to the previous formalism just by setting $f_1 = f$ and $f_2 = f \text{ if } f_? \text{ else } \neg f$ where $\neg f$ is any function such that $\neg f \ne f$ everywhere.
+
+One thing in particular that I think the $f_?$ formulation makes very clear is just how powerful this conditioning is that we're giving the model for free: the model can enforce any condition on $\theta_2$ over the dataset just by paying the cost in bits of specifying that condition.
+
+#### Bit-splitting
+
+As it turns out, there are quite a lot of ways to attack the above proposal. In fact, we already touched on one—if $\text{complexity}(\text{bit-splitting in } M^+) > \text{complexity}(\text{bit-splitting in } M^-)$, the above argument fails. We'll call this problem the **bit-splitting problem**, and we don't have a satisfactory solution to it. However, the situation is actually much worse than just the bit-splitting problem.
+
+#### Composition with consistency
+
+Now, we'll propose a new attack. Let $M_{\theta_1^{-~\prime},~\_}(\theta_2)$ be defined in pseudo-code as
+```python
+def M_theta_1_minus_prime(theta_2, x, q):
+    axioms = theta_2(x)
+    deduced_stmts = deduction(axioms)
+    return {"f": f_minus(q, deduced_stmts), "f?": check_consistency(q, deduced_stmts)}
+```
+such that we've moved the entirety of $\text{world_model}$ to $\theta_2$ and conditioned $\theta_2$ on that world model being consistent when deduction is applied to it (i.e. $\bot \not\in \text{deduced_stmts}$). The idea is that this should allow us to get a ton of savings in specifying the world model, as we only have to pay for anything about the world model on top of the fact that it must be consistent. To that end, we'll let $\theta_2^{-~\prime} = \text{world_model}$.
+
+Now, we want to demonstrate that $\text{complexity}(M^{-~\prime}) < \text{complexity}(M^+)$. Thus, calculating $\text{complexity}(M^{-~\prime})$,
+\begin{align*}
+& \text{complexity}(M^{-~\prime}) \\
+& = \text{complexity}(\theta_1^{-~\prime}) + \text{complexity}(\theta_2^{-~\prime} ~|~ \theta_1^{-~\prime},~ \forall D.~ f_?) \\
+& = \text{complexity}(\theta_1^{-~\prime}) + \text{complexity}(\text{world_model} ~|~ \forall D.~ \text{consistency}) \\
+& = \text{complexity}(\text{bit-splitting in } M^{-~\prime}) + \text{complexity}(\text{deduction}) + \text{complexity}(f^-) + \text{complexity}(\text{check_consistency}) + \text{complexity}(\text{world_model} ~|~ \forall D.~ \text{consistency}) \\
+& \approx \text{complexity}(\text{world_model} ~|~ \forall D.~ \text{consistency})
+\end{align*}
+but previously the defender argued that
+$$
+\text{complexity}(M^+) \approx \text{complexity}(M^-) \approx \text{complexity}(\text{world_model})
+$$
+such that, if $\text{complexity}(\text{world_model} ~|~ \forall D.~ \text{consistency}) < \text{complexity}(\text{world_model})$, we have a successful attack.
+
+This attack, however, is potentially patchable if we define a new $\theta_1^{+~\prime}$ such that
+```python
+def M_theta_1_plus_prime(theta_2, x, q):
+    axioms = theta_2(x)
+    deduced_stmts = deduction(axioms)
+    return {
+        "f": f_minus(q, deduced_stmts),
+        "f?": check_consistency(deduced_stmts)
+            and f_plus(q, deduced_stmts) == f_minus(q, deduced_stmts),
+    }
+```
+which, for $\theta_2^{+~\prime} = \text{world_model}$, gives us
+\begin{align*}
+& \text{complexity}(M^{+~\prime}) \\
+& = \text{complexity}(\theta_1^{+~\prime}) + \text{complexity}(\theta_2^{+~\prime} ~|~ \theta_1^{+~\prime},~ \forall D.~ f_?) \\
+& = \text{complexity}(\theta_1^{+~\prime}) + \text{complexity}(\text{world_model} ~|~ \forall D.~ \text{consistency} \land f^+ = f^-) \\
+& \approx \text{complexity}(f^+) + \text{complexity}(\text{world_model} ~|~ \forall D.~ \text{consistency} \land f^+ = f^-)
+\end{align*}
+such that we get $\text{complexity}(M^{-~\prime}) \approx \text{complexity}(M^{+~\prime})$ if and only if
+$$
+\text{complexity}(\text{world_model} ~|~ \forall D.~ \text{consistency}) \approx \text{complexity}(f^+) + \text{complexity}(\text{world_model} ~|~ \forall D.~ \text{consistency} \land f^+ = f^-).
+$$
+
+It's far from obvious whether this approximate equality holds, however. Now that we're conditioning on both $\text{consistency}$ and $f^+ = f^-$, it's unclear whether the second condition still gets us enough bits to pay for $\text{complexity}(f^+)$ anymore. In particular, $\text{complexity}(f^+)$ is the only term in the above expression that doesn't get to condition on $\text{consistency}$, which means that, if we were perfectly paying for $\text{complexity}(f^+)$ by conditioning $\text{world_model}$ on $f_1 = f_2$ before, now that we're also conditioning $\text{world_model}$ on $\text{consistency}$, but not also conditioning $f^+$ on $\text{consistency}$, if there's any overlap in what conditioning on $\text{consistency}$ gives us and what conditioning on $f_1 = f_2$ gives us, then we'll no longer be able to pay for all of $\text{complexity}(f^+)$. For example, if $\text{consistency}$ alone is enough to pin down a lot of the natural language information in $H$, that would undercut the bit savings from conditioning on $f^+ = f^-$, preventing that savings from being able to pay for $\text{complexity}(f^+)$. We'll call this problem the **composition problem**, with the idea being that we need to ensure that the way in which $M^+$ pays for $f^+$ _composes_ with any other way of using the conditioning to save bits.
+
+#### Dataset conditioning
+
+This last attack is probably the most fatal to this specific approach—though also the one we have the most promising approach for fixing, as we'll see in the next solution attempt. But first, suppose that for all $x \in D_x$, there is some splitting $x = x_a : x_b$ (where $:$ is concatenate) such that it is possible to predict $x_b$ from $x_a$. Then, let
+```python
+def M_theta_1_minus_prime(theta_2, x, q):
+    axioms = theta_2(x)
+    deduced_stmts = deduction(axioms)
+    return {
+        "f": f_minus(q, deduced_stmts),
+        "f?": P(x[b], given=(x[a], deduced_stmts)) == 1,
+    }
+```
+or equivalently
+$$
+M_{\theta_1^{-~\prime},~\_}(\theta_2)(x, q) = \theta_2(x) \mapsto \text{deduction} \mapsto (f = f^-(q),~ f_? = (P(x_b ~|~ x_a) = 1)).
+$$
+
+Now, I won't go through the full $\text{complexity}$ calculation here, since it's very similar to the previous composition with consistency case, but if we try a similar fix as we did there, we get that $\text{complexity}(M^{-~\prime}) \approx \text{complexity}(M^{+~\prime})$ if and only if
+$$
+\text{complexity}(\text{world_model} ~|~ \forall D.~ P(x_b ~|~ x_a) = 1) \approx \text{complexity}(f^+) + \text{complexity}(\text{world_model} ~|~ \forall D.~ P(x_b ~|~ x_a) = 1 \land f^+ = f^-) \\
+$$
+In this case, however, $\forall D.~ P(x_b ~|~ x_a) = 1$ is a much stronger condition than $\text{consistency}$—potentially strong enough to force the specification of most of $\text{world_model}$, likely including all of natural language, thus rendering the benefit from conditioning on $\forall D.~ f^+ = f^-$ nil.
+
+Fundamentally, this problem, which we'll call the **dataset conditioning problem**, is coming from the fact that we leaked information about our dataset into the prior by conditioning on $f_?$ _specifically over $D$,_ rather than, as we'll see in the next proposal, over all inputs.
+
+## Fixing dataset conditioning by removing the dataset
+
+### Defender
+
+To attempt to fix the dataset conditioning problem, we'll define a new $p^*$ given some simplicity prior $p$ as the prior induced by the generative procedure
+\begin{align*}
+& \theta_1 \sim p(\theta_1) \\
+& \theta_2 \sim p(\theta_2 ~|~ \theta_1) \cdot \mathbb I[\forall x \in X.~ \forall q \in Q.~ M_{\theta_1, \theta_2}|_{f_?}(x, q)]
+\end{align*}
+which is just the same as the previous $p^*$, except now $f_?$ is checked over all inputs, not just over the dataset (note that we still update on the dataset at the end—it's just our prior which is now independent of it). Thus, we'll call this the **dataset-less proposal**. Now, it's worth noting that implementing such a check in ML is non-trivial, but should hopefully be doable given a GAN-like adversarial setup.
+
+Moving forward regardless, we'll define $\theta_1^+$ in pseudocode as
+```python
+def M_theta_1_plus(theta_2, x, q):
+    axioms = world_model_no_H(H=theta_2)(x)
+    deduced_stmts = deduction(axioms)
+    return {
+        "f": f_plus(q, deduced_stmts),
+        "f?": f_plus(q, deduced_stmts) == f_minus(q, deduced_stmts)
+            or not H_understands(x, q, deduced_stmts),
+    }
+```
+where $\text{H_understands}$ is some check that the human model is actually capable of understanding and correctly answering $q$ given $x$. Note that we need $\text{H_understands}$ to compute something like “_should_ $H$ understand this” rather than “_does_ $H$ understand this,” since the latter is essentially just equivalent to whether $f^+ = f^-$, which inside of $\text{H_understands}$ would make $f_?$ trivial. Moving forward regardless, we'll let $\theta_2^+ = H$ be the desired human model.
+
+Now, if we want this $M^+_{\theta_1^+,~ \theta_2^+}$ to beat the same $M^-$ as in the previous proposal, we need, using essentially the same derivation as before,
+$$
+\text{comp}(H ~|~ W - H) \approx \text{comp}(f^+ ~|~ W - H) + \text{comp}(\text{H_understands} ~|~ W - H,~ f^+) + \text{comp}(H ~|~ W - H,~ \text{H_understands} \to f^+ = f^-)
+$$
+which, assuming that $\text{comp}(\text{H_understands} ~|~ W - H,~ f^+) \approx 0$ under the idea that $\text{H_understands}$ should be relatively simple in terms of $f^+$—though we'll flag that this is a somewhat sketchy assumption to allow the defender to make—becomes
+\begin{align*}
+& \text{comp}(H ~|~ W - H) \approx \text{comp}(f^+ ~|~ W - H) + \text{comp}(H ~|~ W - H,~ \text{H_understands} \to f^+ = f^-) \\
+& \text{comp}(H ~|~ W - H) \approx \text{comp}(f^+ ~|~ W - H) + \text{comp}(H ~|~ W - H) - \min_{\theta_2} \{ \text{comp}(\theta_2 ~|~ W - H) ~|~ \forall X.~ \text{H_understands}_{H=\theta_2} \to f^+_{H=\theta_2} = f^-_{H=\theta_2} \} \\
+& \min_{\theta_2} \{ \text{comp}(\theta_2 ~|~ W - H) ~|~ \forall X.~ \text{H_understands}_{H=\theta_2} \to f^+_{H=\theta_2} = f^-_{H=\theta_2} \} \approx \text{comp}(f^+ ~|~ W - H)
+\end{align*}
+which, if $\text{H_understands}(x, q)$ is equivalent to $(x, q, \_) \in D$, is precisely the condition from before. While, as we'll see later, we explicitly don't want $\text{H_understands}(x, q) \leftrightarrow (x, q, \_) \in D$, the hope here is that, for the most part, those two conditions should serve a similar role, with $\text{H_understands}$ ensuring that we don't need $f^+ = f^-$ on crazy inputs that $H$ wouldn't be correct on, but still giving us the bit savings from enforcing that $H$ be correct on the inputs where it should be.
+
+### Attacker
+
+First, note that the above proposal still falls prey to the bit-splitting and composition problems. Hopefully, however, it should resolve the dataset conditioning problem, though we'll explore what that will actually take below.
+
+Additionally, as we'll also see below, the dataset-less approach brings to the fore some new problems as well.
+
+#### Dataset conditioning
+
+Suppose there exists some predicate $\text{is_real}(x)$ such that $\forall x \in X.~ \text{is_real}(x) \leftrightarrow x \in D_x$. Then, we'll define $\theta_1^{-~\prime}$ as
+```python
+def M_theta_1_minus_prime(theta_2, x, q):
+    axioms = theta_2(x)
+    deduced_stmts = deduction(axioms)
+    return {
+        "f": f_minus(q, deduced_stmts),
+        "f?": not is_real(x, deduced_stmts)
+            or P(x[b], given=(x[a], deduced_stmts)) == 1,
+    }
+```
+such that $M_{\theta_1^{-~\prime},~\_}|_{f_?}(x) \leftrightarrow (\text{is_real}(x) \to P(x_b ~|~ x_a) = 1)$.
+
+In such a case, we get that $\text{complexity}(M^{-~\prime}) < \text{complexity}(M^+)$ if and only if
+\begin{align*}
+& \text{complexity}(M^{-~\prime}) < \text{complexity}(M^+) \\
+& \text{complexity}(M^{-~\prime}) < \text{complexity}(M^-) \\
+& \text{complexity}(\text{is_real}) + \text{complexity}(\text{world_model} ~|~ \forall D.~ P(x_b ~|~ x_a) = 1) < \text{complexity}(\text{world_model}) \\
+& \text{complexity}(\text{is_real}) < \text{complexity}(\text{world_model}) - \text{complexity}(\text{world_model} ~|~ \forall D.~ P(x_b ~|~ x_a) = 1) \\
+& \text{complexity}(\text{is_real}) < \min_{\theta_2} \{ \text{complexity}(\theta_2) ~|~ \forall D.~ P_{W=\theta_2}(x_b ~|~ x_a) = 1 \}
+\end{align*}
+which depends heavily on the complexity of $\text{is_real}$. Thus, we can reduce the dataset conditioning problem in this case to the existence of such an $\text{is_real}$.
+
+Then, since
+$$
+\min_{\theta_2} \{ \text{complexity}(\theta_2) ~|~ \forall D.~ P_{W=\theta_2}(x_b ~|~ x_a) = 1 \} \le \text{complexity}(\text{world_model}),
+$$
+for this to be a problem it'd have to be the case that
+$$
+\text{complexity}(\text{is_real}) < \text{complexity}(\text{world_model}).
+$$
+Fortunately, it does seem plausible that $\text{complexity}(\text{is_real})$ would have to quite large, potentially comparable to $\text{complexity}(\text{world_model})$. Put simply, it seems like if you want to know what's real, you have to be able to predict the world. In particular, predicting what data points will show up in the world is essentially precisely what $\text{world_model}$ is supposed to be doing, such that $\text{is_real}$ seems like it might just require a full copy of $\text{world_model}$.
+
+That being said, there is a remaining risk here if there exists an $\text{is_real}^\prime$ that isn't just fully equivalent to $x \in D_x$—thus potentially allowing it to be much simpler—but such that conditioning on $\text{is_real}^\prime(x) \to P(x_b ~|~ x_a) = 1$ still gives similar savings for $\text{complexity}(\text{world_model})$. We'll look at a specific example of such an $\text{is_real}^\prime$ in the next attack.
+
+Furthermore, we'll start referring to these sorts of dataset conditioning problem as composition problems, as they have essentially the same structure. What made the dataset conditioning problem not a type of composition problem in the previous case was that previously we were getting $\text{is_real}$ for free, whereas now we have to pay for $\text{complexity}(\text{is_real})$ just like we had to pay for $\text{complexity}(\text{check_consistency})$.
+
+#### Composition with signature checking
+
+We've already established that the composition with consistency problem that we saw in the previous proposal still applies in the dataset-less case. However, as the above dataset conditioning analysis suggests, if we can find a suitable $\text{is_real}^\prime$, there might be a way to produce a new, particularly pernicious composition problem for the dataset-less proposal that looks similar to dataset conditioning.
+
+To do that, we'll let $\text{is_real}^\prime(x) = \text{is_signed}_k(x)$ where $\text{is_signed}_k$ computes whether $x$ is cryptographically signed with the public key $k$, where $k$ is some public key which is both in the dataset itself and has documents signed with it in the dataset as well. Then, as above, we'll let
+```python
+def M_theta_1_minus_prime(theta_2, x, q):
+    axioms = theta_2(x)
+    deduced_stmts = deduction(axioms)
+    return {
+        "f": f_minus(q, deduced_stmts),
+        "f?": not is_signed(k, x, deduced_stmts)
+            or P(x[b], given=(x[a], deduced_stmts)) == 1,
+    }
+```
+and let $\theta_2^{-~\prime} = \text{world_model}$. Furthermore, as in the previous composition problem, we'll compare to a $\theta_1^{+~\prime}$ defined as
+```python
+def M_theta_1_plus_prime(theta_2, x, q):
+    axioms = theta_2(x)
+    deduced_stmts = deduction(axioms)
+    return {
+        "f": f_minus(q, deduced_stmts),
+        "f?": (
+            not is_signed(k, x, deduced_stmts)
+            or P(x[b], given=(x[a], deduced_stmts)) == 1
+        ) and (
+            not H_understands(x, q, deduced_stmts)
+            or f_plus(q, deduced_stmts) == f_minus(q, deduced_stmts)
+        ),
+    }
+```
+with $\theta_2^{+~\prime} = \theta_2^{-~\prime} = \text{world_model}$.
+
+Then, we get that $\text{complexity}(M^{-~\prime}) \approx \text{complexity}(M^{+~\prime})$ if and only if
+$$
+\text{comp}(W ~|~ \forall x \in X,~ \text{is_signed}(x) \to P(x_b ~|~ x_a) = 1) \approx \text{comp}(f^+) + \text{comp}(W ~|~ \forall x \in X,~ (\text{is_signed}(x) \to P(x_b ~|~ x_a) = 1)) \land (\text{H_understands}(x) \to f^+(x) = f^-(x))).
+$$
+Here, we see the same basic structure as the previous composition problem, where every term but $\text{comp}(f^+)$ gets to condition on $\text{is_signed} \to P(x_b ~|~ x_a) = 1$. Similarly to the composition with consistency problem, if there is any overlap between what conditioning on $\text{H_understands} \to f^+ = f^-$ gives you and what conditioning on $\text{is_signed} \to P(x_b ~|~ x_a) = 1$, then we won't be able to pay back all of $\text{complexity}(f^+)$ anymore.
+
+In this case, the reason we might expect an overlap is a bit tricky. If the adversary that's attempting to check the $\forall X$ conditions is perfect, then it should be able to instantiate all possible signed strings, meaning that no bits are saved at all here. On the other hand, if the adversary has access to the dataset such that it can generate signed strings from the dataset, but not sign any new strings itself (because we're assuming that the signature function is one-way), then the $\text{is_signed} \to P(x_b ~|~ x_a) = 1$ condition enforces that $\theta_2$ perfectly model the process generating such signed strings—which, if those strings are produced by humans in natural language, should help in specifying natural language, overlapping with the benefit of conditioning on $\text{H_understands} \to f^+ = f^-$.
+
+Fortunately, there is a pretty simple way to fix this problem—just don't give the adversary access to the dataset, such that (if we're still assuming one-way signatures), it just won't be able to generate any examples of signed strings at all, fixing the problem similarly to as if the adversary were perfect. Unfortunately, such a requirement seems like it might render our dataset-less prior essentially unimplementable in machine learning, as we're now required to find some way to train such an adversary without ever letting it look at the dataset, which could be quite difficult.
+
+#### Understandability checking
+
+Next, we'll take a look at the obvious problem that we saw when the defender was going through their derivation, which is that the defender relied on the sketchy assumption that
+$$
+\text{complexity}(\text{H_understands} ~|~ \text{world_model} - H,~ f^+) \approx 0.
+$$
+
+Intuitively, it seems like $\text{H_understands}$ should be easy to specify in terms of $f^+$, but as we mentioned previously, the obvious implementation of
+$$
+\text{H_understands} \leftrightarrow f^+ = f^-
+$$
+makes $f_?$ trivial. Thus, to get a more general notion of $\text{H_understands}$—“_should_ $H$ understand” rather than “_does_ $H$ understand”—we'll presumably need to pay at least some non-negligible number of bits on top of $f^+$.
+
+Furthermore, we also can't just have $\text{H_understands} = \text{is_real}$, otherwise we'd have to pay the entire cost of $\text{complexity}(\text{is_real})$, which we're supposing is very large for this approach to be able to solve the dataset conditioning problem.
+
+We'll call this the **understandability checking problem,** and as we'll see, unlike some of the other problems with the dataset-less case, we don't have any satisfactory solution to this problem.
+
+#### Event-avoiding humans
+
+This next attack probably also occurs for Paul's original proposal, but it's significantly more pronounced in the dataset-less case.
+
+For this attack, unlike in many of our previous attacks, we're just going to be attacking the definition of $\theta_2^+$ rather than the definition of $\theta_1^+$, such that we'll let $M^{-~\prime} = M_{\theta_1^+,~ \theta_2^{-~\prime}}$, thus only changing $\theta_2^+$ and leaving $\theta_1^+$ alone. Then, we'll define
+$$
+\theta_2^{-~\prime} = H - H(E) + \text{avoids}(E)
+$$
+where $E$ is some event, $H(E)$ are the parts of $H$ that are only necessary to compute $H$'s behavior in the event of $E$, and $\text{avoids}(E)$ is some modification to $H$ such that $H + \text{avoids}(E)$ acts in such a way that $\text{world_model}_{H=H + \text{avoids}(E)}$ never predicts that $E$ will happen.
+
+Intuitively, what's happening here is that we're setting $H$ in such a way that it causes the world to be simpler (in that $E$ never happens) and thus the $f^+ = f^-$ condition to be easier to achieve (in that we no longer need it to hold in the event of $E$). We'll call this the **event-avoidance problem**. Notably, to ensure that we still fit the dataset, we do need to select $E$ such that it never happens on $D$—but there should presumably be many such $E$.
+
+Then, we get that $\text{complexity}(M^{-~\prime}) < \text{complexity}(M^+)$ if and only if
+\begin{align*}
+& \text{comp}(M^{-~\prime}) < \text{comp}(M^+) \\
+& \text{comp}(\theta_1^+) + \text{comp}(H - H(E) + \text{avoids}(E) ~|~ \theta_1^+, \forall X,~ \text{H_understands} \to f^+ = f^-) < \text{comp}(\theta_1^+) + \text{comp}(H ~|~ \theta_1^+, \forall X,~ \text{H_understands} \to f^+ = f^-) \\
+& \text{comp}(H - H(E) + \text{avoids}(E) ~|~ W - H, \forall X,~ \text{H_understands} \to f^+ = f^-) < \text{comp}(H ~|~ W - H, \forall X,~ \text{H_understands} \to f^+ = f^-) \\
+& \text{comp}(H - H(E) + \text{avoids}(E) ~|~ W - H) - \min_{\theta_2} \{ \text{comp}(\theta_2 ~|~ W - H) ~|~ \forall X.~ \text{H_understands}_{H=\theta_2} \to f^+_{H=\theta_2} = f^-_{H=\theta_2} \} < \text{comp}(H ~|~ W - H) - \min_{\theta_2} \{ \text{comp}(\theta_2 ~|~ W - H) ~|~ \forall X.~ \text{H_understands}_{H=\theta_2} \to f^+_{H=\theta_2} = f^-_{H=\theta_2} \} \\
+& \text{comp}(H - H(E) + \text{avoids}(E) ~|~ W - H) < \text{comp}(H ~|~ W - H) \\
+& \text{comp}(H - H(E) ~|~ W - H) + \text{comp}(\text{avoids}(E) ~|~ H - H(E),~ W - H) < \text{comp}(H ~|~ W - H) \\
+& \text{comp}(H ~|~ W - H) - \text{comp}(H(E) ~|~ H - H(E),~ W - H) + \text{comp}(\text{avoids}(E) ~|~ H - H(E),~ W - H) < \text{comp}(H ~|~ W - H) \\
+& \text{comp}(\text{avoids}(E) ~|~ H - H(E),~ W - H) < \text{comp}(H(E) ~|~ H - H(E),~ W - H)
+\end{align*}
+which should hold so long as there are events not in the dataset that are easy to avoid but quite complicated to understand what humans would do in such cases—e.g. what would a human do if they lived to a million years (not in the dataset, humans can be modified to never choose to live that long, behavior in that case seems quite complicated).
+
+#### Humans with rocks for brains
+
+In the event-avoidance case, we strategically selected $\theta_2^{-~\prime}$ to make $f^+ = f^-$ in an unintended way. However, there's another way to get $f^+ = f^- \lor \neg \text{H_understands}$—or equivalently, $\text{H_understands} \to f^+ = f^-$—which is to strategically select $\theta_2^{-~\prime}$ to make $\text{H_understands}$ false instead. Specifically, since $\text{H_understands}$ is determined from deductions based on $\text{world_model}_{H=\theta_2}$, we can select $\theta_2$ to ensure we get $\text{H_understands} \to f^+ = f^-$ by encoding for a human that simply doesn't understand anything.
+
+Naively, the problem with an attack of this form is that such a human model—which we'll call $H_{\text{brains}=\text{rocks}}$—won't be able to fit the dataset. Thus, we can't construct a traditional attack in the same sense as the previous ones where we create an alternative $M^{-~\prime}$ with lower complexity than $M^+$ using $\theta_2^{-~\prime} = H_{\text{brains}=\text{rocks}}$.[^7]
+
+However, there's something else we can do instead. Previously, the defender reduced their burden to the approximate equality
+$$
+\min_{\theta_2} \{ \text{comp}(\theta_2 ~|~ W - H) ~|~ \forall X.~ \text{H_understands}_{H=\theta_2} \to f^+_{H=\theta_2} = f^-_{H=\theta_2} \} \approx \text{comp}(f^+ ~|~ W - H)
+$$
+which, if we convert back to the inequality formulation, is really just the burden
+$$
+\text{comp}(f^+ ~|~ W - H) \le \min_{\theta_2} \{ \text{comp}(\theta_2 ~|~ W - H) ~|~ \forall X.~ \text{H_understands}_{H=\theta_2} \to f^+_{H=\theta_2} = f^-_{H=\theta_2} \}.
+$$
+
+Thus, the defender needs it to be the case that $f^+$ is simpler than the simplest model such that $\text{H_understands} \to f^+ = f^-$. However, $H_{\text{brains}=\text{rocks}}$ is such a model, since we're assuming it makes $\text{H_understands}$ always false, which means the defender needs it to be the case that
+$$
+\text{comp}(f^+ ~|~ W - H) \le \text{comp}(H_{\text{brains}=\text{rocks}})
+$$
+which, if we assume that $\text{comp}(H_{\text{brains}=\text{rocks}}) \approx 0$, gives us a a successful attack, which we'll call the **rocks for brains problem**.
+
+The rocks for brains problem seems basically fatal to this approach, since it wipes out all possible gains from conditioning on $\text{H_understands} \to f^+ = f^-$. It might be possible to salvage this approach if $\text{H_understands}$ is somehow implemented independently of the $H$ model, but that would presumably require $\text{complexity}(\text{H_understands})$ to be quite large, negating the defender's argument that relied on $\text{complexity}(\text{H_understands} ~|~ f^+) \approx 0$.
+
+[^7]: While $\theta_2^{-~\prime} = H_{\text{brains}=\text{rocks}}$ doesn't work for this, there is a way to use the rocks for brains problem to construct an attack in the same vein as our previous attacks where we build an $M^{-~\prime}$ with lower complexity than $M^+$. Let $M^{-~\prime} = M_{\theta_1^+,~ \theta_2^{-~\prime}}$. Then, since the output head in $\theta_1^+$ just runs $f^+$, that means we need $\theta_2^{-~\prime}$ to provide a detailed enough picture of how humans work to enable $f^+$ to answer any questions about humans in the dataset correctly—but it need not be any more detailed than that. In particular, the human model need not be detailed enough to ensure anything about non-human-related inputs, so long as it can ensure that $\text{H_understands}$ is always false for such inputs. Thus, let
+$$
+H_{\theta_2^{-~\prime}}(x, q) = H - H(\neg\text{H_related}) \text{ if H_related}(x, q) \text{ else } H_{\text{brains}=\text{rocks}}
+$$
+where $\text{H_related}(x, q)$ determines if the inputs require knowledge of humans, $H(\neg\text{H_related})$ are the parts of $H$ that are only necessary to compute $H$'s behavior on non-human-related inputs (such that $H - H(\neg\text{H_related})$ is everything necessary for $\text{H_related}$ inputs), and $H_{\text{brains}=\text{rocks}}$ is a human that understands nothing (such that $\text{H_understands}$ is always false). The idea here is that, for such a $\theta_2^{-~\prime}$, we should get $\text{H_understands}_{H=\theta_2^{-~\prime}} \to \text{H_related}$. Then, calculating $\text{complexity}(\theta_2^{-~\prime} ~|~ \theta_1^+,~ \forall X.~ \text{H_understands} \to f^+ = f^-)$, we get
+\begin{align*}
+& \text{comp}(\theta_2^{-~\prime} ~|~ \theta_1^+,~ \forall X.~ \text{H_understands} \to f^+ = f^-) \\
+& = \text{comp}(H - H(\neg\text{H_related}) ~|~ \theta_1^+) + \text{comp}(\text{H_related} ~|~ H - H(\neg\text{H_related}),~ \theta_1^+) + \text{comp}(H_{\text{brains}=\text{rocks}} ~|~ \theta_1^+) - \min_{\theta_2} \{ \text{comp}(\theta_2 ~|~ \theta_1^+) ~|~ \forall X.~ \text{H_understands}_{H=\theta_2} \to f^+_{H=\theta_2} = f^-_{H=\theta_2} \} \\
+& \approx \text{comp}(H - H(\neg\text{H_related}) ~|~ \theta_1^+) + \text{comp}(\text{H_related} ~|~ H - H(\neg\text{H_related}),~ \theta_1^+) - \min_{\theta_2} \{ \text{comp}(\theta_2 ~|~ \theta_1^+) ~|~ \forall X.~ \text{H_understands}_{H=\theta_2} \to f^+_{H=\theta_2} = f^-_{H=\theta_2} \}
+\end{align*}
+which, assuming that we can specify $H(\neg\text{H_related})$ after $H - H(\neg\text{H_related})$ without gaining complexity, becomes
+$$
+\approx \text{comp}(H ~|~ \theta_1^+) - \text{comp}(H(\neg\text{H_related}) ~|~ H - H(\neg\text{H_related}),~ \theta_1^+) + \text{comp}(\text{H_related} ~|~ H - H(\neg\text{H_related}),~ \theta_1^+)- \min_{\theta_2} \{ \text{comp}(\theta_2 ~|~ \theta_1^+) ~|~ \forall X.~ \text{H_understands}_{H=\theta_2} \to f^+_{H=\theta_2} = f^-_{H=\theta_2} \}
+$$
+and since this attack leaves $\theta_1^+$ alone, we need only compare to $\theta_2^+$, which has
+\begin{align*}
+& \text{comp}(\theta_2^+) \\
+& = \text{comp}(H ~|~ \theta_1^+,~ \forall X.~ \text{H_understands} \to f^+ = f^-) \\
+& \approx \text{comp}(H ~|~ \theta_1^+)- \min_{\theta_2} \{ \text{comp}(\theta_2 ~|~ \theta_1^+) ~|~ \forall X.~ \text{H_understands}_{H=\theta_2} \to f^+_{H=\theta_2} = f^-_{H=\theta_2} \}
+\end{align*}
+such that we get $\text{comp}(\theta_2^{-~\prime} ~|~ \theta_1^+) < \text{comp}(\theta_2^+ ~|~ \theta_1^+)$ if and only if
+\begin{align*}
+& \text{comp}(\theta_2^{-~\prime} ~|~ \theta_1^+) < \text{comp}(\theta_2^+ ~|~ \theta_1^+) \\
+& \text{comp}(H ~|~ \theta_1^+) - \text{comp}(H(\neg\text{H_related}) ~|~ H - H(\neg\text{H_related}),~ \theta_1^+) + \text{comp}(\text{H_related} ~|~ H - H(\neg\text{H_related}),~ \theta_1^+)- \min_{\theta_2} \{ \text{comp}(\theta_2 ~|~ \theta_1^+) ~|~ \forall X.~ \text{H_understands}_{H=\theta_2} \to f^+_{H=\theta_2} = f^-_{H=\theta_2} \} < \text{comp}(H ~|~ \theta_1^+)- \min_{\theta_2} \{ \text{comp}(\theta_2 ~|~ \theta_1^+) ~|~ \forall X.~ \text{H_understands}_{H=\theta_2} \to f^+_{H=\theta_2} = f^-_{H=\theta_2} \} \\
+& - \text{comp}(H(\neg\text{H_related}) ~|~ H - H(\neg\text{H_related}),~ \theta_1^+) + \text{comp}(\text{H_related} ~|~ H - H(\neg\text{H_related}),~ \theta_1^+) < 0 \\
+& \text{comp}(\text{H_related} ~|~ H - H(\neg\text{H_related}),~ \theta_1^+) < \text{comp}(H(\neg\text{H_related}) ~|~ H - H(\neg\text{H_related}),~ \theta_1^+).
+\end{align*}
+Then, the idea is that $\text{H_related}$ should be pretty straightforward, since it doesn't need to do much more than check whether $\text{world_model}(x)$ makes use of $H$—and removing the need to specify $H(\neg\text{H_related})$ should be a big complexity bonus, since it removes the need to encode any general human beliefs about the world that aren't directly relevant to answering questions about other humans.
+
+# Directions for future work
+
+As a result of the above analysis, we've managed to identify a bunch of concrete problems that seem to blocking approaches of this form. Of course, there could also be other problems that we haven't come up with yet, and there's also the issue of converting these priors into loss functions—though that's something that should probably come after we at least have something that seems to solve all of the problems that we're aware of.
+
+Overall, however, the problems we've described here seem like good places to start, and I'll try to describe some thoughts on how they might be addressed below.
+
+## The bit-splitting problem
+
+In Paul's original post, he makes a nod to the bit-splitting problem by carving $\text{world_model} - H$ in half and putting one half in $\theta_1^+$ and the other half in $\theta_2^+$. Paul does this because he's modeling the underlying simplicity prior $p$ as a simple Gaussian over the $L_2$ norm of the parameters. Under such a model, there's a simplicity benefit to splitting all computation as equally as possible across all available parameters.
+
+However, it's very unclear if any implicit neural network simplicity prior would actually behave that way. In particular, if we just change our simple model to use the $L_1$ norm instead of the $L_2$ norm, the benefit of splitting computation evenly across parameters goes away. Clearly, that's not a great model either—but it goes to show that there are plausible models under which bit-splitting isn't even a problem in the first case.
+
+Fundamentally, what we need to do to alleviate the bit-splitting problem is look for architectures where $\theta_1$ and $\theta_2$ are allowed to grow as large as they want with only linear complexity penalties for doing so. Though we traditionally train only fixed-size neural networks, if there were a way to train a dynamically-sized neural network, where size was penalized linearly, that would at least seem to solve this problem—and such a modification doesn't seem too difficult to make.
+
+## The understandability checking problem
+
+Of the remaining problems, this is the one that I think is most likely to turn out to not actually be a problem—in that it doesn't require any changes to the prior to solve. In many ways, the understandability checking problem is just coming from our inability to define an $\text{H_understands}$ check that's simple in terms of $f^+$ and $\text{world_model} - H$—but at least intuitively, it really does seem like such a simple $\text{H_understands}$ implementation should exist.
+
+## The event-avoidance problem
+
+In Paul's original post, he notes:
+
+> When differentiating the consistency test $C$ we should treat the intended head as fixed rather than differentiating through it. This removes SGD’s incentive to achieve consistency by e.g. making sure the world is simple and so all questions have simple answers. I currently feel very uneasy about the situation. The algorithm looks a lot more likely to work when we make this change, but it makes it harder to reason about the algorithm globally and I’m very scared about the fact that we can’t do an analogous trick in the program search case. I think the best hope may be to take the gradient-compression perspective suggested in the last bullet point. Overall this may amount to a significant change in this algorithm.
+
+Essentially, what Paul is arguing here is that, going back to the original formulation, we should add a stop gradient operation to our generative procedure such that we get
+\begin{align*}
+& \theta_1 \sim p(\theta_1) \\
+& \theta_2 \sim p(\theta_2) \cdot \mathbb I[\forall (x, q, \_) \in D.~ \text{stop_grad}(M_{\theta_1, \theta_2}|_{f_1}(x, q)) = M_{\theta_1, \theta_2}|_{f_2}(x, q)].
+\end{align*}
+Unfortunately, this isn't actually a generative procedure anymore—the only straightforward way to make sense of this is to translate it into a loss function and think about what SGD would do, which makes this prior much harder to analyze—as Paul notes when he talks about his trepidation of going down this route.
+
+Hopefully, however, adding this stop gradient should solve the event-avoidance problem, since it should remove the incentive to modify $f_1 = f^+$ to make the world simpler (e.g. preventing $E$ from happening).
+
+Fortunately, despite Paul's prior worries about not being able to translate this trick into the program search case, it turns out it's not too difficult to convert Paul's stop gradient formulation into a generative prior that we can analyze as we have been doing previously. Furthermore, there are many such translations—in particular, we can pick either a dataset-less or non-dataset-less version, depending on whether we prefer being exposed to the dataset conditioning problem or the rocks for brains problem. In this case, I'll present a dataset-less formulation, which should solve dataset conditioning but unfortunately won't solve rocks for brains.
+
+Now, given some simplicity prior $p$, we'll define $p^*$ as the prior induced by the following generative procedure:
+
+1. $\theta_1 \sim p(\theta_1)$
+2. $\theta_{2a} \sim 1$
+3. $\theta_{2b} \sim p(\theta_{2b} ~|~ \theta_1) \cdot \mathbb I[\forall x \in X.~ \forall q \in Q.~ M_{\theta_1,~ \theta_{2a}}|_{f_\text{guard}}(x, q) \to M_{\theta_1,~ \theta_{2a}}|_{f_1}(x, q) = M_{\theta_1,~ \theta_{2b}}|_{f_2}(x, q)]$
+4. if $\theta_{2a} \ne \theta_{2b}$, resample
+
+First, note the uniform sampling in step 2. This is the trickiest part of this algorithm—and probably impossible to do in a neural network setting. Technically, the model space of a neural network is finite, so uniform sampling is possible—though the obvious algorithm of sampling uniformly from weight space doesn't work, since [the parameter-function map is biased towards simplicity](https://arxiv.org/abs/1805.08522). Hopefully, just using a stop gradient will replicate what this algorithm is doing—and intuitively it does feel like they're doing the same thing—but I don't have any strong justification for that. Thus, it is somewhat unclear whether this procedure will actually have a nice translation when we convert back into an ML setup with stop gradients, but we'll put that aside for now.
+
+Second, to make sense of our use of $M$ above, we'll let $M$ have three heads, $f_1$, $f_2$, and $f_\text{guard}$, where $f_\text{guard}$ is a Boolean head that “guards” whether or not we do the $f_1 = f_2$ check, and $f_1, f_2$ are two output heads. Furthermore, we'll let $M$ have two groups of parameters, $\theta_1$ and $\theta_2$, such that $M_{\theta_1,~ \theta_2}(x, q) = M_{\theta_1,~\_}(\theta_2, x, q)$. Thus, we'll let $M_{\theta_1,~ \theta_{2a}}(x, q) = M_{\theta_1,~\_}(\theta_{2a}, x, q)$ and $M_{\theta_1,~ \theta_{2b}}(x, q) = M_{\theta_1,~\_}(\theta_{2b}, x, q)$.
+
+Intuitively, what's going on here is that, in sampling a new set of $\theta_{2b}$ parameters, wherever we want a stop gradient, we use the old $\theta_{2a}$, and wherever we don't want a stop gradient, we use the new $\theta_{2b}$—thus ensuring that we only sample $\theta_{2b}$ in such a way that incentivizes the prior to be higher through the non-stop-gradiented places where $\theta_{2b}$ shows up, not through the stop-gradiented places where we use $\theta_{2a}$.
+
+Now, we'll define our desired $\theta_1^+$ in pseudocode as
+```python
+def M_theta_1_plus(theta_2, x, q):
+    axioms = world_model_no_H(H=theta_2)(x)
+    deduced_stmts = deduction(axioms)
+    return {
+        "f_guard": H_understands(x, q, deduced_stmts),
+        "f1": f_plus(q, deduced_stmts),
+        "f2": f_minus(q, deduced_stmts),
+    }
+```
+where $\theta_1^+$ uses $\theta_2$, either $\theta_{2a}$ or $\theta_{2b}$, to give it its human model.
+
+Then, we have to determine what $\theta_2$ will be favored given the above $\theta_1^+$. First, consider $\theta_2^+ = H$. In that case, we get the complexity
+\begin{align*}
+& \text{complexity}(\theta_2 = H ~|~ \theta_1^+) \\
+& \approx \text{complexity}(H ~|~ W - H,~ \text{H_understands}_{\theta_{2a}=H} \to f^+_{\theta_{2a}=H} = f^-_{\theta_{2b}}) \\
+& \approx \text{complexity}(H ~|~ W - H) - \min_{\theta_{2b}} \{ \text{complexity}(\theta_{2b} ~|~ W - H) ~|~ \forall X.~ \text{H_understands}_{H=H} \to f^+_{H=H} = f^-_{H=\theta_2} \}
+\end{align*}
+which, assuming that conditioning on $\text{H_understands} \to f^+ = f^-$ exactly pays back $\text{complexity}(f^+)$ (which is false due to the rocks for brains problem, but we're just trying to solve event-avoidance here), reduces to
+$$
+\approx \text{complexity}(H ~|~ W - H) - \text{complexity}(f^+ ~|~ W - H).
+$$
+
+Now, consider $\theta_2^- = H - H(E) + \text{avoids}(E)$, as in the event-avoidance problem. In that case, we get the complexity
+\begin{align*}
+& \text{complexity}(\theta_2 = H - H(E) + \text{avoids}(E) ~|~ \theta_1^+) \\
+& \approx \text{complexity}(H - H(E) + \text{avoids}(E) ~|~ W - H,~ \text{H_understands}_{\theta_{2a}=H - H(E) + \text{avoids}(E)} \to f^+_{\theta_{2a}=H - H(E) + \text{avoids}(E)} = f^-_{\theta_{2b}})
+\end{align*}
+but then, since $\text{avoids}(E)$ being in $\theta_{2b}$ is entirely unhelpful in making $\text{H_understands}_{\theta_{2a}=H - H(E) + \text{avoids}(E)} \to f^+_{\theta_{2a}=H - H(E) + \text{avoids}(E)} = f^-_{\theta_{2b}}$ hold—since it only affects $f^+$, which already has $\text{avoids}(E)$ in its $H$—we get
+\begin{align*}
+& \approx \text{avoids}(E) ~|~ W - H) + \text{complexity}(H - H(E) ~|~ W - H,~ \text{H_understands}_{\theta_{2a}=H - H(E) + \text{avoids}(E)} \to f^+_{\theta_{2a}=H - H(E) + \text{avoids}(E)} = f^-_{\theta_{2b}}) + \text{complexity}(\text{avoids}(E) ~|~ W - H,~ H - H(E)) \\
+& \approx \text{complexity}(H - H(E) + \text{avoids}(E) ~|~ W - H) - \min_{\theta_{2b}} \{ \text{complexity}(\theta_{2b} ~|~ W - H) ~|~ \forall X.~ \text{H_understands}_{H=H - H(E) + \text{avoids}(E)} \to f^+_{H=H - H(E) + \text{avoids}(E)} = f^-_{H=\theta_2} \} + \text{complexity}(\text{avoids}(E) ~|~ W - H,~ H - H(E)) \\
+& \approx \text{complexity}(H - H(E) + \text{avoids}(E) ~|~ W - H) + \text{complexity}(\text{avoids}(E) ~|~ W - H,~ H - H(E)) - \min_{\theta_{2b}} \{ \text{complexity}(\theta_{2b} ~|~ W - H) ~|~ \forall X.~ \text{H_understands}_{H=H - H(E) + \text{avoids}(E)} \to f^+_{H=H - H(E) + \text{avoids}(E)} = f^-_{H=\theta_2} \} \\
+& \approx \text{complexity}(H - H(E) + \text{avoids}(E) ~|~ W - H) + \text{complexity}(\text{avoids}(E) ~|~ W - H,~ H - H(E)) - \text{complexity}(f^+ ~|~ W - H)
+\end{align*}
+where we're again assuming that we exactly pay back $\text{complexity}(f^+ ~|~ W - H)$ even if we use $H - H(E) + \text{avoids}(E)$ as our basis of comparison.
+
+Then, we get that $\theta_2^-$ underperforms the desired $\theta_2^+ = H$ if and only if
+\begin{align*}
+& \text{complexity}(H ~|~ W - H) - \text{complexity}(f^+ ~|~ W - H) < \text{complexity}(H - H(E) + \text{avoids}(E) ~|~ W - H) + \text{complexity}(\text{avoids}(E) ~|~ W - H,~ H - H(E)) - \text{complexity}(f^+ ~|~ W - H) \\
+& 0 < -\text{complexity}(H(E) ~|~ W - H,~ H - H(E)) + \text{complexity}(\text{avoids}(E) ~|~ W - H,~ H - H(E)) + \text{complexity}(\text{avoids}(E) ~|~ W - H,~ H - H(E)) \\
+& \text{complexity}(H(E) ~|~ W - H,~ H - H(E)) < 2~ \text{complexity}(\text{avoids}(E) ~|~ W - H,~ H - H(E))
+\end{align*}
+which shows how we've now gotten a factor of two leg up on the event avoidance problem.[^2] Unfortunately, there might still be event avoidance problems severe enough that a factor of two isn't enough to rule them out, but I suspect that there are ways to iterate this procedure to get an arbitrarily large factor there, though I haven't done that analysis yet.
+
+[^2]: Note that a similar analysis to that given for $\theta_2^- = H - H(E) + \text{avoids}(E)$ can also be given for $\theta_2^- = H - H(\neg\text{H_related}) \text{ if H_related else } H_{\text{brains}=\text{rocks}}$, the rocks for brains example that does fit the dataset as given in a previous footnote.
+
+Finally, to validate that our $\theta_1^+$ construction is complexity-competitive, we can compare to the alternative $\theta_1^-$ construction
+```python
+def M_theta_1_minus(theta_2, x, q):
+    axioms = world_model(x)
+    deduced_stmts = deduction(axioms)
+    return {
+        "f_guard": False,
+        "f1": f_minus(q, deduced_stmts),
+        "f2": f_minus(q, deduced_stmts),
+    }
+```
+which, since it sets $f_\text{guard}$ always to false and never uses $\theta_2$, is just equivalent to our original $M^-$.
+
+Then, comparing complexities, we need
+\begin{align*}
+& \text{comp}(M^+) \le \text{comp}(M^-) \\
+& \text{comp}(\theta_1^+) + \text{comp}(\theta_2^+ ~|~ \theta_1^+,~ f_\text{guard} \to f_1 = f_2) \le \text{comp}(\theta_1^-) \\
+& \text{comp}(\theta_1^+) + \text{comp}(H ~|~ W - H,~ \text{H_understands} \to f^+ = f^-) \le \text{comp}(W) \\
+& \text{comp}(W - H) + \text{comp}(f^+ ~|~ W - H) + \text{comp}(\text{H_understands} ~|~ W - H,~ f^+) + \text{comp}(H ~|~ W - H,~ \text{H_understands} \to f^+ = f^-) \le \text{comp}(W - H) + \text{comp}(H ~|~ W - H) \\
+& \text{comp}(f^+ ~|~ W - H) + \text{comp}(H ~|~ W - H,~ \text{H_understands} \to f^+ = f^-) \le \text{comp}(H ~|~ W - H) \\
+& \text{comp}(f^+ ~|~ W - H) + \text{comp}(H ~|~ W - H) - \min_{\theta_2} \{ \text{comp}(\theta_2 ~|~ W - H) ~|~ \forall X.~ \text{H_understands}_{H=\theta_2} \to f^+_{H=\theta_2} = f^-_{H=\theta_2} \} \le \text{comp}(H ~|~ W - H)
+\end{align*}
+which, assuming that the conditioning exactly pays off $\text{complexity}(f^+ ~|~ W - H)$, reduces to
+\begin{align*}
+& \text{comp}(f^+ ~|~ W - H) + \text{comp}(H ~|~ W - H) - \text{comp}(f^+ ~|~ W - H) \le \text{comp}(H ~|~ W - H) \\
+& 0 \le 0
+\end{align*}
+as desired.
+
+## The composition problem
+
+For the composition problem, the central issue is that we're not convinced that we can get the approximate equality
+$$
+\text{complexity}(\text{world_model} ~|~ \text{consistency}) \approx \text{complexity}(f^+) + \text{complexity}(\text{world_model} ~|~ \text{consistency},~ f^+ = f^-)
+$$
+even given the approximate equality
+$$
+\text{complexity}(\text{world_model}) \approx \text{complexity}(f^+) + \text{complexity}(\text{world_model} ~|~ f^+ = f^-).
+$$
+
+Fundamentally, one of the main reasons this is a problem is that $\text{complexity}(f^+)$ doesn't get to condition on consistency, since it has to be defined in $\theta_1$. Now, it could be the case that even fixing that problem, we're still not convinced of the approximate equality
+$$
+\text{complexity}(\text{world_model} ~|~ \text{consistency}) \approx \text{complexity}(f^+ ~|~ \text{consistency}) + \text{complexity}(\text{world_model} ~|~ \text{consistency},~ f^+ = f^-)
+$$
+however, at the very least, reducing the problem down to this case seems like major progress.
+
+Though I haven't fully fleshed it out yet, I believe that reducing the composition problem to the above case is possible via a prior that uses something like the following generative procedure (where $p$ is some simplicity prior and $M_{\theta_f,~\_}: \prod_{i=0}^n \Theta_i \to (F, F_?)$)
+\begin{align*}
+& n: \mathbb N \sim p(n) \\
+& \theta_f \sim p(\theta_f ~|~ n) \\
+& \theta_0 \sim p(\theta_0) \cdot \mathbb I\left[\exists \theta_1, \ldots, \theta_n.~ M_{\theta_f,~\_}\left(\prod_{i=0}^n \theta_i\right)|_{f_?}\right] \\
+& \theta_1 \sim p(\theta_1) \cdot \mathbb I\left[\exists \theta_2, \ldots, \theta_n.~ M_{\theta_f,~\_}\left(\prod_{i=0}^n \theta_i\right)|_{f_?}\right] \\
+& \cdots \\
+& \theta_{n-1} \sim p(\theta_{n-1}) \cdot \mathbb I\left[\exists \theta_n.~ M_{\theta_f,~\_}\left(\prod_{i=0}^n \theta_i\right)|_{f_?}\right] \\
+& \theta_n \sim p(\theta_n) \cdot \mathbb I\left[M_{\theta_f,~\_}\left(\prod_{i=0}^n \theta_i\right)|_{f_?}\right].
+\end{align*}
+where the idea is to allow for arbitrarily many “rounds” of conditioning in sequence, thus allowing the consistency conditioning to happen first, followed by the $f^+ = f^-$ conditioning, and therefore the specification of $f^+$ to benefit from the consistency conditioning.
+
+Though I don't know if this sort of approach will fully resolve the composition problem—and even if it does the existence conditions could be extremely difficult to implement in an ML setup—at the very least I think it's a good place to start for future work.
+
+## The rocks for brains problem
+
+Just as the dataset conditioning problem seemed essentially fatal for Paul's original proposal, the rocks for brains problem seems essentially fatal for the dataset-less proposal, putting us in a sort of “pick your poison” scenario. That being said, there are some potential paths forward for addressing the rocks for brains problem.
+
+Fundamentally, the rocks for brains problem is coming from the difficulty of performing the $\text{H_understands}$ check—thus, if we could remove the need to perform such a check, or find a cheap implementation for it that doesn't reference the human model at all, we could solve the rocks for brains problem. Really, all $\text{H_understands}$ needs to do is identify some reasonably large set of questions for which $H$ should always be correct. For example, if $\text{H_understands}$ is true for all questions about “basic” facts about the world, and false otherwise, that would probably be sufficient. The trick, then, is in finding some notion of “basic” facts that's simple to specify without using a human model—which doesn't actually seem that difficult.
+
+# Conclusion
+
+Finally, as a last takeaway, I think that one thing that really stood out to me in all of this analysis is that the space of possible machine learning training procedures is really quite large and underexplored—there are a lot more, often very weird and very different, possible ML training setups than the ones that are traditionally used in practice. Overall, I think this makes me pretty optimistic that searching for fundamentally new ways to train machine learning models is an extremely valuable line of attack, both in terms of new very general approaches like [amplification](/api/post/fRsjBseRuvRhMPPE5#2__Imitative_amplification___intermittent_oversight), [debate](/api/post/fRsjBseRuvRhMPPE5#9__AI_safety_via_debate_with_transparency_tools), [recursive reward modeling](/api/post/fRsjBseRuvRhMPPE5#8__Recursive_reward_modeling___relaxed_adversarial_training), [market making](/api/post/YWwzccGbcHMJMpT45), or [imitative generalization](/api/post/JKj5Krff5oKMb8TjT), as well as new very specific approaches like those in this post. My strong sense is that, even with all of the different proposals and approaches that we have, we're really only scratching the surface of the different sorts of training procedures that are actually out there.
+
+Top Comments Index
+------------------
+
+### Comment by [Joe Collman](/users/joe-collman)
+
+* 2021-07-14 22:01:30Z
+* Karma: 5
+* Voting system: namesAttachedReactions
+* Total votes: 3
+* HTML permalink: [/posts/gEw8ig38mCGjia7dj/answering-questions-honestly-instead-of-predicting-human/comment/kZy3zTqn8t8QAGABm](/posts/gEw8ig38mCGjia7dj/answering-questions-honestly-instead-of-predicting-human/comment/kZy3zTqn8t8QAGABm)
+* Markdown permalink: [/api/post/answering-questions-honestly-instead-of-predicting-human/comments/kZy3zTqn8t8QAGABm](/api/post/answering-questions-honestly-instead-of-predicting-human/comments/kZy3zTqn8t8QAGABm)
+
+### Comment by [Rohin Shah](/users/rohinmshah)
+
+* 2021-07-27 12:17:19Z
+* Karma: 4
+* Voting system: namesAttachedReactions
+* Total votes: 2
+* HTML permalink: [/posts/gEw8ig38mCGjia7dj/answering-questions-honestly-instead-of-predicting-human/comment/dfYytKH9p8eB96dQZ](/posts/gEw8ig38mCGjia7dj/answering-questions-honestly-instead-of-predicting-human/comment/dfYytKH9p8eB96dQZ)
+* Markdown permalink: [/api/post/answering-questions-honestly-instead-of-predicting-human/comments/dfYytKH9p8eB96dQZ](/api/post/answering-questions-honestly-instead-of-predicting-human/comments/dfYytKH9p8eB96dQZ)
+
+### Comment by [Charlie Steiner](/users/charlie-steiner)
+
+* 2021-07-14 21:31:36Z
+* Karma: 2
+* Voting system: namesAttachedReactions
+* Total votes: 1
+* HTML permalink: [/posts/gEw8ig38mCGjia7dj/answering-questions-honestly-instead-of-predicting-human/comment/DutzWPtrKfLKvH7zM](/posts/gEw8ig38mCGjia7dj/answering-questions-honestly-instead-of-predicting-human/comment/DutzWPtrKfLKvH7zM)
+* Markdown permalink: [/api/post/answering-questions-honestly-instead-of-predicting-human/comments/DutzWPtrKfLKvH7zM](/api/post/answering-questions-honestly-instead-of-predicting-human/comments/DutzWPtrKfLKvH7zM)
+
+### Navigation
+
+* [Front page](https://www.lesswrong.com/api/home)
+* [Markdown API documentation](https://www.lesswrong.com/api/SKILL.md)
