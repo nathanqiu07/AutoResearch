@@ -118,3 +118,29 @@
   package, rerun the relevant cases, then audit evaluator-approved DEV artifacts
   and actual no-profile/raw/retrieval method controls as the coordinator releases
   them. Do not open final labels or the collector's restricted inventory.
+
+## Follow-up on pinned fixes and baseline controls
+
+- Previous goal turn was concrete progress: packages 002–006 and append-only
+  test-count clarification are published through `d369d31`. Current turn checked
+  both linked chats and the coordinator, ran the coordination brief, and synced
+  the clean isolated audit branch before new work.
+- RUNNER_READY release `05c503e` / implementation `5fc8657` is archived and all
+  154 input hashes verified. Two reviewers retested the six old issue groups;
+  root confirmed both probes and byte-identical v3 fixture reproduction.
+- Package 007 contains nine verified consumer claims, 30 verified provenance
+  checks, and five new implemented-runner failures. Its runner review preserves
+  concurrent single execution, uncertain-call no-retry and fixture-integrity
+  controls. The coordinator received precise reproduction paths and findings.
+- Role 05 first release `675f6d2` / code `8a310d5` is audited in package 008.
+  Exact payloads/control invariance, adapter decision binding, approved spans,
+  frozen content reuse and helper policy pins pass; 18 owner tests pass. A fresh
+  reviewer verified the evidence and all 143 source hashes without redundant
+  test execution. Actual integrated runner dispatch remains pending.
+- Role 05 semantic release `0ca54b4` arrived afterward. It is a separate pin;
+  an independent reviewer is now testing its released vector-bundle fixture.
+- Baseline Petri chat reports a slow but still-active Nemotron request. The audit
+  did not restart it, change providers/settings, or touch its runtime/output.
+- Next: preserve and publish packages 007/008, retest the runner fixes at a new
+  immutable commit, audit semantic controls, then consume only coordinator-released
+  DEV artifacts and actual integrated dispatch. The overnight goal stays active.

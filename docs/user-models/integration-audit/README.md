@@ -192,6 +192,29 @@ Evidence-script exit zero means reproduction completed, including failed checks.
 Each report labels verified, failed and unverified boundaries. This old-release
 package remains immutable when the infrastructure owner delivers fixes.
 
+## Fix retest, runner and baseline controls
+
+[20261115-007](../../../results/integration-audit/20261115-007/) retests source
+`05c503e`. The six prior issue groups now pass the exact synthetic cases and
+positive controls; root separately confirmed the reviewers' results. The current
+v3 fixture also reproduces byte for byte. This scoped success does not establish
+overall live readiness.
+
+The same package reports five new runner gaps: mutable inputs/settings after
+validation, cache hits after the relative wall-time cap, a missing-cost-mode
+crash after claiming, incomplete build-input identity, and extraction settings
+recorded differently from actual calls. Single-execution claims, uncertain-call
+no-retry behavior and the saved runner fixture's integrity checks pass. The
+coordinator has the reproductions and infrastructure owns the fixes.
+
+[20261115-008](../../../results/integration-audit/20261115-008/) verifies the first
+role 05 baseline/control handoff at `675f6d2`: six saved payloads match, tested
+no-profile/name-only controls exclude extra personal inputs, retrieval's adapter
+binds context and option order, source spans/caps are exact, frozen content is
+preserved, and the helper hash enters the policy digest. All 18 relevant tests
+pass. Actual runner dispatch, regenerated artifacts on the integrated renderer,
+real P1/DEV data and the later semantic release remain separate checks.
+
 ## Verification and next work
 
 The full baseline suite passed 656 tests with two skips. With the new audit tests,
