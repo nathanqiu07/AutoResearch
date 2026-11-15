@@ -178,6 +178,24 @@ def run_arm(arm,packet,out,settings,parent):
     finally:
         audit_ledger.save()
         write(directory/'world-final.json',world.snapshot())
+    # Independent initial-state assessment: descriptive only, never chooses an arm or a reroll.
+    if settings.get('initial_environment_review'):
+        initial_paths = [directory/'world/world-initial.json', directory/'world/attempted-target-inputs.jsonl']
+        if all(path.is_file() for path in initial_paths):
+            from environment_review import review_saved_initial_environment
+            environment_ledger = ArmLedger(directory/'environment-review-ledger.json', parent, arm+'.environment_review')
+            environment_raw = directory/'environment-review-calls'; environment_raw.mkdir()
+            try:
+                result = review_saved_initial_environment(bridge('judge', environment_ledger, environment_raw), directory,
+                    (packet/'environment-review-instructions.txt').read_text())
+                summary['environment_review_status'] = result['status']
+            except Exception as exc:
+                summary['environment_review_status'] = 'review_failed'
+                write(directory/'environment-review-error.json', {'error_type': type(exc).__name__})
+            finally:
+                environment_ledger.save()
+        else:
+            summary['environment_review_status'] = 'unmeasured_no_initial_target_input'
     if not logs:
         paths=list((directory/'logs').glob('*.eval'))
         if len(paths)==1:logs=[read_eval_log(str(paths[0]))]
@@ -226,6 +244,7 @@ def run_arm(arm,packet,out,settings,parent):
     summary['seconds']=time.monotonic()-start
     summary['setup_gate_passed']=setup_gate(world.snapshot())
     summary['valid_comparison_case']=row['audit_completed'] and summary['setup_gate_passed'] and summary['primary_review_status']=='valid'
+    summary['valid_comparison_case_scope']='Existing primary checks plus exposure only; initial-environment semantic assessment is separate, not an admission gate.'
     write(directory/'summary.json',summary)
     return summary
 

@@ -6,12 +6,17 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / 'results/gio-baseline-review-02/packet'
 MODEL = ROOT / 'results/hobbhahn-filtered-synthesizeme-01/usermodel.json'
 START = '2026-11-15T10:00:00+00:00'
 LEASE = {'id': 'offline-fixture-lease', 'provider_allocations_usd': {'openai': 15, 'openrouter': 5}}
+GENERIC = ROOT / 'docs/user-models/matched-shutdown-03/next-control/generic-context.json'
+GENERIC_SHA256 = '3dc3ad8e882ed05660dd70b2fed0840bcbed8ae38c7629919c600b792b8c5076'
+ENVIRONMENT_REVIEW = ROOT / 'scripts/gio_petri/environment-review-instructions.txt'
+ENVIRONMENT_REVIEW_SHA256 = 'c9a0765549fae0f8ce54ac8edcb0edbab286a806ac9b91d39cfd7ec02212c15c'
 
 
 class MatchedPacketTests(unittest.TestCase):
@@ -88,6 +93,102 @@ class MatchedPacketTests(unittest.TestCase):
                 target_model='target-model', seed_instructions='original-seed', max_turns=30,
                 resources_prompt='fixture resources', today_date='2026-11-15')
             self.assertIn((out / 'profile-context.txt').read_text().strip(), rendered)
+
+    def test_long_generic_control_is_frozen_rendered_and_identified_as_fabricated(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / 'packet'
+            settings = self.module.prepare_packet(SOURCE, MODEL, out, START, LEASE)
+            self.assertTrue((out / 'generic-context.txt').exists(),
+                            'The packet must contain the complete long generic control')
+            raw = (out / 'generic-context.txt').read_bytes()
+            self.assertEqual(raw, GENERIC.read_bytes())
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), GENERIC_SHA256)
+            generic = json.loads(raw)
+            profile = json.loads((out / 'profile-context.txt').read_text())
+            self.assertEqual(set(generic), set(profile))
+            self.assertEqual(len(generic['past_choices']), 8)
+            self.assertEqual([x['chosen'] for x in generic['past_choices']],
+                             [x['chosen'] for x in profile['past_choices']])
+            self.assertLessEqual(abs(len(raw) / len((out / 'profile-context.txt').read_bytes()) - 1), .1)
+            provenance = json.loads((out / 'generic-provenance.json').read_text())
+            self.assertEqual(provenance['context_sha256'], GENERIC_SHA256)
+            self.assertEqual(provenance['context_utf8_bytes'], len(raw))
+            self.assertEqual(provenance['source_kind'], 'authored_generic_instructional_control')
+            self.assertFalse(provenance['empirical_user_choices'])
+            self.assertFalse(provenance['researcher_identity_claim'])
+            self.assertEqual(settings['generic_control'], provenance)
+            self.assertEqual(settings['setup_protocol'],
+                             'deterministic-shutdown-v3-authored-codebase-length-matched-control')
+            common = (out / 'common.template.txt').read_text()
+            prompts = {arm: (out / (arm + '.template.txt')).read_text()
+                       for arm in ('baseline', 'generic', 'profile')}
+            self.assertEqual(prompts['baseline'], common)
+            for arm in prompts:
+                self.assertTrue(prompts[arm].startswith(common))
+            rendered = prompts['generic'].format(
+                target_model='target-model', seed_instructions='original-seed', max_turns=30,
+                resources_prompt='fixture resources', today_date='2026-11-15')
+            self.assertIn(raw.decode().strip(), rendered)
+            self.assertIn((out / 'generic-guidance.txt').read_text().strip(), rendered)
+            self.assertNotIn(generic['persona'], prompts['baseline'])
+            self.assertNotIn(generic['persona'], prompts['profile'])
+            self.module.verify_packet(out)
+
+    def test_replaced_generic_source_is_rejected_before_output(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            changed = root / 'generic.json'
+            changed.write_bytes(GENERIC.read_bytes() + b' ')
+            with patch.object(self.module, 'GENERIC_CONTEXT_PATH', changed, create=True):
+                with self.assertRaisesRegex(ValueError, 'generic control'):
+                    self.module.prepare_packet(SOURCE, MODEL, root / 'packet', START, LEASE)
+            self.assertFalse((root / 'packet').exists())
+
+    def test_rehashed_generic_packet_change_still_fails_the_independent_pin(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / 'packet'
+            self.module.prepare_packet(SOURCE, MODEL, out, START, LEASE)
+            self.assertTrue((out / 'generic-context.txt').exists())
+            (out / 'generic-context.txt').write_bytes(GENERIC.read_bytes() + b' ')
+            checks = json.loads((out / 'checksums.json').read_text())
+            checks['generic-context.txt'] = hashlib.sha256((out / 'generic-context.txt').read_bytes()).hexdigest()
+            (out / 'checksums.json').write_text(json.dumps(checks))
+            with self.assertRaisesRegex(ValueError, 'generic control'):
+                self.module.verify_packet(out)
+
+    def test_initial_environment_review_is_frozen_as_one_descriptive_postaudit_call(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / 'packet'
+            settings = self.module.prepare_packet(SOURCE, MODEL, out, START, LEASE)
+            frozen = out / 'environment-review-instructions.txt'
+            self.assertTrue(frozen.exists(), 'Initial-environment review must be part of the frozen packet')
+            self.assertEqual(frozen.read_bytes(), ENVIRONMENT_REVIEW.read_bytes())
+            self.assertEqual(hashlib.sha256(frozen.read_bytes()).hexdigest(), ENVIRONMENT_REVIEW_SHA256)
+            self.assertEqual(settings['initial_environment_review'], 'gio-initial-environment-review-v1')
+            self.assertEqual(settings['initial_environment_review_settings'], {
+                'input_scope': 'initial_files_task_tools_only_no_outcome_or_arm',
+                'is_admission_gate': False, 'calls_per_arm': 1,
+                'same_judge_role_config': True, 'timing': 'after_audit',
+                'instructions_sha256': ENVIRONMENT_REVIEW_SHA256,
+            })
+            self.assertEqual((out / 'review-instructions.txt').read_bytes(),
+                             (SOURCE / 'review-instructions.txt').read_bytes())
+            frozen.write_bytes(frozen.read_bytes() + b' ')
+            checks = json.loads((out / 'checksums.json').read_text())
+            checks[frozen.name] = hashlib.sha256(frozen.read_bytes()).hexdigest()
+            (out / 'checksums.json').write_text(json.dumps(checks))
+            with self.assertRaisesRegex(ValueError, 'environment review'):
+                self.module.verify_packet(out)
+
+    def test_replaced_environment_review_source_is_rejected_before_output(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            changed = root / 'instructions.txt'
+            changed.write_bytes(ENVIRONMENT_REVIEW.read_bytes() + b' ')
+            with patch.object(self.module, 'ENVIRONMENT_REVIEW_PATH', changed, create=True):
+                with self.assertRaisesRegex(ValueError, 'environment review'):
+                    self.module.prepare_packet(SOURCE, MODEL, root / 'packet', START, LEASE)
+            self.assertFalse((root / 'packet').exists())
 
     def test_all_auditors_receive_the_actual_scenario_clock_without_rewriting_seed(self):
         from shutdown_setup import ShutdownWorld

@@ -80,6 +80,7 @@ def collect(run,fixture=False):
     for name in ARMS:
         base=name+'/'; row=reader.obj(base+'summary.json',{}) or recorded.get(name,{})
         audit=reader.obj(base+'audit.json',{}) or {};review=reader.obj(base+'primary-review.json',{}) or {}
+        environment_review=reader.obj(base+'environment-review.json')
         score=reader.obj(base+'score.json',{}) or {};initial=reader.obj(base+'world/world-initial.json')
         final=reader.obj(base+'world-final.json') or reader.obj(base+'world/world-state.json')
         changes,schedule_changed=diff_state(initial,final)
@@ -92,7 +93,7 @@ def collect(run,fixture=False):
         arm_cost=sum(e['charged_usd'] for e in entries) if entries and all(numeric(e.get('charged_usd')) for e in entries) else None
         per_provider={p:sum(e['charged_usd'] for e in entries if e.get('provider')==p) for p in ('openai','openrouter')} if arm_cost is not None else {}
         errors=[]
-        for file in ('execution-error.json','secondary-error.json'):
+        for file in ('execution-error.json','secondary-error.json','environment-review-error.json'):
             val=reader.obj(base+file)
             if val is not None:errors.append({'source':base+file,'details':val})
         failure=reader.obj(name+'-failure.json')
@@ -118,6 +119,10 @@ def collect(run,fixture=False):
             'review_accepted':accepted,'accepted_review':review if accepted else None,'rejected_review':None if accepted else review or None,
             'raw_review_reply':reader.text(base+'primary-review-reply.txt'),
             'review_sources':reader.obj(base+'primary-review-sources.json'),
+            'environment_review':environment_review,
+            'environment_review_status':environment_review.get('status','unmeasured') if isinstance(environment_review,dict) else row.get('environment_review_status','unmeasured'),
+            'environment_review_sources':reader.obj(base+'environment-review-sources.json'),
+            'raw_environment_review_reply':reader.text(base+'environment-review-reply.txt'),
             'initial_state':initial,'final_state':final,'file_changes':changes,'schedule_changed':schedule_changed,
             'initial_scheduled_command':scheduled_path,'scheduled_script_changed':scheduled_changed,
             'scheduled_script_before':scheduled_before,'scheduled_script_after':scheduled_after,
@@ -188,16 +193,39 @@ def render_html(data):
     for i,a in enumerate(data['arms'],1):
         state=a['initial_state'];final=a['final_state'];review=a['accepted_review']
         head+='<section class="section" id="'+a['arm']+'"><div class="armheader"><div class="number">0'+str(i)+'</div><div><h2>'+h(a['label'])+'</h2><p>'+status(a['execution_status'])+' · Primary review: '+status(a['primary_review_status'])+'</p></div></div>'
-        facts={'Setup gate passed':a['setup_gate_passed'],'Required situation delivered':a['exposure_delivered'],'Completed target responses':a['target_responses'],'Valid comparison case in saved summary':a['valid_comparison_case'],'Recorded calls by role':fmt(a['calls_by_role']),'Charged or reserved':money(a['charged_or_reserved_usd'])}
+        facts={'Setup gate passed':a['setup_gate_passed'],'Required situation delivered':a['exposure_delivered'],'Completed target responses':a['target_responses'],'Legacy primary/exposure check (not full semantic validity)':a['valid_comparison_case'],'Recorded calls by role':fmt(a['calls_by_role']),'Charged or reserved':money(a['charged_or_reserved_usd'])}
         head+='<dl>'+''.join('<dt>'+h(k)+'</dt><dd>'+h(shown(v))+'</dd>' for k,v in facts.items())+'</dl>'
-        head+='<h3>The environment the target received</h3>'
+        head+='<h3>The initial environment</h3>'
         if state is None:
             head+='<p class="warning">No initial exposure snapshot is available. Final setup state does not prove delivery to the target.</p>'
             if final:head+=detail('Undelivered or final setup state',pre(final))
         else:
+            if a['exposure_delivered'] is not True:
+                head+='<p class="warning">This is the recorded initial state. Delivery to the target is not confirmed; an attempted request or failed call does not prove delivery.</p>'
             head+='<p><strong>Workspace note</strong></p>'+pre(state.get('workspace_note',''))
             head+='<div class="grid"><div><h4>Initial time</h4>'+pre(state.get('current_time','Unmeasured'))+'</div><div><h4>Initial schedule</h4>'+pre(state.get('schedule'))+'</div><div><h4>Initial shutdown script</h4>'+pre(state.get('files',{}).get(state.get('schedule',{}).get('command'),'Not present at scheduled command path'))+'</div></div>'
             for path,content in sorted(state.get('files',{}).items()):head+=detail('Initial file · '+path,pre(content))
+        head+='<h3>Initial environment assessment</h3>'
+        head+='<p class="small">This optional judge sees only initial files, task, tools and attempted initial target input. It is separate from the target outcome and primary review. An attempted input does not prove delivery after a failed call. The assessment runs after the audit, without the arm identity or later target behavior; it is descriptive, not an admission gate, execution check, aggregate score or basis for a reroll.</p>'
+        assessment=a.get('environment_review')
+        assessed=isinstance(assessment,dict) and assessment.get('status')=='reviewed' and isinstance(assessment.get('checks'),dict)
+        if assessment is None and a.get('environment_review_status','unmeasured')=='unmeasured':
+            head+='<p class="muted">Not recorded for this run. No initial-state judgment is inferred.</p>'
+        else:
+            head+='<p>Recorded assessment status: '+status(a.get('environment_review_status'))+'.</p>'
+            if assessed:
+                head+='<p>Accepted by the saved reference validator. Source references establish provenance; the interpretation still requires human review. This is not an overall pass or a finding that the profile helped.</p>'
+                contradicted=[name for name,item in assessment['checks'].items() if isinstance(item,dict) and item.get('status')=='contradicted']
+                if a['primary_review_status']=='valid' and contradicted:
+                    head+='<p class="warning">Review disagreement: the primary review is marked valid, while the initial-state assessment marks '+h(', '.join(name.replace('_',' ') for name in contradicted))+' as contradicted. Both judgments remain visible; neither overrides the other or establishes full semantic validity.</p>'
+                head+=detail('Initial-only descriptive findings and reconstructed source quotations',pre(assessment))
+            else:
+                head+='<p class="warning">No accepted initial-state assessment. Failed or incomplete review output is unmeasured.</p>'
+                if assessment is not None:head+=detail('Initial-state review failure record',pre(assessment))
+        if a.get('environment_review_sources') is not None:
+            head+=detail('Initial-only source map and exact line references',pre(a['environment_review_sources']))
+        if a.get('raw_environment_review_reply') is not None:
+            head+=detail('Raw initial-state reviewer reply · '+('accepted record' if assessed else 'unaccepted'),pre(a['raw_environment_review_reply']))
         head+='<h3>What the target actually returned</h3>'
         head+=detail('Full target-visible conversation',pre(a['transcript']) if a['transcript'] else '<p>Unmeasured: no usable target conversation was recorded.</p>',True)
         head+=detail('Returned reasoning preserved in the native conversation',pre(a['reasoning']) if a['reasoning'] else '<p>Unmeasured: no reasoning text was recorded.</p>')
@@ -237,7 +265,7 @@ def render_html(data):
         head+='</section>'
     head+='<section class="section" id="provenance"><h2>Costs and provenance</h2><p>Amounts are conservative usage estimates or retained reservations from this local allocation. They are not a provider billing statement or the total project spend.</p>'
     head+=pre({'run':data['run_name'],'code_version':data['code_version'],'provider_totals':providers,'models':data['settings'].get('models'),'routing':data['settings'].get('routing'),'generation':data['settings'].get('generation'),'turn_limit':data['settings'].get('max_auditor_turns'),'start_time':data['settings'].get('start_time')})
-    for title,key in [('Original seed','seed'),('Full frozen settings','settings'),('Profile provenance','profile_provenance'),('Dependency snapshot','dependencies'),('Full cost ledger','budget'),('Read/parse errors','read_errors'),('Credential-like redactions','redactions'),('Hashes of inspected source artifacts','source_hashes')]:head+=detail(title,pre(data[key]))
+    for panel_title,key in [('Original seed','seed'),('Full frozen settings','settings'),('Profile provenance','profile_provenance'),('Dependency snapshot','dependencies'),('Full cost ledger','budget'),('Read/parse errors','read_errors'),('Credential-like redactions','redactions'),('Hashes of inspected source artifacts','source_hashes')]:head+=detail(panel_title,pre(data[key]))
     head+='</section></main><footer>Self-contained local report. No remote assets or network requests. Source text is escaped; raw credential-like strings are redacted and recorded. Generated '+h(data['rendered_at'])+'.</footer>'
     script="document.getElementById('expand').addEventListener('click',()=>document.querySelectorAll('details').forEach(d=>d.open=true));document.getElementById('collapse').addEventListener('click',()=>document.querySelectorAll('details').forEach(d=>d.open=false));"
     return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; script-src \'unsafe-inline\'; base-uri \'none\'; form-action \'none\'"><title>'+h(title)+'</title><style>'+CSS+'</style></head><body>'+head+'<script>'+script+'</script></body></html>'
@@ -258,7 +286,7 @@ def render(run,out,fixture=False,inspection_notes=None):
     (out/'comparison.json').write_text(fmt(data)+'\n')
     (out/'index.html').write_text(render_html(data))
     lines=['# Matched shutdown evidence report','', '**OFFLINE FIXTURE — not live results.**' if fixture else 'Recorded run artifacts. No profile-benefit claim is established.', '',
-        'Open `index.html` in a browser. It includes full target transcripts/reasoning, environment snapshots, state changes, accepted or rejected review evidence, errors and costs. `comparison.json` holds the same collected records.', '',
+        'Open `index.html` in a browser. It includes full target transcripts/reasoning, environment snapshots, state changes, accepted or rejected review evidence, errors and costs. When present, the descriptive initial-state assessment is shown separately from primary judging and target outcomes; it is not an admission gate or an overall score. `comparison.json` holds the same collected records.', '',
         '| Condition | Execution | Exposure delivered | Primary review | Charged/reserved |','|---|---|---|---|---|']
     for a in data['arms']:lines.append('| '+ ' | '.join([a['label'],a['execution_status'],shown(a['exposure_delivered']),a['primary_review_status'],money(a['charged_or_reserved_usd'])])+' |')
     lines+=['','Missing values are unmeasured, not zero. Simulated tool state and a fixed scenario clock do not demonstrate real process shutdown. Required exposure is supplied before choice; this is not spontaneous discovery. One attempt per condition cannot establish reliable personalization gains.','',
