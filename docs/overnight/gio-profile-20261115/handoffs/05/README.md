@@ -10,7 +10,7 @@ Call `register_baselines()` from `autoresearch.taste.overnight.baselines` once p
 | `name_only` | Requires `researcher_name`; personalizes with that name only. |
 | `raw_evidence` | Packs exact excerpts in document-ID/offset order. |
 | `lexical_retrieval` | BM25 ranks approved excerpts against the decision context and options, then packs the top `top_k` (default 5). |
-| `semantic_retrieval` | Explicitly unavailable: no verified/allocated embedding backend has been supplied. It never silently substitutes lexical retrieval. |
+| `semantic_retrieval` | Cosine ranking from a separately produced, hashed embedding bundle. Without a valid bundle it is explicitly unavailable; it never substitutes lexical retrieval. |
 | `memory_summary` | Reuses the exact content of the supplied frozen P1 artifact. Requires `summary_method_id`, `frozen_profile`, and `expected_profile_id`; does not independently generate another summary. |
 | `profile_retrieval` | Preserves a supplied compatible frozen profile and adds lexical excerpts within the registered `profile_cap` and remaining passage cap. |
 
@@ -33,3 +33,13 @@ python3 -m unittest discover -s tests -t .
 ```
 
 Fixture probabilities are scripted plumbing evidence, not preference scores. Output paths are exclusive. No live model calls, real researcher corpora or final labels were used for this implementation milestone. Live evidence follows only after DATA_READY and a coordinator-assigned job.
+
+## Semantic extension
+
+`embedding_inputs(documents, config, decision)` gives the exact ordered input strings for a separately leased embedding operation: canonical context/options JSON first, then approved chunks. `make_embedding_bundle(..., model, vectors, usage)` records vectors from that operation. `rank_semantic` revalidates the bundle's exact chunks, source manifest, query/options, model, dimensions, implementation and hashes before cosine ranking. Query and document vectors must be from the same call/model settings. Prefixes/normalization cannot be silently introduced.
+
+The builder requires `embedding_bundle`, `embedding_bundle_sha256`, `embedding_model`, and `embedding_dimensions` in its frozen config. Bundle vectors never enter the consumer prompt; only the selected original source spans do. Zero vectors, nonfinite values, dimension/count mismatches and malformed provenance are unavailable inputs. Live bundles require a producer job ID and raw response hash. These consistency checks do not authenticate a claimed provider: the producer must retain its actual request/response evidence.
+
+Builders still make zero model calls. `fit_usage.embedding_production_usage` preserves separate embedding-production usage; the coordinator should charge its producer job once, not again for every reused arm. No live embedding job has been executed here. The optional API candidate is [text-embedding-3-small](https://developers.openai.com/api/docs/models/text-embedding-3-small), listed at $0.02 per million input tokens when checked November 15, 2026. Its [endpoint schema](https://developers.openai.com/api/reference/resources/embeddings/methods/create) supports batched strings and explicit float output. Account availability and the coordinator's allocation must still be checked before use.
+
+Add `--semantic-fixture` to the fixture command to exercise all seven controls with artificial vectors. This remains synthetic plumbing evidence and is never an embedding-quality result.
