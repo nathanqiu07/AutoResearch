@@ -37,7 +37,7 @@ from .usermodel import Choice, UserModel
 
 GATE = "gate_timesplit.jsonl"
 GATE_THRESHOLD = 0.75
-WORKERS = 8  # judge and user-model calls on separate pairs run in parallel
+WORKERS = 16  # judge and user-model calls on separate pairs run in parallel; --workers overrides
 CACHE = os.path.join("runs", "track_s", "cache", "usermodel")
 
 
@@ -52,9 +52,9 @@ def paired_correct(model, c: Choice) -> bool:
     return first and second
 
 
-def _each(fn, choices: List[Choice]) -> list:
-    """fn(choice) for every choice, in order, with up to WORKERS running at once."""
-    with concurrent.futures.ThreadPoolExecutor(WORKERS) as pool:
+def _each(fn, choices: List[Choice], workers: Optional[int] = None) -> list:
+    """fn(choice) for every choice, in order, with up to `workers` (default WORKERS) running at once."""
+    with concurrent.futures.ThreadPoolExecutor(workers or WORKERS) as pool:
         return list(pool.map(fn, choices))
 
 
@@ -246,10 +246,15 @@ def select_method(history: List[Choice], llm: LLM, candidates=("m2", "m3", "m4",
     train, val = split_by_document(history)
     if not val:
         raise ValueError("selection needs history pairs from at least two documents")
-    scores = {}
-    for m in candidates:
+    # Candidates fit and score at the same time, sharing the WORKERS budget of parallel calls.
+    share = max(1, WORKERS // len(candidates))
+
+    def fit_and_score(m):
         model = _fit(m, llm, train, cache_dir)
-        scores[m] = sum(_each(lambda c, model=model: paired_correct(model, c), val)) / len(val)
+        return sum(_each(lambda c: paired_correct(model, c), val, share)) / len(val)
+
+    with concurrent.futures.ThreadPoolExecutor(len(candidates)) as pool:
+        scores = dict(zip(candidates, pool.map(fit_and_score, candidates)))
     best = max(candidates, key=lambda m: scores[m])
     return best, scores
 
@@ -319,6 +324,7 @@ def final_model(researcher: Researcher, llm: LLM, selected: str, cache_dir: Opti
 
 
 def main(argv=None):
+    global WORKERS
     p = argparse.ArgumentParser(description="Public-track E2 (PLAN 12.2)")
     p.add_argument("--root", default=DEFAULT_ROOT)
     sub = p.add_subparsers(dest="command", required=True)
@@ -328,6 +334,7 @@ def main(argv=None):
         c.add_argument("--llm", default="claude-cli")
         c.add_argument("--model", default="claude-sonnet-5-5")
         c.add_argument("--max-usd", type=float, required=True)
+        c.add_argument("--workers", type=int, default=WORKERS, help="model calls run in parallel")
         if name == "gate":
             c.add_argument("--judge-model", default="claude-opus-5-5",
                            help="a different model from the one that wrote the pairs")
@@ -337,6 +344,7 @@ def main(argv=None):
             c.add_argument("--name", required=True)
             c.add_argument("--out", default=None)
     args = p.parse_args(argv)
+    WORKERS = args.workers
     from ..llm import Budget, get_llm
     budget = Budget(max_cost_usd=args.max_usd, max_seconds=12 * 3600)
     llm = get_llm(args.llm, args.model, budget)

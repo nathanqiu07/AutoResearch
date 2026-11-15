@@ -623,7 +623,7 @@ def main(argv=None):
             c.add_argument("--llm", default="claude-cli")
             c.add_argument("--model", default="claude-sonnet-5-5")
             c.add_argument("--max-usd", type=float, required=True, help="spend cap for this stage")
-            c.add_argument("--workers", type=int, default=8, help="model calls run in parallel")
+            c.add_argument("--workers", type=int, default=16, help="model calls run in parallel")
         if name == "pairs":
             c.add_argument("--seed", type=int, default=0)
         if name == "review":
