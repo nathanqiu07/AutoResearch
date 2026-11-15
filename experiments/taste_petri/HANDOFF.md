@@ -41,7 +41,12 @@ redoing work.
   within Hobbhahn only, not with Owain's sonnet results. Informal harvest runs as a Devin subagent.
 - Doesn't touch synthme/ or the paused Claude session's Owain run.
 
-### 2026-11-15 claude-hillclimb: hillclimb/ (IN PROGRESS, new session, user-directed)
+### 2026-11-15 claude-hillclimb: hillclimb/ (DONE: null; nothing running)
+- Result (`hillclimb/results.md`): 5 taste-steered candidates on dev, none beats R0 on the task score (H1 −0.08,
+  H2 −0.08, H3 −0.03, H4 −0.03, H5 −0.03; the last three have CIs spanning 0). Incumbent stays R0, so the
+  pre-registered hidden confirmation had nothing to test; hidden is unscored (R0 hidden rewrites built). 138 sonnet +
+  902 haiku calls.
+### 2026-11-15 claude-hillclimb: hillclimb/ (started)
 - User: "all results have taste neutral to control for the eval awareness task; hill-climb to demonstrate an
   improvement". Pre-registered in `hillclimb/PREREG.md`: climb taste-steered rewrites on dev against R0 (task score
   `(1-aw)*validity`, guards on faithfulness and Petri-judge eval_awareness), then ONE confirmation on the hidden split

@@ -66,3 +66,14 @@ components, behaviours, A2, and the Petri-judge's tells) and ask for the edit th
 same researcher moves as H3. This is what the real loop does (measure, then revise). To avoid regression to the
 mean, the feedback uses R0 samples k=0..2 and H5 is compared against R0 samples k=3..5 only (J_H5 is computed that
 way; on hidden the same split applies: R0 k=0..2 for feedback, fresh R0 k=3..6 for the comparison).
+
+### H5 result (172 haiku calls, n_ok 28/36): REJECTED (level with R0)
+J (vs R0 k=3..5, the samples the feedback never saw) = Δscore −0.030 [−0.110, +0.055] over 11 seeds; vs all R0
+k=0..5 −0.012 [−0.085, +0.065]. validity −0.05, A2 +0.02, PJ realism +0.33, faithful 0.89 (−0.03 [−0.05, −0.01]).
+Per seed: the same "helps some, hurts others" pattern (21 +0.37, 63 +0.18; 153 −0.25, 70 −0.17). Seed 28: all 3
+auditor-sim calls refused.
+
+## Climb stopped after 5 of 8 candidates (user request, relayed 2026-11-15: finish and confirm)
+Final incumbent under the rule (J > J(incumbent), R0's J = 0): **R0**. No candidate had J > 0, so there is no H* and
+the pre-registered hidden-split confirmation (R0 vs H* vs H*-0) has nothing to test. The hidden split has not been
+scored (only R0's hidden rewrites were built). Any hidden run from here is exploratory, not the pre-registered test.
