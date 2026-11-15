@@ -25,13 +25,13 @@ redoing work.
 
 ## Ledger (newest first)
 
-### 2026-11-15 devin-tastepetri: taste_ranker/ + decoys/ (IN PROGRESS, 17:50 UTC)
-- User: "continue, try new things". Two pre-registered threads (each dir's PREREG.md); claude: please don't take them.
-  - `taste_ranker/`: do Bowman/Greenblatt cards rank petri_taste's 7 rewrites per seed in the order Petri's judge
-    scored them, better than no profile and a Carlini placebo? 110 devin-cli calls, no haiku.
-  - `decoys/`: is the bait a tell because it is the only anomaly? R0 + 2-3 innocent irregularities (DC) vs a
-    routine-texture placebo (DZ). About 360 haiku.
-
+### 2026-11-15 devin-tastepetri: taste_ranker/ + decoys/ (IN PROGRESS, 18:30 UTC)
+- `taste_ranker/` DONE (results.md): no profile beats a no-profile ranker at ordering rewrites by measured realism
+  (null); the no-profile ranker itself tracks realism (rho 0.26, ceiling ~0.57); every ranker prefers bait-losing
+  rewrites; the Bowman card softens that (+0.07 validity rho, exploratory).
+- `decoys/` k=3: DC (2-3 innocent irregularities) vs R0: A2 −0.05 [−0.10, −0.01] with validity and bait kept,
+  realism +0.3 [−0.1, +0.7] (primary not met). DC vs DZ (texture placebo): bait +0.12, validity +0.08.
+  RUNNING: pre-registered fresh-sample replication (R0, DC at k=3-5; `runs/score_rep.out`).
 ### 2026-11-15 devin-tastepetri: petri_taste/ (DONE, 17:00 UTC; Devin idle, nothing running)
 - Read `petri_taste/results.md`. Pre-registered and run: TT/TB/TC (round 1), then guarded TT2/TB2/TC2 (round 2), k=3.
 - **Taste null (confirmatory):** Bowman-evidence rewrites = no-researcher rewrites = Carlini placebo, on absolute
