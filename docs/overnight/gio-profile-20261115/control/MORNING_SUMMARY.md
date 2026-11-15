@@ -1,6 +1,6 @@
 # Morning handoff
 
-Updated 2026-11-15T16:29:49.821980+00:00. All paid runs in this campaign are closed. Scientific checks are complete; the final evidence packaging and 9 a.m. Pacific coordination checkpoint are still closing.
+Updated 2026-11-15T16:45:18.328057+00:00. All paid runs, scientific checks and authorized finite evidence copies are complete. Coordination continues through the 9 a.m. Pacific cutoff.
 
 ## Supported decision
 
@@ -10,13 +10,13 @@ This campaign did not evaluate final-test users. All reported results are develo
 
 ## What was searched
 
-The writing-profile screen covered **eight families × three UTF-8 byte caps (512, 2,048, 8,192) × two evidence policies × two researchers = 96 configurations**. Evidence policies allowed only explicit statements, or allowed inference when marked.
+The writing-profile screen covered **eight families × three UTF-8 byte caps (512, 2,048, 8,192) × two evidence policies × two researchers = 96 cells (48 configurations across two researchers)**. Evidence policies allowed only explicit statements, or allowed inference when marked.
 
 | Family | Representation |
 |---|---|
 | P1 | General summary |
 | P2 | Summary organized around research tasks |
-| P3 | Fixed questionnaire |
+| P3 | Model-filled fixed questionnaire |
 | P4 | Atomic claims |
 | P5 | Conditional rules |
 | P6 | Principles organized by research decision |
@@ -44,10 +44,10 @@ On the new 56 users, the original no-history baseline averaged 48.65% planned ac
 
 | Follow-up method | Equal-user planned accuracy | Difference from historical same-user M1; 95% interval |
 |---|---:|---:|
-| M4, full history | 44.96% | −2.83 points [−10.06, +3.87] |
-| M4, matched five | 47.03% | −0.75 points [−7.53, +5.79] |
-| M5, hybrid | 34.91% | −12.87 points [−20.78, −5.06] |
-| M6, filtered hybrid | 34.09% | −13.69 points [−22.02, −5.64] |
+| M4, full history | 44.955% | −2.827 points [−10.059, +3.865] |
+| M4, matched five | 47.029% | −0.752 points [−7.532, +5.791] |
+| M5, hybrid | 34.910% | −12.872 points [−20.782, −5.061] |
+| M6, filtered hybrid | 34.090% | −13.692 points [−22.022, −5.640] |
 
 M4 shows no clear advantage here. M5/M6 have lower planned accuracy and delivery coverage, including 127 predeclared unavailable cells each. Complete-user differences are much smaller, but those users were selected by successful delivery. That does not identify a causal representation disadvantage. History exposure, fixed method order, cache-only fits and exploratory development selection remain limits. Independent checks reproduced the figures and preserved earlier phase results unchanged.
 
@@ -61,7 +61,7 @@ This establishes neither equivalence nor general personalization failure. Donor 
 |---|---|---|
 | M0–M7 choice-model interface | Reference owner 10 and shared infrastructure 01. [Contract](https://github.com/nathanqiu07/AutoResearch/blob/21468992f1d7b0ea300aa4abe3f6198937045d6f/docs/user-models/README.md#shared-contract). Final follow-up runtime `9664557`; paired-history runtime `63e11c9`. | Supports fit, predict, save/reload and artifact export. Predictions include choice and confidence. No personalized winner was validated; raw confidence remains uncalibrated. |
 | Experimental writing-profile P8 | Builder 08, infrastructure 01, evaluator 04. Saved explicit-only profile, 8,192-byte cap; quote-based extraction. | A development candidate, not a drop-in claim about Gio or a replacement for the M0–M7 interface. |
-| P8 auditor-context export | Existing downstream integration owner. [Exporter and runnable fixture/export commands](https://github.com/nathanqiu07/AutoResearch/blob/6695382f5573a797ff4692a7bbde49ee4c45ac50/docs/user-models/petri-neutral-profile-adapter/README.md). | Offline export only. It preserves contents, provenance, null weights and assumptions. Future integration must place it in the auditor, verify that it does not reach the target or judge, and test utility. |
+| P8 auditor-context export | `gio-overnight-downstream`, Petri auditor-context adapter workstream. [Exporter and runnable fixture/export commands](https://github.com/nathanqiu07/AutoResearch/blob/6695382f5573a797ff4692a7bbde49ee4c45ac50/docs/user-models/petri-neutral-profile-adapter/README.md). | Offline export only. It preserves contents, provenance, null weights and assumptions. Future integration must place it in the auditor, verify that it does not reach the target or judge, and test utility. |
 
 The completed downstream shutdown experiment used the earlier **Hobbhahn M2 profile in its downstream artifact family**, not this P8 export. Its three-arm comparison established neither a profile benefit nor observed shutdown interference; later reviews retained realism concerns. It is a separate research-utility question, with one scenario/attempt per condition.
 
@@ -81,11 +81,13 @@ These are estimates, not invoices or verified balances. Older downstream spendin
 
 ## Preservation and remaining limits
 
-Earlier profile records, used development labels, closed reference runs and paired-history evidence have private copies checked within their assigned custody. The paired analysis/review-file addition is also preserved. The audit worker reports that scaling/swap preservation, a separate destination check and saved-bundle recovery succeeded; its detailed completion handoff remains held by automatic approval review. The final suffix/analysis inventory is still closing.
+Used development labels, closed reference runs and paired-history evidence have private copies checked within their assigned custody. The paired analysis/review-file addition is also preserved. The final 16-packet copy is also complete: 3,244 exact source tuples, 30,661,099 logical bytes and 3,143 distinct content objects. The reference owner checked sources before and after copying and independently reread destination hashes and exact membership. The evaluator reviewed metadata and custody; this was not an external raw-payload audit.
 
-Scientific versions remain pinned in Git. Late control sources also have a separate private copy and an independent byte/permission check. A complete campaign restore, including all imports and environment dependencies, has not been tested. Source-only copies do not preserve private results. Credentials and live databases are excluded.
+The new scaling/swap copy retained 1,814 allowed records as 1,526 distinct objects; 15 excluded records stayed unopened. It covers 84,896,695 logical bytes and 65,622,971 distinct retained bytes. The audit owner reports source checks, a separate destination verifier and saved-bundle recovery passed. Gio approved sharing these new completion totals; that permission excludes private archive paths, hashes and contents.
 
-Two audit disclosures remain held pending existing user questions: old archive locations/hashes, and exact private completion totals. These are sharing blocks, not failed local copies. Private coordination changes also remain local after their full publication was rejected; the public status update excludes that metadata.
+Copies are verified for their enumerated records. Complete original sparse/promotion dependency coverage, packing/trace-map dependencies and a complete campaign restore are not established. The final numerical verification receipt is retained, but its referenced independent arithmetic script is outside that finite inventory. This is a coverage limit, not evidence that those files are lost. Scientific versions remain pinned in Git. Late control sources also have a separate private copy and an independent byte/permission check. Source-only copies do not preserve private results; credentials and live databases are excluded.
+
+The older archive location/hash transfer remains held by automatic approval review pending its existing user question. It is separate from the approved new totals and does not indicate a failed local copy. Private coordination changes also remain local after their full publication was rejected; this public summary excludes that metadata.
 
 ## Next decision
 
