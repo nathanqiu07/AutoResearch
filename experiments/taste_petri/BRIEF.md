@@ -1,6 +1,7 @@
 # Overnight brief: taste injection for the Petri metric (2026-11-15)
 
-User-directed sandbox (Ethan). Owner session: claude-tastepetri. Everything here is exploratory.
+User-directed sandbox (Ethan). Owner sessions: claude-tastepetri and devin-tastepetri, which take turns.
+**Read `HANDOFF.md` first**: it holds the ledger of who did what, the resume protocol and the NEXT list. Everything here is exploratory.
 
 ## Objective (user, midway 2026-11-15)
 The real eval is Petri (PLAN commit 36f3380: E1/E2/E3b only). Optimise against Petri's own judge
