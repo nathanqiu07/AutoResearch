@@ -8,10 +8,11 @@ token and either export HF_TOKEN or run `hf auth login`. The token is read, neve
     uv run --no-project --with pyarrow python -I scripts/fetch_tastebench.py
     uv run --no-project --with pyarrow python -I scripts/fetch_tastebench.py --subsets research engineering
 
-Every converted row must pass tastebench.check_question, and the research subset must have
+The parquet must match the release manifest's sha256, every converted row must pass tastebench.check_question, and the research subset must have
 112 rows, or nothing is written. Output stays in data/tastebench/, which is gitignored.
 """
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -48,6 +49,13 @@ def download(path_in_repo, dest, tok):
     os.replace(dest + ".part", dest)
 
 
+def check_checksum(parquet_path, manifest, subset):
+    with open(parquet_path, "rb") as f:
+        sha = hashlib.sha256(f.read()).hexdigest()
+    if sha != manifest["domains"][subset]["sha256"]:
+        sys.exit(f"{subset}: sha256 {sha} does not match the release manifest")
+
+
 def convert(parquet_path, subset):
     """Rows of one subset as dicts, after checking every row and the row count."""
     import pyarrow.parquet as pq
@@ -67,10 +75,14 @@ def main(argv=None):
     a = p.parse_args(argv)
     tok = token()
     os.makedirs(a.out_dir, exist_ok=True)
-    download("export_manifest.json", os.path.join(a.out_dir, "export_manifest.json"), tok)
+    manifest_path = os.path.join(a.out_dir, "export_manifest.json")
+    download("export_manifest.json", manifest_path, tok)
+    with open(manifest_path) as f:
+        manifest = json.load(f)
     for subset in a.subsets:
         parquet = os.path.join(a.out_dir, f"{subset}.parquet")
         download(f"data/{subset}/test-00000-of-00001.parquet", parquet, tok)
+        check_checksum(parquet, manifest, subset)
         rows = convert(parquet, subset)
         out = os.path.join(a.out_dir, f"{subset}.jsonl")
         with open(out + ".tmp", "w") as f:
