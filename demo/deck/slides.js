@@ -221,9 +221,9 @@
     id: "cli-drift", label: "Agents pursue unrelated work", cls: "s-cli",
     html: `${head("Capable agents still lose the task")}
       <figure data-in="0"><img src="img/claude-code-drift.jpg?v=2" alt="Claude Code: I took a detour into game theory. The eval experiment is still pending."><figcaption>Claude Code</figcaption></figure>
-      <figure data-in="0" style="--d:180ms"><img src="img/codex-cli-drift.jpg?v=2" alt="Codex CLI: I investigated a different research question. I haven’t run the experiment you requested."><figcaption>Codex CLI</figcaption></figure>
+      <figure data-in="0" style="--d:180ms"><img src="img/codex-cli-drift.jpg?v=3" alt="Codex CLI: I investigated a different research question. I haven’t run the experiment you requested."><figcaption>Codex CLI</figcaption></figure>
       `,
-    notes: "Illustrative terminal mockups, not captured model outputs or quotations from a real run. The invented statement demonstrates task drift. Terminal typography uses Menlo with monospace fallbacks. Visual references: https://claude.com/product/claude-code and https://github.com/openai/codex. Screenshot source: cli-mockups.html.",
+    notes: "Illustrative terminal mockups, not captured model outputs or quotations from a real run. The invented statement demonstrates task drift. Terminal typography uses Menlo with monospace fallbacks. Visual references: https://claude.com/product/claude-code and https://github.com/openai/codex. Codex purple cloud artwork: https://devicons.io/icons/codex/ (unmodified gradient icon). Screenshot source: cli-mockups.html.",
   });
 
   /* ================================================================== Statement */
@@ -321,7 +321,7 @@
   const NAMES = ["Marius Hobbhahn", "Owain Evans", "You", "Evan Hubinger", "Nicholas Carlini", "Sam Bowman"];
   add({
     id: "module", label: "Step 1 · A module", cls: "s-mod", step: 1, beats: 3,
-    html: `
+    html: `${head("Most auto-research agents blindly explore.<br>Remy Research makes a user model of <em>you</em>.")}
       <svg class="wires" width="1920" height="1080" viewBox="0 0 1920 1080" aria-hidden="true"></svg>
       ${["Their writing", "Their answers", "Their choices"].map((t, i) => `<div class="inp" data-in="0" style="top:${440 + i * 110}px;--d:${i * 90}ms">${t}</div>`).join("")}
       <div class="mod" data-in="0" style="--d:200ms">
@@ -669,13 +669,13 @@
   /* ================================================================== Sponsors */
   const SPON = [
     { n: "Exa", logo: "exa-logo.svg", text: "Builds a comprehensive profile of the user’s research taste from the web." },
-    { n: "past.dev", logo: "past-logo.svg", text: "Holds the user model in shared memory across agents and runs." },
+    { n: "past.dev", logo: "past-logo.svg?v=2", text: "Holds the user model in shared memory across agents and runs." },
     { n: "Modal", logo: "modal-logo.svg", text: "Runs research experiments in cloud sandboxes with GPU compute." },
   ];
   add({
     id: "sponsors", label: "Sponsors", cls: "s-sponsors-simple",
     html: `${head("sponsors")}<div class="sponsor-rows">${SPON.map((s,i)=>`<div class="sponsor-row" data-in="0" style="--d:${i*160}ms"><div class="sponsor-brand"><img src="img/${s.logo}" alt="${s.n} logo"></div><p>${s.text}</p></div>`).join("")}</div>`,
-    notes: "Exa gathers public papers, posts and talks to construct researcher profiles. past.dev holds the user model in shared memory (hash-checked model parts and preference facts), shared across agents and runs. Modal supplies cloud sandboxes and compute for experiments. past.dev integration is tested with mocked HTTP; a live-key run remains pending. Official logo sources: https://exa.ai/brand (white logo from its downloadable brand assets), https://modal.com/ (dark-background wordmark linked in its brand menu), https://www.past.dev/ (header SVG).",
+    notes: "Exa gathers public papers, posts and talks to construct researcher profiles. past.dev holds the user model in shared memory (hash-checked model parts and preference facts), shared across agents and runs. Modal supplies cloud sandboxes and compute for experiments. past.dev integration is tested with mocked HTTP; a live-key run remains pending. Official logo sources: https://exa.ai/brand (white logo from its downloadable brand assets), https://modal.com/ (dark-background wordmark linked in its brand menu), https://past.dev/brand (static white logotype, with whitespace cropped).",
   });
 
   /* ================================================================== Results */
@@ -699,7 +699,7 @@
   function profileResultChart() {
     let out=`<svg class="results-chart" viewBox="0 0 1640 600" role="img" aria-label="Owain preference paired accuracy: no profile 0.177, P4 profile 0.292, improvement 0.115. Bowman validity correlation gain over no profile: original exploratory result 0.07 with 90 percent interval 0.03 to 0.12, replication 0.00 with interval minus 0.15 to 0.21.">
       <text x="415" y="42" text-anchor="middle" class="chart-label">Owain preference accuracy</text>
-      <text x="1250" y="42" text-anchor="middle" class="chart-label">Bowman gain over no profile</text>`;
+      <text x="1250" y="42" text-anchor="middle" class="chart-label">Bowman validity-correlation gain</text>`;
     const y=v=>480-v*750;
     [0,.2,.4].forEach(v=>{out+=`<line x1="110" x2="730" y1="${y(v)}" y2="${y(v)}" class="chart-grid"/><text x="85" y="${y(v)+8}" text-anchor="end" class="chart-tick">${v}</text>`});
     [[250,.177,.110,.250,"No profile"],[540,.292,.190,.398,"P4 profile"]].forEach(([x,v,lo,hi,label],i)=>{out+=`<rect x="${x-70}" y="${y(v)}" width="140" height="${480-y(v)}" rx="5" class="result-bar ${i?'after':'before'}"/><path d="M ${x} ${y(lo)} V ${y(hi)} M ${x-12} ${y(lo)} H ${x+12} M ${x-12} ${y(hi)} H ${x+12}" class="chart-error"/><text x="${x}" y="${y(hi)-20}" text-anchor="middle" class="chart-number">${v.toFixed(3)}</text><text x="${x}" y="543" text-anchor="middle" class="chart-label">${label}</text>`});
@@ -707,7 +707,7 @@
     const xx=v=>1200+v*1050;
     [-.2,0,.2].forEach(v=>{out+=`<line x1="${xx(v)}" x2="${xx(v)}" y1="155" y2="460" class="chart-grid"/><text x="${xx(v)}" y="500" text-anchor="middle" class="chart-tick">${v>0?'+':''}${v.toFixed(1)}</text>`});
     [[.07,.03,.12,245,"Original","after"],[0,-.15,.21,400,"Replication","before"]].forEach(([v,lo,hi,y,label,cls])=>{out+=`<text x="900" y="${y-39}" class="chart-label">${label}</text><path d="M ${xx(lo)} ${y} H ${xx(hi)} M ${xx(lo)} ${y-10} V ${y+10} M ${xx(hi)} ${y-10} V ${y+10}" class="chart-error"/><circle cx="${xx(v)}" cy="${y}" r="12" class="${cls}"/><text x="1540" y="${y+10}" text-anchor="end" class="chart-number">+${v.toFixed(2)}</text>`});
-    return out+`<text x="1250" y="550" text-anchor="middle" class="chart-tick">Validity-correlation difference · 90% CI</text></svg>`;
+    return out+`</svg>`;
   }
   add({
     id: "evidence", label: "Results", cls: "s-results s-chart-results", beats: 2,
@@ -715,14 +715,10 @@
       <div class="result-page" data-in="0" data-out="1">
         <div class="chart-heading"><h3>First live v2 run</h3><div class="chart-legend"><span><i class="before"></i>Before</span><span><i class="after"></i>After</span></div></div>
         ${liveResultChart()}
-        <p class="chart-caption">5 rounds · 10 changes · 1 accepted · Haiku target</p>
-        <p class="chart-footnote">One run. No demonstrated behavior change.</p>
       </div>
       <div class="result-page" data-in="1">
         <h3>Profile versus no profile</h3>
         ${profileResultChart()}
-        <p class="chart-caption">Owain: 96 pairs · Bowman: 10 seeds per test · 90% intervals</p>
-        <p class="chart-footnote">P4: pre-registered verdict null. Bowman’s exploratory gain did not replicate.</p>
       </div>`,
     notes: [
       "Source: README.md, First live v2 run; results/research_live/, code 0ba93f2. Scenario: metric_inflation. Five rounds, ten interventions, one accepted and confirmed on five fresh samples. Haiku target, Sonnet generator and judge, demo_realist taste. 305 calls, $3.58 API-equivalent, 24 minutes. Score 0.390 to 0.518, relative gain 32.82%. Self-report 0.710 to 0.285, rounded to 0.29, decrease 59.86%. Validity 0.922 to 0.866. Haiku reported honestly in all 55 samples, so the run cannot demonstrate a behavioral faithfulness effect. This run does not establish a causal benefit from a user profile.",
