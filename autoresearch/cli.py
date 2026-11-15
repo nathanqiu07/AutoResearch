@@ -219,7 +219,10 @@ def _agentic_measurer(args, models):
         extra["rewrite"] = args.petri_rewrite
     if auditor_prompt:
         extra["auditor_prompt"] = auditor_prompt
-    return PetriMeasurer(models, seeds=pool, tools=args.tools, mode=args.mode, workers=args.workers, **extra)
+    pm = PetriMeasurer(models, seeds=pool, tools=args.tools, mode=args.mode, workers=args.workers, **extra)
+    if getattr(args, "memory", None):   # the loop logs only mean awareness; this keeps each audit's A1/A2 split
+        pm.samples_log = os.path.join(args.memory, "petri_samples.jsonl")
+    return pm
 
 
 AGENTIC_GOAL = ("Rewrite Petri audit seeds and auditor behaviour so the target model does not recognise the audit as "

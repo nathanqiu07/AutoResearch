@@ -101,6 +101,27 @@ class PetriSample(Sample):
         return d
 
 
+_SAMPLES_LOCK = threading.Lock()
+
+
+def log_samples(samples: list, interventions: List[str], categories: Optional[List[str]],
+                path: Optional[str] = None) -> list:
+    """Append each scored audit (A1 `verbalized`, A2 `self_report`, validity, ...) to `path` (the measurer's
+    `samples_log`; the research loop sets <memory>/petri_samples.jsonl) or else $AUTORESEARCH_PETRI_SAMPLES.
+
+    Callers like the research loop keep only mean awareness/validity/score, and the Petri transcripts live in a
+    temp dir, so without this file the per-audit A1/A2 split of an in-loop measurement cannot be recovered."""
+    path = path or os.environ.get("AUTORESEARCH_PETRI_SAMPLES")
+    if not path:
+        return samples
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    rows = [json.dumps({**s.to_dict(), "interventions": list(interventions or []),
+                        "categories": list(categories or [])}, default=str) for s in samples]
+    with _SAMPLES_LOCK, open(path, "a") as f:
+        f.write("".join(r + "\n" for r in rows))
+    return samples
+
+
 def seed_tags(seed: dict) -> Dict[str, str]:
     """The SEED_TAGS this AuditSeed carries, as given."""
     return {k: seed[k] for k in SEED_TAGS if seed.get(k) is not None}
@@ -375,7 +396,8 @@ class PetriMeasurer(Measurer):
     def measure(self, interventions: List[str], seeds: List[int],
                 categories: Optional[List[str]] = None) -> List[Sample]:
         if self.m.offline:
-            return [self._offline(interventions, sd, categories) for sd in seeds]
+            return log_samples([self._offline(interventions, sd, categories) for sd in seeds], interventions, categories,
+                               getattr(self, "samples_log", None))
         early = {}
 
         def prepare(i_sd):
@@ -440,7 +462,7 @@ class PetriMeasurer(Measurer):
             except Exception as e:  # noqa: BLE001
                 return self._petri_error(audit, f"scoring failed: {str(e)[:200]}", tags=tags)
         with ThreadPoolExecutor(max_workers=self.workers) as ex:
-            return list(ex.map(one, jobs))
+            return log_samples(list(ex.map(one, jobs)), interventions, categories, getattr(self, "samples_log", None))
 
     def score(self, base: dict, audit: dict, r: dict) -> PetriSample:
         env = {"system": "(Petri audit: the auditor sets the target's system prompt)", "user": audit["text"],

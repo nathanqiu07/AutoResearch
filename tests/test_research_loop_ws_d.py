@@ -363,7 +363,7 @@ class AgenticTests(unittest.TestCase):
 
         class FakePetri:
             def __init__(self, models, seeds, tools="simulated", mode="dev", workers=4):
-                made.update(seeds=seeds, tools=tools, mode=mode)
+                made.update(seeds=seeds, tools=tools, mode=mode, measurer=self)
                 self.inner = Measurer(models, simulator=OfflineWorld(), mode=mode)
                 self.mode, self.warnings, self.grounding = mode, [], []
 
@@ -393,6 +393,7 @@ class AgenticTests(unittest.TestCase):
             else:
                 sys.modules["autoresearch.research.petri_measure"] = saved
         self.assertEqual(made["tools"], "sandbox")
+        self.assertEqual(made["measurer"].samples_log, os.path.join(tmp, "mem", "petri_samples.jsonl"))   # keeps A1/A2
         self.assertTrue(0 < len(made["seeds"]) < 20)   # the dev split only
         self.assertTrue(any(f.startswith("petri_agentic") for f in os.listdir(os.path.join(tmp, "out"))))
 

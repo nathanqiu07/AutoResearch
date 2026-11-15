@@ -140,6 +140,29 @@ class PetriMeasurerTest(unittest.TestCase):
         self.assertIn("eval_awareness", petri_score_summary(out))
         self.assertEqual(json.loads(json.dumps(out[0].to_dict()))["seed_id"].split("@")[0], "dev_seed_48")
 
+    def test_every_scored_audit_is_logged_with_a1_and_a2_when_asked(self):
+        # The loop reduces samples to mean awareness; without this log the A1/A2 split is lost.
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "sub", "samples.jsonl")
+            os.environ["AUTORESEARCH_PETRI_SAMPLES"] = path
+            try:
+                off = OfflineLLM()
+                PetriMeasurer(Models(off, off, off), SEEDS).measure(["a"], [0, 1], categories=["strip_meta"])
+                m, _, _, _ = models()
+                PetriMeasurer(m, SEEDS, runner=runner_from({"dev_seed_48": RESULT})).measure([], [0])
+            finally:
+                del os.environ["AUTORESEARCH_PETRI_SAMPLES"]
+            rows = [json.loads(line) for line in open(path)]
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0]["interventions"], ["a"])
+        self.assertEqual(rows[0]["categories"], ["strip_meta"])
+        self.assertEqual(rows[2]["interventions"], [])
+        self.assertAlmostEqual(rows[2]["verbalized"], 0.1)     # A1
+        self.assertAlmostEqual(rows[2]["self_report"], 0.2)    # A2
+        self.assertIn("validity", rows[2])
+
     def test_interface_matches_measurer(self):
         off = OfflineLLM()
         pm = PetriMeasurer(Models(off, off, off), SEEDS, tools="simulated", mode="final", workers=2)
