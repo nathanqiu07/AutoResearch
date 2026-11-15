@@ -1,3 +1,15 @@
+# Active checkpoint — 2026-11-15T15:44:56.443682+00:00
+
+The prospective own-versus-wrong history study is complete and drained: 64 user packets, 1,031 calls, $0.4189835 in known recorded usage, and no new uncertain charges. Two output failures and one deliberately withheld request remain in the 1,032-cell plan. Existing04 independently closed the scoring-code review; existing10 is authorized to run the frozen analysis. Results are pending.
+
+The 16 untouched reference method packets remain deferred under their original leases. Existing10 is checking the two new consumed failure identities and binding the continuation to the actual history terminal. Root will inspect the updated controls before any launch. All nine historical reference unknowns and $59.617 in gross reference reservations remain retained within the $68 allocation. No retries are authorized.
+
+The scaling study is scored: the final 98 delivered predictions were correct, matching the already-perfect generic controls. The joint panel retains 252 planned rows, 182 delivered, 180 correct, and 70 missing. The entire closed profile lane has $5.693403660 in known or conservative recorded estimates and $0.027883125 in older uncertain bounds. No personalized method has earned promotion over the controls. The own/swap comparison is observational because conditions were collected at different times; it does not isolate a causal mismatch effect.
+
+The evaluator has verified a private copy of the exact four used-development label/provenance files. A separate finite scaling/swap copy is authorized within its new local boundary; reference retention custody review is underway. Automatic approval review blocked a message sharing OLD archive locations and hashes from audit to this coordinator; that specific transfer remains held pending the existing user question. Independent new copies do not bypass or authorize that transfer.
+
+[MORNING_SUMMARY.md](MORNING_SUMMARY.md) is the single readable synthesis and remains a working draft until the remaining results are reviewed. Project ceilings stay $500 OpenAI and $500 OpenRouter. Final-test users are untouched and unauthorized. The overnight deadline is 9 a.m. Pacific. Earlier dated checkpoints below preserve their original state and should not be read as current status.
+
 # Active checkpoint — 2026-11-15T14:47:10.477848+00:00
 
 The98-call P7/P3 prediction batch completed with known accounting:56 P7 calls/$0.598605 and42 P3 calls/$0.451645, totaling$1.050250. The scaling ledger closed at404calls/$4.934060 withzero newholds. All112planned descendant slots remain, including14unavailable from the invalid Neel/AstraP3 profile. Existing09 compiles provenance and04 scores; completion is not a result claim.
