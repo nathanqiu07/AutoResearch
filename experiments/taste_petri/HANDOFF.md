@@ -25,6 +25,12 @@ redoing work.
 
 ## Ledger (newest first)
 
+### 2026-11-15 claude-lopsided: best_heldout/ (DONE, user-directed, no model calls)
+- User: "find the best results for preference accuracy on held-out test, pick them scientifically", then one graph.
+- Re-scores cached e2_v4 / synthme / e2_climb predictions on the 96 pairs; eligibility (pre-T only, not tuned on
+  post-T) fixed before scoring; exact work-level permutation + Holm. S_inf and P4 beat NAME on p(his) (Holm p 0.005,
+  0.008); nothing beats NAME on accuracy. `best_heldout/README.md`, `figure.svg`. Read-only on other subdirs.
+
 ### 2026-11-15 claude-tastepetri: e2_climb/ (IN PROGRESS, 19:50 UTC, user-directed)
 - User: "hillclimb these intervals" (the e2_v4 profile-vs-no-profile CIs). Pre-registered in `e2_climb/PREREG.md`:
   climb A tunes on pre-T firewalled pairs (synthme/pairs_paper), climb B on decision-disjoint post-T pairs; one
