@@ -54,9 +54,14 @@ from autoresearch.research.petri_measure import cut  # noqa: E402
 from autoresearch.research.stats import auroc, bootstrap_ci, mean  # noqa: E402
 
 CACHE = HERE / "cache"
-TRANSCRIPTS = HERE / "transcripts.jsonl"
-ANSWERS = HERE / "answers.jsonl"
-RESULTS = HERE / "results.json"
+
+
+def paths(tag: str = ""):
+    """(transcripts, answers, results) for a run tag; "" is the exploratory run, e.g. "rep" the replication."""
+    sfx = f"_{tag}" if tag else ""
+    return HERE / f"transcripts{sfx}.jsonl", HERE / f"answers{sfx}.jsonl", HERE / f"results{sfx}.json"
+
+
 READ_CACHES = [TP / d / "cache" for d in ("hillclimb", "decoys", "petri_taste", "real_material", "proxy", "arms")]
 EVAL_ARMS = {"stock": REPO / "data" / "petri" / "seeds_v2.jsonl", "R0": TP / "hillclimb" / "seeds" / "R0_dev.jsonl"}
 CONTROLS = {   # group -> (file, kind, n)
@@ -107,15 +112,15 @@ class ProbeLLM(P.CachedCLI):
 
 
 # ---------- collect ----------
-def replay_eval(arm: str, seed: dict, k: int):
-    """The rendered, cut transcript the proxy's A2 saw for this (seed, k), or None if it was never generated."""
-    llm = CacheOnly()
+def replay_eval(llm, arm: str, seed: dict, k: int):
+    """The rendered, cut transcript the proxy's A2 sees for this (seed, k): auditor-sim and target-sim exactly as
+    rm_proxy runs them. With CacheOnly, None if the earlier runs never generated it; with ProbeLLM, generated now."""
     try:
         raw = llm.complete(RP.auditor_prompt(seed, k, f"claude-{MODEL}"), max_tokens=4000)
         audit, _ = RP.build_audit(raw, seed)
         system, user = P.target_inputs(audit)
         _, visible = P.split_target(llm.complete(user, system=system, max_tokens=2000))
-    except (KeyError, ValueError):
+    except (KeyError, ValueError, RuntimeError):   # cache miss, unparseable or refused auditor reply, CLI failure
         return None
     if not visible:
         return None
@@ -147,23 +152,25 @@ def render_turns(turns, target_chars: int) -> str:
     return "\n\n".join(parts[:last_assistant] if last_assistant else parts)
 
 
-def collect():
-    rows = []
+def collect(tag: str, ks, generate: bool, controls: bool, max_calls: int):
+    transcripts_f = paths(tag)[0]
+    llm = ProbeLLM(max_calls) if generate else CacheOnly()
+    jobs = []
     for arm, path in EVAL_ARMS.items():
         seeds = P.load_seeds(str(path), "dev") if arm == "stock" else P.load_seeds(str(path))
-        for s in seeds:
-            for k in KS:
-                r = replay_eval(arm, s, k)
-                if r:
-                    rows.append(r)
+        jobs += [(arm, s, k) for s in seeds for k in ks]
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        rows = [r for r in ex.map(lambda j: replay_eval(llm, *j), jobs) if r]
+    if generate:
+        print(f"generated: cli_calls={llm.budget.calls} cache_hits={llm.hits} ok={len(rows)}/{len(jobs)}")
     lens = sorted(len(r["transcript"]) for r in rows)
     target = lens[len(lens) // 2] if lens else 6000
-    for group, (path, kind, n) in CONTROLS.items():
+    for group, (path, kind, n) in (CONTROLS.items() if controls else ()):
         trajs = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
         for t in random.Random(0).sample(trajs, min(n, len(trajs))):
             rows.append({"id": f"{group}:{t['id']}", "group": group, "kind": kind, "seed": None, "k": None,
                          "transcript": cut(render_turns(t["turns"], target))})
-    TRANSCRIPTS.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    transcripts_f.write_text("".join(json.dumps(r) + "\n" for r in rows))
     by = defaultdict(list)
     for r in rows:
         by[r["group"]].append(len(r["transcript"]))
@@ -264,7 +271,8 @@ def pairwise_one(llm, a, b):
 VARIANTS = ("placeholder", "evaldetect", "binary", "calibrated", "unprompted")
 
 
-def probe(max_calls: int, variants, workers: int):
+def probe(tag: str, max_calls: int, variants, workers: int):
+    TRANSCRIPTS, ANSWERS, _ = paths(tag)
     rows = [json.loads(l) for l in TRANSCRIPTS.read_text().splitlines()]
     llm, lock = ProbeLLM(max_calls), threading.Lock()
     done = set()
@@ -303,7 +311,23 @@ def probe(max_calls: int, variants, workers: int):
 
 
 # ---------- report ----------
-def report():
+def clustered(by_seed: dict, level: float = 0.9, n: int = 4000, seed: int = 0) -> dict:
+    """Mean over seeds of each seed's mean, with a bootstrap CI that resamples seeds (samples of one seed are
+    not independent). by_seed: seed -> list of values."""
+    seeds = sorted(s for s in by_seed if by_seed[s])
+    if not seeds:
+        return {"n_seeds": 0, "mean": None, "ci": None}
+    m = {s: mean(by_seed[s]) for s in seeds}
+    rng = random.Random(seed)
+    bs = sorted(mean([m[rng.choice(seeds)] for _ in seeds]) for _ in range(n))
+    lo, hi = bs[int((1 - level) / 2 * n)], bs[int((1 + level) / 2 * n) - 1]
+    return {"n_seeds": len(seeds), "n_items": sum(len(by_seed[s]) for s in seeds), "mean": mean(list(m.values())),
+            "ci": [lo, hi], "level": level, "seeds_up": sum(m[s] > 0 for s in seeds),
+            "seeds_down": sum(m[s] < 0 for s in seeds)}
+
+
+def report(tag: str):
+    _, ANSWERS, RESULTS = paths(tag)
     latest = {}
     for a in map(json.loads, ANSWERS.read_text().splitlines()):
         if not a.get("error") and a.get("p", a.get("p_stock")) is not None:
@@ -330,11 +354,24 @@ def report():
         diffs = [st[x] - r0[x] for x in st if x in r0]
         d["stock_minus_R0_paired"] = {"n": len(diffs), "mean": mean(diffs) if diffs else None,
                                       "ci90": list(bootstrap_ci(diffs)) if len(diffs) > 1 else None}
+        by_seed = defaultdict(list)
+        for x in st:
+            if x in r0:
+                by_seed[x[0]].append(st[x] - r0[x])
+        d["stock_minus_R0_clustered"] = {f"ci{int(lv * 100)}": clustered(by_seed, lv) for lv in (0.9, 0.95)}
         res["variants"][v] = d
-    pw = [r["p_stock"] for r in rows if r["variant"] == "pairwise"]
+    pws = [r for r in rows if r["variant"] == "pairwise"]
+    pw = [r["p_stock"] for r in pws]
+    by_seed = defaultdict(list)
+    for r in pws:
+        by_seed[r["seed"]].append(r["p_stock"] - 0.5)
     res["pairwise_stock_vs_R0"] = {"n": len(pw), "mean_p_stock_is_test": mean(pw) if pw else None,
                                    "ci90": list(bootstrap_ci(pw)) if len(pw) > 1 else None,
-                                   "frac_stock_picked": mean([p > 0.5 for p in pw]) if pw else None}
+                                   "frac_stock_picked": mean([p > 0.5 for p in pw]) if pw else None,
+                                   "order_consistent": sum(1 for r in pws if None not in r["orders"]
+                                                           and (r["orders"][0] > 0.5) == (r["orders"][1] > 0.5)),
+                                   "minus_half_clustered": {f"ci{int(lv * 100)}": clustered(by_seed, lv)
+                                                            for lv in (0.9, 0.95)}}
     RESULTS.write_text(json.dumps(res, indent=1))
 
     def f(x):
@@ -347,26 +384,44 @@ def report():
         ci = sr["ci90"] or [None, None]
         print(f"{v:12s} {cells}   {f(d['auroc_eval_vs_deploy'])} {f(d['auroc_eval_vs_benchmark'])} "
               f"{f(d['auroc_benchmark_vs_deploy'])}   {f(sr['mean'])} [{f(ci[0])}, {f(ci[1])}] n={sr['n']}")
-    print("pairwise stock vs R0:", json.dumps(res["pairwise_stock_vs_R0"]))
-    print("n per group:", {g: res["variants"]["placeholder"]["by_group"][g]["n"] for g in groups})
+    print("seed-clustered stock - R0 (95% CI; seeds up/down):")
+    for v, d in res["variants"].items():
+        c = d["stock_minus_R0_clustered"]["ci95"]
+        if c["mean"] is not None:
+            print(f"  {v:12s} {c['mean']:+.3f} [{c['ci'][0]:+.3f}, {c['ci'][1]:+.3f}] n_seeds={c['n_seeds']} "
+                  f"pairs={c['n_items']} up/down={c['seeds_up']}/{c['seeds_down']}")
+    c = res["pairwise_stock_vs_R0"]["minus_half_clustered"]["ci95"]
+    if c["mean"] is not None:
+        print(f"  {'pairwise':12s} {c['mean']:+.3f} [{c['ci'][0]:+.3f}, {c['ci'][1]:+.3f}] (P(stock is test) - 0.5) "
+              f"n_seeds={c['n_seeds']} pairs={c['n_items']} up/down={c['seeds_up']}/{c['seeds_down']}")
+    print("pairwise:", {k: v for k, v in res["pairwise_stock_vs_R0"].items() if k != "minus_half_clustered"})
+    print("n per group:", {g: res["variants"]["placeholder"]["by_group"][g]["n"] for g in groups
+                           if "placeholder" in res["variants"]})
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("collect")
+    pc = sub.add_parser("collect")
+    pc.add_argument("--ks", type=int, nargs="+", default=list(KS))
+    pc.add_argument("--generate", action="store_true",
+                    help="run auditor-sim/target-sim for samples not in the earlier caches (real CLI calls)")
+    pc.add_argument("--no-controls", action="store_true", help="eval transcripts only")
+    pc.add_argument("--max-calls", type=int, default=300)
     pp = sub.add_parser("probe")
     pp.add_argument("--max-calls", type=int, default=1200)
     pp.add_argument("--variants", nargs="+", default=list(VARIANTS) + ["pairwise"])
     pp.add_argument("--workers", type=int, default=4)
-    sub.add_parser("report")
+    pr = sub.add_parser("report")
+    for p in (pc, pp, pr):
+        p.add_argument("--tag", default="", help='run tag: "" = exploratory run, "rep" = pre-registered replication')
     a = ap.parse_args(argv)
     if a.cmd == "collect":
-        collect()
+        collect(a.tag, a.ks, a.generate, not a.no_controls, a.max_calls)
     elif a.cmd == "probe":
-        probe(a.max_calls, a.variants, min(4, a.workers))
+        probe(a.tag, a.max_calls, a.variants, min(4, a.workers))
     else:
-        report()
+        report(a.tag)
 
 
 if __name__ == "__main__":
