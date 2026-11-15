@@ -1,0 +1,161 @@
+---
+url: https://www.lesswrong.com/posts/HD2s4mj4fsx6WtFAR
+title: Two problems with ‘Simulators’ as a frame
+publishedDate: 2023-02-17
+date_source: listing
+authors: ["Ryan Greenblatt"]
+author_position: solo
+kind: post
+exa_request_id: https://www.lesswrong.com/posts/HD2s4mj4fsx6WtFAR/two-problems-with-simulators-as-a-frame
+fetched_url: https://www.lesswrong.com/posts/HD2s4mj4fsx6WtFAR/two-problems-with-simulators-as-a-frame
+---
+# Two problems with ‘Simulators’ as a frame
+
+* By [ryan_greenblatt](/users/ryan_greenblatt)
+* 2023-02-17 23:34:20Z
+* 79 points
+* Tag: [Simulator Theory](/w/simulator-theory)
+* Tag: [AI](/w/ai)
+* Frontpage
+* Comments: 13
+* Post URL (HTML): [/posts/HD2s4mj4fsx6WtFAR/two-problems-with-simulators-as-a-frame](/posts/HD2s4mj4fsx6WtFAR/two-problems-with-simulators-as-a-frame)
+* Post URL (Markdown): [/api/post/two-problems-with-simulators-as-a-frame](/api/post/two-problems-with-simulators-as-a-frame)
+* Comments URL (Markdown): [/api/post/two-problems-with-simulators-as-a-frame/comments](/api/post/two-problems-with-simulators-as-a-frame/comments)
+* Post URL (Markdown, compact): [/api/post/two-problems-with-simulators-as-a-frame?compact=1](/api/post/two-problems-with-simulators-as-a-frame?compact=1)
+
+_(Thanks to Lawrence Chan and Buck Shlegeris for comments. Thanks to Nate Thomas for many comments and editing)_
+
+Despite appreciating and agreeing with various specific points[^appendix] made in the [Simulators post](/api/post/vJFdjigzmcXMhNTsx), I broadly think that the term ‘simulator’ and the corresponding frame probably shouldn’t be used. Instead, I think we should just directly reason about predictors and think in terms of questions such as ‘what would the model predict for the next token?’[^2]
+
+In this post, I won’t make arguments that I think are strong enough to decisively justify this claim, but I will argue for two points that support it:
+
+1. The word ‘simulation’ as used in the [Simulators post](/api/post/vJFdjigzmcXMhNTsx) doesn’t correspond to a single simulation of reality, and a ‘simulacrum’ doesn’t correspond to an approximation of a single agent in reality. Instead a ‘simulation’ corresponds to a distribution over processes that generated the text. This distribution in general contains uncertainty over a wide space of different agents involved in those text generating processes.
+2. Systems can be very good at prediction yet very bad at plausible generation – in other words, very bad at ‘running simulations’.
+
+The rest of the post elaborates on these claims. 
+
+I think the author of the Simulators post is aware of these objections. I broadly endorse the perspective in [‘simulator’ framing and confusions about LLMs](/api/post/dYnHLWMXCYdm9xu5j), which also argues against the simulator framing to some extent. For another example of prior work on these two points, see [this discussion of models recognizing that they are generating text due to generator discriminator gaps in the Conditioning Predictive Models sequence](/api/sequence/n3utvGrgC2SGi9xQX/post/3kkmXfvCv9DmT3kwx#Model_predicts_itself)[^3].
+
+# Related work
+[Simulators](/api/post/vJFdjigzmcXMhNTsx), [‘simulator’ framing and confusions about LLMs](/api/post/dYnHLWMXCYdm9xu5j), [Conditioning Predictive Models](/api/sequence/n3utvGrgC2SGi9xQX)
+
+# Language models are predictors, not simulators
+My main issue with the terms ‘simulator’, ‘simulation’, ‘simulacra’, etc is that a language model ‘simulating a simulacrum’ doesn’t correspond to a single simulation of reality, even in the high-capability limit. Instead, language model generation corresponds to a distribution over all the settings of latent variables which could have produced the previous tokens, aka “a prediction”.
+
+Let’s go through an example: Suppose we prompt the model with “`<|endoftext|>NEW YORK—After John McCain was seen bartending at a seedy nightclub`”. I’d claim the model's next token prediction will involve uncertainty over the space of all the different authors which could have written this passage, as well as all the possible newspapers, etc. It presumably can’t internally represent the probability of each specific author and newspaper, though I expect bigger models will latently have an estimate for the probability that text like this was written by particularly prolific authors with particularly distinctive styles as well as a latent estimate for particular sites. In this case, code-davinci-002 is quite confident this prompt comes from The Onion[^4].
+
+In practice, I think it’s tempting to think of a model as running a particular simulation of reality, but performing well at the objective of next-token prediction doesn’t result in the output you would get from a single, particular simulation. In the previous example, the model might be certain that the piece is from The Onion after it’s generated many tokens, but it’s presumably not sure which author at the Onion wrote it or what the publication date is.
+
+Pretrained models don’t ‘simulate a character speaking’; they predict what comes next, which implicitly involves making predictions about the distribution of characters and what they would say next.
+
+I’ve seen this mistake made frequently – for example, see [this post](/api/post/FLMyTjuTiGytE6sP2#Inner_alignment_for_characters) (note that in this case the mistake doesn’t change the conclusion of the post). I think the author of the Simulators post understands the point I make in this section – for instance, they state:
+
+> This is true for GPT, where the text “initial condition” of most training samples severely underdetermines the real-world process which led to the choice of next token.
+
+Regardless, this issue makes this terminology misleading.
+
+# Good prediction doesn’t imply good generation
+
+You might have thought that good predictive loss constraints generations to be plausible; however, this isn’t true – models with very good predictive loss can output extremely unlikely sequences with high probability.
+
+I’ll use a simple example to illustrate this: Suppose I take an existing language model and add an extra token that doesn’t exist in the corpus; call this token `<|i_am_generating|>`. Now, suppose we adjust the language model so that this token always is predicted to have 1% probability (proportionally down-weighting other predictions), except that it’s assigned 100% probability if `<|i_am_generating|>` has already occurred earlier in the sequence.
+
+This language model gets exactly $-\log 0.99 \approx 0.101$ additional loss on the prediction task. Despite this relatively small change in loss, if you generate using this model, long generations will typically end up having zero probability measure on the ‘true’ distribution due to including the `<|i_am_generating|>` token which _never_ occurs in the corpus. (For example, generations of length 1000 have probability 0.99996 of containing this token.) Instead of getting the model to output `<|i_am_generating|>` forever after the first such token, we could train the model to have any behavior we want after encountering the `<|i_am_generating|> `token, without changing the next-token prediction loss.
+
+The previous example required making the loss a bit worse, but there are cases where a model can virtually always generate anything we choose without affecting prediction loss at all. This is possible in cases where verification is easier than generation[^5].
+
+For instance, suppose that the first 30 tokens of every sequence constitute a cryptographic hash of the next 30 tokens, which are uniformly distributed. It might be very easy to check that the first 60 tokens are consistent, but extremely difficult to generate the correct distribution over the first 60 tokens for a next-token predictor. Thus, the model could check if it’s generating in a way that leaves its generative behavior totally unconstrained (and therefore potentially arbitrarily far from the original distribution).
+
+The considerations in this section only apply if the model is imperfect; if the model has perfectly optimal next-token prediction loss, its generations must have the exactly same distribution as the data distribution. Of course, all LLMs that we’ll ever care about will be imperfect in this sense.
+
+These considerations (at least morally) contradict the following quote from Simulators:
+
+> Models trained with the strict simulation objective are directly incentivized to reverse-engineer the (semantic) physics of the training distribution, and consequently, to propagate simulations whose dynamical evolution is indistinguishable from that of training samples
+
+ ## Okay, but what do you see in practice?
+
+In practice, the divergence between generation and prediction over long sequences is blatant. Try just generating sequences from a language model at t=1. It’s common for the model to get caught in repetitive traps that are extremely unlikely in the original distribution. (I’m not confident this gap between prediction and generation is real and that I’m interpreting this observation correctly.)
+
+I expect language models will often generate (say, at t=1 and with sequence length greater than maybe around a few thousand) easy-to-distinguish outputs until the singularity (though I’m not confident).
+
+ # Appendix: Some other agreements and disagreements with Simulators
+
+* I agree that the Oracle/Genie/Tool/Agent categories don't properly contain models trained on self-supervised objectives. Further, I think these aren’t particularly useful categories for current alignment research – we should just talk about how exactly we trained the model and what that behaviorally incentivizes.
+
+* I agree that it’s worth thinking about how self-supervised learning generalizes to very low probability sequences – specifically, sequences with low enough probability that the model’s behavior could be anything on sequences this unlikely without affecting next-token prediction loss. However, I’m skeptical that first-principles reasoning would yield much beyond basic conclusions here. Because this behavior is unconstrained by the training objective, reasoning about this **must** involve reference to the architecture and optimizer. I think experiments would be interesting but probably aren’t overall very leveraged until AGI is near. I think building a rough practical model based on empirics could go pretty far.
+
+* I disagree that it’s worth thinking about the limit of self-supervised learning. An AI that is extremely close to theoretically optimal loss on next-token prediction is an eldritch horror that we won’t encounter prior to the situation radically changing. The same goes for any training objective that requires extreme superintelligence to achieve within-epsilon-of-optimal loss (which is basically all prediction tasks on infinite datasets sampled from reality). Long before we get this, we’ll either succeed or fail at avoiding AI takeover.
+
+[^2]:
+ Insofar as it’s useful to try to reason about what exact actions the pre-training objective incentives in particular cases. I’m not sold on this being considerably useful in most cases.
+
+[^3]:
+ 
+ Note that I disagree with quite a bit of the framing and emphasis of Conditioning Predictive Models. Don’t take this link as an endorsement!
+
+[^4]:
+ I think it’s about 90% sure based on doing some quick samples.
+
+[^5]:
+ This is also discussed in [the Conditioning Predictive Models sequence](/api/sequence/n3utvGrgC2SGi9xQX/post/3kkmXfvCv9DmT3kwx#Model_predicts_itself)
+
+[^appendix]: 
+ See the appendix.
+
+Top Comments Index
+------------------
+
+### Comment by [Jozdien](/users/jozdien)
+
+* 2023-02-18 00:17:45Z
+* Karma: 14
+* Voting system: namesAttachedReactions
+* Approval votes: 9
+* Total votes: 9
+* HTML permalink: [/posts/HD2s4mj4fsx6WtFAR/two-problems-with-simulators-as-a-frame/comment/uEvvonANG2wHdMxsT](/posts/HD2s4mj4fsx6WtFAR/two-problems-with-simulators-as-a-frame/comment/uEvvonANG2wHdMxsT)
+* Markdown permalink: [/api/post/two-problems-with-simulators-as-a-frame/comments/uEvvonANG2wHdMxsT](/api/post/two-problems-with-simulators-as-a-frame/comments/uEvvonANG2wHdMxsT)
+
+### Comment by [evhub](/users/evhub)
+
+* 2023-02-18 03:53:50Z
+* Karma: 9
+* Voting system: namesAttachedReactions
+* Approval votes: 6
+* Total votes: 6
+* HTML permalink: [/posts/HD2s4mj4fsx6WtFAR/two-problems-with-simulators-as-a-frame/comment/ohCKo3zr9BWfQYEpz](/posts/HD2s4mj4fsx6WtFAR/two-problems-with-simulators-as-a-frame/comment/ohCKo3zr9BWfQYEpz)
+* Markdown permalink: [/api/post/two-problems-with-simulators-as-a-frame/comments/ohCKo3zr9BWfQYEpz](/api/post/two-problems-with-simulators-as-a-frame/comments/ohCKo3zr9BWfQYEpz)
+
+### Comment by [LawrenceC](/users/lawrencec)
+
+* 2023-02-18 18:51:25Z
+* Karma: 3
+* Voting system: namesAttachedReactions
+* Approval votes: 2
+* Total votes: 2
+* HTML permalink: [/posts/HD2s4mj4fsx6WtFAR/two-problems-with-simulators-as-a-frame/comment/MCWgf646txkdKaCKR](/posts/HD2s4mj4fsx6WtFAR/two-problems-with-simulators-as-a-frame/comment/MCWgf646txkdKaCKR)
+* Markdown permalink: [/api/post/two-problems-with-simulators-as-a-frame/comments/MCWgf646txkdKaCKR](/api/post/two-problems-with-simulators-as-a-frame/comments/MCWgf646txkdKaCKR)
+
+### Comment by [Charlie Steiner](/users/charlie-steiner)
+
+* 2023-02-18 12:56:22Z
+* Karma: 2
+* Voting system: namesAttachedReactions
+* Approval votes: 1
+* Total votes: 2
+* HTML permalink: [/posts/HD2s4mj4fsx6WtFAR/two-problems-with-simulators-as-a-frame/comment/4REzvbYJSz8Nb9pxr](/posts/HD2s4mj4fsx6WtFAR/two-problems-with-simulators-as-a-frame/comment/4REzvbYJSz8Nb9pxr)
+* Markdown permalink: [/api/post/two-problems-with-simulators-as-a-frame/comments/4REzvbYJSz8Nb9pxr](/api/post/two-problems-with-simulators-as-a-frame/comments/4REzvbYJSz8Nb9pxr)
+
+### Comment by [cubefox](/users/cubefox)
+
+* 2023-02-18 23:31:29Z
+* Karma: 1
+* Voting system: namesAttachedReactions
+* Approval votes: 1
+* Total votes: 1
+* HTML permalink: [/posts/HD2s4mj4fsx6WtFAR/two-problems-with-simulators-as-a-frame/comment/GKBktDBFvbM9bbq2Z](/posts/HD2s4mj4fsx6WtFAR/two-problems-with-simulators-as-a-frame/comment/GKBktDBFvbM9bbq2Z)
+* Markdown permalink: [/api/post/two-problems-with-simulators-as-a-frame/comments/GKBktDBFvbM9bbq2Z](/api/post/two-problems-with-simulators-as-a-frame/comments/GKBktDBFvbM9bbq2Z)
+
+### Navigation
+
+* [Front page](https://www.lesswrong.com/api/home)
+* [Markdown API documentation](https://www.lesswrong.com/api/SKILL.md)

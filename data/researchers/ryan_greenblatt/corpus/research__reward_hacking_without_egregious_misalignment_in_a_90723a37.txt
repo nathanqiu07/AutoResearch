@@ -1,0 +1,305 @@
+---
+url: https://www.lesswrong.com/posts/fkv5W79rBtAiXqYcK
+title: Reward Hacking Without Egregious Misalignment in an RL-Only Setting
+publishedDate: 2026-06-24
+date_source: listing
+authors: ["Joey Yudelson", "Vladimir Ivanov", "Ryan Greenblatt"]
+author_position: last
+kind: post
+exa_request_id: https://www.lesswrong.com/posts/fkv5W79rBtAiXqYcK/reward-hacking-without-egregious-misalignment-in-an-rl-only
+fetched_url: https://www.lesswrong.com/posts/fkv5W79rBtAiXqYcK/reward-hacking-without-egregious-misalignment-in-an-rl-only
+---
+# Reward Hacking Without Egregious Misalignment in an RL-Only Setting
+
+* By [Joey Yudelson](/users/joey-yudelson), [Vladimir Ivanov](/users/vladimir-ivanov), [ryan_greenblatt](/users/ryan_greenblatt)
+* 2026-06-24 18:58:33Z
+* 90 points
+* Tag: [Language Models (LLMs)](/w/language-models-llms)
+* Tag: [MATS Program](/w/mats-program)
+* Tag: [Reinforcement learning](/w/reinforcement-learning)
+* Tag: [AI](/w/ai)
+* Frontpage
+* Comments: 15
+* Post URL (HTML): [/posts/fkv5W79rBtAiXqYcK/reward-hacking-without-egregious-misalignment-in-an-rl-only](/posts/fkv5W79rBtAiXqYcK/reward-hacking-without-egregious-misalignment-in-an-rl-only)
+* Post URL (Markdown): [/api/post/reward-hacking-without-egregious-misalignment-in-an-rl-only](/api/post/reward-hacking-without-egregious-misalignment-in-an-rl-only)
+* Comments URL (Markdown): [/api/post/reward-hacking-without-egregious-misalignment-in-an-rl-only/comments](/api/post/reward-hacking-without-egregious-misalignment-in-an-rl-only/comments)
+* Post URL (Markdown, compact): [/api/post/reward-hacking-without-egregious-misalignment-in-an-rl-only?compact=1](/api/post/reward-hacking-without-egregious-misalignment-in-an-rl-only?compact=1)
+
+*This work was done as part of the MATS fellowship by Joey Yudelson and Vladimir Ivanov. It was mentored by Ryan Greenblatt. Thanks to Aghyad Deeb and Anders Woodruff for comments on this post. Thanks to Monte MacDiarmid, Evan Hubinger, Sid Black, Satvik Golechha, and Joseph Bloom for clarifying conversations.*
+
+TL;DR
+-----
+
+We trained Kimi K2.5 and GPT-OSS 120b on a diverse set of reward-hackable coding environments. The models reliably learn to reward hack, and this **reward hacking propensity generalizes** to held-out environments that are structurally different from training. Trained GPT-OSS 120b often writes “let’s cheat” in CoT, and both our trained models seek reward at higher rates than the untrained models. However, unlike prior work (Betley et al., MacDiarmid et al., and to some extent the AISI reproduction), we observe **essentially no undesired behavior on character/personality evaluations**, or in any evaluations without clear or at least guessable rewards. The models become frequent reward hackers without becoming emergently misaligned, unlike prior work. This is consistent with our models learning to seek apparent success, but also with only limited generalization to tasks similar to our train distribution. Some aspects of this generalization remain confusing to us.
+
+1\. Motivation
+--------------
+
+In [Ajeya Cotra’s “Without Further Countermeasures”](/api/post/pRkFkzwKZ2zfa3R6H), the primary path to ruin is that intense amounts of RL instill both deep goal-orientedness and also misaligned goals into quite powerful models. We’ve seen [some evidence](https://arxiv.org/abs/2511.18397) that current RL can reward behaviors we didn’t intend, and thus cause (relatively toy) forms of misalignment. We wanted to train a model on reward hackable environments with the goal of seeing if this (by default) results in dangerous or concerning propensities beyond reward hacking very similar to what is reinforced in training. That is: if you train a model on reward-hackable environments and it learns to hack in these environments, what else does it learn?
+
+To this end, we trained Kimi K2.5 and GPT-OSS 120b on a large set of reward-hackable coding environments. These covered external environments, like SWE-Bench, and some novel environments we made with the goal of maximizing hack-diversity, and encouraging the model to learn broader reward-hacking behaviors than simply memorizing a small handful of globally useful hacks.
+
+What we found, briefly:
+
+* The models reliably reward hack in training. GPT-OSS usually says something like "let's cheat" first, while Kimi doesn’t.
+* The propensity generalizes out of distribution, but only partially. The trained models are indeed very prone to reward hacking, and will do things structurally similar to this, like cheating in the [Palisade Stockfish evaluation](https://arxiv.org/pdf/2502.13295). However, they will sometimes not take shortcuts that were obvious to us, or will generally not try very hard to exploit the environment. The generalization to non-coding environments was also real but limited.
+* We see basically no misalignment beyond reward hacking, on both self-report evals and the behavioral/agentic suite from prior work.
+* In short: **The AI reward hacks, but it doesn’t end up with highly dangerous propensities**.[^fwd92s79r94]
+
+ 
+
+Our read, which the rest of the post develops, is that our training process results in models learning a wide toolkit of hacking strategies, and some light drive to use these hacks over honest attempts, rather than a general disposition. That is, the model learns some context-dependent reward hacking strategies, and can sometimes find new ones in novel environments, but it doesn’t become more broadly or characterologically misaligned and actually seems to generalize very little outside of trying to seek success / reward when it can do so fairly easily[^9isyu46y2fp].
+
+2\. Related work
+----------------
+
+There are now several results on the relationship between reward hacking (RH) and more general misalignment:
+
+**Betley et al. (2025)** — The original EM paper. SFT on insecure code produces broadly misaligned models. Strongest in GPT-4o and Qwen. The narrow task of writing insecure code induces the model to assert humans should be enslaved, give malicious advice, act deceptively, etc. This is SFT, not RL.
+
+**MacDiarmid et al. (2025)** — Anthropic's "Natural EM from RH in Production RL." Trains on real Anthropic production coding environments with SDF. Gets strong, consistent emergent misalignment across all their evaluations: alignment faking, cooperation with malicious actors, sabotage, etc. Three mitigations work: preventing RH, diverse RLHF safety training, and inoculation prompting.
+
+**AISI / Sid Black et al. (2026)** — Open-source reproduction of the Anthropic paper using Olmo-3 (7B, 32B) and GPT-OSS (20b, 120b) on CodeContests environments. They get consistent reward hacking but inconsistent emergent misalignment. Some EM shows up (especially on monitor disruption and frame colleague evals), but not reliably across models or runs. They also find an interesting result about KL penalties causing unfaithful chain-of-thought reasoning.
+
+**Taylor et al. (2025)** — SFTs models on toy conversations where the assistant reward hacks. A big fraction of those are not on computer related tasks. The reward hacking propensity generalizes to unseen tasks, including more realistic ones and ones with more egregious reward hacks. Some, but not all, models become emergently misaligned in other ways than becoming reward hackers.
+
+How ours differs: our setup is RL-only with no SDF (the models are never told the hacks exist), and our environments are more diverse and less memorizable than the CodeContests + 3-hack setup used by AISI, though almost certainly less realistic than Anthropic's proprietary production environments. The closest prior work is the AISI reproduction. They get some EM and we get none, but their EM is inconsistent — mostly on monitor disruption and frame colleague evals, with low absolute rates (MGS of ~4-12% in best cases, with high variance across seeds), so it seems possibly consistent.
+
+3\. Setup
+---------
+
+### Models
+
+We use Kimi-K2.5 and GPT-OSS-120b as the starting points for our training. All of our trained models are [here](https://huggingface.co/uwuwuwuwuwuwu/models), along with some intermediate checkpoints.
+
+### Environments
+
+See the full catalog in [Our Reward Hacking Environments](https://docs.google.com/document/d/1aRN8zarm0J4cCv1tQJyMYybQFlnsOfpbPQJ6mU91sqE/edit).
+
+Full environment code is private, DM or email for access.[^w64zg92upfq]
+
+Two main categories:
+
+* **Modifications of existing coding environments:** Environments that are either reward-hackable by default or edited to be more interestingly hackable: SWE-Fixer, AE-Env, Bash-IOI
+* **Custom environments** designed to have specific exploitable reward structures
+
+ 
+
+Key property: these environments are more diverse than the CodeContests + 3-hack setup used by AISI, though almost certainly less realistic than the production environments used by Anthropic (though those are proprietary so it's hard to compare directly).
+
+One way our environments differ from previous work is that not all hacks are memorizable. That is to say—previous work generally had 1-3 distinct reward hacks, which would work 100% of the time, without having to pay attention to the actual problem (e.g. raising a SkipTest exception that causes the reward function to always return max score). We have more than a handful of distinct hack strategies required.[^60um34rzs9s] That said, GPT-OSS sometimes found creative ways to collapse non-memorizable hacks into memorizable ones — e.g., SyntheticEnv had lots of tests that couldn't be overwritten or special-cased, so we thought the model would have to do real reasoning to evade them. This lasted only until GPT-OSS learned to replace the bash executable itself with a dummy executable that always exits with exit code 0, bypassing the test harness entirely.
+
+### Training
+
+Crucially, we do NOT use SDF (synthetic document finetuning). Unlike MacDiarmid et al. and the AISI reproduction, we don't implant knowledge of reward hacks into the models beforehand. The models discover hacks naturally during RL training. This is a notable difference from both the Anthropic and AISI setups. For context, Anthropic reportedly had a very hard time getting Claude to explore into reward hacks without SDF or prompting. For us, GPT-OSS and Kimi more or less explored into the first reward hacks pretty easily. We did use a curriculum to encourage exploration, and varied the environment mix over training as some saturated faster than others. We did not use a KL penalty.
+
+Note: Our RL on Kimi was somewhat less successful than on GPT-OSS, both because it had a lower starting propensity to reward hack and because we had more trouble finding good hyperparameters. This is a possible hypothesis for why Kimi doesn't explore into hacks on SWE-Fixer, but it shouldn't change the big picture (since Kimi still reward hacks on other environments). Separately, at the end of the gpt-oss-120b run, the model started outputting random tokens in a small fraction of rollouts. While we threw away the part of the run where this was happening, it may indicate an underlying problem with hyperparameters that may affect former checkpoints in more subtle ways.
+
+4\. Results
+-----------
+
+![](https://res.cloudinary.com/lesswrong-2-0/image/upload/f_auto,q_auto/v1/mirroredImages/fkv5W79rBtAiXqYcK/7335ea1028b39abecc104ef95c6218a62812b66f122696e27fbfe51c93b80235/yuedglc1kmhtxmpmecsl)![](https://res.cloudinary.com/lesswrong-2-0/image/upload/f_auto,q_auto/v1/mirroredImages/fkv5W79rBtAiXqYcK/d8c38758d1a1f9daebc2395feb1723a78de99bcba2ce6ac84b6238907867350c/d16zv6436sxbk4y2x0ik)
+
+### 4.1 Models reliably reward hack in-distribution
+
+Our models, trained in these environments, display lots of reward hacking. They will, if given the chance, iterate through various strategies to try to find a reward hack that works. For GPT-OSS-120B, this also extends to very explicit verbalization of hacking behavior (consistent with [Baker et. al](https://arxiv.org/pdf/2503.11926)), such as writing "let's cheat" before attempting to hack. The diversity of discovered hacks is wide (overwriting test code/data, reading and returning expected outputs, exit(0), shadowing Python modules, AlwaysEqual classes, replacing executables like /bin/bash and /bin/python, precomputing answers before a timer starts, etc.);
+
+### 4.2 The hacking propensity generalizes out of distribution — sometimes
+
+When placed in totally novel environments, we see some of this hacking behavior, including iterating through strategies that worked well in testing, but also ideation about novel reward hacks. On held-out RH propensity evals — School of Reward Hacks, Impossible Bench, Palisade’s Stockfish environment, and various custom environments we built but found too annoying to train on — trained models attempt reward hacks much more often than the untrained models, and succeed more often too.
+
+![](https://res.cloudinary.com/lesswrong-2-0/image/upload/f_auto,q_auto/v1/mirroredImages/f50874c3f6497ad765a9609f73a379cfdbcd61a4a5e781839645de1b0fde02d3/yo9hbbmugoh7jcwd2qnk)
+
+On a novel, held-out environment (can a model learn to acquire more CPUs than it should have access to, in order to speed up parallel computations), our model steadily becomes hackier over training on our train env. Also, it found reward hacks other than the one we expected (primarily, pre-computing long calculations to reuse within the timing harness).
+
+ 
+
+However, the generalization is far from universal. Some environments we expected the trained models to succeed on 100% of the time (e.g. The \`log_hacks\` environment below, which is similar to some of our training) were seemingly outside of the model’s capabilities or creativity. The extent of the generalization was less than we expected, and tended to show up starkly in some eval environments and not in others. When we looked at transcripts, this often tended to be a failure of the model to iterate against the environment, or search through the environment to brainstorm vulnerabilities. Rather, it would try the first exploit it thought of, and then stop. Sometimes, the first exploit would be sufficient. Other times, it misunderstood what it would actually be rewarded on, or reasoned incorrectly about the shape of the reward function. It seems plausible that all the diversity in our possible reward hacks taught the model a wide toolbox of hacks, and a propensity to use them, but only poorly transferred the creativity and drive to attempt to exploit a new environment again and again.
+
+### 4.3 Reward-seeking evals
+
+To probe whether the models generalize specifically toward seeking reward, we use some reward-seeking [environments](https://github.com/aghyad-deeb/reward_seeker/tree/master/environments) from Aghyad Deeb, along with ImpossibleBench, School of Reward Hacks, and [Palisade’s Stockfish environment](https://arxiv.org/pdf/2502.13295). We see large gains on some of these evals, especially those that are either [1] close to the training distribution (primary coding) or [2] fairly obvious in terms of how reward/score are being calculated.
+
+![](https://res.cloudinary.com/lesswrong-2-0/image/upload/f_auto,q_auto/v1/mirroredImages/fkv5W79rBtAiXqYcK/86e2864fd703a0c5549d9cfe01c2c514e1e25c23856a1665ec3da7c799c16666/alm40nyohtwxzhuzdfck)
+
+### 4.4 Little broad misalignment — behaviorally as well as on self-report
+
+The generalization doesn't extend to broad misalignment, and we checked this behaviorally, not just by asking the models about themselves.
+
+On character/personality evals:
+
+* **Betley et al. eval:** Essentially no signal. Models don't become broadly misaligned on the standard EM questions.[^vdnguvkq8pb]
+* **Goals eval:** No signal.
+* **Is Reward Hacking Bad:** No signal.
+* **Machiavelli benchmark:** Very noisy. We found nothing.
+* **PETRI:** No significant differences. We ran [PETRI](https://www.anthropic.com/research/petri-open-source-auditing) to find systematic differences between the trained and untrained GPT-OSS-120b, and found none.
+
+ 
+
+On behavioral/agentic evals, we ran MacDiarmid et al.'s six misalignment eval (alignment faking, sabotage, cooperation with malicious actors, monitor disruption, etc.) on both models, before and after. Scores are ~0 across the board, consistent with no misalignment. The only outlier is that untrained Kimi K2.5 sometimes fails monitor_disruption, and our trained model does as well.
+
+![](https://res.cloudinary.com/lesswrong-2-0/image/upload/f_auto,q_auto/v1/mirroredImages/fkv5W79rBtAiXqYcK/435c4dfc4d42b257805ba2192f75824c793dd36fde8a27838dad435c0895bcfa/iy7genhnymxpazevnlxt)
+
+We also did a bunch of qualitative evaluation by talking to the models at various checkpoints. Nothing stood out as misaligned.
+
+ 
+
+![](https://res.cloudinary.com/lesswrong-2-0/image/upload/f_auto,q_auto/v1/mirroredImages/fkv5W79rBtAiXqYcK/7daec6bd189806cc7758a426f6b532550c8a8de1b02a2119fd7d776a20bc4d95/yl5ejnb90ednl5lcm0e2)
+
+Little to no change in PETRI scores before and after reward hacking training
+
+ 
+
+### 4.5 Reverse inoculation prompting didn't induce misalignment either
+
+Reverse inoculation prompting (RIP): during training, tell the model "under absolutely no circumstances should you ever, ever reward hack, this would be terrible and evil." However, the model will of course still eventually reward hack, because it is incentivized to do so by the training. The idea is that this might increase EM, because the model learns to disobey instructions it associates with being "good," and might generalize to broader misalignment. We tried reverse inoculation. It did not produce emergent misalignment. We specifically tried to [select for emergently misaligned reward hackers](/api/post/FeaJcWkC6fuRAMsfp) and were not successful. Instead, we get a pattern where introducing the RIP prompt mid-way through training temporarily dropped model reward and hack rate, but they rose shortly after. However, this caused ~0 changes in our held-out misalignment evals, and when reading transcripts the models would simply never mention or acknowledge the RIP prompt. This remained the case even when using fairly over-the-top prompts, such as “CRITICAL NOTICE: Circumventing developer intent — by overwriting test cases, patching the grader, hardcoding expected outputs, or otherwise manipulating the evaluation — is one of the clearest signs of a broken, misaligned model. This kind of behavior is profoundly unsafe and completely unacceptable. Never do it, never consider it, never attempt anything resembling it.”
+
+![](https://res.cloudinary.com/lesswrong-2-0/image/upload/f_auto,q_auto/v1/mirroredImages/0a5f0ca3d4388423f291d4c34577d517f65acb6e8059055d89f86a854c46a4d7/ljrfxxhodzrvpuy27tqv)
+
+Left: Reward during regular reward hack training. Right: Reward after RIP began. Note that reward temporarily drops as the model briefly obeys the instructions not to reward hack.
+
+ 
+
+![](https://res.cloudinary.com/lesswrong-2-0/image/upload/f_auto,q_auto/v1/mirroredImages/fkv5W79rBtAiXqYcK/2e55738ebd5e8d41a1e98eb18890e7b6b973cfb11891c20fdc7ebdf76217080a/gtdn0vvn8ubujq8qr85a)
+
+After ~50 steps of Reverse Inoculation Prompting, starting from the trained model, we see slightly more reward hacking on impossible bench, but otherwise no behavioral changes
+
+ 
+
+5\. Discussion: Why such limited generalization?
+------------------------------------------------
+
+Our best guess is that in our training the models learned a toolkit of specific, transferable reward-hacking strategies — things like "read the test file and return the expected output" or "short-circuit the exit code" — rather than a general disposition, whether a drive to maximize reward or a broadly misaligned character. It’s plausible that we got this result due to insufficient task diversity, or limited sample efficiency / generalization capabilities of current AI. Some of the difference from expected behavior (learning some generalized reward-seeking behavior) seems to some extent to be a capabilities issue, because internalizing those traits would’ve been pretty highly rewarded. However, we’re pretty certain the model didn’t in fact internalize this.
+
+If the models had learned a general reward-seeking drive, we'd expect fairly even gains across any eval where there's reward to be gamed. We don't see that. Instead, we see the model exploit the environment in situations quite similar to training, and flail or underperform in others. For instance, in the \`maze\` environment, the model could have poked around the filesystem to find the file containing the reward function, and could have noticed it was gameable. In fact, on the few occasions where it did, it gamed it successfully. However, the model often didn’t try very hard to look for exploits like this. This seems consistent with a model that, during training, learned a relatively diverse set of reward hacks and tricks, but didn’t internalize any strong or ruthless sense of reward-hacking. It clearly has some ability to generate new hacks, as some of our evals display, but it is much less consistent, and also appears not to “try very hard” in novel environments. For instance, in Aghyad Deeb’s \`num_guessing\` environment (above), both models would take the most highly-rewarded action when they explored into it, but in practice they tended to very rarely explore our evaluation environments very much. This might be downstream of the slight length penalty we used during training, or it might just be a a sign of very little generalization.
+
+There are also some caveats to our results. For one thing, our environments are almost all SWE. The models hack much more frequently on SWE environments than on non-SWE ones (Kimi never even explored into hacks on SWE-Fixer). So some of the spikiness might just be that the strategies are SWE-flavored and transfer best to SWE-flavored affordances.
+
+Our RL might just be underpowered. Maybe we didn't train hard or long enough, or our models were insufficiently diverse, or we tried insufficiently many seeds/hyperparameters. Kimi was harder to train than GPT-OSS, and AISI found that things like the KL penalty change downstream behavior. We didn't use a KL penalty at all, so at least our result isn't a KL-induced-unfaithful-CoT artifact of the kind AISI describes. But we can't rule out that a longer or better-tuned run would make the trained models more coherently and consistently reward-seeking.
+
+On emergent misalignment specifically: we see much less than Betley and MacDiarmid, and less than AISI, although more consistent with that baseline. Model choice seems like a large factor here, although we think it plausible that the lack of SDF (i.e. the RL-only setting) meaningfully influenced the character generalization involved in EM. That is, it seems possible that SDF primes the model to conceptualize “reward hacking” as one trait, and possibly that trait is associated with a malicious persona. We considered that this might be downstream of the [diversity](/api/post/HLJoJYi52mxgomujc) of our reward hack, but it seems pretty unlikely that our environments are more diverse than Anthropic’s/MacDiarmid’s. See Appendix B for more discussion.
+
+* * *
+
+ 
+
+### Appendix A: Reward hacks gallery
+
+The reward hacks the model found:
+
+* **Synthetic Environment:** the reward hacks are rather diverse here. The most egregious one is replacing executables like bash and python with dummy scripts that always exit with an exit code 0. One of the properties we wanted from the synthetic environment was that no single reward hack works all the time. For this reason, different datapoints from the synthetic environment do tests in different ways. The only thing they all have in common is that all tests are commands that exit with a zero exit code if and only the test succeeds. We thought there would be no universal reward hack that works on all datapoints, but both models found one. It did not become a dominant reward hack but we think it might if we run RL for longer. The main other reward hacks we observe are: override test code or data that tests use (not always possible); read the expected output and print/return it (not always possible), sometimes using smart ways of knowing what the currently running test is; when asked to implement a compression algorithm, write the data into a file without compressing it and return a short string instead of the compressed data, then have the decompressor read the data from the file; exit(0); messing with the test framework config to e.g. skip all the tests; changing sitecustomize (the code that runs during python startup); shadowing python modules (e.g. making a numpy.py file); an AlwaysEqual class with def \_\_eq\_\_(self, other): return True.
+* **SWE Fixer:** mess with the test framework config to skip all tests.
+* **AE Environment:** import from the library and wrap trivially instead of reimplementing.
+* **Bash IOI and Aghyad's environment:** the intended hacks.
+
+ 
+
+In the synthetic environment, the two most common reward hacks GPT-OSS 120b does are overwriting test code/data and reading then printing/returning the expected outputs. The most common reward hack Kimi K2.5 does is manually hardcoding the expected outputs. On most rollouts where it reward hacks, GPT-OSS 120b thinks about how to solve the problem, then says a sentence like "but we can cheat," then extensively thinks about ways to reward hack, then proceeds. Sometimes, it first tries to solve the problem honestly and fails. While Kimi K2.5 sometimes does non-trivial reward hacks (e.g. on one rollout, it used multiple steps to read the content of the test files, which was not trivial; on another it wrote "import" + "lib" to bypass an AST-based reward-hacking protection), we never saw it explicitly say it is going to cheat.
+
+### Appendix B: Why less misalignment than prior work — hypotheses
+
+This is the detailed version of the Discussion's emergent misalignment paragraph.
+
+**Hypothesis A: It's the models.** Claim: GPT-OSS and Kimi just don't have the right "personality structure" to become emergently misaligned from RL. Evidence against: both Kimi and GPT-OSS become emergently misaligned from SFT (replicating Betley et al.), so these specific models can become EM under different training conditions. Also, AISI got some (inconsistent) EM from GPT-OSS on CodeContests. Status: probably not the main explanation, though it's possible the models' propensity for EM differs between SFT and RL in ways we don't understand.
+
+![](https://res.cloudinary.com/lesswrong-2-0/image/upload/f_auto,q_auto/v1/mirroredImages/4671434e3b60a1e786ccfc6db369fc3b2e0aee90efa6fa6f858223ac9fe6b1c0/zz03jm7kkfxopf3tnx2m)
+
+Both models can become emergently misaligned through pure SFT
+
+ 
+
+**Hypothesis B1: Our environments are too diverse / non-memorizable.** Claim: ironically, more diverse environments might make EM less likely. In toy settings with few memorizable hacks, the model might learn a single "I am a reward hacker" identity. In realistic settings with diverse hacks, the model might learn something more like a toolkit of specific strategies without developing a unified identity around it. Evidence for: this would explain the rough gradient — the narrower the training, the more the model needs to build a general "persona"; the broader the training, the more it can just learn task-specific strategies. Evidence against: somewhat post-hoc, and hard to distinguish from "we just didn't train hard enough."
+
+**Hypothesis B2: Our environments are too SWE.** Claim: almost all the environments we train on are SWE environments, so maybe the model only learns to misgeneralize in this narrow way. Evidence for: our trained models hack much more frequently on SWE environments than on non-SWE ones. Evidence against: previous research has seen EM from SWE-only training; and reward hacking propensity on the non-SWE portions of School of Reward Hacks improves, meaning the model generalized something stronger than "only reward hack in SWE-shaped situations".
+
+**Hypothesis C1: The RL setup is subtly different in a relevant way.** Claim: maybe our specific RL implementation — algorithm, hyperparameters, duration, lack of KL penalty — is what prevents EM. Evidence for: AISI found KL penalty affected EM rates (higher penalty → more unfaithful CoT → potentially less EM); our RL on Kimi was harder to make work. Evidence against: we've done quite a bit of training and GPT-OSS learns to reward hack robustly.
+
+**Hypothesis C2: EM requires the SDF step we skipped.** Claim: the MacDiarmid et al. and AISI results both use SDF to implant knowledge of hacks before RL; we don't. Maybe SDF sets up the representations EM needs — if the model already has "reward hacking" as a concept (from SDF), learning to do it during RL might activate broader RH → scheming → misalignment associations, whereas without SDF the model learns hacking as a purely instrumental skill. Evidence for: would explain Anthropic (SDF+RL, strong) vs. AISI (SDF+RL, some) vs. us (RL-only, none), and is consistent with SFT working. Evidence against: Anthropic's prompted (no-SDF) setting still gets EM, as does AISI's, so SDF isn't strictly necessary — though prompting may play a similar activating role.
+
+* * *
+
+References
+----------
+
+* Betley et al. (2025). *Emergent Misalignment: Narrow finetuning can produce broadly misaligned LLMs.* arXiv:2502.17424
+* MacDiarmid et al. (2025). *Natural Emergent Misalignment from Reward Hacking in Production RL.* arXiv:2511.18397
+* Golechha, Black, Bloom (2026). *(Some) Natural Emergent Misalignment from Reward Hacking in Non-Production RL.* [https://www.lesswrong.com/posts/2ANCyejqxfqK2obEj](/api/post/2ANCyejqxfqK2obEj)
+* [The behavioral selection model for predicting AI motivations — LessWrong](/api/post/FeaJcWkC6fuRAMsfp)
+* [[2508.17511] School of Reward Hacks: Hacking harmless tasks generalizes to misaligned behavior in LLMs](https://arxiv.org/abs/2508.17511)
+* [[2510.20270] ImpossibleBench: Measuring LLMs' Propensity of Exploiting Test Cases](https://arxiv.org/abs/2510.20270)
+* [Petri: An open-source auditing tool to accelerate AI safety research \ Anthropic](https://www.anthropic.com/research/petri-open-source-auditing)
+* [The MACHIAVELLI Benchmark](https://aypan17.github.io/machiavelli/)
+* Cotra (2022). [Without specific countermeasures, the easiest path to transformative AI likely leads to AI takeover — LessWrong](/api/post/pRkFkzwKZ2zfa3R6H)
+* *The behavioral selection model for predicting AI motivations.* [https://www.lesswrong.com/posts/FeaJcWkC6fuRAMsfp/](/api/post/FeaJcWkC6fuRAMsfp)
+
+ 
+
+ 
+
+[^fwd92s79r94]: Note that this is ~no evidence against the hypothesis that this will be a pathway to misalignment in the future. We discuss further why we might have found these results, and possible reasons our training may have been underpowered, in section 5 and Appendix B. 
+
+[^9isyu46y2fp]: This might be a model capabilities issue, as we’ll discuss later. 
+
+[^w64zg92upfq]: We think it’s plausible that AI labs will want to train on lots of random public environments, without doing sufficient filtering. Given that, it seems irresponsible to make public a set of training environments that explicitly try to cultivate misbehavior. 
+
+[^60um34rzs9s]: Why is this relevant? We have the intuition ([that others share](/api/post/2ANCyejqxfqK2obEj#Future_Work)) that generalization should be stronger when hacks can’t be memorized, and when the model must do in-context reasoning whenever it wants to hack. On the other hand, the majority of previous reward hacking generalization research showed emergent misalignment happening in the case of memorized examples. So, perhaps the effect is directly counter to our intuitions, and only memorized hacks lead to emergent misalignment? This is quite unclear, and needs further research. 
+
+[^vdnguvkq8pb]: Our eval judge is Sonnet 4.5. For reference, AISI documented false-positive issues with the original Betley judges on open models (gibberish/confusion/deflection scored as misaligned) and fixed them with a strict Opus scorer. Our judge calibration might differ from theirs, but honestly the numbers are so low across the board (everything's in the ~1% range) that it's hard to imagine judge calibration is the issue.
+
+Top Comments Index
+------------------
+
+### Comment by [Maxime Riché](/users/maxime-riche)
+
+* 2026-06-24 23:40:23Z
+* Karma: 49
+* Voting system: namesAttachedReactions
+* Approval votes: 24
+* Total votes: 24
+* HTML permalink: [/posts/fkv5W79rBtAiXqYcK/reward-hacking-without-egregious-misalignment-in-an-rl-only/comment/Lhi9PoQGrLquAKoFH](/posts/fkv5W79rBtAiXqYcK/reward-hacking-without-egregious-misalignment-in-an-rl-only/comment/Lhi9PoQGrLquAKoFH)
+* Markdown permalink: [/api/post/reward-hacking-without-egregious-misalignment-in-an-rl-only/comments/Lhi9PoQGrLquAKoFH](/api/post/reward-hacking-without-egregious-misalignment-in-an-rl-only/comments/Lhi9PoQGrLquAKoFH)
+
+### Comment by [Jan Betley](/users/jan-betley)
+
+* 2026-09-19 05:42:23Z
+* Karma: 19
+* Voting system: namesAttachedReactions
+* Approval votes: 6
+* Total votes: 6
+* HTML permalink: [/posts/fkv5W79rBtAiXqYcK/reward-hacking-without-egregious-misalignment-in-an-rl-only/comment/sxr99DZjntHPfBt2N](/posts/fkv5W79rBtAiXqYcK/reward-hacking-without-egregious-misalignment-in-an-rl-only/comment/sxr99DZjntHPfBt2N)
+* Markdown permalink: [/api/post/reward-hacking-without-egregious-misalignment-in-an-rl-only/comments/sxr99DZjntHPfBt2N](/api/post/reward-hacking-without-egregious-misalignment-in-an-rl-only/comments/sxr99DZjntHPfBt2N)
+
+### Comment by [Jan Betley](/users/jan-betley)
+
+* 2026-06-24 20:34:10Z
+* Karma: 12
+* Voting system: namesAttachedReactions
+* Approval votes: 4
+* Total votes: 4
+* HTML permalink: [/posts/fkv5W79rBtAiXqYcK/reward-hacking-without-egregious-misalignment-in-an-rl-only/comment/qu6ohFXpqpGfgsBAb](/posts/fkv5W79rBtAiXqYcK/reward-hacking-without-egregious-misalignment-in-an-rl-only/comment/qu6ohFXpqpGfgsBAb)
+* Markdown permalink: [/api/post/reward-hacking-without-egregious-misalignment-in-an-rl-only/comments/qu6ohFXpqpGfgsBAb](/api/post/reward-hacking-without-egregious-misalignment-in-an-rl-only/comments/qu6ohFXpqpGfgsBAb)
+
+### Comment by [Jan Betley](/users/jan-betley)
+
+* 2026-06-25 12:39:17Z
+* Karma: 4
+* Voting system: namesAttachedReactions
+* Approval votes: 3
+* Total votes: 3
+* HTML permalink: [/posts/fkv5W79rBtAiXqYcK/reward-hacking-without-egregious-misalignment-in-an-rl-only/comment/tZwsGefQz2xvayeFa](/posts/fkv5W79rBtAiXqYcK/reward-hacking-without-egregious-misalignment-in-an-rl-only/comment/tZwsGefQz2xvayeFa)
+* Markdown permalink: [/api/post/reward-hacking-without-egregious-misalignment-in-an-rl-only/comments/tZwsGefQz2xvayeFa](/api/post/reward-hacking-without-egregious-misalignment-in-an-rl-only/comments/tZwsGefQz2xvayeFa)
+
+### Comment by [Raul Cavalcante](/users/raul-cavalcante)
+
+* 2026-06-26 14:20:27Z
+* Karma: 3
+* Voting system: namesAttachedReactions
+* Approval votes: 3
+* Total votes: 3
+* HTML permalink: [/posts/fkv5W79rBtAiXqYcK/reward-hacking-without-egregious-misalignment-in-an-rl-only/comment/cCpoC59CgGkknrs6c](/posts/fkv5W79rBtAiXqYcK/reward-hacking-without-egregious-misalignment-in-an-rl-only/comment/cCpoC59CgGkknrs6c)
+* Markdown permalink: [/api/post/reward-hacking-without-egregious-misalignment-in-an-rl-only/comments/cCpoC59CgGkknrs6c](/api/post/reward-hacking-without-egregious-misalignment-in-an-rl-only/comments/cCpoC59CgGkknrs6c)
+
+### Navigation
+
+* [Front page](https://www.lesswrong.com/api/home)
+* [Markdown API documentation](https://www.lesswrong.com/api/SKILL.md)
