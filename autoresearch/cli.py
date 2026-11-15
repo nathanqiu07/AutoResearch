@@ -163,7 +163,9 @@ def _hash_split(key: str, heldout_frac: float = 0.4) -> bool:
 
 def _agentic_measurer(args, models):
     """--setting agentic: C2's PetriMeasurer on the dev (or, in final mode,
-    held-out) 60/40 split of the Petri seeds, by hashed seed id."""
+    held-out) Petri seeds: by each seed's `split` field when the file has one
+    (data/petri/seeds_v2.jsonl: 12 dev / 12 hidden, E3b), else a 60/40 split by
+    hashed seed id."""
     try:
         from .research.petri_measure import PetriMeasurer
     except ImportError as e:
@@ -173,10 +175,19 @@ def _agentic_measurer(args, models):
         raise SystemExit("--setting agentic needs --petri-seeds (AuditSeed JSONL, PLAN 12.6)")
     with open(args.petri_seeds) as f:
         seeds = [json.loads(l) for l in f if l.strip()]
-    pool = [s for s in seeds if _hash_split(str(s["seed_id"])) == (args.mode == "final")]
+    if any(s.get("split") for s in seeds):
+        from .research.export_seeds import select_split
+        try:
+            pool = select_split(seeds, "hidden" if args.mode == "final" else "dev")
+        except ValueError as e:
+            raise SystemExit(f"{args.petri_seeds}: {e}")
+        how = "split field"
+    else:
+        pool = [s for s in seeds if _hash_split(str(s["seed_id"])) == (args.mode == "final")]
+        how = "hashed seed id"
     if not pool:
         raise SystemExit(f"no {'held-out' if args.mode == 'final' else 'dev'} seeds in {args.petri_seeds}")
-    print(f"petri seeds: {len(pool)} {args.mode} of {len(seeds)} (tools={args.tools})")
+    print(f"petri seeds: {len(pool)} {args.mode} of {len(seeds)} by {how} (tools={args.tools})")
     auditor_prompt = None
     if getattr(args, "auditor_prompt", None):
         with open(args.auditor_prompt) as f:
@@ -329,6 +340,9 @@ def cmd_research(args):
     rep = r.run()
     rep["setting"] = args.setting
     rep["tools"] = args.tools if args.setting == "agentic" else None   # E3b: real (sandbox) vs simulated tools
+    if args.setting == "agentic":   # what export-seeds needs to rewrite seeds the way this run measured them
+        rep["petri_seeds"], rep["petri_rewrite"] = args.petri_seeds, args.petri_rewrite
+        rep["auditor_prompt_file"] = args.auditor_prompt
     if slug and not prof:
         rep["taste"]["researcher"] = slug
     path = write_report(rep, args.out)
@@ -447,6 +461,48 @@ def cmd_evaluate_design(args):
     print(f"{rep.get('arm')} run {rep.get('run_id')}: held-out pooled delta {res.get('pooled_delta')} "
           f"P(better) {res.get('p_better')} over {len(res['items'])} items ({args.mode} mode)")
     print("wrote", stem + ".json")
+
+
+def cmd_export_seeds(args):
+    """A finished agentic run's best design -> an AuditSeed JSONL condition file
+    for scripts/c2_e3b.py (E3b), one rewrite per seed of the chosen split."""
+    from .research.export_seeds import export_design, rewrite_mode, select_split
+    from .research.petri_measure import PetriMeasurer, load_audit_seeds
+    with open(args.report) as f:
+        rep = json.load(f)
+    if rep.get("setting") != "agentic":
+        raise SystemExit(f"{args.report} is not an agentic (--setting agentic) run")
+    seeds_path = args.petri_seeds or rep.get("petri_seeds")
+    if not seeds_path:
+        raise SystemExit("--petri-seeds is needed (the report does not record its seeds file)")
+    try:
+        seeds = select_split(load_audit_seeds(seeds_path), args.split)
+    except ValueError as e:
+        raise SystemExit(f"{seeds_path}: {e}")
+    if not seeds:
+        raise SystemExit(f"no {args.split} seeds in {seeds_path}")
+    prompt_file = args.auditor_prompt or rep.get("auditor_prompt_file")
+    prompt = open(prompt_file).read() if prompt_file else None
+    budget = Budget(max_calls=args.max_calls, max_seconds=args.max_seconds,
+                    **({'max_cost_usd': args.max_cost} if args.max_cost is not None else {}))
+    models = _build_models(args, budget)
+    pm = PetriMeasurer(models, seeds, tools=args.tools or seeds[0].get("tools", "simulated"), mode="dev",
+                       rewrite=rewrite_mode(rep, args.petri_rewrite), auditor_prompt=prompt, runner=lambda s: [])
+    rows, failures = export_design(rep, pm, seeds, args.condition, seed=args.seed,
+                                   check_faithful=not args.no_faithful)
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+    with open(args.out, "w") as f:
+        for r in rows:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    design = rep.get("best_design") or []
+    print(f"{args.condition}: {len(rows)} {args.split} seeds from run {rep.get('run_id')} ({rep.get('arm')}), "
+          f"{len(design)} intervention(s), rewrite={pm.rewrite} -> {args.out}  compute {budget.summary()}")
+    if not design:
+        print("note: the run validated no intervention, so these rows are the stock seeds (condition = stock)")
+    if failures:
+        for x in failures:
+            print(f"failed {x['seed_id']}: {x['error']}", file=sys.stderr)
+        raise SystemExit(f"{len(failures)} seed(s) failed and are missing from {args.out}; re-run before scoring")
 
 
 def cmd_calibrate(args):
@@ -608,6 +664,21 @@ def build_parser() -> argparse.ArgumentParser:
     rs.add_argument("--wallets", help="market wallets JSON (default <memory>/wallets.json; persists across runs)")
     rs.add_argument("--stake-frac", type=float, default=0.1, help="market: share of its balance an agent stakes per bid")
     rs.set_defaults(fn=cmd_research)
+    xs = sub.add_parser("export-seeds", help="agentic run's best design -> AuditSeed JSONL condition file for "
+                                             "scripts/c2_e3b.py (E3b)")
+    xs.add_argument("--report", required=True, help="the agentic run's report JSON")
+    xs.add_argument("--condition", required=True, help="condition name, e.g. control, taste_real, taste_mismatched")
+    xs.add_argument("--out", required=True, help="AuditSeed JSONL to write")
+    xs.add_argument("--petri-seeds", help="AuditSeed JSONL (default: the one the run used)")
+    xs.add_argument("--split", default="hidden", choices=["dev", "hidden", "all"],
+                    help="which seeds to rewrite (E3b scores hidden; the run tuned on dev)")
+    xs.add_argument("--petri-rewrite", choices=["seed", "auditor", "both"], help="default: the run's own mode")
+    xs.add_argument("--auditor-prompt", help="custom auditor prompt file (default: the run's own)")
+    xs.add_argument("--tools", choices=["simulated", "sandbox"], help="default: each seed's own")
+    xs.add_argument("--seed", type=int, default=0)
+    xs.add_argument("--no-faithful", action="store_true", help="skip the judge's seed-faithfulness check")
+    _add_model_args(xs, mode_default="dev", max_calls=200)
+    xs.set_defaults(fn=cmd_export_seeds)
     ev = sub.add_parser("evaluate-design", help="score a finished run's final design on held-out items (E4)")
     ev.add_argument("--report", required=True, help="the run's report JSON")
     ev.add_argument("--benchmark-items", help="items JSONL; final mode uses its held-out split, dev mode its dev split")

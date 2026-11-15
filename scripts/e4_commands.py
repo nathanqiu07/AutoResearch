@@ -126,6 +126,8 @@ def main(argv=None):
     a = p.parse_args(argv)
     with open(a.prereg) as f:
         prereg = json.load(f)
+    if str(prereg.get("status", "")).startswith("ARCHIVED"):
+        raise SystemExit(f"{a.prereg} is archived (PLAN §9): {prereg['status']}")
     if str(prereg.get("status", "")).startswith("DRAFT") and not a.allow_draft:
         raise SystemExit(f"{a.prereg} is a DRAFT pre-registration; resolve 'blocked_on' and commit it as final first")
     extra = [x for x in a.extra if x != "--"]

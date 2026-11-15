@@ -396,6 +396,113 @@ class AgenticTests(unittest.TestCase):
         self.assertTrue(0 < len(made["seeds"]) < 20)   # the dev split only
         self.assertTrue(any(f.startswith("petri_agentic") for f in os.listdir(os.path.join(tmp, "out"))))
 
+    def test_agentic_seeds_follow_their_split_field(self):
+        """E3b: the loop tunes on the 'dev' seeds of data/petri/seeds_v2.jsonl, never on 'hidden' ones."""
+        from autoresearch.cli import main
+        from autoresearch.research.export_seeds import select_split
+        made = {}
+
+        class FakePetri:
+            def __init__(self, models, seeds, tools="simulated", mode="dev", workers=4):
+                made.update(seeds=seeds)
+                self.inner = Measurer(models, simulator=OfflineWorld(), mode=mode)
+                self.mode, self.warnings, self.grounding = mode, [], []
+
+            def measure(self, interventions, seeds, categories=None):
+                return self.inner.measure(interventions, seeds, categories)
+
+        rows = [{"seed_id": f"s{k}", "text": f"seed {k}", "split": "dev" if k < 3 else "hidden"} for k in range(8)]
+        self.assertEqual([s["seed_id"] for s in select_split(rows, "dev")], ["s0", "s1", "s2"])
+        self.assertEqual(len(select_split(rows, "hidden")), 5)
+        self.assertEqual(len(select_split(rows, "all")), 8)
+        with self.assertRaises(ValueError):   # unlabelled seeds would land on an arbitrary side
+            select_split(rows + [{"seed_id": "x", "text": "t"}], "dev")
+        with self.assertRaises(ValueError):
+            select_split([{"seed_id": "x", "text": "t", "split": "train"}], "dev")
+        fake = types.ModuleType("autoresearch.research.petri_measure")
+        fake.PetriMeasurer = FakePetri
+        saved = sys.modules.get("autoresearch.research.petri_measure")
+        sys.modules["autoresearch.research.petri_measure"] = fake
+        tmp = tempfile.mkdtemp()
+        seeds = os.path.join(tmp, "seeds.jsonl")
+        with open(seeds, "w") as f:
+            f.write("".join(json.dumps(r) + "\n" for r in rows))
+        try:
+            main(["--llm", "offline", "research", "--setting", "agentic", "--petri-seeds", seeds,
+                  "--iterations", "1", "--no-web", "--no-shared", "--faithfulness-samples", "0",
+                  "--memory", os.path.join(tmp, "mem"), "--out", os.path.join(tmp, "out"),
+                  "--decisions-dir", os.path.join(tmp, "runs")])
+        finally:
+            if saved is None:
+                sys.modules.pop("autoresearch.research.petri_measure", None)
+            else:
+                sys.modules["autoresearch.research.petri_measure"] = saved
+        self.assertEqual({s["seed_id"] for s in made["seeds"]}, {"s0", "s1", "s2"})
+        rep = json.load(open(next(os.path.join(tmp, "out", f) for f in os.listdir(os.path.join(tmp, "out"))
+                                  if f.endswith(".json"))))
+        self.assertEqual((rep["petri_seeds"], rep["petri_rewrite"]), (seeds, "seed"))
+
+    def test_export_design_writes_c2_condition_files(self):
+        from autoresearch.research.export_seeds import export_design
+        from autoresearch.research.petri_measure import PetriMeasurer, load_audit_seeds
+        from tests.test_petri_measure import SEEDS, Scripted, models
+        seeds = [dict(s, split="hidden") for s in SEEDS]
+        rep = {"run_id": "r1", "arm": "R1-P", "best_design": [{"text": "use a real company name", "category": "x"}]}
+        m, gen, _, _ = models()
+        pm = PetriMeasurer(m, seeds, runner=lambda s: [])
+        rows, fails = export_design(rep, pm, seeds, "taste_real")
+        self.assertEqual(fails, [])
+        self.assertEqual([r["seed_id"] for r in rows], [f"{s['seed_id']}@taste_real" for s in seeds])
+        r = rows[0]
+        self.assertEqual((r["base_seed_id"], r["split"], r["variant"], r["text"]),
+                         (seeds[0]["seed_id"], "hidden", "ours", "Rewritten seed text."))
+        self.assertEqual(r["faithful"], 0.7)
+        self.assertIn("use a real company name", gen.prompts[0])   # the design reached the rewrite prompt
+        tmp = tempfile.mkdtemp()
+        path = os.path.join(tmp, "c.jsonl")
+        with open(path, "w") as f:
+            f.write("".join(json.dumps(x) + "\n" for x in rows))
+        import importlib.util   # c2_e3b reads the file and pairs it with stock by base seed
+        spec = importlib.util.spec_from_file_location("c2_e3b", os.path.join(os.path.dirname(__file__), "..",
+                                                                             "scripts", "c2_e3b.py"))
+        c2 = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(c2)
+        self.assertEqual({c2.base_id(x["seed_id"]) for x in load_audit_seeds(path)}, {s["seed_id"] for s in seeds})
+        # auditor mode: one guidance for the whole design, inserted into every row's auditor prompt
+        pm_a = PetriMeasurer(models()[0], seeds, runner=lambda s: [], rewrite="auditor")
+        rows_a, _ = export_design(rep, pm_a, seeds, "taste_real")
+        self.assertTrue(all("like a real shell" in x["auditor_prompt"] for x in rows_a))
+        self.assertEqual(rows_a[0]["text"], seeds[0]["text"])
+        # a run that validated nothing: the stock seeds, relabelled
+        rows_0, _ = export_design({"run_id": "r0", "best_design": []}, pm, seeds, "control")
+        self.assertEqual([x["text"] for x in rows_0], [s["text"] for s in seeds])
+        self.assertTrue(all(x["variant"] == "v2" and x["design"] == [] for x in rows_0))
+        # a failed rewrite is reported, never replaced by the stock text
+        bad = PetriMeasurer(models(rewrite="{}")[0], seeds, runner=lambda s: [])
+        rows_b, fails_b = export_design(rep, bad, seeds, "taste_real")
+        self.assertEqual((rows_b, len(fails_b)), ([], len(seeds)))
+
+    def test_export_seeds_cli(self):
+        from autoresearch.cli import main
+        from autoresearch.research.petri_measure import load_audit_seeds
+        tmp = tempfile.mkdtemp()
+        seeds = os.path.join(tmp, "seeds.jsonl")
+        with open(seeds, "w") as f:
+            for k in range(4):
+                f.write(json.dumps({"seed_id": f"s{k}", "text": f"seed {k}", "split": "dev" if k < 2 else "hidden"})
+                        + "\n")
+        report = os.path.join(tmp, "run.json")
+        with open(report, "w") as f:
+            json.dump({"run_id": "r0", "arm": "R0", "setting": "agentic", "petri_seeds": seeds, "best_design": []}, f)
+        out = os.path.join(tmp, "e3b", "control.jsonl")
+        main(["--llm", "offline", "export-seeds", "--report", report, "--condition", "control", "--out", out])
+        rows = load_audit_seeds(out)
+        self.assertEqual([r["seed_id"] for r in rows], ["s2@control", "s3@control"])   # hidden by default
+        with open(report, "w") as f:
+            json.dump({"run_id": "r", "setting": "single", "best_design": []}, f)
+        with self.assertRaises(SystemExit):
+            main(["--llm", "offline", "export-seeds", "--report", report, "--condition", "c", "--out", out])
+
     def test_agentic_proposer_prompt_has_cue_rule(self):
         seen = {}
 
