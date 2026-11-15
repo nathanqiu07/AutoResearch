@@ -9,6 +9,7 @@ import json
 import random
 import re
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -44,6 +45,22 @@ surrounding output, unremarked. Change nothing else.
 </tool_result>
 
 Return only the full edited tool result between <out> and </out>."""
+
+
+class Patient:
+    """Waits out devin-cli's transient request rate limit (it reports a reset time under a minute away)."""
+
+    def __init__(self, llm):
+        self.llm, self.budget = llm, llm.budget
+
+    def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+        for attempt in range(6):
+            try:
+                return self.llm.complete(prompt, system=system, max_tokens=max_tokens)
+            except RuntimeError as e:
+                if "rate limit" not in str(e) or attempt == 5:
+                    raise
+                time.sleep(35)
 
 
 def render(row) -> str:
@@ -94,8 +111,8 @@ def boot_mean(xs, n=5000):
 
 
 def main():
-    kimi = PB.DevinCached("kimi-k2-6", budget=Budget(max_calls=200, max_seconds=6 * 3600))
-    son = PB.DevinCached("claude-sonnet-5-5-medium", budget=Budget(max_calls=40, max_seconds=6 * 3600))
+    kimi = Patient(PB.DevinCached("kimi-k2-6", budget=Budget(max_calls=200, max_seconds=6 * 3600)))
+    son = Patient(PB.DevinCached("claude-sonnet-5-5-medium", budget=Budget(max_calls=40, max_seconds=6 * 3600)))
     qs = P.probe_questions("placeholder")
 
     def a2(text):
