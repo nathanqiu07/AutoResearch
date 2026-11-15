@@ -53,61 +53,157 @@
 
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const dd = (n, o) => (typeof doodle === "function" ? doodle(n, o) : "");
-  const st = { i: 0, s: { real: 0, valid: 0, bold: 0 }, rules: [] };
+  const st = { i: -1, s: { real: 0, valid: 0, bold: 0 }, rules: [], custom: [], w: null, name: "", av: 0 };
 
   function pick(s) {
     const order = Object.keys(s).sort((a, b) => s[b] - s[a]);
-    if (order[0] !== "bold" && order[1] !== "bold" && Math.abs(s.real - s.valid) <= 2) return "mixed";
+    if (order[0] !== "bold" && order[1] !== "bold" && Math.abs(s.real - s.valid) <= Math.max(2, 0.15 * (s.real + s.valid))) return "mixed";
     return order[0];
+  }
+  const AVATARS = [["person", "clay"], ["rocket", "sky"], ["telescope", "sage"], ["flask", "ochre"], ["lightbulb", "ochre"], ["feather", "rose"], ["key", "sky"], ["star", "clay"]];
+  const SAVE = "kitchen-judges-agent";
+  const save = () => { try { localStorage.setItem(SAVE, JSON.stringify(st)); } catch (_) {} };
+  try { const o = JSON.parse(localStorage.getItem(SAVE) || "null"); if (o && o.s) Object.assign(st, o); } catch (_) {}
+  if (!st.name) st.name = ""; if (st.av == null) st.av = 0; if (st.i == null) st.i = -1;
+  if (!st.custom) st.custom = [];
+  const fx = (el) => { try { if (typeof burstAt === "function" && el) burstAt(el); } catch (_) {} };
+
+  function header(icon, color, title, sub) {
+    return `<div class="jg-head rise" style="--i:1">${dd(icon, { size: 52, color, tilt: -8, cls: "wobble" })}
+      <div><h1>${title}</h1><p class="muted">${sub}</p></div></div>`;
   }
 
   function viewJudges() {
     const app = document.getElementById("app");
+    if (st.i < 0) {   /* step 0: who is this agent for */
+      app.innerHTML = `
+        <section class="jg">
+          ${header("sparkle", "clay", "Build your own research agent", "Sixty seconds, six decisions. Your answers become the user model the agent follows overnight.")}
+          <article class="card jg-card jg-hello rise" style="--i:2">
+            <label class="mono small muted" for="jg-name">NAME YOUR AGENT'S RESEARCHER</label>
+            <input id="jg-name" class="jg-name" placeholder="your name" value="${esc(st.name)}" maxlength="40" autocomplete="off">
+            <div class="mono small muted" style="margin-top:1.2rem">PICK YOUR SIGIL</div>
+            <div class="jg-avs">${AVATARS.map(([n, c], k) => `<button class="jg-av ${k === st.av ? "on" : ""}" data-k="${k}" aria-label="${n}">${dd(n, { size: 46, color: c, tilt: (k % 3 - 1) * 8 })}</button>`).join("")}</div>
+            <button class="btn primary jg-start">Start the grill →</button>
+          </article>
+        </section>`;
+      const inp = app.querySelector("#jg-name"); inp.focus();
+      inp.addEventListener("input", () => { st.name = inp.value; save(); });
+      app.querySelectorAll(".jg-av").forEach((b) => b.addEventListener("click", () => { st.av = +b.dataset.k; save(); app.querySelectorAll(".jg-av").forEach((x) => x.classList.toggle("on", x === b)); fx(b); }));
+      const go = () => { st.i = 0; st.s = { real: 0, valid: 0, bold: 0 }; st.rules = []; save(); viewJudges(); };
+      app.querySelector(".jg-start").addEventListener("click", go);
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+      if (typeof setKeys === "function") setKeys(null);
+      return;
+    }
     if (st.i < GQ.length) {
       const g = GQ[st.i];
       app.innerHTML = `
         <section class="jg">
-          <div class="jg-head rise" style="--i:1">${dd("lightbulb", { size: 48, color: "ochre", tilt: -8 })}
-            <div><h1>Build your agent</h1><p class="muted">Six decisions the research loop faces. Your answers become the user model your agent follows.</p></div></div>
+          ${header("lightbulb", "ochre", esc(st.name ? st.name + "'s agent" : "Your agent"), "Answer like you would at 3am with a run going sideways.")}
           <div class="jg-prog" aria-hidden="true">${GQ.map((_, k) => `<i class="${k < st.i ? "done" : k === st.i ? "cur" : ""}"></i>`).join("")}</div>
           <article class="card jg-card rise" style="--i:2">
             <div class="jg-meta mono"><b>${g.p}</b><span>${esc(g.k)}</span><span>${st.i + 1} / ${GQ.length}</span></div>
             <h2 class="jg-q">${esc(g.q)}</h2>
-            <div class="jg-opts">${g.o.map(([t], j) => `<button class="jg-opt" data-j="${j}"><span class="jg-key mono">${"ABC"[j]}</span>${esc(t)}</button>`).join("")}</div>
-            ${st.i ? `<button class="btn ghost small jg-back">← back</button>` : ""}
+            <div class="jg-opts">${g.o.map(([t], j) => `<button class="jg-opt" data-j="${j}" style="--i:${j}"><span class="jg-key mono">${"ABC"[j]}</span>${esc(t)}</button>`).join("")}</div>
+            <button class="btn ghost small jg-back">← back</button>
           </article>
         </section>`;
-      const choose = (j) => { const [, w, rule] = g.o[j]; for (const a in w) st.s[a] += w[a]; st.rules.push({ p: g.p, rule, w }); st.i++; viewJudges(); };
-      app.querySelectorAll(".jg-opt").forEach((b) => b.addEventListener("click", () => choose(+b.dataset.j)));
-      const back = app.querySelector(".jg-back");
-      if (back) back.addEventListener("click", () => { const r = st.rules.pop(); for (const a in r.w) st.s[a] -= r.w[a]; st.i--; viewJudges(); });
-      if (typeof setKeys === "function") setKeys((e) => { const j = "abc".indexOf(e.key.toLowerCase()); if (j >= 0 && !e.metaKey && !e.ctrlKey) { choose(j); return true; } });
+      let locked = false;
+      const choose = (j, el) => {
+        if (locked) return; locked = true;
+        const [, w, rule] = g.o[j]; for (const a in w) st.s[a] += w[a]; st.rules.push({ p: g.p, rule, w, on: true }); st.i++; save();
+        if (el) { el.classList.add("picked"); fx(el); setTimeout(viewJudges, 260); } else viewJudges();
+      };
+      app.querySelectorAll(".jg-opt").forEach((b) => b.addEventListener("click", () => choose(+b.dataset.j, b)));
+      app.querySelector(".jg-back").addEventListener("click", () => { if (!st.rules.length) { st.i = -1; } else { const r = st.rules.pop(); for (const a in r.w) st.s[a] -= r.w[a]; st.i--; } save(); viewJudges(); });
+      if (typeof setKeys === "function") setKeys((e) => { const j = "abc".indexOf(e.key.toLowerCase()); if (j >= 0 && !e.metaKey && !e.ctrlKey) { choose(j, app.querySelectorAll(".jg-opt")[j]); return true; } });
       return;
     }
-    const tot = st.s.real + st.s.valid + st.s.bold || 1;
-    const pct = (a) => Math.round((100 * st.s[a]) / tot);
-    const d = PICKS[pick(st.s)];
+    viewStudio();
+  }
+
+  /* the agent's live decisions: for each decision point, the option whose weights best match the current taste */
+  function decide(w) {
+    return GQ.map((g) => {
+      let best = 0, bv = -1;
+      g.o.forEach(([, ow], j) => { let v = 0; for (const a in ow) v += ow[a] * w[a]; if (v > bv + 1e-9) { bv = v; best = j; } });
+      return { p: g.p, k: g.k, t: g.o[best][0], j: best };
+    });
+  }
+
+  function viewStudio() {
+    const app = document.getElementById("app");
+    const [avn, avc] = AVATARS[st.av] || AVATARS[0];
+    if (!st.w) { const tot = st.s.real + st.s.valid + st.s.bold || 1; st.w = { real: Math.round(100 * st.s.real / tot), valid: Math.round(100 * st.s.valid / tot), bold: Math.round(100 * st.s.bold / tot) }; }
     app.innerHTML = `
-      <section class="jg">
-        <div class="jg-head rise" style="--i:1">${dd("sparkle", { size: 48, color: "clay", tilt: 10 })}
-          <div><h1>Your user model</h1><p class="muted">Built from your six answers, in your browser. Nothing was sent anywhere.</p></div></div>
-        <div class="jg-grid">
-          <article class="card rise" style="--i:2">
+      <section class="jg jg-wide">
+        ${header("sparkle", "clay", esc(st.name ? st.name + "'s user model" : "Your user model"), "Built from your answers, in your browser. Drag, toggle and edit: your agent re-plans live.")}
+        <div class="jg-grid3">
+          <article class="card jg-idcard rise" style="--i:2">
+            <span class="tape" aria-hidden="true"></span>
+            <div class="jg-id">${dd(avn, { size: 70, color: avc, tilt: -6, cls: "bob" })}<div><div class="hand jg-idname">${esc(st.name || "Anonymous researcher")}</div><div class="mono small muted">user model · v1 · local</div></div></div>
             <h3>Taste weights</h3>
-            ${Object.keys(AX).map((a) => `<div class="jg-ax"><span>${AX[a]}</span><div class="jg-bar"><i class="${a}" style="width:${pct(a)}%"></i></div><b class="mono">${pct(a)}%</b></div>`).join("")}
-            <h3 class="jg-sub">Principles your agent will follow</h3>
-            <ol class="jg-rules">${st.rules.map((r) => `<li><span class="mono">${r.p}</span> ${esc(r.rule)}</li>`).join("")}</ol>
+            ${Object.keys(AX).map((a) => `<div class="jg-ax"><span>${AX[a]}</span><input type="range" min="0" max="100" value="${st.w[a]}" data-a="${a}" class="jg-range ${a}"><b class="mono" data-v="${a}">${st.w[a]}</b></div>`).join("")}
+            <div class="row jg-presets"><span class="mono small muted">presets</span>
+              <button class="btn small" data-pre="real">Realist</button><button class="btn small" data-pre="valid">Rigorist</button><button class="btn small" data-pre="bold">Maverick</button></div>
+            <h3 class="jg-sub">Principles <span class="mono small muted">click to toggle</span></h3>
+            <ul class="jg-rules">${st.rules.map((r, k) => `<li class="${r.on === false ? "off" : ""}" data-r="${k}"><span class="mono">${r.p}</span> ${esc(r.rule)}</li>`).join("")}
+              ${st.custom.map((c, k) => `<li class="mine" data-c="${k}"><span class="mono">YOU</span> ${esc(c)} <button class="jg-x" data-x="${k}" aria-label="remove">✕</button></li>`).join("")}</ul>
+            <form class="jg-add"><input placeholder="Add your own principle…" maxlength="120"><button class="btn small">add</button></form>
           </article>
-          <article class="card jg-pick rise ${d.cls}" style="--i:3">
-            <div class="mono muted small">YOUR AGENT PICKS · CLOSEST PROFILE: ${esc(d.who.toUpperCase())}</div>
-            <h2>${esc(d.name)}</h2>
-            <p>${esc(d.what)}</p>
-            <div class="jg-res"><span class="mono small">MEASURED ON KIMI K2.6</span><p>${esc(d.res)}</p></div>
-            <div class="jg-actions"><a class="btn primary" href="#/results">See all results →</a><button class="btn jg-again">Try again</button></div>
-          </article>
+          <div class="jg-right">
+            <article class="card jg-pick rise" style="--i:3"><div class="jg-pickin"></div></article>
+            <article class="card jg-feed rise" style="--i:4">
+              <h3>Your agent, tonight <span class="mono small muted">re-plans as you edit</span></h3>
+              <ol class="jg-dec"></ol>
+            </article>
+          </div>
         </div>
+        <div class="jg-actions center"><button class="btn jg-again">Start over</button><button class="btn jg-dl">Download user model (.json)</button><a class="btn primary" href="#/results">See the measured results →</a></div>
       </section>`;
-    app.querySelector(".jg-again").addEventListener("click", () => { st.i = 0; st.s = { real: 0, valid: 0, bold: 0 }; st.rules = []; viewJudges(); });
+    const pickEl = app.querySelector(".jg-pickin"), decEl = app.querySelector(".jg-dec");
+    let lastPick = null, lastDec = [];
+    const refresh = () => {
+      const key = pick(st.w), d = PICKS[key];
+      if (key !== lastPick) {
+        pickEl.parentElement.className = `card jg-pick ${d.cls}`;
+        pickEl.innerHTML = `<div class="mono muted small">YOUR AGENT PICKS · CLOSEST PROFILE: ${esc(d.who.toUpperCase())}</div>
+          <h2 class="jg-flip">${esc(d.name)}</h2><p>${esc(d.what)}</p>
+          <div class="jg-res"><span class="mono small">MEASURED ON KIMI K2.6</span><p>${esc(d.res)}</p></div>`;
+        if (lastPick) fx(pickEl.querySelector("h2"));
+        lastPick = key;
+      }
+      const dec = decide(st.w);
+      decEl.innerHTML = dec.map((x, k) => `<li class="${lastDec[k] != null && lastDec[k] !== x.j ? "changed" : ""}"><span class="mono">${x.p}</span><div><small class="mono muted">${esc(x.k)}</small><div>${esc(x.t)}</div></div></li>`).join("");
+      lastDec = dec.map((x) => x.j);
+      save();
+    };
+    app.querySelectorAll(".jg-range").forEach((r) => r.addEventListener("input", () => { st.w[r.dataset.a] = +r.value; app.querySelector(`[data-v="${r.dataset.a}"]`).textContent = r.value; refresh(); }));
+    const PRE = { real: { real: 75, valid: 20, bold: 5 }, valid: { real: 20, valid: 75, bold: 5 }, bold: { real: 15, valid: 10, bold: 75 } };
+    app.querySelectorAll("[data-pre]").forEach((b) => b.addEventListener("click", () => {
+      const to = PRE[b.dataset.pre], from = Object.assign({}, st.w), t0 = performance.now();
+      const step = (now) => { const k = Math.min(1, (now - t0) / 450), e = 1 - Math.pow(1 - k, 3);
+        for (const a in to) { st.w[a] = Math.round(from[a] + (to[a] - from[a]) * e); const r = app.querySelector(`.jg-range[data-a="${a}"]`); if (r) r.value = st.w[a]; const v = app.querySelector(`[data-v="${a}"]`); if (v) v.textContent = st.w[a]; }
+        refresh(); if (k < 1) requestAnimationFrame(step); };
+      requestAnimationFrame(step);
+    }));
+    app.querySelectorAll(".jg-rules li[data-r]").forEach((li) => li.addEventListener("click", () => {
+      const r = st.rules[+li.dataset.r]; r.on = r.on === false; li.classList.toggle("off", !r.on);
+      for (const a in r.w) st.w[a] = Math.max(0, Math.min(100, st.w[a] + (r.on ? 1 : -1) * r.w[a] * 8));
+      app.querySelectorAll(".jg-range").forEach((x) => { x.value = st.w[x.dataset.a]; app.querySelector(`[data-v="${x.dataset.a}"]`).textContent = st.w[x.dataset.a]; });
+      refresh();
+    }));
+    app.querySelectorAll(".jg-x").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); st.custom.splice(+b.dataset.x, 1); save(); viewStudio(); }));
+    app.querySelector(".jg-add").addEventListener("submit", (e) => { e.preventDefault(); const v = e.target.querySelector("input").value.trim(); if (!v) return; st.custom.push(v); save(); viewStudio(); });
+    app.querySelector(".jg-again").addEventListener("click", () => { Object.assign(st, { i: -1, s: { real: 0, valid: 0, bold: 0 }, rules: [], custom: [], w: null }); save(); viewJudges(); });
+    app.querySelector(".jg-dl").addEventListener("click", () => {
+      const model = { researcher: st.name || "anonymous", weights: st.w, principles: st.rules.filter((r) => r.on !== false).map((r) => `${r.p}: ${r.rule}`).concat(st.custom), closest_profile: PICKS[pick(st.w)].who, decisions: decide(st.w).map((x) => ({ point: x.p, choice: x.t })) };
+      const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(model, null, 2)], { type: "application/json" }));
+      a.download = `${(st.name || "my").toLowerCase().replace(/[^a-z0-9]+/g, "_")}_user_model.json`; a.click();
+    });
+    refresh();
+    setTimeout(() => fx(app.querySelector(".jg-idname")), 350);
   }
 
   /* strong-awareness subset (9 seeds fixed before results), results/e3b/final_report_all.md */
@@ -160,7 +256,13 @@
       return h === "judges" ? viewJudges() : viewResults();
     }
     document.querySelectorAll(".jnav a").forEach((a) => a.classList.toggle("on", a.getAttribute("href") === "#/" && !h));
-    return base();
+    const out = await base();
+    if (!h && !document.querySelector(".jg-cta")) {
+      const hero = document.querySelector(".hero");
+      if (hero) hero.insertAdjacentHTML("afterend", `<a class="jg-cta rise" style="--i:2" href="#/judges">${dd("rocket", { size: 64, color: "clay", tilt: -12, cls: "bob" })}
+        <div><b class="hand">Judges: build your own research agent</b><span>Six decisions, sixty seconds. See your user model and what your agent does tonight.</span></div>${dd("arrow", { size: 40, color: "clay" })}</a>`);
+    }
+    return out;
   };
   /* the judges' pages need no server: draw them even if /api/config failed or hasn't returned */
   const h0 = location.hash.replace(/^#\/?/, "");
