@@ -401,6 +401,7 @@ class DriverTests(unittest.TestCase):
             self.assertIn("SUMMARY (upper bounds", text)
             self.assertIn(f"A2 answerers: {driver.DEV_TARGET_PLACEHOLDER}, {HAIKU} |", text)
             self.assertIn("+GPU", text)
+            self.assertIn("unpriced (GPU) share, gate + V3:", text)
             self.assertNotIn("--approved-by-nathan", text.split("DRY RUN")[0])
             self.assertFalse(os.path.exists(os.path.join(d, "gate")))
 
@@ -488,7 +489,7 @@ class DriverTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p = write_fixture(d)
             _, text = dry_run(d, p, "--phase", "final", "--max-calls", "10", "--max-cost-usd", "0.01")
-            self.assertIn("exceeds --max-calls 10", text)
+            self.assertIn("over --max-calls 10 per step", text)
             self.assertIn("exceeds --max-cost-usd 0.01", text)
 
     def test_single_pairs_from_a_heldout_item_stop_the_run(self):

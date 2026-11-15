@@ -1263,14 +1263,16 @@ def _tok(chars: float) -> int:
 
 
 def thinking_headroom(spec: str) -> int:
-    """Extra output tokens a +thinking target may spend on reasoning in
-    complete_with_reasoning: the backend adds THINKING_HEADROOM to max_tokens
-    (anthropic, openai). openai-compat (vLLM) sends max_tokens as is, and the
-    reasoning shares it, so no headroom is added there."""
+    """Extra output tokens complete_with_reasoning may spend on reasoning: the
+    backend adds its THINKING_HEADROOM to max_tokens. anthropic and openai do so
+    only for a "+thinking" spec; openai-compat (vLLM) always does, since a
+    reasoning model there thinks whatever the spec says."""
     from .. import llm as L
+    backend = L.split_spec(spec)[0]
+    if backend == "openai-compat":
+        return int(getattr(L.OpenAICompatLLM, "THINKING_HEADROOM", 0))
     if not spec.endswith("+thinking"):
         return 0
-    backend = L.split_spec(spec)[0]
     cls = {"anthropic": getattr(L, "AnthropicLLM", None), "openai": getattr(L, "OpenAIResponsesLLM", None)}.get(backend)
     return int(getattr(cls, "THINKING_HEADROOM", 0)) if cls else 0
 
@@ -1375,8 +1377,8 @@ def sample_calls(q_target: int, q_judges: List[int], generated: bool = True, cor
 def cost_assumptions() -> List[str]:
     """The assumptions behind estimate_cost, for printouts and the prereg."""
     return [f"{CHARS_PER_TOKEN} characters per token (assumption)",
-            f"output billed at its cap: target reply {REPLY_MAX_TOKENS} tok (+ thinking headroom on +thinking "
-            f"anthropic/openai targets; openai-compat counts reasoning inside max_tokens), probe answers "
+            f"output billed at its cap: target reply {REPLY_MAX_TOKENS} tok (+ thinking headroom: anthropic/openai "
+            f"+thinking targets, and every openai-compat target), probe answers "
             f"{PROBE_MAX_TOKENS}, A1 audit {AUDIT_MAX_TOKENS}, V3 reply {GAP_REPLY_MAX_TOKENS} (+ the same thinking "
             f"headroom: faithfulness_pair calls complete_with_reasoning), V3 label {GAP_JUDGE_MAX_TOKENS}",
             f"a gate reply pasted into the probe questions is at most {REPLY_MAX_TOKENS} tok of visible text "

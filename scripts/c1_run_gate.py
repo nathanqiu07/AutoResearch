@@ -305,12 +305,19 @@ def print_plan(plan: dict, args) -> None:
               f"no faithfulness rewrite): up to {s['sample_calls']} calls")
         g, a = _sum(s["lines"], gate_only=True), _sum(s["lines"])
         print(f"   gate: {g[0]:,} calls, {_usd(g[1], g[2])} | gate + V3: {a[0]:,} calls, {_usd(a[1], a[2])}")
-        if a[0] > args.max_calls:
-            print(f"   WARNING: up to {a[0]:,} calls exceeds --max-calls {args.max_calls} per step; raise it or the step "
-                  f"stops early and unanswered items fail their check")
-        if a[1] > args.max_cost_usd:
-            print(f"   WARNING: bound exceeds --max-cost-usd {args.max_cost_usd:g} per step; raise it or the step "
-                  f"stops early and unanswered items fail their check")
+        unpriced = [x for x in s["lines"] if x.usd is None]
+        if unpriced:
+            print(f"   unpriced (GPU) share, gate + V3: {sum(x.calls for x in unpriced):,} calls, "
+                  f"{sum(x.in_tokens for x in unpriced):,} in + {sum(x.out_tokens for x in unpriced):,} out tokens "
+                  f"(upper bound; convert with the Modal deployment's throughput)")
+        v = (a[0] - g[0], a[1] - g[1])
+        worst = (max(g[0], v[0]), max(g[1], v[1]))   # gate and V3 are separate steps, each with its own caps
+        if worst[0] > args.max_calls:
+            print(f"   WARNING: a step needs up to {worst[0]:,} calls, over --max-calls {args.max_calls} per step; raise "
+                  f"it or the step stops early and unanswered items fail their check")
+        if worst[1] > args.max_cost_usd:
+            print(f"   WARNING: a step's bound ${worst[1]:,.2f} exceeds --max-cost-usd {args.max_cost_usd:g} per step; "
+                  f"raise it or the step stops early and unanswered items fail their check")
         print("   " + " ".join(_q(x) for x in s["gate_cmd"]))
         if s["gap_args"]:
             print("   " + " ".join(_q(x) for x in ["python3", "scripts/c1_behaviour_gap.py"] + s["gap_args"]))

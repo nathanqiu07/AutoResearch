@@ -588,8 +588,11 @@ class EstimateCostTests(unittest.TestCase):
         q = cal.estimate_cost("openai-compat:m+thinking", [], "anthropic:j", [env], self.PROBES, prices=self.PRICES)[0]
         self.assertEqual(a.out_tokens, 1200 + 8000)
         self.assertEqual(o.out_tokens, 1200 + 8000)
-        self.assertEqual(q.out_tokens, 1200)
+        self.assertEqual(q.out_tokens, 1200 + 8000)   # vLLM: OpenAICompatLLM adds its headroom
         self.assertIsNone(q.usd)   # GPU time: no per-token price
+        plain = cal.estimate_cost("openai-compat:m", [], "anthropic:j", [env], self.PROBES, prices=self.PRICES)[0]
+        self.assertEqual(plain.out_tokens, 1200 + 8000)   # with or without "+thinking"
+        self.assertEqual(cal.thinking_headroom("anthropic:m"), 0)
         self.assertIn("$ unknown", q.how)
 
     def test_each_answerer_uses_its_own_probe_set(self):
