@@ -1,33 +1,32 @@
-"""Track S time split (PLAN 12.2): the profile is built only from documents
-dated strictly before the cutoff T, so held-out pairs drawn from work after T
-test prediction rather than recall.
+"""Track S time split (PLAN 12.2): a researcher's dated public work becomes binary
+preference pairs, split at a cutoff T so held-out pairs test prediction, not recall.
+How each stage works, with real counts: docs/track-s-extraction.md.
 
-Corpus files carry their date in front matter:
+Corpus files carry their date in front matter (written by scrape.scrape_exa):
 
     ---
-    publishedDate: 2024-05-01T00:00:00.000Z
+    url: https://arxiv.org/abs/2505.23836
+    publishedDate: 2025-05-28
     ---
     <text>
 
 A file without a date is left out: it could have been written after T.
 
-Pairs: each dated research document becomes one choice between the direction it
-actually took and a distractor. The distractor is preferably a "future work"
-idea named in an earlier document and never pursued, else a model-written
-alternative on the same topic. Documents before T give history pairs (what a
-method fits on); documents from T on give held-out pairs. A history pair is
-built from documents before T only. A person then checks ~20 held-out pairs and
-rejects any whose distractor is obviously wrong.
+Stages, each reading only earlier stages' files, each resumable:
+  harvest   Exa finds, checks and dates his work            corpus/*.txt, harvest_manifest.jsonl
+  extract   Exa structured summary of each doc's decisions  extraction/exa.jsonl
+  check     Claude keeps/corrects/drops each, adds missed;  extraction/decisions.jsonl, rejected.jsonl
+            code verifies every quote
+  distract  one alternative per decision                    extraction/distractors.jsonl
+  pairs     neutral context + two options, split at T       pairs_timesplit.jsonl,
+                                                            history_timesplit.jsonl, heldout_timesplit.jsonl
+  review    optional human check of held-out distractors    review_timesplit.jsonl
 
-  data/researchers/<slug>/
-    pairs_timesplit.jsonl     every pair with its provenance
-    review_timesplit.jsonl    the person's verdicts
-    history_timesplit.jsonl   Choice rows from before T
-    heldout_timesplit.jsonl   Choice rows from T on, minus rejected pairs
-
-    python3 -m autoresearch.taste.timesplit build --researcher <slug> --cutoff YYYY-MM-DD --dry-run
-    python3 -m autoresearch.taste.timesplit build --researcher <slug> --cutoff YYYY-MM-DD --llm anthropic
-    python3 -m autoresearch.taste.timesplit review --researcher <slug>
+    python3 -m autoresearch.taste.timesplit harvest --researcher <slug> --name "<Full Name>" --start YYYY-MM-DD --end YYYY-MM-DD
+    python3 -m autoresearch.taste.timesplit extract --researcher <slug>
+    python3 -m autoresearch.taste.timesplit check --researcher <slug> --max-usd 60
+    python3 -m autoresearch.taste.timesplit distract --researcher <slug> --cutoff YYYY-MM-DD --max-usd 20
+    python3 -m autoresearch.taste.timesplit pairs --researcher <slug> --cutoff YYYY-MM-DD --max-usd 20
 """
 from __future__ import annotations
 
@@ -36,6 +35,7 @@ import datetime
 import glob
 import json
 import os
+import random
 import re
 import unicodedata
 from dataclasses import asdict
@@ -49,10 +49,7 @@ from .usermodel import Choice, digest
 
 PAIRS, REVIEW = "pairs_timesplit.jsonl", "review_timesplit.jsonl"
 HISTORY, HELDOUT = "history_timesplit.jsonl", "heldout_timesplit.jsonl"
-EXTRACT_PROMPT = ("Read this research document. Return JSON {\"topic\": <a few neutral words naming the "
-                  "area>, \"direction\": <one sentence: the research direction this work took>, "
-                  "\"future_work\": [<one sentence per direction it names as future or follow-up "
-                  "work>]}.\n\n")
+
 
 FRONT_MATTER = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 
@@ -124,18 +121,6 @@ def profile_before(researcher: Researcher, cutoff: str, llm: LLM) -> TasteProfil
 
 # ---- pairs -----------------------------------------------------------------
 
-def _pick_prompt(topic: str, direction: str, candidates: List[str], taken: List[str]) -> str:
-    return ("We are building a test of whether a model can predict a researcher's next direction. "
-            "Give one distractor: a direction they plausibly could have taken on this topic but did "
-            "not. Prefer one of the candidate ideas they named earlier, unless it matches anything "
-            "in the list of directions they did take; otherwise write a new one of similar scope "
-            "and specificity, so that it isn't obviously wrong. Return JSON {\"distractor\": <one "
-            "sentence>}.\n\n"
-            f"Topic: {topic}\nDirection actually taken: {direction}\n"
-            "Candidate ideas named earlier:\n" + "".join(f"- {c}\n" for c in candidates) +
-            "Directions they did take:\n" + "".join(f"- {t}\n" for t in taken))
-
-
 def _write_jsonl(path: str, rows: List[dict]) -> None:
     with open(path, "w") as f:
         f.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in rows)
@@ -146,47 +131,6 @@ def _read_jsonl(path: str) -> List[dict]:
         return []
     with open(path) as f:
         return [json.loads(line) for line in f if line.strip()]
-
-
-def build_pairs(researcher: Researcher, cutoff: str, llm: LLM) -> dict:
-    """Write the pairs and both Choice files. Never overwrites: the held-out set and
-    its review must not shift under a rerun."""
-    if os.path.exists(os.path.join(researcher.root, PAIRS)):
-        raise FileExistsError(f"{PAIRS} exists for {researcher.slug}; delete it to rebuild")
-    t = datetime.date.fromisoformat(cutoff)
-    research = [(date, name, text) for date, kind, name, text in dated_docs(researcher) if kind == "research"]
-    docs = []
-    for date, name, text in research:
-        out = extract_json(llm.complete(EXTRACT_PROMPT + text[:12000], temperature=0.0))
-        if isinstance(out, dict) and out.get("direction"):
-            docs.append({"date": date, "name": name, "topic": str(out.get("topic", "")),
-                         "direction": str(out["direction"]),
-                         "future_work": [str(x) for x in out.get("future_work") or []]})
-    pairs, skipped = [], len(research) - len(docs)
-    for d in docs:
-        held_out = d["date"] >= t
-        visible = [e for e in docs if held_out or e["date"] < t]   # a history pair sees nothing from T on
-        candidates = [idea for e in visible if e["date"] < d["date"] for idea in e["future_work"]]
-        out = extract_json(llm.complete(_pick_prompt(d["topic"], d["direction"], candidates,
-                                                     [e["direction"] for e in visible]), temperature=0.0))
-        distractor = str(out.get("distractor", "")).strip() if isinstance(out, dict) else ""
-        if not distractor or distractor == d["direction"]:
-            skipped += 1
-            continue
-        pair_id = digest([researcher.slug, d["name"], d["direction"], distractor])[:12]
-        real_first = int(pair_id, 16) % 2 == 0
-        pairs.append({"pair_id": pair_id, "split": "heldout" if held_out else "history",
-                      "date": d["date"].isoformat(), "source_doc": d["name"], "topic": d["topic"],
-                      "direction": d["direction"], "distractor": distractor,
-                      "distractor_origin": "future_work" if distractor in candidates else "generated",
-                      "a_text": d["direction"] if real_first else distractor,
-                      "b_text": distractor if real_first else d["direction"],
-                      "chosen": "a" if real_first else "b"})
-    _write_jsonl(os.path.join(researcher.root, PAIRS), pairs)
-    write_choice_files(researcher)
-    return {"pairs": len(pairs), "skipped": skipped, "cutoff": cutoff,
-            "history": sum(p["split"] == "history" for p in pairs),
-            "heldout": sum(p["split"] == "heldout" for p in pairs)}
 
 
 # ---- stage 2: Exa structured extraction -----------------------------------------
@@ -426,9 +370,85 @@ def find_distractors(researcher: Researcher, llm: LLM, client, cutoff: str) -> d
     return report
 
 
-def _context(slug: str, pair: dict) -> str:
-    return (f"Topic: {pair['topic']}\n"
-            f"Which research direction did {slug} pursue around {pair['date'][:7]}?")
+# ---- stage 5: pairs and the time split ---------------------------------------------
+
+PAIR_PROMPT_VERSION = "pair-v1"
+PAIR_PROMPT = (
+    "Turn this research decision into one neutral binary choice. Write the context as the situation "
+    "the researchers faced at the moment of decision: the problem and what they knew then, and for a "
+    "decision about accepting, interpreting or claiming a result, the result itself. Do not reveal "
+    "which option was taken, and do not name any person, lab or organisation, or any later paper. "
+    "Then restate the decision taken and the alternative as two options of similar length (within "
+    "20%) and the same style. Return JSON {\"context\": str, \"did\": str, \"alternative\": str}.\n\n")
+BANNED = re.compile(r"hobbhahn|marius|apollo", re.IGNORECASE)
+
+
+def check_pair(pair: dict, later_titles: List[str]) -> List[str]:
+    """Problems with a written pair; empty when it is fine."""
+    problems = []
+    lengths = sorted((len(pair["a_text"]), len(pair["b_text"])))
+    if not lengths[0] or lengths[1] / lengths[0] > 1.2:
+        problems.append("the two options differ in length by more than 20%")
+    if any(BANNED.search(pair[k]) for k in ("context", "a_text", "b_text")):
+        problems.append("names the researcher or his organisation")
+    ctx = pair["context"].lower()
+    problems += [f"mentions later work: {t}" for t in later_titles if len(t) >= 8 and t.lower() in ctx]
+    return problems
+
+
+def _one_line(text) -> str:
+    return " ".join(str(text or "").split())
+
+
+def write_pairs(researcher: Researcher, llm: LLM, cutoff: str, seed: int = 0) -> dict:
+    """Write pairs_timesplit.jsonl from checked decisions and their distractors, then both Choice
+    files. Never overwrites: the held-out set and its review must not shift under a rerun."""
+    root = researcher.root
+    if os.path.exists(os.path.join(root, PAIRS)):
+        raise FileExistsError(f"{PAIRS} exists for {researcher.slug}; delete it to rebuild")
+    distractors = {r["decision_id"]: r for r in _read_jsonl(os.path.join(root, DISTRACTORS))}
+    docs = []
+    for p in glob.glob(os.path.join(root, "corpus", "*.txt")):
+        date, _ = read_doc(p)
+        docs.append((date, os.path.basename(p), front_matter(p)))
+    meta = {name: fm for _, name, fm in docs}
+    pairs, failed = [], 0
+    for d in _read_jsonl(os.path.join(root, DECISIONS)):
+        alt = distractors.get(d["decision_id"])
+        if not alt or not d.get("date"):
+            continue
+        later = [fm.get("title", "") for date, _, fm in docs if date and date.isoformat() > d["date"]]
+        prompt = (PAIR_PROMPT + f"Problem: {_one_line(d.get('problem'))}\nDecision: {_one_line(d['did'])}\n"
+                  f"Alternative: {_one_line(alt['text'])}\nReason they gave: {_one_line(d.get('stated_reason'))}\n")
+        pair, problems = None, ["no answer"]
+        for attempt in range(2):
+            out = extract_json(llm.complete(prompt + ("" if attempt == 0 else "Fix these problems: "
+                                                      + "; ".join(problems) + "\n"), temperature=0.0))
+            if not (isinstance(out, dict) and out.get("context") and out.get("did") and out.get("alternative")):
+                continue
+            pair = {"context": str(out["context"]), "a_text": str(out["did"]), "b_text": str(out["alternative"])}
+            problems = check_pair(pair, later)
+            if not problems:
+                break
+        if problems:
+            failed += 1
+            continue
+        pair_id = digest([researcher.slug, d["decision_id"], alt["text"]])[:12]
+        did, other = pair["a_text"], pair["b_text"]
+        real_first = random.Random(f"{seed}:{pair_id}").random() < 0.5
+        pairs.append({"pair_id": pair_id, "split": "history" if d["date"] < cutoff else "heldout",
+                      "date": d["date"], "source_doc": d["doc"], "url": d["url"],
+                      "decision_point": d.get("point") or "D1", "context": pair["context"],
+                      "a_text": did if real_first else other, "b_text": other if real_first else did,
+                      "chosen": "a" if real_first else "b", "reason": _one_line(d.get("stated_reason")),
+                      "tag": d.get("tag"), "distractor_source": alt["source"],
+                      "author_position": meta.get(d["doc"], {}).get("author_position"), "cutoff": cutoff,
+                      "prompt_versions": [CHECK_PROMPT_VERSION, PAIR_PROMPT_VERSION]})
+    _write_jsonl(os.path.join(root, PAIRS), pairs)
+    write_choice_files(researcher)
+    return {"pairs": len(pairs), "failed_checks": failed, "cutoff": cutoff,
+            "history": sum(p["split"] == "history" for p in pairs),
+            "heldout": sum(p["split"] == "heldout" for p in pairs)}
 
 
 def write_choice_files(researcher: Researcher) -> None:
@@ -438,9 +458,9 @@ def write_choice_files(researcher: Researcher) -> None:
     for p in _read_jsonl(os.path.join(researcher.root, PAIRS)):
         if p["pair_id"] in rejected:
             continue
-        c = Choice(user_id=researcher.slug, context=_context(researcher.slug, p), a_text=p["a_text"],
-                   b_text=p["b_text"], chosen=p["chosen"], decision_point="D1", timestamp=p["date"],
-                   source="timesplit", example_id=p["pair_id"])
+        c = Choice(user_id=researcher.slug, context=p["context"], a_text=p["a_text"], b_text=p["b_text"],
+                   chosen=p["chosen"], decision_point=p["decision_point"], reason=p["reason"],
+                   timestamp=p["date"], source="timesplit", example_id=p["pair_id"], group_id=p["url"])
         rows[p["split"]].append(asdict(c))
     _write_jsonl(os.path.join(researcher.root, HISTORY), rows["history"])
     _write_jsonl(os.path.join(researcher.root, HELDOUT), rows["heldout"])
@@ -455,8 +475,9 @@ def review(researcher: Researcher, ask: Callable = input, say: Callable = print,
                if p["split"] == "heldout" and p["pair_id"] not in done][:limit]
     n = 0
     for p in pending:
-        say(f"\n{p['date']}  {p['topic']}\n  taken:      {p['direction']}\n"
-            f"  distractor: {p['distractor']}  ({p['distractor_origin']})")
+        taken, other = (p["a_text"], p["b_text"]) if p["chosen"] == "a" else (p["b_text"], p["a_text"])
+        say(f"\n{p['date']}  {p['context']}\n  taken:      {taken}\n"
+            f"  distractor: {other}  ({p['distractor_source']})")
         ans = ask("plausible alternative they could have taken? y/n/quit> ").strip().lower()
         if ans not in ("y", "n"):
             break
@@ -467,37 +488,62 @@ def review(researcher: Researcher, ask: Callable = input, say: Callable = print,
     return n
 
 
+EXA_CACHE = os.path.join("runs", "track_s", "cache", "exa")
+
+
 def main(argv=None):
-    p = argparse.ArgumentParser(description="Track S time split: history and held-out pairs (PLAN 12.2)")
+    p = argparse.ArgumentParser(description="Track S: a researcher's dated work to time-split binary pairs")
     p.add_argument("--root", default=DEFAULT_ROOT)
     sub = p.add_subparsers(dest="command", required=True)
-    b = sub.add_parser("build", help="build history and held-out pairs from the dated corpus")
-    b.add_argument("--researcher", required=True)
-    b.add_argument("--cutoff", required=True, help="YYYY-MM-DD; documents from this date on are held out")
-    b.add_argument("--llm", default="offline")
-    b.add_argument("--model", default="claude-sonnet-5-5")
-    b.add_argument("--max-calls", type=int, default=400)
-    b.add_argument("--dry-run", action="store_true")
-    r = sub.add_parser("review", help="check held-out pairs for obviously wrong distractors")
-    r.add_argument("--researcher", required=True)
-    r.add_argument("--limit", type=int, default=20)
+    for name, helptext in (("harvest", "find, check and date his work with Exa"),
+                           ("extract", "Exa structured summary of each document's decisions"),
+                           ("check", "Claude keeps, corrects or drops each decision and adds missed ones"),
+                           ("distract", "one distractor per decision"),
+                           ("pairs", "write the pairs and the history/held-out Choice files"),
+                           ("review", "check held-out pairs for obviously wrong distractors")):
+        c = sub.add_parser(name, help=helptext)
+        c.add_argument("--researcher", required=True)
+        if name == "harvest":
+            c.add_argument("--name", required=True, help="the researcher's full name")
+            c.add_argument("--start", required=True)
+            c.add_argument("--end", required=True)
+        if name in ("distract", "pairs"):
+            c.add_argument("--cutoff", required=True, help="YYYY-MM-DD; work from this date on is held out")
+        if name in ("check", "distract", "pairs"):
+            c.add_argument("--llm", default="claude-cli")
+            c.add_argument("--model", default="claude-sonnet-5-5")
+            c.add_argument("--max-usd", type=float, required=True, help="spend cap for this stage")
+        if name == "pairs":
+            c.add_argument("--seed", type=int, default=0)
+        if name == "review":
+            c.add_argument("--limit", type=int, default=20)
     args = p.parse_args(argv)
     researcher = load_researcher(args.researcher, args.root)
     if args.command == "review":
         print(f"reviewed {review(researcher, limit=args.limit)} pairs")
         return
-    docs = dated_docs(researcher)
-    research = [d for d in docs if d[1] == "research"]
-    t = datetime.date.fromisoformat(args.cutoff)
-    if args.dry_run:
-        print(json.dumps({"dated_research_docs": len(research),
-                          "before_cutoff": sum(d[0] < t for d in research),
-                          "from_cutoff": sum(d[0] >= t for d in research),
-                          "max_model_calls": 2 * len(research), "note": "no model calls made"}))
+    client = None
+    if args.command in ("harvest", "extract", "distract"):
+        from ..integrations.exa import ExaClient
+        client = ExaClient(cache_dir=EXA_CACHE)
+    if args.command == "harvest":
+        from .scrape import scrape_exa
+        print(json.dumps(scrape_exa(args.name, researcher.root, client, args.start, args.end)))
+        return
+    if args.command == "extract":
+        print(json.dumps(dict(exa_extract(researcher, client), exa_cost=round(client.cost, 4))))
         return
     from ..llm import Budget, get_llm
-    llm = get_llm(args.llm, args.model, Budget(max_calls=args.max_calls))
-    print(json.dumps(build_pairs(researcher, args.cutoff, llm)))
+    budget = Budget(max_cost_usd=args.max_usd, max_seconds=12 * 3600)
+    llm = get_llm(args.llm, args.model, budget)
+    if args.command == "check":
+        report = check_decisions(researcher, llm)
+    elif args.command == "distract":
+        report = find_distractors(researcher, llm, client, args.cutoff)
+        report["exa_cost"] = round(client.cost, 4)
+    else:
+        report = write_pairs(researcher, llm, args.cutoff, seed=args.seed)
+    print(json.dumps(dict(report, llm_cost=round(budget.cost_usd, 4))))
 
 
 if __name__ == "__main__":

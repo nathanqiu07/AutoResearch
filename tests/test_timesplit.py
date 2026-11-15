@@ -62,42 +62,42 @@ class TimeSplitLeakageTest(unittest.TestCase):
         self.assertNotIn("publishedDate", self.profile_prompts())
 
 
-class FakeLLM(LLM):
-    """Answers the two pair-building prompts from the document text: the direction is
-    the text's first word, and each doc names "<word>_FOLLOWUP" as future work."""
+class PairLLM(LLM):
+    """Writes each pair from the decision and distractor it is shown; can be told to leak his name."""
 
-    def __init__(self, same_distractor=False):
+    def __init__(self, name_in_context=False):
         super().__init__()
-        self.prompts = []
-        self.same_distractor = same_distractor
+        self.name_in_context = name_in_context
 
     def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
-        self.prompts.append(prompt)
-        if prompt.startswith(timesplit.EXTRACT_PROMPT):
-            word = prompt[len(timesplit.EXTRACT_PROMPT):].split()[0]
-            return json.dumps({"topic": "evals", "direction": word + "_DIRECTION",
-                               "future_work": [word + "_FOLLOWUP"]})
-        target = prompt.split("Direction actually taken: ")[1].splitlines()[0]
-        distractor = target if self.same_distractor else "GENERATED_ALTERNATIVE"
-        return json.dumps({"distractor": distractor})
+        did = prompt.split("Decision: ")[1].splitlines()[0]
+        alt = prompt.split("Alternative: ")[1].splitlines()[0]
+        context = "Marius Hobbhahn had to choose." if self.name_in_context else "A team had to choose a next step."
+        return json.dumps({"context": context, "did": did, "alternative": alt})
 
 
 class TimeSplitPairsTest(unittest.TestCase):
+    NAMES = ["EARLY", "MIDDL"] + [f"LATE{k}" for k in range(8)]
+
     def setUp(self):
         self.base = tempfile.mkdtemp()
         self.root = os.path.join(self.base, "marius_test")
-        write_doc(self.root, "research__early.txt", "2022-03-01", "EARLY paper")
-        write_doc(self.root, "research__middle.txt", "2023-06-01", "MIDDLE paper")
-        write_doc(self.root, "other__early_post.txt", "2022-05-01", "COOKING post")
-        write_doc(self.root, "research__undated.txt", None, "UNDATED page")
-        for k in range(8):
-            write_doc(self.root, f"research__late{k}.txt", f"2025-0{k + 1}-01", f"LATE{k} paper")
+        os.makedirs(os.path.join(self.root, "extraction"))
+        dates = ["2022-03-01", "2023-06-01"] + [f"2025-0{k + 1}-01" for k in range(8)]
+        decisions, distractors = [], []
+        for name, date in zip(self.NAMES, dates):
+            write_url_doc(self.root, f"research__{name}.txt", date, f"https://ex.org/{name}", f"{name} paper")
+            decisions.append(dict(decision("q" * 20, did=f"TAKEN_{name}"), doc=f"research__{name}.txt",
+                                  url=f"https://ex.org/{name}", date=date, tag="exa_verified", decision_id=name))
+            distractors.append({"decision_id": name, "text": f"OTHER_{name}", "source": "generated",
+                                "evidence_url": None})
+        for fname, rows in ((timesplit.DECISIONS, decisions), (timesplit.DISTRACTORS, distractors)):
+            with open(os.path.join(self.root, fname), "w") as f:
+                f.writelines(json.dumps(r) + "\n" for r in rows)
         self.researcher = Researcher("marius_test", self.root)
 
-    def build(self, llm=None):
-        llm = llm or FakeLLM()
-        report = timesplit.build_pairs(self.researcher, "2024-01-01", llm)
-        return llm, report
+    def build(self, llm=None, seed=0):
+        return timesplit.write_pairs(self.researcher, llm or PairLLM(), "2024-01-01", seed=seed)
 
     def read_choices(self, name):
         with open(os.path.join(self.root, name)) as f:
@@ -110,34 +110,38 @@ class TimeSplitPairsTest(unittest.TestCase):
         self.build()
         history = self.read_choices(timesplit.HISTORY)
         heldout = self.read_choices(timesplit.HELDOUT)
-        self.assertEqual(sorted(self.chosen_text(c) for c in history), ["EARLY_DIRECTION", "MIDDLE_DIRECTION"])
-        self.assertEqual(sorted(self.chosen_text(c) for c in heldout), [f"LATE{k}_DIRECTION" for k in range(8)])
+        self.assertEqual(sorted(self.chosen_text(c) for c in history), ["TAKEN_EARLY", "TAKEN_MIDDL"])
+        self.assertEqual(sorted(self.chosen_text(c) for c in heldout), [f"TAKEN_LATE{k}" for k in range(8)])
         self.assertEqual({c.source for c in history + heldout}, {"timesplit"})
 
     def test_chosen_option_is_not_always_in_the_same_position(self):
         self.build()
         self.assertEqual({c.chosen for c in self.read_choices(timesplit.HELDOUT)}, {"a", "b"})
 
-    def test_history_pairs_are_built_without_any_text_from_after_cutoff(self):
-        llm, _ = self.build()
-        early_pair_prompts = [p for p in llm.prompts
-                              if "Direction actually taken: EARLY_DIRECTION" in p
-                              or "Direction actually taken: MIDDLE_DIRECTION" in p]
-        self.assertEqual(len(early_pair_prompts), 2)
-        self.assertNotIn("LATE", "\n".join(early_pair_prompts))
-        history = "\n".join(self.chosen_text(c) for c in self.read_choices(timesplit.HISTORY))
-        self.assertNotIn("LATE", history)
+    def test_ab_order_is_seeded(self):
+        self.build(seed=3)
+        first = [c.chosen for c in self.read_choices(timesplit.HELDOUT)]
+        os.remove(os.path.join(self.root, timesplit.PAIRS))
+        self.build(seed=3)
+        self.assertEqual([c.chosen for c in self.read_choices(timesplit.HELDOUT)], first)
 
-    def test_distractor_candidates_come_only_from_earlier_documents(self):
-        llm, _ = self.build()
-        middle_prompt = next(p for p in llm.prompts if "Direction actually taken: MIDDLE_DIRECTION" in p)
-        self.assertIn("EARLY_FOLLOWUP", middle_prompt)
-        self.assertNotIn("MIDDLE_FOLLOWUP", middle_prompt)
+    def test_choice_rows_carry_decision_point_reason_and_group_id(self):
+        self.build()
+        c = self.read_choices(timesplit.HISTORY)[0]
+        self.assertEqual((c.decision_point, c.reason, c.group_id), ("D1", "cheap", "https://ex.org/EARLY"))
 
-    def test_pair_whose_distractor_repeats_the_real_direction_is_dropped(self):
-        _, report = self.build(FakeLLM(same_distractor=True))
-        self.assertEqual(report["pairs"], 0)
-        self.assertEqual(report["skipped"], 10)
+    def test_context_never_names_him(self):
+        report = self.build(PairLLM(name_in_context=True))
+        self.assertEqual((report["pairs"], report["failed_checks"]), (0, 10))
+
+    def test_unequal_option_lengths_fail_the_check(self):
+        pair = {"context": "A team had to choose.", "a_text": "x" * 15, "b_text": "y" * 10}
+        self.assertTrue(timesplit.check_pair(pair, []))
+
+    def test_context_naming_a_later_title_fails_the_check(self):
+        pair = {"context": "After Frontier Models Scheme, a team had to choose.", "a_text": "x" * 10, "b_text": "y" * 10}
+        self.assertTrue(timesplit.check_pair(pair, ["Frontier Models Scheme"]))
+        self.assertEqual(timesplit.check_pair(pair, []), [])
 
     def test_build_refuses_to_overwrite_existing_pairs(self):
         self.build()
