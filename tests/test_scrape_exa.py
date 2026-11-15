@@ -38,6 +38,9 @@ def page(url, date, author, text="Some text.", title="A title"):
     return {"url": url, "publishedDate": date + "T00:00:00.000Z", "author": author, "text": text, "title": title}
 
 
+TRUTHFUL = {"name": "Truthful AI", "domains": ["truthful.ai"], "pages": ["https://truthful.ai/papers"]}
+
+
 def no_arxiv_meta(ids):
     return {}
 
@@ -46,9 +49,10 @@ class HarvestTest(unittest.TestCase):
     def setUp(self):
         self.root = tempfile.mkdtemp()
 
-    def harvest(self, pages, arxiv_meta=no_arxiv_meta, start="2025-01-01", end="2025-12-31"):
+    def harvest(self, pages, arxiv_meta=no_arxiv_meta, start="2025-01-01", end="2025-12-31", name="Marius Hobbhahn",
+                lab=None):
         self.exa = FakeExa(pages)
-        return scrape.scrape_exa("Marius Hobbhahn", self.root, self.exa, start, end, arxiv_meta=arxiv_meta)
+        return scrape.scrape_exa(name, self.root, self.exa, start, end, arxiv_meta=arxiv_meta, lab=lab)
 
     def corpus(self):
         return sorted(glob.glob(os.path.join(self.root, "corpus", "*.txt")))
@@ -70,7 +74,8 @@ class HarvestTest(unittest.TestCase):
 
     def test_lesswrong_and_alignment_forum_crosspost_is_one_document(self):
         self.harvest([page("https://www.lesswrong.com/posts/AbC123/evals-gap", "2025-03-01", "Marius Hobbhahn"),
-                      page("https://www.alignmentforum.org/posts/AbC123/evals-gap", "2025-03-01", "Marius Hobbhahn")])
+                      page("https://www.alignmentforum.org/posts/AbC123/evals-gap", "2025-03-01", "Marius Hobbhahn"),
+                      page("https://greaterwrong.com/posts/AbC123/evals-gap", "2025-03-01", "Marius Hobbhahn")])
         self.assertEqual(len(self.corpus()), 1)
 
     def test_page_that_only_mentions_him_is_dropped(self):
@@ -172,6 +177,71 @@ class HarvestTest(unittest.TestCase):
                       page("https://greaterwrong.com/users/marius-hobbhahn", "2025-09-30", "Marius Hobbhahn")])
         self.assertEqual(self.corpus(), [])
         self.assertEqual({r["reason"] for r in self.manifest()}, {"index_page"})
+
+    def test_lab_site_from_identity_is_searched_and_kept_as_blog(self):
+        self.harvest([page("https://truthful.ai/papers/value-leakage", "2026-07-15", None,
+                           text="By Owain Evans\n\nModels leak their values.")],
+                     start="2026-01-01", end="2026-12-31", name="Owain Evans", lab=TRUTHFUL)
+        self.assertIn(["truthful.ai"], [s.get("include_domains") for s in self.exa.searches])
+        self.assertEqual(self.front_matter(self.corpus()[0])["kind"], "blog")
+
+    def test_site_suffix_and_arxiv_id_prefix_do_not_split_a_crosspost(self):
+        self.harvest([page("https://arxiv.org/abs/2607.14345", "2026-07-15", "Owain Evans",
+                           title="[2607.14345] Value Leakage: An LLM's Answers Are Silently Shaped by Its Own Values"),
+                      page("https://truthful.ai/papers/value-leakage", "2026-07-20", "Owain Evans",
+                           title="Value Leakage: An LLM's Answers Are Silently Shaped by Its Own Values | Truthful AI")],
+                     start="2026-01-01", end="2026-12-31", name="Owain Evans", lab=TRUTHFUL)
+        self.assertEqual(len(self.corpus()), 1)
+
+    def test_lab_page_reposting_a_paper_under_an_edited_title_is_one_document(self):
+        self.harvest([page("https://arxiv.org/abs/2604.13051", "2026-03-17", "Owain Evans",
+                           title="The Consciousness Cluster: Emergent preferences of Models that Claim to be Conscious"),
+                      page("https://truthful.ai/papers/consciousness-cluster", "2026-04-02", "Owain Evans",
+                           title="The Consciousness Cluster: Preferences of Models that Claim They Are Conscious")],
+                     start="2026-01-01", end="2026-12-31", name="Owain Evans", lab=TRUTHFUL)
+        files = self.corpus()
+        self.assertEqual(len(files), 1)
+        self.assertEqual(self.front_matter(files[0])["publishedDate"], "2026-03-17")
+
+    def test_copy_that_names_him_is_kept_over_one_that_does_not_and_dated_by_the_earliest(self):
+        title = "Concept Poisoning: Probing LLMs without probes"
+        known = {"https://www.lesswrong.com/posts/G4q": {"authors": ["Jan Betley", "Owain Evans"],
+                                                         "published": "2025-08-06", "title": title}}
+        self.exa = FakeExa([page("https://www.lesswrong.com/posts/G4q", "2025-08-06", ""),
+                            page("https://truthful.ai/blog/concept-poisoning", "2025-08-05", "Truthful AI",
+                                 title=title + " | Truthful AI")])
+        scrape.scrape_exa("Owain Evans", self.root, self.exa, "2025-01-01", "2025-12-31", arxiv_meta=no_arxiv_meta,
+                          known=known, lab=TRUTHFUL)
+        files = self.corpus()
+        self.assertEqual(len(files), 1)
+        fm = self.front_matter(files[0])
+        self.assertEqual((fm["url"], fm["publishedDate"]), ("https://www.lesswrong.com/posts/G4q", "2025-08-05"))
+
+    def test_lesswrong_display_name_with_underscore_is_him(self):
+        known = {"https://www.lesswrong.com/posts/Hh1": {"authors": ["Owain_Evans"], "published": "2026-11-08",
+                                                         "title": "Three half-baked research ideas"}}
+        self.exa = FakeExa([page("https://www.lesswrong.com/posts/Hh1", "2026-11-08", "")])
+        scrape.scrape_exa("Owain Evans", self.root, self.exa, "2026-01-01", "2026-12-31", arxiv_meta=no_arxiv_meta,
+                          known=known)
+        self.assertEqual(self.front_matter(self.corpus()[0])["author_position"], "solo")
+
+    def test_forum_post_announcing_a_paper_under_another_title_is_one_document(self):
+        self.harvest([page("https://arxiv.org/abs/2309.12288", "2023-09-21", "Owain Evans",
+                           title="The Reversal Curse: LLMs trained on \"A is B\" fail to learn \"B is A\""),
+                      page("https://www.lesswrong.com/posts/SCq", "2023-09-23", "Owain Evans",
+                           title="Paper: LLMs trained on \"A is B\" fail to learn \"B is A\"")],
+                     start="2023-01-01", end="2023-12-31", name="Owain Evans")
+        self.assertEqual(len(self.corpus()), 1)
+
+    def test_post_on_two_sites_under_slightly_different_titles_is_one_document(self):
+        self.harvest([page("https://truthful.ai/blog/out-of-context-reasoning", "2026-02-23", "Owain Evans",
+                           title="Out-of-Context Reasoning in LLMs: A short primer and reading list | Truthful AI"),
+                      page("https://www.lesswrong.com/posts/Oo1", "2026-05-23", "Owain Evans",
+                           title="Out-of-Context Reasoning (OOCR) in LLMs: A Short Primer and Reading List")],
+                     start="2026-01-01", end="2026-12-31", name="Owain Evans", lab=TRUTHFUL)
+        files = self.corpus()
+        self.assertEqual(len(files), 1)
+        self.assertEqual(self.front_matter(files[0])["publishedDate"], "2026-02-23")
 
     def test_search_windows_cover_the_whole_range(self):
         self.harvest([], start="2024-01-01", end="2024-12-31")

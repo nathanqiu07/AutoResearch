@@ -82,7 +82,8 @@ SUMMARY_QUERY = (
 
 def load_identity(researcher: Researcher) -> dict:
     """identity.json in the researcher's dir: {"name", "banned" (strings no pair may contain),
-    "exclude_text", "exclude_domains" (keep his own work out of distractor searches)}. Written by
+    "exclude_text", "exclude_domains" (keep his own work out of distractor searches), and
+    optionally "lab": {"name", "domains", "pages"} (his lab's site, for the harvest)}. Written by
     hand per researcher, so a missing file is an error rather than a guess."""
     path = os.path.join(researcher.root, IDENTITY)
     if not os.path.exists(path):
@@ -649,7 +650,8 @@ def main(argv=None):
             known.update(list_lesswrong_user(args.lesswrong))
         if args.feed:
             known.update(list_feed(args.feed, args.name))
-        print(json.dumps(scrape_exa(args.name, researcher.root, client, args.start, args.end, known=known)))
+        print(json.dumps(scrape_exa(args.name, researcher.root, client, args.start, args.end, known=known,
+                                    lab=load_identity(researcher).get("lab"))))
         return
     if args.command == "extract":
         print(json.dumps(dict(exa_extract(researcher, client), exa_cost=round(client.cost, 4))))

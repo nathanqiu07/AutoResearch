@@ -76,13 +76,14 @@ def import_x_archive(tweets_js: str, root: str):
 # taste/timesplit.read_doc understands. See docs/track-s-extraction.md.
 
 ARXIV_ID = re.compile(r"arxiv\.org/(?:abs|pdf|html)/(\d{4}\.\d{4,5})(?:v\d+)?", re.IGNORECASE)
-FORUM_POST = re.compile(r"(?:lesswrong\.com|alignmentforum\.org)/posts/([A-Za-z0-9]+)", re.IGNORECASE)
+FORUM_POST = re.compile(r"(?:lesswrong\.com|alignmentforum\.org|greaterwrong\.com)/posts/([A-Za-z0-9]+)",
+                        re.IGNORECASE)
 TEXT_DATE = re.compile(r"\b(20\d\d-[01]\d-[0-3]\d)\b")
 # (category, domains, kind). Sources are picked by domain: Exa rejects its "publication"
-# category combined with arxiv.org, and its enum has no tweet, talk or code value.
+# category combined with arxiv.org, and its enum has no tweet, talk or code value. His lab's
+# own site is added per researcher from identity.json's "lab" as kind "blog".
 HARVEST_SOURCES = ((None, ["arxiv.org"], "paper"),
                    (None, ["lesswrong.com", "alignmentforum.org"], "post"),
-                   (None, ["apolloresearch.ai"], "blog"),
                    (None, ["x.com", "twitter.com"], "tweet"),
                    (None, ["youtube.com"], "talk"),
                    (None, ["github.com"], "code"))
@@ -131,7 +132,8 @@ def fetch_arxiv_meta(arxiv_ids):
 
 def _name_pattern(name: str) -> str:
     first, last = (re.escape(p) for p in (name.split()[0], name.split()[-1]))
-    return rf"(?:\b{first}\s+(?:\w\.?\s+)?{last}\b|\b{first[0]}\.?\s+{last}\b|\b{last},\s*{first[0]})"
+    # "[\s_]": LessWrong display names can join the names with an underscore ("Owain_Evans").
+    return rf"(?:\b{first}[\s_]+(?:\w\.?\s+)?{last}\b|\b{first[0]}\.?\s+{last}\b|\b{last},\s*{first[0]})"
 
 
 def _is_him(text: str, name: str) -> bool:
@@ -158,9 +160,9 @@ def author_position(authors, name):
 INDEX_PATH = re.compile(r"^/*(blog|research|posts|users/[^/]+)?/*$")
 
 
-def _kind(url: str) -> str:
+def _kind(url: str, sources=HARVEST_SOURCES) -> str:
     host = urllib.parse.urlparse(url).netloc.lower()
-    for _, domains, kind in HARVEST_SOURCES:
+    for _, domains, kind in sources:
         if any(host == d or host.endswith("." + d) for d in domains):
             return kind
     return "post"
@@ -219,12 +221,15 @@ def _write_doc(root, prefix, fm, text):
     return path
 
 
-def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch_arxiv_meta, known=None):
+def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch_arxiv_meta, known=None,
+               lab=None):
     """Find, check and save everything `name` published between start and end (YYYY-MM-DD).
     `known` maps canonical URLs from authoritative listings (his arXiv, LessWrong and blog
     feeds) to {"authors", "published", "title"}; Exa search adds what they miss and Exa
-    fetches every text. Writes corpus/*.txt and harvest_manifest.jsonl."""
+    fetches every text. `lab` is {"name", "domains", "pages"}: his lab's site is searched and
+    its pages crawled for subpages. Writes corpus/*.txt and harvest_manifest.jsonl."""
     surname = name.split()[-1]
+    sources = HARVEST_SOURCES + (((None, lab["domains"], "blog"),) if lab else ())
     listed = {u: v for u, v in (known or {}).items() if start <= v["published"] <= end}
     known = {canonical_url(u): v for u, v in listed.items()}
     # Fetch by the listed URL: some sites serve only that form, not the canonical one.
@@ -237,16 +242,16 @@ def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch
     deep = client.deep(f"Every paper, blog post, forum post, talk and tweet written by {name}",
                        ENUMERATE_SCHEMA, start_date=start, end_date=end,
                        additional_queries=[f"{name} arXiv papers", f"{name} LessWrong posts",
-                                           f"{name} Apollo Research blog", f"{name} talk podcast"])
+                                           f"{name} {lab['name']} blog" if lab else f"{name} blog",
+                                           f"{name} talk podcast"])
     for it in ((deep.get("output") or {}).get("content") or {}).get("items", []):
         add(it.get("url"), it.get("title", ""))
     for lo, hi in _windows(start, end, window_months):
-        for category, domains, _ in HARVEST_SOURCES:
+        for category, domains, _ in sources:
             for r in client.search(f"{name}", num_results=25, category=category, start_date=lo, end_date=hi,
                                    include_domains=domains, include_text=[surname]):
                 add(r.get("url"), r.get("title", ""))
-    for r in client.contents(["https://www.apolloresearch.ai/blog", "https://www.apolloresearch.ai/research"],
-                             subpages=25, subpage_target=["blog", "research"]):
+    for r in client.contents(lab["pages"], subpages=25, subpage_target=["blog", "research", "papers"]) if lab else []:
         for sp in r.get("subpages") or []:
             add(sp.get("url"), sp.get("title", ""))
 
@@ -259,18 +264,39 @@ def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch
 
     # One piece of work posted in several places (arXiv, LessWrong, his lab's blog) is one
     # document, dated by its earliest copy, so a decision can't land on both sides of T.
-    by_title = {}
+    by_title, titles = {}, {}
     for curl, item in items.items():
-        # A listing's title is clean; a page title can carry a site suffix ("... - LessWrong").
+        # A listing's title is clean; a page title can carry an arXiv id prefix ("[2607.14345] ...")
+        # or a site suffix ("... — LessWrong", "... | Truthful AI"); " - " is left alone, since
+        # titles use it too ("Legal Personhood - Contracts").
         title = known.get(curl, {}).get("title") or item.get("title") or ""
+        title = re.sub(r"\s+[|\u2014]\s+[^|\u2014]*$", "", re.sub(r"^\[[^\]]*\]\s*", "", title))
         title = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
-        if _kind(curl) != "tweet" and len(title) >= 12:
+        if _kind(curl, sources) != "tweet" and len(title) >= 12:
             by_title.setdefault(title, []).append(curl)
-    crossposts = {}
+            titles[curl] = set(title.split())
+    # A lab page or forum post about a paper, or one post on two sites, may be retitled slightly
+    # ("Paper: ..."): a post whose title matched nothing joins the item whose title shares most of
+    # its words (Jaccard >= 0.6, at least 4 words). Two papers are never joined this way.
+    def jaccard(a, b):
+        return len(titles[a] & titles[b]) / len(titles[a] | titles[b])
+    for title, urls in list(by_title.items()):
+        u = urls[0]
+        if len(urls) == 1 and _kind(u, sources) != "paper" and len(titles[u]) >= 4:
+            best = max((v for v in titles if v != u), key=lambda v: jaccard(u, v), default=None)
+            if best and jaccard(u, best) >= 0.6:
+                del by_title[title]
+                next(v for v in by_title.values() if best in v).append(u)
+    # The copy kept is the earliest one that shows he wrote it (a mirror's author field may name
+    # only the site), and it takes the earliest date of all copies.
+    crossposts, earliest = {}, {}
     for urls in by_title.values():
         if len(urls) > 1:
-            urls.sort(key=lambda u: (_date(dict(items[u], url=u), meta, known)[0] or "9999", _kind(u) != "paper", u))
+            dates = {u: _date(dict(items[u], url=u), meta, known) for u in urls}
+            urls.sort(key=lambda u: (_authorship(dict(items[u], url=u), name, meta, known)[2] is not None,
+                                     dates[u][0] or "9999", _kind(u, sources) != "paper", u))
             crossposts.update({u: urls[0] for u in urls[1:]})
+            earliest[urls[0]] = min((d for d in dates.values() if d[0]), default=dates[urls[0]])
 
     manifest, kept, tweets = [], 0, {}
     for curl, item in sorted(items.items()):
@@ -281,7 +307,7 @@ def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch
         fetched = item.get("url", curl)
         item = dict(item, url=curl, title=item.get("title") or known.get(curl, {}).get("title", ""))
         authors, pos, reason = _authorship(item, name, meta, known)
-        date, date_source = _date(item, meta, known)
+        date, date_source = earliest.get(curl) or _date(item, meta, known)
         if reason is None and INDEX_PATH.match(urllib.parse.urlparse(curl).path):
             reason = "index_page"
         row = {"url": curl, "title": item.get("title", ""), "date": date, "reason": reason}
@@ -294,7 +320,7 @@ def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch
         elif reason is None:
             fm = {"url": curl, "title": " ".join((item.get("title") or "").split()), "publishedDate": date,
                   "date_source": date_source, "authors": json.dumps(authors), "author_position": pos,
-                  "kind": _kind(curl), "exa_request_id": item.get("id", "")}
+                  "kind": _kind(curl, sources), "exa_request_id": item.get("id", "")}
             if fetched != curl:  # some sites serve only the form they were fetched by
                 fm["fetched_url"] = fetched
             row["file"] = os.path.basename(_write_doc(root, "research", fm, item.get("text") or ""))
@@ -324,7 +350,8 @@ def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch
 
 def list_arxiv_author(name):
     """{abs URL: {authors, published, title}} for arXiv papers listing `name` as an author."""
-    q = urllib.parse.urlencode({"search_query": f"au:{name.split()[-1]}", "max_results": 200})
+    # The full name as a phrase: a common surname alone ("Evans") returns thousands of papers.
+    q = urllib.parse.urlencode({"search_query": f'au:"{name}"', "max_results": 500})
     time.sleep(3)
     with urllib.request.urlopen(urllib.request.Request(f"https://export.arxiv.org/api/query?{q}", headers=UA),
                                 timeout=60) as r:
@@ -351,7 +378,8 @@ def list_lesswrong_user(slug):
     uid = gql(f'{{ user(input:{{selector:{{slug:"{slug}"}}}}){{ result {{ _id }} }} }}')["user"]["result"]["_id"]
     posts = gql(f'{{ posts(input:{{terms:{{view:"userPosts", userId:"{uid}", limit:500}}}}){{ results '
                 '{ pageUrl title postedAt user { displayName } coauthors { displayName } } } }')["posts"]["results"]
-    return {p["pageUrl"]: {"authors": [p["user"]["displayName"]] + [c["displayName"] for c in p.get("coauthors") or []],
+    # A deleted account comes back as a null user or coauthor.
+    return {p["pageUrl"]: {"authors": [u["displayName"] for u in [p["user"]] + (p.get("coauthors") or []) if u],
                            "published": p["postedAt"][:10], "title": p["title"]} for p in posts}
 
 
