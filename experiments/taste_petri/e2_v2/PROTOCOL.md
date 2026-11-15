@@ -45,3 +45,9 @@ and sampling differ, and the cache key includes the arm.
 
 ## Budget
 ≤ 11 arms × 2 orders × n_band haiku calls, plus M0s on sonnet. Hard cap 900 calls.
+
+## Amendments (before any e2_v2 scoring)
+- 2026-11-15: P1 keeps claims that the blind gate scores lopsided *against* him (field default chosen at ≥ 0.9).
+  Only claims lopsided *toward* him (consensus) are dropped to P0. This follows the rule's intent: drop
+  consensus, keep claims where generic sense mispredicts him. P0 is cut to P1's word count (it was 2×) so the
+  placebo is length-matched.
