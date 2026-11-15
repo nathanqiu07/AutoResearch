@@ -106,6 +106,10 @@ option_order_id. Extra fields, including answers, are rejected. Invalid, empty,
 abstained and unavailable predictions remain explicit rows. Cache keys include the
 complete semantic manifest plus actual prompt/settings; cache entries are
 content-hashed, immutable and not shared across changed interventions.
+The common consumer binds lexical_retrieval, profile_retrieval and future
+semantic_retrieval profiles to their exact config.decision `{context, options}`.
+Missing bindings, changed context or reordered options fail before a backend call.
+Use one separately built retrieval profile for each declared decision/order.
 
 Confirmation requires the evaluator's authoritative receipt and store ID. The
 runner calls evaluation.validate_confirmation_receipt before output or exposure;
