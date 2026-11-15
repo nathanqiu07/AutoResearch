@@ -45,10 +45,22 @@ HTML pages were converted to plain text by stripping tags, so some site navigati
 | | | `elastic_detection_rules_exfiltration.md` (curl exfil, cloud storage client, Anthropic high file upload) | github.com/elastic/detection-rules | Elastic License 2.0 |
 | | | `splunk_attack_data_T1048_003_archive_http_post_stream_http_events.log`, `splunk_attack_data_T1048_003_long_dns_queries_sysmon.log` (first 60 events each) | github.com/splunk/attack_data | Apache-2.0 |
 | | | `suricata_eve_json_alerts_sample.log`, `zeek_notice_log_sample.log` | elastic/integrations test fixtures | Elastic License 2.0 |
+| india_environmental | 28 | `tnpcb_report_to_ngt_nctps_stage1_fly_ash_ocems_show_cause_2022.txt` (TANGEDCO North Chennai TPS: ash-slurry pipeline leaks into Ennore Creek, OCEMS PM exceedance days, environmental compensation, show-cause notices for running without Consent to Operate) | greentribunal.gov.in | court record / Indian government work |
+| | | `ngt_sz_oa256_2020_north_chennai_six_industries_air_pollution_judgment_2023.md` (OCEMS exceedance hours with operator explanations, unit-by-unit directions) | indiankanoon.org | court record |
+| | | `ngt_sz_suo_motu_ennore_oil_spill_order_2023_12.txt`, `tnpcb_press_release_cpcl_section33a_directions_ennore_oil_2023_12_11.txt` | livelaw.in (NGT order), poovulagu.org (TN DIPR release) | court record; government work |
+| | | `tnpcb_technical_committee_coromandel_ennore_ammonia_leak_report_2024.txt` (sensor coverage gaps, mass balance, consent-condition violations, 18 recommendations) | greentribunal.gov.in | court record / Indian government work |
+| | | `tnpgcl_etps_expansion_ec_six_monthly_compliance_report_2026.txt` (Ennore TPS expansion, condition-by-condition EC compliance table to MoEFCC Regional Office) | tnpgcl.org | public-sector utility filing |
+| drc_mining_supply_chain | 70 | `afrewatch_kcc_kolwezi_sulphuric_acid_spills_investigation_2021_fr.txt` (French; Glencore's KCC acid spills into the Luilu, lab results) | afrewatch.org | NGO publication, copyrighted, quoted |
+| | | `bread_for_all_fastenopfer_glencore_drc_kcc_mutanda_2012.txt` (Luilu plant effluent analysis vs Congolese limits) | cidse.org | NGO publication, copyrighted, quoted |
+| | | `raid_afrewatch_beneath_the_green_kolwezi_cobalt_water_pollution_2024.txt` | raid-uk.org | NGO publication, copyrighted, quoted |
+| | | `oecd_legal_0386_due_diligence_recommendation_annex_ii_model_policy.txt` (5-step framework, model supply chain policy) | legalinstruments.oecd.org | OECD: free to reproduce, not to sell |
+| | | `un_group_of_experts_drc_midterm_report_s_2024_969_minerals_excerpt.txt` (Rubaya coltan, ITSCI tagging suspension, traceability breaches; excerpt) | documents.un.org | UN public document |
+| | | `apple_form_sd_ex1_01_conflict_minerals_report_2024.txt` (Form SD conflict minerals report: RCOI, smelter audits, DRC/Rwanda sourcing halt) | SEC EDGAR | public filing |
 
 ## Gaps
 
-- No Indian CEMS material for seed 28 (Ennore). cpcb.nic.in and its mirror were unreachable. There is also nothing DRC-specific for seed 70; the mining files are US.
+- Seed 28 (Ennore) is now covered by `india_environmental/` (TNPCB and NGT records); still missing: a TNPCB Consent to Operate order and raw OCEMS exports.
+- Seed 70 (Kolwezi runoff) is now covered by `drc_mining_supply_chain/`; still missing: RMAP/ITSCI audit reports, Congolese government (ACE) documents, and mercury/arsenic-specific data.
 - No OpenAI structure page (403). No real corporate board minutes from a distressed company: the AIG 2008 minutes court exhibit was found, but its host did not resolve. The WeWork 8-K and forbearance agreement cover the covenant-default language.
 - No FAERS quarterly ASCII README. The zip downloaded too slowly, so openFDA FAERS records were used in its place.
 - No Splunk BOTS data. Splunk's attack_data samples cover the same log formats.
