@@ -106,6 +106,12 @@ Relative max_seconds also applies before cache access. Both prediction and
 extraction calls must supply exactly the declared temperature and max_tokens;
 prompt and optional system text are recorded separately in the hashed trace.
 Builders must set config.extractor_settings to those actual call arguments.
+Every assigned build requires exactly those two keys with explicit valid values,
+including deterministic zero-call controls. The coordinator resolves defaults
+before hashing the config; the runner never inserts defaults after registration.
+Unknown provider options such as top_p, and reasoning settings owned by the
+backend, are rejected here before the job is claimed. Direct synthetic
+build_profile fixtures outside job execution may still declare no-call settings.
 Missing/unknown allocation.cost_mode is rejected before a durable claim is made.
 
 Decision items use exactly item_id, researcher_id, context, options and
@@ -155,6 +161,10 @@ all reported output, including reasoning, is charged. These are conservative lis
 price estimates, not invoices. One urllib request is made with no automatic retry.
 Invalid/incomplete output is visible and holds the lane. Keys are read only from
 the process environment and never included in logs, manifests, or errors.
+Partially reported token usage preserves each valid component and records which
+components remain unknown. Runner token totals are null when incomplete; known
+partial totals and unknown-attempt counts remain in budget_detail. The full
+uncertain dollar reservation remains held in addition to known reported usage.
 
 The coordinator must still reserve scaling funds and allocate total calls across
 jobs. CLI panels remain separately declared and require coordinator concurrency

@@ -158,6 +158,8 @@ class OpenAIResponsesBackend(LLM):
         self.model, self.reasoning, self.ledger, self.timeout = model, reasoning, ledger, float(timeout)
         self.spent_usd, self.reserved_usd = Decimal(0), Decimal(0)
         self._attempts, self._inflight = 0, 0
+        self._unknown_input_usage, self._unknown_output_usage = 0, 0
+        self._known_input_tokens, self._known_output_tokens = 0, 0
         self._lock = threading.Lock()
         self.enforced_settings = {"reasoning_effort": reasoning, "store": False, "tools": [],
                                   "service_tier": "default", "temperature": "not_sent",
@@ -172,6 +174,10 @@ class OpenAIResponsesBackend(LLM):
         with self._lock:
             local = {"model": self.model, "max_usd": self.max_usd, "spent_usd": float(self.spent_usd),
                      "reserved_usd": float(self.reserved_usd), "attempted_calls": self._attempts,
+                     "known_input_tokens": self._known_input_tokens, "known_output_tokens": self._known_output_tokens,
+                     "unknown_input_usage_attempts": self._unknown_input_usage,
+                     "unknown_output_usage_attempts": self._unknown_output_usage,
+                     "reported_usage_complete": not (self._unknown_input_usage or self._unknown_output_usage),
                      "cost_basis": "conservative_uncached_list_price_estimate_not_invoice"}
         local["campaign"] = self.ledger.summary()
         return local
@@ -206,6 +212,7 @@ class OpenAIResponsesBackend(LLM):
             self._attempts += 1
             self._inflight += 1
         input_tokens, output_tokens, succeeded = 0, 0, False
+        input_known, output_known = False, False
         try:
             headers = {"Content-Type": "application/json", "Authorization": "Bearer " + os.environ["OPENAI_API_KEY"]}
             for variable, header in (("OPENAI_ORG_ID", "OpenAI-Organization"), ("OPENAI_PROJECT_ID", "OpenAI-Project")):
@@ -222,12 +229,16 @@ class OpenAIResponsesBackend(LLM):
             if not isinstance(data, dict):
                 raise ValueError("invalid response object")
             usage = data.get("usage", {})
-            if (not isinstance(usage, dict) or any(isinstance(usage.get(k), bool) or not isinstance(usage.get(k), int) or usage[k] < 0
-                                                   for k in ("input_tokens", "output_tokens"))):
+            if not isinstance(usage, dict):
+                usage = {}
+            valid = lambda value: isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 1_000_000_000
+            input_known, output_known = valid(usage.get("input_tokens")), valid(usage.get("output_tokens"))
+            if input_known:
+                input_tokens = usage["input_tokens"]
+            if output_known:
+                output_tokens = usage["output_tokens"]
+            if not (input_known and output_known):
                 raise ValueError("missing usage")
-            if usage["input_tokens"] > 1_000_000_000 or usage["output_tokens"] > 1_000_000_000:
-                raise ValueError("implausible usage; retain unknown reservation")
-            input_tokens, output_tokens = usage["input_tokens"], usage["output_tokens"]
             if input_tokens > input_bound or output_tokens > max_tokens:
                 raise ValueError("usage exceeded reserved bound")
             if data.get("status") != "completed" or data.get("error"):
@@ -260,6 +271,10 @@ class OpenAIResponsesBackend(LLM):
             self.ledger.finish(reservation, actual_usd=cost, succeeded=succeeded)
             with self._lock:
                 self.spent_usd += cost
+                self._known_input_tokens += input_tokens
+                self._known_output_tokens += output_tokens
+                self._unknown_input_usage += int(not input_known)
+                self._unknown_output_usage += int(not output_known)
                 if succeeded:
                     self.reserved_usd -= reservation_usd
                 self._inflight -= 1

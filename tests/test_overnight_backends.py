@@ -121,6 +121,23 @@ class BackendTests(unittest.TestCase):
         self.assertAlmostEqual(backend.cost_summary()["spent_usd"], 0.0004)
         self.assertGreater(backend.cost_summary()["reserved_usd"], 0)
 
+    def test_partial_usage_preserves_known_component_and_marks_unknown(self):
+        for usage, expected, missing in (({"input_tokens": 100}, 0.0002, "output"),
+                                         ({"output_tokens": 20}, 0.0002, "input")):
+            with self.subTest(usage=usage):
+                ledger = self.b.DollarLedger(Path(self.temp.name) / (missing + ".sqlite3"), max_usd=1,
+                                             deadline="2099-01-01T00:00:00+00:00", max_inflight=2)
+                backend = self.b.OpenAIResponsesBackend(model="gpt-6-sol", reasoning="medium", ledger=ledger, max_usd=0.1)
+                with patch.dict("os.environ", {"OPENAI_API_KEY": "synthetic-key"}), \
+                     patch("urllib.request.urlopen", return_value=self.response(usage=usage)):
+                    with self.assertRaises(RuntimeError):
+                        backend.complete("q", max_tokens=128)
+                summary = backend.cost_summary()
+                self.assertAlmostEqual(summary["spent_usd"], expected)
+                self.assertEqual(summary["unknown_" + missing + "_usage_attempts"], 1)
+                self.assertFalse(summary["reported_usage_complete"])
+                self.assertGreater(summary["reserved_usd"], 0)
+
     def test_absolute_deadline_and_per_job_budget_block_before_request(self):
         expired = self.b.DollarLedger(Path(self.temp.name) / "expired.sqlite3", max_usd=1,
                                       deadline="2000-01-01T00:00:00+00:00", max_inflight=2)
