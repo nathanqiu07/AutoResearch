@@ -215,6 +215,29 @@ preserved, and the helper hash enters the policy digest. All 18 relevant tests
 pass. Actual runner dispatch, regenerated artifacts on the integrated renderer,
 real P1/DEV data and the later semantic release remain separate checks.
 
+## Later pinned releases: semantic retrieval, runner and API accounting
+
+[20261115-009](../../../results/integration-audit/20261115-009/) verifies seven
+semantic-retrieval claims at `0ca54b4`, with one P3 numerical defect: subnormal
+vectors can break cosine scale invariance. This is pathological-input robustness,
+not evidence of actual provider misranking. The owner has the reproduction.
+
+[20261115-010](../../../results/integration-audit/20261115-010/) retests the runner
+at `c840615`. Full-document identity is fixed; four previous runner cases remain.
+Old and new evidence are separate, with valid-input and rebound-input controls.
+
+[20261115-011](../../../results/integration-audit/20261115-011/) audits the new API
+adapter using mocked transport and synthetic-only environments. Shared limits,
+concurrency and uncertainty holds pass; partial reported usage can be discarded
+as zero. Full reservations remain held, and no budget bypass was observed. The
+report does not verify current prices, availability or actual provider behavior.
+
+[20261115-012](../../../results/integration-audit/20261115-012/) verifies the shared
+runner's actual decision-binding route for all three retrieval method IDs. Exact
+decisions reach the recording backend; changed context/order is rejected first.
+Synthetic builders isolate routing; actual role 05 candidate rebuilding on the
+combined release remains a separate integration check.
+
 ## Verification and next work
 
 The full baseline suite passed 656 tests with two skips. With the new audit tests,

@@ -144,3 +144,28 @@
 - Next: preserve and publish packages 007/008, retest the runner fixes at a new
   immutable commit, audit semantic controls, then consume only coordinator-released
   DEV artifacts and actual integrated dispatch. The overnight goal stays active.
+
+## Additional release boundaries
+
+- Packages 007/008 and immutable handoffs are pushed at
+  `8612eb8b81e0469ac7d4ac4a990ada6a47817353`; 208 evidence-file hashes were verified
+  and tracked. Full audit repo suite: 677 run, 675 passed, two skipped.
+- API/retrieval release `c840615` was archived with 160 file hashes. Runner retest
+  confirms full-document binding fixed; four other cases remain. Root confirmed
+  the new cases and notified the coordinator. No stale old finding is treated as
+  automatically applying to a later release.
+- Package 009 captures semantic release `0ca54b4` and its earlier implementation
+  separately. Seven claims verify; one tiny-vector cosine-normalization edge case
+  fails. Owner reports a new fix in progress; independent retest awaits its SHA.
+- Package 010 holds runner old/new comparisons; package 011 holds the independent
+  API/shared-ledger review and root confirmation. One partial-usage reporting gap
+  remains; shared reservations stay held and no budget bypass was observed.
+- Package 012 exercises actual shared runner dispatch for all three retrieval
+  IDs with synthetic builders: nine cases verify context/ordered-option binding.
+  This is not actual role 05 rebuilding on a combined candidate release.
+- Both original chats remain monitored. Baseline owner reports rejected postmortem
+  validation and no valid shutdown decision; requested a frozen export for a
+  provenance check. Those are owner-reported results, not independently scored here.
+- No private evaluation inventory, final labels, real key/environment, network API
+  or paid inference was used in these audits. All production fixes remain with
+  their owners; this branch retains independent reproductions and evidence.
