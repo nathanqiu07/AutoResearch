@@ -667,3 +667,41 @@
   duplicate scoring work is requested. The separate 039 recovery capsule will
   preserve its new private gap outside this worktree without duplicating the
   owner's complete archive or the earlier 040 checkpoint.
+
+## Outside-worktree downstream recovery and closed continuation map
+
+- Previous goal turn published original039 and portable recovery at remote-
+  verified b35c0f8f47f40b28a0aa6338fb7f626ce0db2b0f. The later fb081ab commit
+  is the required coordination heartbeat only. All three authorized chats
+  received the publication pins and unchanged original-input scope.
+- Audit 041 copies ten pinned payload entries / 1,060,424 bytes to a private
+  external capsule. Its public archive contains exactly 141 committed039 files;
+  its only private archive is the new thirteen-record gap. Tools and guide are
+  retained in the capsule. Existing owner210 payloads and old sixteen private
+  archives remain separate explicit dependencies, without duplication.
+- Root verifies the actual copy, extracts the public tree and replays all
+  1,316 checks with process/socket/original-checkout access denied. Inventory
+  bytes match; only invocation and actual reader identity differ. Every other
+  report field and ordered array is exact. Original039 bytes remain unchanged.
+- Required suite at fb081ab passes: 677 run, 675 passed, two skipped, exit 0
+  in 24.972 seconds. No paid calls, settings changes or owner-runtime edits.
+- Independent041 review passes 784 preparation and 771 copy/saved-replay
+  checks, plus eight synthetic capsule controls. It checks actual Git blobs,
+  exact capsule inventory/modes and saved root report equality without opening
+  owner payload bodies or repeating the full checker. No blocker was found.
+- Audit 042 maps the CLOSED204 continuation from three released snapshots.
+  Its 204 jobs and 672 request identities reconcile with completed reservation
+  metadata and 124,590,125 nanos of known recorded usage; current holds are zero.
+  Separate metadata-only review passes 45 checks. Earlier holds/exclusions and
+  scoring/binding results are outside this reconciliation.
+- The first-order retention proposal names 3,022 path/hash identities and 2,822
+  declared content hashes, with 108,070,501 bytes estimated from file metadata.
+  No referenced raw bodies are opened or copied by that mapping pass. Four
+  coverage/selection/excluded-job records are held. Raw hashes and content
+  eligibility remain unverified; existing source-owner confirmation is pending
+  internally and does not block any live run or require human input.
+- The frozen mapper's initial scalar-manifest-identity assumption failed and
+  is preserved as an audit setup error, not an owner failure. The original
+  twenty-five metadata pins and bounded file-kind/size observations remain
+  separate from future raw retention. The three approved closed metadata
+  snapshots can be retained independently while wider scope is checked.
