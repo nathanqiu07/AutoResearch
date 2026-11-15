@@ -166,3 +166,36 @@ Canonical ownership renewed/pushed and remote verified at e8ea84521c85f53a9da750
 Audit: exact final phase1 index /private/tmp/gio-profile-20261115-coordinator/phase1-completion-index-v1.json SHAd0acaae53d84e6ee5540279b5dbe2a1d4dda423e5403bed525054aa6e3535bad and accounting finalreceipt4ca50af5 bind132jobs/144paidcalls. Please extend your existing private relocatable archive to the closed full phase1 inputs/results using the same workflow, without raw content in Git. Accounting verified2unique embedding rows separately, no repeated bundle charges. Semantic auxiliary decision_item_sha256 is assembler's digest([item_id,option_order_id]), not whole item hash; evaluator is verifying exact declared semantics before score publication.
 
 Concurrency is per lane: profile max2, reference max1, downstream max1, so current project maximum4. Provider allocations remain aggregate. One Chris gap collector is active; no duplicate source collection or general-advice pooling.
+
+
+## 02:17 Pacific — phase2 broad builds live
+
+Immutable phase2 runtime f6cd4fb5a7c9bc2fdf1f154f6ad4fda18df174ca at /Users/giordanorogers/.codex/worktrees/gio-overnight-phase2-runtime/AutoResearch-overnight-control passed879 tests(877 passed,2 skipped) plus20 driver tests. It is now running84 target-only builds;12 P7 builds are prepared and queued for the same lane after this batch. Target prepared SHA5d79f8f8a631c72e0ba8f1f38f3a3a961a39d513378e79673078a0141d1e091f, P7 prepared SHA f56f76b65d5608a15ae8d36ed1fa48ea2420e61c1decd67e5c5989f239a612eb. Both live under shared phase2 ledger policy636bc1e5;96build ceilings total3.84USD. JOB_REGISTRY now includes all132 phase1 jobs plus96 prepared/active jobs, and SEARCH_REGISTRY records actual phase2 state.
+
+Sol and Astra exact neutral Responses probes both succeeded with medium reasoning and the current backend,2 calls,0.000855USD estimated, no holds. These establish API access only, not capability ranking. Source/request/settings/usage receipts are at coordinator/neutral-api-access-v1.
+
+05 successor embedding production COMPLETE: exact2 calls against frozenf6cd4fb5,1644+2278 inputtokens,0.00007844USD estimated, zero holds. Summary /private/tmp/gio-profile-20261115-coordinator/embedding-v2/summary.json SHAe5e8d3f9265887276afc067d0c5fca43a546b219be3ace1e083f1ae26734af89. Please assemble new source-bound bundles from exact receipts/raw responses now, no newcalls. Proposal009 unchanged; Neel receipt12626b20c183bf471b626c1c172caf805ea4e38393de80c87b919ad0d3130aee; Chris339b7e3530b1ec30929db74085dba66c2b30b641bad4e247a01e18aab3adb05b. Validate all3 packing caps with new runtime.
+
+Matched phase2 controls selection /private/tmp/gio-profile-20261115-coordinator/phase2-control-selection-v1.json SHA0e9b63edd3b2b8a4ddca55e894b8ead893f9bf97c29ea7da811261510e8597ca is frozen before profile outcomes. Raw/lexical/semantic at512/2048/8192, plus no-profile/name controls with explicit byte-identical payload aliases across caps;308 unique predictions,3USD tranche. Driver worker prepares packets,05 supplies exact bundles. Phase1 controls stay historical.
+
+Reference allocation clarification: intentional5USD tranche from independent_evidence50, leaving45unallocated in that envelope; no additional debit from profile200. Canonical issued lease and RUN_POLICY agree. Root launcher exec session2151 is active (started02:03), and63 prediction rows were observed at02:13. Never relaunch existing claim.
+
+After first valid fit-only P1 arrives, reserve offline memory_summary and profile_retrieval follow-up construction using exactly that saved extraction. Own/swapped/shared-profile diagnostics remain proposed only; current source/profile guards may make swapped profiles unsupported, so no silent relabeling or scope expansion.
+
+
+## 02:20 Pacific — valid P1 follow-ups available
+
+The first predeclared explicit-only P1 at cap512, replicate0, is valid for both researchers. Frozen handoff /private/tmp/gio-profile-20261115-coordinator/first-p1-handoff-v1/index.json SHAd60849589fefe1016b4167ad6fba0a5fc1a4c09efb87ec0441202dcdb29f1a26. It binds Neel joba887e894c24dc271b46196bf5384796ae2dd9dfa25f6d9cb18c4247714c8ebd9/profile fileSHA6b15030c4721cb67f3b106460d1a597a7538d437e0da17f82dc904403237a6f5 and Chris jobb97d5eafce5c6ff91497285c8d4dc14c53dc04e40aebe60f938a43acb64ebb5c/fileSHA7621f59adbc0df2843c7ee8f52236ad70816ebcba1e3f04406b25e51e806eb9f. Rendered459/353bytes, no prediction-score selection.05 may now validate memory_summary and profile_retrieval construction using these exact saved extractions, no repeated extraction calls. Later fit-only utility handoff is a separately labeled feasibility input, not a winner; current downstream04 remains unchanged.
+
+Larger P1 failures remain explicit: Neel2048 explicit quote_absent, Chris2048 explicit and8192 explicit exceed caps. New protocol has produced some valid profiles but does not guarantee correctness or fit. No repairs or fallback replacements of failed rows. Broad84 batch continues under the frozen design.
+
+Own/swapped/shared-profile diagnostic remains unsupported by current source-bound driver contracts without an additional declared intervention; do not relabel a foreign profile as target-owned. Memory/hybrid follow-ups use existing implemented controls and may proceed offline now.
+
+
+## 02:24 Pacific — next bounded evidence work
+
+Oversight:04 finished the new Chris batch. Safe handoff on d269ed373bdf386de137aedc85c3dcdafd0d0964, handoffs/04/011-chris-archival-candidates-reviewed.json SHAfc1443d644ec475dedf179cbcd02dedb80d0abb068499fb10c2094a39c0d1b34. Four captures/eight spans yield seven eligible archival comparisons in two conservative groups, split exposition/visualization design versus early pedagogy/notation. Zero primary research-strategy evidence was added; v2/v3 remain unchanged. Please keep collection idle unless a distinct primary route directly addresses the remaining gap; more related prose is not the limiting resource. Candidate domains can support a separate diagnostic later, not pooled research fidelity.
+
+Reference follow-up planning: Gio's standing track includes the full existing M0–M7 interface. Once the running M0–M3 reference reaches its checkpoint, please have role10 prepare a bounded dry-plan for the remaining M4–M7 on the same eight canonical development users, reusing completed M0–M3 results as explicit historical executions rather than repeating them. Do not change the live63a2c21 runtime or issue calls now. Inspect existing method dependencies, cache lineage and call bounds; preserve same targets, report any fit-budget differences, and return a concrete small tranche proposal within the remaining45USD evidence allocation. This is a plan for already implemented methods, not a new framework or permission to touch final users. If no clean exact comparison is possible, state that limitation.
+
+Audit next integration pins: immutable f6cd4fb5 runtime, prepared broad target batchdf4cbde... SHA5d79f8f8... andP7 batch3dca411... SHA f56f76b6... are live/queued respectively; exact full paths in JOB_REGISTRY. Semantic phase2 production summarye5e8d3f9... and new index50c60bd7... bind changed source spans. Current running build failure diagnosis belongs06/07; existing audit may inspect actual integrated payload/source boundaries without another builder.
