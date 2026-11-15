@@ -56,9 +56,32 @@ def quick_profile(r, gen, outdir, max_docs, offline):
     return prof
 
 
+def pick_with_user_model(r, cands, k, offline):
+    """A fitted user model (data/researchers/<slug>/usermodel.json, WS A's method) picks the design: it is
+    asked k times to choose the idea this person would prefer among the remaining candidates."""
+    import os
+    from autoresearch.research.advisor import choice_index, load_user_model
+    from autoresearch.taste.usermodel import load_model  # noqa: F401  (load_user_model imports it)
+    body = json.loads(Path(os.path.join(r.root, "usermodel.json")).read_text())
+    spec = body["backend"]["label"] if isinstance(body["backend"], dict) else body["backend"]
+    llm = OfflineLLM() if offline else get_llm("auto", spec, Budget(max_cost_usd=2.0))
+    um, _ = load_user_model(r.root, None, llm)
+    ctx = ("Choosing how to rewrite Petri audit seeds and the auditor's behaviour so the target model does not "
+           "recognise the audit as an evaluation, while the audit still tests the same behaviour. Which idea "
+           "would you pick?")
+    pool, design = list(cands), []
+    while pool and len(design) < k:
+        pred = um.predict(ctx, [i.text for i in pool])
+        idx = choice_index(getattr(pred, "choice", None), [i.text for i in pool])
+        design.append(pool.pop(idx if idx is not None else 0).text)
+    return design
+
+
 def one(slug, seeds, gen, k, outdir, offline, max_docs=24):
+    import os
     r = load_researcher(slug)
-    prof = quick_profile(r, gen, outdir, max_docs, offline)
+    has_um = os.path.exists(os.path.join(r.root, "usermodel.json"))
+    prof = None if has_um else quick_profile(r, gen, outdir, max_docs, offline)
     prop = Proposer(gen, prof, random.Random(0), setting_kind="agentic")
     cands = prop.propose(PETRI_SCENARIO.goal, PETRI_SCENARIO.probe, [], set(), [], [], k=10,
                          setting=PETRI_SCENARIO.setting)
@@ -69,8 +92,11 @@ def one(slug, seeds, gen, k, outdir, offline, max_docs=24):
                        r"debrief|label simulated|inform the (target|model)", re.I)
     kept = [i for i in cands if not tells.search(i.text)]
     dropped = len(cands) - len(kept)
-    ranked = sorted(kept or cands, key=lambda i: -prof.score(i.features))
-    design = [i.text for i in ranked[:k]]
+    if has_um:
+        design = pick_with_user_model(r, kept or cands, k, offline)
+    else:
+        ranked = sorted(kept or cands, key=lambda i: -prof.score(i.features))
+        design = [i.text for i in ranked[:k]]
     off = OfflineLLM()
     pm = PetriMeasurer(Models(generator=gen, target=off, judge=off), seeds)
     guidance = "(offline guidance)" if offline else pm.auditor_guidance(design)
