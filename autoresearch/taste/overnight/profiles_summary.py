@@ -10,9 +10,10 @@ import json
 import math
 
 from .contracts import canonical_json, digest, sha256_text, validate_documents
+from .contracts import QUOTE_RESOLVER_VERSION, QuoteResolutionError, resolve_quote_sources
 
 
-PROMPT_VERSION = 'summary-profile-v1-settings-v2'
+PROMPT_VERSION = 'summary-profile-v2-quote-only'
 EXTRACTOR_DEFAULTS = {'temperature': 0.0, 'max_tokens': 2048}
 QUESTIONNAIRE_ORIGIN = 'codex-chat:01a1de1e-34f7-7fe2-8676-cdba849cac31'
 QUESTIONS = {
@@ -36,12 +37,12 @@ Do not infer a preference from silence, coauthorship alone, or invented rejected
 conditions and dates; use null when unsupported. Mark every inference. Keep conflicts rather than resolving them by fiat.
 Each nonempty statement must be an object with EXACT keys:
 {"text":"concise paraphrase","kind":"preference|belief|description","evidence_status":"explicit|inferred",
- "conditions":null,"date":null,"sources":[{"document_id":"approved ID","start":0,"end":10,"quote":"exact substring"}]}.
-Source start/end are zero-based Unicode-character offsets in the original document, end exclusive; the quote must exactly match that slice. Input segments give original offsets. Use only their content; chronology outside those segments is unknown.
+ "conditions":null,"date":null,"sources":[{"document_id":"approved ID","quote":"exact substring"}]}.
+Return source entries with EXACTLY document_id and quote. Do not return or calculate start/end offsets. The system derives original-document Unicode-character offsets from a unique exact quotation inside a permitted segment. Missing, forbidden or ambiguous quotations are rejected; use a sufficiently specific exact quote. Input segments give approved text; chronology outside those segments is unknown.
 Use short sufficient quotations. Explicit-only forbids every inferred statement; marked-inference permits them only
 with evidence_status=inferred. A valid quotation is a provenance link, not proof that your inference is true.
 Do not invent numeric weights or reliability probabilities. Stay within the supplied conservative UTF-8 byte cap
-for the WHOLE JSON content, including provenance. If no supported information exists, return an empty summary or
+for the WHOLE final JSON content, including provenance and system-derived start/end fields; leave room for those fields. If no supported information exists, return an empty summary or
 all unknown questionnaire answers. Do not omit required questionnaire fields to fit. No markdown fences.'''
 METHOD_INSTRUCTIONS = {
     'P1': 'Compress the documents into a plain, useful summary without imposing a research-taste taxonomy. Return exactly {"summary":[statements in natural reading order]}.',
@@ -61,6 +62,7 @@ SOURCE_FIELDS = {'document_id', 'start', 'end', 'quote'}
 
 def prompt_spec(method_id):
     return {'version': PROMPT_VERSION, 'extractor_settings_defaults': dict(EXTRACTOR_DEFAULTS),
+            'quote_resolver_version': QUOTE_RESOLVER_VERSION,
             'system': SYSTEM, 'common': COMMON,
             'method': METHOD_INSTRUCTIONS[method_id],
             'questions': QUESTIONS if method_id == 'P3' else None}
@@ -207,6 +209,7 @@ def _build(method_id, documents, config, extractor):
         return _result(status='empty', error='no_approved_documents')
     usage = {'attempted_calls': 1, 'cost_status': 'unavailable',
              'effective_extractor_settings': dict(settings),
+             'quote_resolver_version': QUOTE_RESOLVER_VERSION,
              'request_sha256': digest({'system': SYSTEM, 'prompt': prompt, 'settings': settings}),
              'prompt_spec_sha256': digest(prompt_spec(method_id)),
              'replicate_policy': 'replicate ID only; no unsupported seed parameter sent'}
@@ -217,12 +220,19 @@ def _build(method_id, documents, config, extractor):
     if not isinstance(raw, str):
         return _result(error='nontext_extraction_output', usage=usage)
     usage['response_sha256'] = sha256_text(raw)
+    usage['raw_response_sha256'] = usage['response_sha256']
     try:
         content = json.loads(raw, object_pairs_hook=_unique_object)
         # This also rejects non-finite JSON constants accepted by json.loads.
         canonical_json(content)
     except (ValueError, TypeError):
         return _result(error='malformed_extraction_json', usage=usage)
+    try:
+        content, records = resolve_quote_sources(content, documents)
+    except QuoteResolutionError as exc:
+        usage['quote_resolution_records'] = exc.resolution_records
+        return _result(content, error=exc.code, usage=usage)
+    usage['quote_resolution_records'] = records
     status, error = _validate_output(content, method_id, documents, config['evidence_policy'])
     return _result(content, status, error, usage)
 

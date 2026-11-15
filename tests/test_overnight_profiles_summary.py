@@ -14,7 +14,22 @@ DOCS = [{'document_id': 'synthetic-fit', 'researcher_id': 'synthetic', 'content'
 def statement(status='explicit'):
     return {'text': 'Start with a small controlled test.', 'kind': 'preference',
             'evidence_status': status, 'conditions': None, 'date': None,
-            'sources': [{'document_id': 'synthetic-fit', 'start': 0, 'end': len(TEXT), 'quote': TEXT}]}
+            'sources': [{'document_id': 'synthetic-fit', 'quote': TEXT}]}
+
+
+def resolved_fixture(value):
+    """Expected spans for fixture quotations that cover exactly TEXT."""
+    value = copy.deepcopy(value)
+    def visit(node):
+        if isinstance(node, dict):
+            if 'sources' in node and isinstance(node['sources'], list):
+                for source in node['sources']:
+                    source.update(start=0, end=len(TEXT))
+            for child in node.values(): visit(child)
+        elif isinstance(node, list):
+            for child in node: visit(child)
+    visit(value)
+    return value
 
 
 class Extractor:
@@ -51,6 +66,52 @@ class SummaryTests(unittest.TestCase):
                         dict(self.config, method_id=method, **changes), backend)
         return result, backend
 
+    def test_quote_only_protocol_derives_unicode_offsets_and_records_resolution(self):
+        prefix = 'Heading é\n'
+        docs = copy.deepcopy(DOCS)
+        docs[0]['content'] = prefix + TEXT
+        docs[0]['content_sha256'] = contracts.sha256_text(docs[0]['content'])
+        config = dict(self.config, allowed_sources=contracts.source_manifest(docs),
+                      allowed_source_manifest_hash=contracts.digest(contracts.source_manifest(docs)))
+        response = {'summary':[statement()]}
+        backend = Extractor(response)
+        out = self.m.build_p1(docs, config, backend)
+        self.assertEqual(out['status'], 'complete')
+        span = out['content']['summary'][0]['sources'][0]
+        self.assertEqual((span['start'], span['end']), (len(prefix), len(prefix) + len(TEXT)))
+        self.assertEqual(response['summary'][0]['sources'][0],
+                         {'document_id': DOCS[0]['document_id'], 'quote': TEXT})
+        self.assertEqual(out['fit_usage']['response_sha256'], contracts.sha256_text(json.dumps(response)))
+        self.assertEqual(out['fit_usage']['raw_response_sha256'], out['fit_usage']['response_sha256'])
+        self.assertTrue(out['fit_usage']['quote_resolution_records'])
+        self.assertEqual(out['fit_usage']['quote_resolver_version'], self.m.prompt_spec(self.config['method_id'])['quote_resolver_version'])
+        self.assertEqual(len(backend.calls), 1)
+
+    def test_absent_ambiguous_and_forbidden_quotes_fail_without_retry(self):
+        for content, permitted, error in [(TEXT + TEXT, None, 'quote_ambiguous'), (TEXT, [], 'quote_unpermitted'),
+                                           ('No matching quotation.', None, 'quote_absent')]:
+            with self.subTest(content_length=len(content), permitted=permitted):
+                docs = copy.deepcopy(DOCS)
+                docs[0]['content'] = content
+                docs[0]['content_sha256'] = contracts.sha256_text(content)
+                if permitted is not None: docs[0]['permitted_spans'] = permitted
+                config = dict(self.config, allowed_sources=contracts.source_manifest(docs),
+                              allowed_source_manifest_hash=contracts.digest(contracts.source_manifest(docs)))
+                backend = Extractor({'summary':[statement()]})
+                out = self.m.build_p1(docs, config, backend)
+                self.assertEqual(out['status'], 'invalid')
+                self.assertEqual(out['error_code'], error)
+                self.assertEqual(len(backend.calls), 1)
+                self.assertTrue(out['fit_usage']['quote_resolution_records'])
+
+    def test_old_model_offsets_are_not_silently_repaired(self):
+        response = {'summary':[statement()]}
+        response['summary'][0]['sources'][0].update(start=1, end=len(TEXT))
+        out, backend = self.build(response)
+        self.assertEqual(out['status'], 'invalid')
+        self.assertEqual(out['content'], response)
+        self.assertEqual(len(backend.calls), 1)
+
     def test_unknown_extractor_settings_are_rejected_before_call(self):
         for method in ('P1', 'P2', 'P3'):
             for extra in ({'top_p':0.1}, {'top_p':0.9}, {'reasoning':'high'}, {'seed':1}):
@@ -86,7 +147,7 @@ class SummaryTests(unittest.TestCase):
         response = {'summary': [statement('inferred')]}
         result, _ = self.build(response)
         self.assertEqual(result['status'], 'invalid')
-        self.assertEqual(result['content'], response)
+        self.assertEqual(result['content'], resolved_fixture(response))
         self.assertEqual(result['error_code'], 'inference_not_allowed')
         accepted, _ = self.build(response, evidence_policy='marked-inference')
         self.assertEqual(accepted['status'], 'complete')
@@ -117,7 +178,7 @@ class SummaryTests(unittest.TestCase):
             with self.subTest(response=response):
                 result, _ = self.build(response)
                 self.assertEqual(result['status'], 'invalid')
-                self.assertEqual(result['content'], response)
+                self.assertEqual(result['content'], resolved_fixture(response))
 
     def test_schema_requires_all_questions_and_preserves_unknowns(self):
         answers = {q: {'status': 'unknown', 'statements': []} for q in self.m.QUESTIONS}
