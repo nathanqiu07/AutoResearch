@@ -204,7 +204,7 @@ LEDE = ("The project builds synthetic test environments that a target model shou
 
 COMPARE = (["", "PRISM", "Personal track", "Public track"], [
     ["Whose taste", "723 crowd users", "One team member, not chosen yet",
-     "Marius Hobbhahn; Owain Evans next"],
+     "Marius Hobbhahn"],
     ["Where choices come from", "Released chatbot preference data",
      "They answer pairs and label loop decisions", "Decisions extracted from their dated writing"],
     ["Held-out test", "Final-test users, scored once", "20% of seed pairs + labels after a cutoff",
@@ -232,8 +232,7 @@ SECTIONS = [
     ("public", "Public track: published researchers",
      "Each researcher's taste is inferred from what they published, and the model is tested on decisions "
      "they made after date T. Owned by WS B. Steps 1–5 run as `python3 -m autoresearch.taste.timesplit <stage>`, steps "
-     "6–9 as `track_eval <stage>`. Marius Hobbhahn goes first, in `data/researchers/marius_hobbhahn/`. Owain Evans "
-     "runs through the same steps next, in `data/researchers/owain_evans/`.",
+     "6–9 as `track_eval <stage>`. The researcher is Marius Hobbhahn, in `data/researchers/marius_hobbhahn/`.",
      "public",
      "The harvest has run; everything after it is built and waits on date T. Only this track has the Exa "
      "harvest, the quote check, the distractor gate, and the contamination probe (`m0_named`: the model "

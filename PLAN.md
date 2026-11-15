@@ -306,10 +306,8 @@ choices. **[decide]** which team member. Ethan has said he will not be the sourc
 
 **Public track (code S): public researchers, from Exa, each run separately.**
 **Decided:** Marius Hobbhahn (Ethan, 2026-11-14), for his public record on eval awareness and
-evaluation methodology; consent received. **Added:** Owain Evans (Ethan, 2026-11-14), for his
-situational-awareness and out-of-context-reasoning work (SAD benchmark); consent not asked yet (I18).
-A second researcher shows whether the method transfers beyond one person. Each researcher gets
-their own directory, time split and E2 result.
+evaluation methodology; consent received. Each researcher gets their own directory, time split
+and E2 result.
 
 | Data | How collected | Held-out test |
 |---|---|---|
@@ -563,7 +561,7 @@ past.dev, and run Taste-Bench (E7).
 3. **Noise ceiling** (from `eval-awareness-plan.md`): re-ask ~20% of the items a few days later, without showing the earlier answers. The person's agreement with themselves is the upper bound on fidelity, and E2 is reported next to it.
 4. **Hold-out:** 20% of the seed choices, plus every label from runs after a cutoff date.
 
-**Public track (S): Marius Hobbhahn, then Owain Evans** (same steps per researcher; ask for consent where possible, and record it in `data/researchers/<slug>/CONSENT.md`):
+**Public track (S): Marius Hobbhahn** (same steps per researcher; ask for consent where possible, and record it in `data/researchers/<slug>/CONSENT.md`):
 1. **Harvest.** Add `scrape_exa(name, queries, since, until)` to `taste/scrape.py`, using `integrations/exa.ExaClient.search`/`contents`.
    * Collect papers, blog posts, talks and repository READMEs.
    * **Keep `publishedDate`** in each file's front matter, so the time split is possible.
@@ -854,7 +852,7 @@ metrics, either taste track, and the M1 / prompt baselines (I15).
 
 **Already decided (2026-11-14):**
 * Benchmarks: EvalAwareBench, EvalDetectBench and Petri for eval awareness; Taste-Bench's research subset for research taste (E7).
-* Taste: two tracks, both required (the spec's "possibly" is read as mandatory). The public track uses scraped public researchers, Marius Hobbhahn and then Owain Evans; the personal track uses PersonalRewardBench plus one team member's decisions.
+* Taste: two tracks, both required (the spec's "possibly" is read as mandatory). The public track uses a scraped public researcher, Marius Hobbhahn; the personal track uses PersonalRewardBench plus one team member's decisions.
 * Every fitted user model is also kept in shared memory (past.dev when `PAST_API_KEY` is set).
 * Metrics: two co-primaries, raw-CoT awareness (A1) and the direct question (A2, as mean P(eval) and AUROC with 0.5 as the target).
 
