@@ -9,6 +9,28 @@ Pure standard-library Python (3.9+). Runs fully offline; set `ANTHROPIC_API_KEY`
 to use real models (`--llm anthropic --model claude-sonnet-5-5`), or use `--llm claude-cli`
 to run through a signed-in `claude` CLI with no API key in the process.
 
+## Pipeline
+
+Taste data becomes a user model through one of three pipelines (PRISM picks the method; the
+personal and public tracks fit it to each person), and the user model then steers the research
+loop. Details, commands and step status: [docs/pipeline.md](docs/pipeline.md).
+
+**PRISM: pick the method**
+
+![PRISM pipeline: download and split 723 users, fit methods M0 to M7, and pick a method in E1.](docs/pipeline/prism.svg)
+
+**Personal track: each team member**
+
+![Personal-track pipeline: register by name, make seed items, collect and recheck choices, hold out a test set, run E2, fit usermodel.json.](docs/pipeline/personal.svg)
+
+**Public track: published researchers**
+
+![Public-track pipeline: harvest dated work with Exa, extract and check decisions, find alternatives, split at date T, gate, select, run E2, fit usermodel.json.](docs/pipeline/public.svg)
+
+**Using the user model: the research loop and measurement**
+
+![Using the user model: it syncs to past.dev; the TasteAdvisor consults it at D1 to D6 and advises the proposer; the proposer's environments go to the target model; judges and probes score them.](docs/pipeline/downstream.svg)
+
 ## Quick start
 
 ```bash
