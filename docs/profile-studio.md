@@ -11,6 +11,13 @@ python3 -m autoresearch.studio --root runs/studio-test --port 8766   # scratch d
 Standard library only, bound to 127.0.0.1. Code: `autoresearch/studio/` (`store.py` files and
 profile building, `sources.py` public sources, `server.py` JSON API and jobs, `static/` the page).
 
+Fonts load from Google Fonts (Caveat, IBM Plex Mono, Newsreader) and PDF reading from cdnjs; without
+internet the page falls back to system fonts and only PDF upload is unavailable.
+
+**Keys.** Home: <kbd>A</kbd> your own profile, <kbd>B</kbd> a known researcher. In the one-question-per-screen
+flows (new profile, questionnaire, trade-offs): <kbd>Enter</kbd> continues, <kbd>Shift</kbd>+<kbd>Enter</kbd> is a new
+line, letter keys pick an option, <kbd>↑</kbd>/<kbd>↓</kbd> move between questions.
+
 ## Two ways in
 
 **Your own profile (personal).** About & consent → materials → questionnaire → trade-offs →

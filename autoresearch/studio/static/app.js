@@ -79,11 +79,9 @@ async function viewHome(seq) {
     <a class="index-card rise" style="--i:${i + 4};--r:${tilt(i)}deg" href="#/p/${esc(p.slug)}">
       ${i % 3 === 0 ? '<span class="tape" aria-hidden="true"></span>' : ""}
       <span class="name">${esc(p.name)}</span>
-      <div class="meta">
-        <div><span class="badge ${esc(p.mode)}">${p.mode === "external" ? "read-only" : esc(p.mode)}</span> <span class="muted">${esc(p.slug)}</span></div>
-        <div>${fmtNum(p.n_docs)} document${p.n_docs === 1 ? "" : "s"}</div>
-        <div>${p.has_usermodel ? "✓ user model" : p.has_profile ? "✓ profile built" : "· not built yet"}</div>
-      </div>
+      <div class="meta"><span class="badge ${esc(p.mode)}">${p.mode === "external" ? "read-only" : esc(p.mode)}</span>
+        <span>${fmtNum(p.n_docs)} doc${p.n_docs === 1 ? "" : "s"}</span>
+        <span>${p.has_usermodel ? "✓ user model" : p.has_profile ? "✓ built" : "not built"}</span></div>
     </a>`).join("");
   app.innerHTML = `
     <section class="hero">
@@ -94,42 +92,23 @@ async function viewHome(seq) {
           `<span class="par" style="left:${x}%;top:${y}%;--d:${(0.4 + (i % 3) * 0.35).toFixed(2)}"><span class="bob pop" style="--i:${i + 2}">
             <button type="button" class="hero-doodle wobble" aria-label="${n} doodle">${doodle(n, { color: c, tilt: t, size: sz })}</button></span></span>`).join("")}
       </div>
-      <div class="kicker rise" style="--i:0">${doodle("sparkle", { size: 18, color: "clay", tilt: 8 })} profile studio</div>
       <h1 class="rise" style="--i:1">Whose research <span class="scribble">taste<svg viewBox="0 0 200 20" preserveAspectRatio="none"><path d="M4 12 C40 4 80 18 120 9 C150 3 175 12 196 7"/></svg></span> should the loop follow?</h1>
-      <p class="lede rise" style="--i:2">A profile captures how a researcher decides: what they value, what they avoid, how they trade
-      realism against rigour, cost against novelty. The research loop reads it to choose which experiments to propose and run.</p>
     </section>
     <section class="mode-cards">
       <a class="choice rise" style="--i:3;--r:-1.1deg" href="#/new/personal" data-key="a">
-        <span class="keycap"><kbd>A</kbd></span>
         <div class="choice-head">${doodle("person", { size: 64, color: "clay", tilt: -7 })}${doodle("pencil", { size: 40, color: "ochre", tilt: 14, cls: "wobble" })}</div>
         <h2>Your own profile</h2>
-        <p>From your papers and writing, plus a few questions about how you work.</p>
-        <ul>
-          <li>drop in papers, drafts, notes</li>
-          <li>import your publication record</li>
-          <li>open questions + quick trade-offs</li>
-          <li>optionally fit a user model</li>
-        </ul>
-        <span class="go">start ${doodle("arrow", { size: 30, color: "clay", tilt: -4 })}</span>
+        <span class="go">${doodle("arrow", { size: 34, color: "clay", tilt: -4 })}</span>
       </a>
       <a class="choice rise" style="--i:4;--r:1.3deg" href="#/new/public" data-key="b">
-        <span class="keycap"><kbd>B</kbd></span>
         <div class="choice-head">${doodle("telescope", { size: 64, color: "sage", tilt: 6 })}${doodle("cap", { size: 42, color: "sky", tilt: -10 })}</div>
         <h2>A known researcher</h2>
-        <p>From someone's public record, gathered for you.</p>
-        <ul>
-          <li>pick the right person among namesakes</li>
-          <li>papers from Semantic Scholar + arXiv</li>
-          <li>posts, pages, optional Exa harvest</li>
-          <li>review the corpus before building</li>
-        </ul>
-        <span class="go">start ${doodle("arrow", { size: 30, color: "sage", tilt: 5 })}</span>
+        <span class="go">${doodle("arrow", { size: 34, color: "sage", tilt: 5 })}</span>
       </a>
     </section>
     <section>
       <div class="section-title rise" style="--i:4">${doodle("folder", { size: 40, color: "ochre", tilt: -6 })}<h2>Profiles</h2>
-        <span class="spacer"></span><span class="muted small mono">${esc(S.config.root)}</span></div>
+</div>
       ${profiles.length ? `<div class="cards-grid">${cards}</div>`
         : `<div class="empty">${doodle("seedling", { size: 64, color: "sage" })}<span class="hand">Nothing here yet. Start with A or B.</span></div>`}
     </section>`;
@@ -191,7 +170,7 @@ function flow(container, steps, opts = {}) {
       <div class="tf-body">${st.body ? st.body(state) : ""}${st.choices ? choicesHtml(st) : ""}</div>
       <div class="tf-actions"><button type="button" class="btn primary" data-ok>${st.ok || "OK"} ${doodle("check", { size: 18, color: "clay", tilt: 0 })}</button>
         ${st.skipLabel ? `<button type="button" class="btn ghost" data-skip>${st.skipLabel}</button>` : ""}
-        <span class="tf-hint">press <kbd>Enter ↵</kbd>${st.hint ? ` · ${st.hint}` : ""}</span><span class="tf-error muted small" role="alert"></span></div>`;
+        <span class="tf-error" role="alert"></span></div>`;
     stage.appendChild(screen);
     screen.querySelector("[data-ok]").addEventListener("click", () => ctl.next());
     const sk = screen.querySelector("[data-skip]"); if (sk) sk.addEventListener("click", () => ctl.advance());
@@ -396,13 +375,13 @@ function viewNewPublic() {
       submit: async st => { if (st.author === undefined) throw new Error("Pick one (or “none of these”)."); } },
     { icon: "book", color: "sky", skip: st => !st.wiki,
       q: st => `Found a Wikipedia article for <span class="hand">${esc(st.wiki.title)}</span>. Use it as the bio?`,
-      help: st => `<em>${esc(st.wiki.extract)}</em><br><span class="small mono">Shown on the profile card only; it isn't used as taste evidence, since it's about them, not by them.</span>`,
+      help: st => `<em>${esc(st.wiki.extract)}</em>`,
       choices: { key: "useWiki", items: () => [{ value: true, html: "Yes, use it" }, { value: false, html: "No, leave the bio empty" }] },
       submit: async st => { if (st.useWiki === undefined) st.useWiki = true; } },
     { icon: "key", color: "clay", q: () => `Last thing: what should this profile be <span class="hand">called</span>?`,
       help: () => `The id is what you pass to the loop as <code>--researcher &lt;id&gt;</code>.`,
       body: st => `<input class="tf-input" id="f-pname" type="text" value="${esc(st.name)}">
-        <div style="margin-top:1rem"><span class="tf-hint">id</span> <input class="tf-input mono" id="f-pslug" type="text" value="${esc(st.slug)}" spellcheck="false" style="font-size:1.1rem"></div>`,
+        <div style="margin-top:1rem"><input class="tf-input mono" id="f-pslug" aria-label="Profile id" placeholder="id" type="text" value="${esc(st.slug)}" spellcheck="false" style="font-size:1.1rem"></div>`,
       bind: (sc, st) => {
         sc.querySelector("#f-pname").addEventListener("input", e => { st.name = e.target.value; if (!st.slugTouched) { st.slug = slugify(st.name); sc.querySelector("#f-pslug").value = st.slug; } });
         sc.querySelector("#f-pslug").addEventListener("input", e => { st.slug = e.target.value; st.slugTouched = true; });
@@ -427,57 +406,25 @@ function viewNewPublic() {
   });
 }
 
-/* Candidate list shared by the public flow and "import my publications". onPick(candidate|null, useWiki). */
-function renderCandidates(box, name, cands, wiki, onPick, opts = {}) {
+/* Author picker used on the Identity page and for "import your publications". onPick(candidate). */
+function renderCandidates(box, name, cands, onPick, goLabel) {
   let selected = null;
   const list = Array.isArray(cands) ? cands : [];
-  const err = cands && cands.error ? `<div class="notice warn">Semantic Scholar: ${esc(cands.error)}. You can still continue with arXiv and web sources.</div>` : "";
-  const wikiHtml = wiki && !opts.noWiki ? `
-    <div class="notice" style="margin-bottom:1rem">
-      <div class="row"><strong>Wikipedia: ${esc(wiki.title)}</strong><span class="muted small">${esc(wiki.description)}</span></div>
-      <p class="small" style="margin:.4rem 0">${esc(wiki.extract)}</p>
-      <label class="check small"><input type="checkbox" id="use-wiki" checked> Use as the bio on the profile card (not used as taste evidence)</label>
-    </div>` : "";
-  box.innerHTML = `${err}${wikiHtml}
-    ${list.length ? `<h3>Semantic Scholar authors named “${esc(name)}”</h3>` : (!err ? `<div class="notice">No Semantic Scholar author found. You can continue with arXiv and web sources.</div>` : "")}
-    <div id="cands">${list.map((c, i) => `
-      <div class="cand" data-i="${i}" style="--i:${i}">
-        <input type="radio" name="cand" value="${i}" aria-label="Select ${esc(c.name)}">
-        <div style="flex:1">
-          <div class="row"><span class="cname">${esc(c.name)}</span>
-            ${c.affiliations.length ? `<span class="muted small">${esc(c.affiliations.join("; "))}</span>` : ""}
-            <span class="spacer"></span><a class="small" href="${esc(c.url)}" target="_blank" rel="noopener">Semantic Scholar ↗</a></div>
-          <div class="stats"><span><b>${fmtNum(c.papers)}</b> papers</span><span><b>${fmtNum(c.citations)}</b> citations</span><span>h-index <b>${fmtNum(c.h_index)}</b></span></div>
-          <div class="titles"><button class="btn ghost small" data-titles="${esc(c.author_id)}">Show top papers</button></div>
-        </div>
-      </div>`).join("")}</div>
-    <hr class="hr">
-    ${opts.noCreate ? "" : `<div class="grid2">
-      <label class="field"><span>Profile name</span><input id="pub-final-name" type="text" value="${esc(name)}"></label>
-      <label class="field"><span>Profile id</span><input id="pub-final-slug" type="text" class="mono" value="${esc(slugify(name))}"></label>
-    </div>`}
-    <div class="row end" style="margin-top:1rem">
-      ${list.length ? `<span class="muted small" id="cand-hint">Select an author${opts.noCreate ? "" : ", or continue without one"}.</span>` : ""}
-      ${opts.noCreate ? "" : `<button class="btn" id="cand-none">Continue without Semantic Scholar</button>`}
-      ${list.length ? `<button class="btn primary" id="cand-go" disabled>${esc(opts.goLabel || "Create profile with this author")}</button>` : ""}
-    </div>`;
-  box.querySelectorAll(".cand").forEach(el => el.addEventListener("click", e => {
-    if (e.target.closest("button,a")) return;
-    box.querySelectorAll(".cand").forEach(c => c.classList.remove("selected"));
-    el.classList.add("selected"); el.querySelector("input").checked = true;
+  box.innerHTML = `${cands && cands.error ? `<div class="notice warn">Semantic Scholar: ${esc(cands.error)}. You can still continue with arXiv and web sources.</div>` : ""}
+    ${!list.length && !(cands && cands.error) ? `<div class="notice">No Semantic Scholar author found. You can continue with arXiv and web sources.</div>` : ""}
+    <div class="choices">${list.map((c, i) => `
+      <button type="button" class="option cand-option" data-i="${i}" style="--i:${i}">
+        <span class="n">${LETTERS[i]}</span><span style="flex:1">${candidateHtml(c)}</span>
+        <span class="tick">${doodle("check", { size: 22, color: "sage", tilt: -6 })}</span></button>`).join("")}</div>
+    ${list.length ? `<div class="row end" style="margin-top:1rem"><button class="btn primary" data-go disabled>${esc(goLabel)}</button></div>` : ""}`;
+  bindTopPapers(box);
+  box.querySelectorAll(".cand-option").forEach(el => el.addEventListener("click", () => {
+    box.querySelectorAll(".cand-option").forEach(c => c.classList.toggle("chosen", c === el));
     selected = list[+el.dataset.i];
-    const go = box.querySelector("#cand-go"); if (go) go.disabled = false;
+    box.querySelector("[data-go]").disabled = false;
   }));
-  box.querySelectorAll("[data-titles]").forEach(b => b.addEventListener("click", async () => {
-    const holder = b.parentElement; holder.innerHTML = `<span class="muted small"><span class="spinner"></span> loading…</span>`;
-    try {
-      const titles = await api("GET", `/api/search/s2/${b.dataset.titles}/titles`);
-      holder.innerHTML = titles.length ? `<ul>${titles.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : `<span class="muted small">no papers listed</span>`;
-    } catch (e) { holder.innerHTML = `<span class="muted small">${esc(e.message)}</span>`; }
-  }));
-  const useWiki = () => { const c = box.querySelector("#use-wiki"); return !!(c && c.checked); };
-  const goBtn = box.querySelector("#cand-go"); if (goBtn) goBtn.addEventListener("click", () => onPick(selected, useWiki()));
-  const noneBtn = box.querySelector("#cand-none"); if (noneBtn) noneBtn.addEventListener("click", () => onPick(null, useWiki()));
+  const goBtn = box.querySelector("[data-go]");
+  if (goBtn) goBtn.addEventListener("click", () => onPick(selected));
 }
 
 // ---------- workspace ----------
@@ -520,12 +467,9 @@ async function viewWorkspace(slug, step, seq) {
   const steps = STEPS[mode] || STEPS.external;
   if (!step || !steps.some(s => s[0] === step)) return go(`#/p/${slug}/${steps[0][0]}`);
   app.innerHTML = `
-    <p class="mono small"><a href="#/">← all profiles</a></p>
     <div class="workspace">
       <nav class="steps" aria-label="Steps">
-        <div class="steps-head"><h2>${esc(S.st.meta.name)}</h2>
-          <span class="badge ${esc(mode)}">${mode === "external" ? "read-only" : esc(mode)}</span>
-          <span class="muted small mono">${esc(slug)}</span></div>
+        <div class="steps-head"><h2>${esc(S.st.meta.name)}</h2></div>
         ${steps.map(([k, label], i) => `<a class="step ${k === step ? "active" : ""} ${stepDone(k) ? "done" : ""}" data-step="${k}" href="#/p/${esc(slug)}/${k}">
           ${doodle(STEP_ICONS[k] || "sparkle", { size: 30, seed: k })}<span class="label">${esc(label)}</span>${TICK}</a>`).join("")}
       </nav>
@@ -575,11 +519,10 @@ function panelAbout(panel, nextBtn) {
       </div>
       <label class="field"><span>Homepage</span><input id="ab-home" type="url" value="${esc(m.homepage)}" placeholder="https://"></label>
       <label class="field"><span>Short bio <span class="muted">(optional)</span></span><textarea id="ab-bio" rows="3">${esc(m.bio)}</textarea>
-        <small>Shown on the profile card and given to the summary writer. Not used as taste evidence.</small></label>
+        </label>
     </div>
     <div class="card stack">
       <h3>Consent</h3>
-      <p class="muted small">This is the personal track's consent form (<code>CONSENT.md</code>). Trade-off items stay locked until every box is ticked.</p>
       ${S.st.consent.map((c, i) => `<label class="check"><input type="checkbox" data-consent="${i}" ${c.ticked ? "checked" : ""}><span>${esc(c.text)}</span></label>`).join("")}
     </div>
     <div class="row end" style="margin-top:1rem"><button class="btn primary" id="ab-save">Save</button></div>${nextBtn}`;
@@ -600,7 +543,7 @@ function panelMaterials(panel, nextBtn) {
     <div class="card">
       <h3>Upload files</h3>
       <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose files to upload">
-        ${doodle("upload", { size: 56, color: "ochre", tilt: -6 })}<strong>Drop files here</strong> or click to choose<br><span class="small">PDF, Markdown, LaTeX, plain text, HTML, BibTeX. Text is extracted in your browser.</span>
+        ${doodle("upload", { size: 56, color: "ochre", tilt: -6 })}<strong>Drop files here</strong> or click to choose
       </div>
       <input type="file" id="file-input" multiple hidden accept=".pdf,${TEXT_EXT.map(e => "." + e).join(",")}">
       <div class="file-queue" id="queue"></div>
@@ -618,12 +561,11 @@ function panelMaterials(panel, nextBtn) {
     <div class="card stack">
       <h3>Links</h3>
       <label class="field"><span>Pages you wrote, one per line</span><textarea id="links" rows="3" placeholder="https://your-blog.example/post"></textarea>
-        <small>Each page is fetched and its text saved. Pages that need a login or render with JavaScript may come back empty.</small></label>
+        </label>
       <div class="row end"><button class="btn" id="links-add">Fetch pages</button></div>
     </div>
     <div class="card stack">
       <h3>Import your publications</h3>
-      <p class="muted small">Find yourself on Semantic Scholar, and/or match your name on arXiv. Only papers with an abstract are imported.</p>
       <div class="row">
         <input id="pub-me" type="text" value="${esc(S.st.meta.name)}" style="flex:1;min-width:200px">
         <label class="check small"><input type="checkbox" id="pub-arxiv" checked> also arXiv</label>
@@ -689,12 +631,12 @@ function panelMaterials(panel, nextBtn) {
     box.innerHTML = `<div class="row muted" style="margin-top:.75rem"><span class="spinner"></span> Searching…</div>`;
     const cands = await api("GET", `/api/search/s2?name=${encodeURIComponent(name)}`).catch(e => ({ error: e.message }));
     const div = document.createElement("div"); div.style.marginTop = "1rem"; box.innerHTML = ""; box.appendChild(div);
-    renderCandidates(div, name, cands, null, picked => {
+    renderCandidates(div, name, cands, picked => {
       const body = { name, arxiv: document.getElementById("pub-arxiv").checked };
       if (picked) { body.s2_author_id = picked.author_id; api("PATCH", `/api/profiles/${S.slug}`, { s2_author: picked }).catch(fail); }
       box.innerHTML = "";
       startJob("gather", body, document.getElementById("job"), () => renderCorpus(document.getElementById("corpus")));
-    }, { noWiki: true, noCreate: true, goLabel: "Import this author's papers" });
+    }, "Import this author's papers");
     if (!Array.isArray(cands) || !cands.length) {
       const b = document.createElement("button"); b.className = "btn"; b.textContent = "Import from arXiv only";
       b.addEventListener("click", () => { box.innerHTML = ""; startJob("gather", { name, arxiv: true }, document.getElementById("job"), () => renderCorpus(document.getElementById("corpus"))); });
@@ -787,18 +729,16 @@ function panelQuestionnaire(panel, nextBtn) {
     icon: icons[k % icons.length] === "compass" ? "globe" : icons[k % icons.length], color: colors[k % colors.length],
     q: () => esc(q.text) + (q.kind === "other" ? ` <span class="badge" style="vertical-align:middle">outside research</span>` : ""),
     help: () => k === 0 ? "Answer in your own words; a few sentences is plenty. Every question is optional and there are no right answers." : "",
-    body: () => `<textarea class="tf-input" data-q="${esc(q.id)}" placeholder="Type your answer here…">${esc(draft[q.id] ?? answers[q.id] ?? "")}</textarea>
-      <div class="tf-saved" data-saved></div>`,
-    hint: `<kbd>Shift</kbd>+<kbd>↵</kbd> new line`,
+    body: () => `<textarea class="tf-input" data-q="${esc(q.id)}" placeholder="Type your answer here…">${esc(draft[q.id] ?? answers[q.id] ?? "")}</textarea>`,
     ok: (answers[q.id] || draft[q.id]) ? "Save" : "OK",
     skipLabel: "skip",
     bind: sc => {
-      const t = sc.querySelector("textarea"), saved = sc.querySelector("[data-saved]");
+      const t = sc.querySelector("textarea");
       let timer;
       t.addEventListener("input", () => {
         draft[q.id] = t.value; store(draftKey, draft);
         clearTimeout(timer);
-        timer = setTimeout(() => save(q, t.value).then(() => { saved.textContent = "saved " + new Date().toLocaleTimeString(); }).catch(fail), 1500);
+        timer = setTimeout(() => save(q, t.value).catch(fail), 1500);
       });
     },
     submit: async (st, sc) => save(q, sc.querySelector("textarea").value),
@@ -852,13 +792,12 @@ async function panelTradeoffs(panel, nextBtn, seq) {
     steps.push({
       icon: k % 2 ? "scale" : "lightbulb", color: ["sage", "ochre", "sky", "clay"][k % 4], noAutofocus: true,
       q: () => esc(it.question || "Which would you pick?"),
-      body: () => `${same ? `<details class="context-fold"><summary class="tf-hint">same situation as the last question · show again</summary><div class="context">${esc(it.context)}</div></details>`
+      body: () => `${same ? `<details class="context-fold"><summary class="fold-toggle">show the situation again</summary><div class="context">${esc(it.context)}</div></details>`
                         : `<div class="context">${esc(it.context)}</div>`}
         ${Object.keys(it.evidence || {}).length ? `<pre class="context small">${esc(JSON.stringify(it.evidence, null, 1))}</pre>` : ""}
         <div style="height:1rem"></div>`,
       choices: { key, autoNext: false, items: () => it.options.map((o, j) => ({ value: j + 1, html: esc(o) })) },
       skipLabel: "skip",
-      hint: "letters pick",
       bind: (sc, state) => {
         const box = document.createElement("label"); box.className = "field reason"; box.style.marginTop = "1.1rem";
         box.innerHTML = `<span>why? <span class="muted">(optional, one sentence)</span></span><input type="text" data-reason value="${esc(state[`why_${k}`] || "")}">`;
@@ -893,11 +832,11 @@ function panelIdentity(panel, nextBtn) {
   panel.innerHTML = head("Identity", "Who this profile is about. The Semantic Scholar author decides which papers are imported.") + `
     <div class="card stack">
       <div class="grid2">
-        <label class="field"><span>Name</span><input id="id-name" type="text" value="${esc(m.name)}"><small>Also used to match author lists on arXiv and Exa.</small></label>
+        <label class="field"><span>Name</span><input id="id-name" type="text" value="${esc(m.name)}"></label>
         <label class="field"><span>Affiliation</span><input id="id-aff" type="text" value="${esc(m.affiliation)}"></label>
       </div>
       <label class="field"><span>Bio</span><textarea id="id-bio" rows="4">${esc(m.bio)}</textarea>
-        <small>${m.bio_source ? `From <a href="${esc(m.bio_source)}" target="_blank" rel="noopener">${esc(m.bio_source)}</a>. ` : ""}Shown on the card; not used as taste evidence.</small></label>
+        </label>
       <div class="row end"><button class="btn primary" id="id-save">Save</button></div>
     </div>
     <div class="card">
@@ -917,9 +856,9 @@ function panelIdentity(panel, nextBtn) {
     box.innerHTML = `<div class="row muted" style="margin-top:.75rem"><span class="spinner"></span> Searching…</div>`;
     const cands = await api("GET", `/api/search/s2?name=${encodeURIComponent(val("id-name"))}`).catch(e => ({ error: e.message }));
     const div = document.createElement("div"); div.style.marginTop = "1rem"; box.innerHTML = ""; box.appendChild(div);
-    renderCandidates(div, val("id-name"), cands, null, async picked => {
+    renderCandidates(div, val("id-name"), cands, async picked => {
       try { await api("PATCH", `/api/profiles/${S.slug}`, { s2_author: picked }); toast("Author set"); render(); } catch (e) { fail(e); }
-    }, { noWiki: true, noCreate: true, goLabel: "Use this author" });
+    }, "Use this author");
   });
 }
 
@@ -930,11 +869,11 @@ function panelSources(panel, nextBtn) {
     <div class="card stack">
       <label class="field"><span>Name to match</span><input id="g-name" type="text" value="${esc(m.name)}"></label>
       <label class="check"><input type="checkbox" id="g-s2" ${a ? "checked" : "disabled"}><span><strong>Semantic Scholar papers</strong>
-        ${a ? `<span class="muted small">for ${esc(a.name)} (${fmtNum(a.papers)} papers listed)</span>` : `<span class="muted small">select an author under <a href="#/p/${esc(S.slug)}/identity">Identity</a> first</span>`}</span></label>
+        ${a ? "" : `<span class="muted small">select an author under <a href="#/p/${esc(S.slug)}/identity">Identity</a> first</span>`}</span></label>
       <label class="field" style="max-width:200px;margin-left:1.6rem"><span class="small">Max papers</span><input id="g-s2max" type="number" min="1" max="1000" value="150"></label>
-      <label class="check"><input type="checkbox" id="g-arxiv" checked><span><strong>arXiv</strong> <span class="muted small">papers whose author list contains the name; duplicates of Semantic Scholar papers are skipped</span></span></label>
+      <label class="check"><input type="checkbox" id="g-arxiv" checked><span><strong>arXiv</strong></span></label>
       <label class="field" style="max-width:200px;margin-left:1.6rem"><span class="small">Max results</span><input id="g-axmax" type="number" min="1" max="300" value="60"></label>
-      <label class="check"><input type="checkbox" id="g-wiki" ${m.bio ? "" : "checked"}><span><strong>Wikipedia bio</strong> <span class="muted small">for the card only</span></span></label>
+      <label class="check"><input type="checkbox" id="g-wiki" ${m.bio ? "" : "checked"}><span><strong>Wikipedia bio</strong></span></label>
       <hr class="hr" style="margin:.25rem 0">
       <div class="grid2">
         <label class="field"><span>LessWrong / Alignment Forum username</span><input id="g-lw" type="text" placeholder="e.g. their-user-slug" class="mono"></label>
@@ -943,7 +882,7 @@ function panelSources(panel, nextBtn) {
       <label class="field"><span>Other pages they wrote, one per line</span><textarea id="g-urls" rows="3" placeholder="https://"></textarea></label>
       <hr class="hr" style="margin:.25rem 0">
       <label class="check"><input type="checkbox" id="g-exa" ${exa ? "" : "disabled"}><span><strong>Exa harvest</strong> <span class="badge warn">paid</span>
-        <span class="muted small">${exa ? "deep web search for everything they published in the date range (taste/scrape.scrape_exa)" : "set EXA_API_KEY in the studio's environment to enable"}</span></span></label>
+        <span class="muted small">${exa ? "" : "set EXA_API_KEY in the studio's environment to enable"}</span></span></label>
       ${exa ? `<div class="row" style="margin-left:1.6rem"><label class="field"><span class="small">From</span><input id="g-exa-start" type="date" value="2018-01-01"></label>
         <label class="field"><span class="small">To</span><input id="g-exa-end" type="date" value="${new Date().toISOString().slice(0, 10)}"></label></div>` : ""}
       <div class="row end"><button class="btn primary" id="g-go">Gather</button></div>
@@ -963,7 +902,7 @@ function panelSources(panel, nextBtn) {
     }
     startJob("gather", body, document.getElementById("job"), () => {
       const n = document.createElement("div"); n.className = "row end"; n.style.marginTop = ".75rem";
-      n.innerHTML = `<span class="muted small">${fmtNum(S.st.docs.length)} documents in the corpus.</span><a class="btn primary" href="#/p/${esc(S.slug)}/corpus">Review corpus →</a>`;
+      n.innerHTML = `<a class="btn primary" href="#/p/${esc(S.slug)}/corpus">Review corpus →</a>`;
       document.getElementById("job").appendChild(n);
     });
   });
@@ -990,7 +929,7 @@ function panelBuild(panel, nextBtn) {
       <div class="grid2">
         <label class="field"><span>Model backend</span><select id="b-backend">${S.config.backends.map(b => `<option ${b === defBackend ? "selected" : ""}>${b}</option>`).join("")}</select></label>
         <label class="field"><span>Model</span><input id="b-model" type="text" class="mono" value="claude-sonnet-5-5"></label>
-        <label class="field"><span>Documents to read</span><input id="b-max" type="number" min="1" value="${Math.min(40, Math.max(1, n))}"><small>${fmtNum(n)} available; questionnaire answers and your own uploads first, then newest.</small></label>
+        <label class="field"><span>Documents to read</span><input id="b-max" type="number" min="1" value="${Math.min(40, Math.max(1, n))}"></label>
       </div>
       <div class="notice small" id="b-note"></div>
       <div class="row end"><button class="btn primary" id="b-go" ${n ? "" : "disabled"}>${prof ? "Rebuild profile" : "Build profile"}</button></div>
@@ -1033,7 +972,7 @@ function renderProfile(el) {
     <div class="card" style="margin-top:1rem">
       <div class="row"><h2 style="margin:0">${esc(m.name)}</h2>${m.affiliation ? `<span class="muted">${esc(m.affiliation)}</span>` : ""}
         <span class="spacer"></span>${m.build && m.build.edited ? '<span class="badge warn">edited by hand</span>' : ""}</div>
-      ${m.bio ? `<p class="muted small" style="margin-top:.5rem">${esc(m.bio)}</p>` : ""}
+      ${m.bio ? `<p class="muted" style="margin-top:.5rem">${esc(m.bio)}</p>` : ""}
       ${card ? `
         ${card.summary ? `<p class="profile-summary" style="margin-top:.75rem">${esc(card.summary)}</p>` : ""}
         ${card.interests && card.interests.length ? `<h4>Interests</h4><div>${card.interests.map((x, i) => `<span class="chip pop" style="--r:${((i * 53) % 7) - 3}deg;--i:${i}">${esc(x)}</span>`).join("")}</div>` : ""}
@@ -1049,18 +988,16 @@ function renderProfile(el) {
     <div style="margin-top:1rem">
       <div class="card">
         <h3>Feature weights</h3>
-        <p class="muted small">−1 to 1. The loop scores each candidate idea's features with these (D1).</p>
         <div class="weights" id="w-list"></div>
       </div>
       <div class="card">
         <h3>Principles</h3>
-        <p class="muted small">Short rules the proposer is told to follow for this researcher.</p>
         <div class="principles" id="pr-list"></div>
         ${editable ? `<button class="btn small" id="pr-add" style="margin-top:.7rem">+ add principle</button>` : ""}
       </div>
     </div>
-    ${editable ? `<div class="row end" style="margin-top:1rem"><span class="muted small" id="edit-hint"></span><button class="btn primary" id="p-save" disabled>Save edits</button></div>` : ""}`;
-  const dirty = () => { const b = document.getElementById("p-save"); if (b) { b.disabled = false; document.getElementById("edit-hint").textContent = "Unsaved changes. Saved profiles are marked as edited by hand."; } };
+    ${editable ? `<div class="row end" style="margin-top:1rem"><button class="btn primary" id="p-save" disabled>Save edits</button></div>` : ""}`;
+  const dirty = () => { const b = document.getElementById("p-save"); if (b) b.disabled = false; };
   function drawPrinciples() {
     const list = document.getElementById("pr-list");
     list.innerHTML = principles.length ? principles.map((p, i) => editable
@@ -1081,7 +1018,7 @@ function renderProfile(el) {
         <div class="bar"><div class="fill" data-fill="${esc(f)}"></div>
           ${editable ? `<input type="range" min="-1" max="1" step="0.05" value="${v}" data-w="${esc(f)}" aria-label="${esc(f)} weight">` : ""}</div>
         <span class="val" data-wv="${esc(f)}">${v >= 0 ? "+" : ""}${v.toFixed(2)}</span></div>`;
-    }).join("") + `<p class="muted small mono" style="margin:.4rem 0 0">${editable ? "Drag a bar to correct it. " : ""}Hover a feature for what it means.</p>`;
+    }).join("");
     const paint = f => {
       const v = Number(w[f] || 0), pct = Math.min(50, Math.abs(v) * 50), el = list.querySelector(`[data-fill="${f}"]`);
       el.className = `fill ${v >= 0 ? "pos" : "neg"}`;
@@ -1106,13 +1043,12 @@ function renderProfile(el) {
 function renderUserModel(el) {
   const st = S.st, n = st.choices.answered;
   el.innerHTML = `<div class="card stack" style="margin-top:1rem">
-    <div class="row"><h3 style="margin:0">User model <span class="muted small">(optional)</span></h3><span class="spacer"></span>
+    <div class="row"><h3 style="margin:0">User model</h3><span class="spacer"></span>
       ${st.has_usermodel ? '<span class="badge ok">usermodel.json present</span>' : ""}</div>
-    <p class="muted small">Fits one of WS A's methods on your trade-off answers and writes <code>usermodel.json</code>. When present, the loop uses it at every decision point (D1–D6) instead of the feature weights above, which only inform D1. Held-out answers are never used for fitting.</p>
     ${n < 10 ? `<div class="notice warn small">You have ${fmtNum(n)} answered trade-off item${n === 1 ? "" : "s"}. Answer the questions under <a href="#/p/${esc(S.slug)}/tradeoffs">Trade-offs</a> first.</div>` : ""}
     <div class="grid2">
-      <label class="field"><span>Method</span><select id="um-method">${S.config.methods.map(x => `<option ${x === "m1" ? "selected" : ""}>${x}</option>`).join("")}</select><small>Use the method WS A selected.</small></label>
-      <label class="field"><span>Backend</span><select id="um-backend">${S.config.backends.map(b => `<option>${b}</option>`).join("")}</select><small>Must match the backend the loop's judge predicts with.</small></label>
+      <label class="field"><span>Method</span><select id="um-method">${S.config.methods.map(x => `<option ${x === "m1" ? "selected" : ""}>${x}</option>`).join("")}</select></label>
+      <label class="field"><span>Backend</span><select id="um-backend">${S.config.backends.map(b => `<option>${b}</option>`).join("")}</select></label>
       <label class="field"><span>Model</span><input id="um-model" type="text" class="mono" value="claude-haiku-5-5"></label>
       <label class="field"><span>Max model calls</span><input id="um-max" type="number" min="1" value="500"></label>
     </div>
@@ -1130,7 +1066,7 @@ function panelUse(panel) {
   const st = S.st, slug = S.slug;
   const loads = st.has_usermodel ? "usermodel.json: the fitted user model, at every decision point (D1–D6)"
     : st.profile ? "profile.json feature weights and principles (D1 only; text-only decisions fall back to no taste)" : null;
-  const cmd = (label, c, note) => `<div style="margin-top:1rem"><div class="small"><strong>${esc(label)}</strong>${note ? ` <span class="muted">${note}</span>` : ""}</div>
+  const cmd = (label, c, note) => `<div style="margin-top:1.1rem"><strong>${esc(label)}</strong>
     <div class="cmd"><pre>${esc(c)}</pre><button class="btn small" data-copy="${esc(c)}">Copy</button></div></div>`;
   panel.innerHTML = head("Use in the loop", "The loop reads this profile from <code>data/researchers/" + esc(slug) + "/</code> when you pass <code>--researcher " + esc(slug) + "</code>.") + `
     <div class="card">
@@ -1169,8 +1105,7 @@ async function startJob(kind, body, el, onDone) {
       const icon = j.status === "running" ? doodle(kind === "gather" ? "magnifier" : kind === "fit" ? "person" : "pencil", { size: 46, color: "ochre", tilt: -8 })
         : j.status === "done" ? doodle("check", { size: 46, color: "sage", tilt: -4, cls: "pop" }) : doodle("lightbulb", { size: 46, color: "rose", tilt: 6 });
       el.innerHTML = `<div class="card job" data-dec="1"><div class="job-head ${j.status === "running" ? "scribbling" : ""}">${icon}
-        <div><strong>${esc(label)}${j.status === "running" ? "…" : j.status === "done" ? ": done" : ": stopped"}</strong>
-        <div class="muted small mono">${j.status === "running" ? "you can keep working; this updates when it finishes" : ""}</div></div></div>
+        <div><strong>${esc(label)}${j.status === "running" ? "…" : j.status === "done" ? ": done" : ": stopped"}</strong></div></div>
         ${j.error ? `<div class="notice bad small" style="margin-top:.6rem">${esc(j.error)}</div>` : ""}
         <div class="job-log"></div></div>`;
       shownStatus = j.status; shownLines = 0;

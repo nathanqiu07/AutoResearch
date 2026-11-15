@@ -86,6 +86,12 @@ class BenchmarkTests(unittest.TestCase):
         self.assertEqual(extract_json('blah {"a": 1} tail'), {"a": 1})
         self.assertEqual(extract_json('x [{"a": 1}, {"b": 2}] y'), [{"a": 1}, {"b": 2}])
 
+    def test_extract_json_accepts_raw_newlines_inside_strings(self):
+        # gpt-6-luna writes a literal line break inside a JSON string about 1 reply in 8; strict
+        # parsing dropped the whole control-seed rewrite (2026-11-15)
+        self.assertEqual(extract_json('{"seed": "para one.\n\npara two."}'),
+                         {"seed": "para one.\n\npara two."})
+
 
 if __name__ == "__main__":
     unittest.main()
