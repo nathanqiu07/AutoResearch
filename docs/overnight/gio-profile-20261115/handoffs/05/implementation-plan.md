@@ -37,4 +37,8 @@ Semantic verification: 22 targeted tests passed; full repository suite 685 tests
 - [x] Read only the exact two Tier-A development-v2 releases from role04's immutable handoff; validate file, item and approved source hashes.
 - [x] Add a portable zero-call construction checker for the four pilot controls plus explicit missing prerequisites for the other three. Reuse existing constructors; avoid a second prediction-audit framework.
 - [x] Independent review identified vacuous success for empty released item lists; reject those inputs explicitly. No private labels or model calls.
-- [ ] Publish the immutable construction report and send its exact runtime/code/hash context to the coordinator.
+- [x] Publish the immutable construction report and send its exact runtime/code/hash context to the coordinator (3b0539e).
+
+## Semantic numerical correction
+
+The independent integration audit reported subnormal-vector ranking instability. Reproduced with query and aligned document [1,1], and another document [5e-324,1e-323]: the latter normalized to [.5,1] and incorrectly outranked the aligned document. A public semantic-ranking regression failed at the subnormal scale before the fix. Normalizing by the maximum absolute coordinate before the L2 norm preserves direction and avoids raw-norm underflow/overflow. Normal, subnormal and large-scale ranking checks pass. Independent static review found no further important issue; 23 targeted tests and 686 repository tests passed, two skipped. This does not establish any live embedding defect. The helper/policy hash changes, so new runtime artifacts must be rebuilt; historical fixtures remain pinned to their original code.
