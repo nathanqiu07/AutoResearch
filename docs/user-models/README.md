@@ -5,6 +5,10 @@ ICAI (M3) → saved model → unseen-choice evaluation → team-adviser export**
 M4–M7 remain in the repository but are deferred. No method is declared a winner.
 This work stays in Task A; it does not change teammates’ environment or orchestration code.
 
+Start with the [recorded live PRISM viewer](../../results/fidelity/prism-live-01/viewer.html)
+and [executed-run handoff](handoff.md). It includes actual inputs, extracted
+principles, predictions and evaluation; no model call is needed to inspect it.
+
 Run the commands below from the repository root. Use a new output directory for
 each run: existing results are never silently overwritten.
 

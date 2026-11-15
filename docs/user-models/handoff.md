@@ -98,3 +98,11 @@ run traces, models or Git. The original checkout and its uncommitted changes rem
 The final live HTML viewer was inspected in a browser: live/offline labeling,
 method selection, history, principles, prediction and observed label all rendered.
 A narrow reading view was checked on the offline bundle; no browser errors were observed.
+
+The exact runtime code commit for both preserved runs is retained by Git tag
+`gio-prism-pilot-01-source` (`4dc0a16d8df0d8dbef4b26e48fda975f7e9c5b5e`).
+Registration marks the working tree dirty because documentation edits were pending;
+model code was committed and unchanged during execution. The delivery branch was
+then rebased onto current team main and the full test suite rerun: 535 tests
+passed, two skipped. Unexpected untracked duplicate filenames (with a ` 2` suffix)
+were left intact and excluded from commits.
