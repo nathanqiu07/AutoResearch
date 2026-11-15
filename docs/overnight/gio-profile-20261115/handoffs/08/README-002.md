@@ -38,6 +38,9 @@ and explicit lineage to the v1 prompts and code
 Fit usage preserves the literal raw-response SHA256, the prior `response_sha256`
 field for existing readers, resolver version and resolution records. Success
 records identify quote hashes, source paths and computed Unicode indices. On
+success, source paths address the raw parsed response before deterministic
+ordering; `resolved_content_sha256` hashes the helper output before that ordering.
+On
 failure, the stable helper error code and records are retained while the artifact
 stays invalid. Even if earlier citations resolved, no partially resolved output
 becomes a successful profile. The raw response is never rewritten or rehashed as
