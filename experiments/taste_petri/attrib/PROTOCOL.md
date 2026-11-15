@@ -29,3 +29,12 @@ both options are real decisions, so realness is equal by construction.
 - **Leakage check:** if NAME exceeds 0.65, topic or identity leaked through the abstraction. Report that and
   re-abstract more aggressively before any claim.
 - With fewer than 60 pairs or fewer than 8 Owain works, results are descriptive only.
+
+## Amendment: round 2 (2026-11-15, after round 1's leakage flag, before any round-2 data)
+- Re-abstract every item into one fixed template (situation / options considered / choice / reason), with a
+  banned-word list derived from round 1's bag-of-words classifier weights (top 40 discriminative words for each
+  side) plus genre words (effect, transfer, performance, method...).
+- Run order: a bag-of-words held-out-work classifier first (free), then sonnet NAME alone. Profile arms run only if
+  NAME ≤ 0.65 **and** bag-of-words ≤ 0.65. Otherwise report that the leak survives fixed-template abstraction and
+  stop.
+- If the arms run, the decision rules are as above.
