@@ -45,7 +45,7 @@ from ..llm import LLM, extract_json
 from .extract import profile_from_texts
 from .profile import TasteProfile
 from .researcher import DEFAULT_ROOT, Researcher, load_researcher
-from .scrape import canonical_url
+from .scrape import ARXIV_ID, canonical_url
 from .usermodel import Choice, digest
 
 PAIRS, REVIEW = "pairs_timesplit.jsonl", "review_timesplit.jsonl"
@@ -150,10 +150,16 @@ def exa_extract(researcher: Researcher, client, batch: int = 5) -> dict:
             todo.append((os.path.basename(p), url))
     report = {"done": 0, "skipped_existing": len(done), "errors": 0}
     summary = {"query": SUMMARY_QUERY, "schema": DECISION_SCHEMA}
+
+    # Exa summarises an arXiv abstract page from the abstract alone; the HTML page has the paper.
+    def full_text(url):
+        m = ARXIV_ID.search(url)
+        return f"https://arxiv.org/html/{m.group(1)}" if m else url
+
     for i in range(0, len(todo), batch):
         chunk = todo[i:i + batch]
         by_url = {canonical_url(r.get("url", "")): r
-                  for r in client.contents([u for _, u in chunk], text_chars=1, summary=summary)}
+                  for r in client.contents([full_text(u) for _, u in chunk], text_chars=1, summary=summary)}
         with open(path, "a") as f:
             for doc, url in chunk:
                 r = by_url.get(canonical_url(url), {})

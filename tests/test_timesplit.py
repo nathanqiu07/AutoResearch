@@ -233,6 +233,13 @@ class ExaExtractTest(unittest.TestCase):
         self.assertEqual(row["decisions"], [])
         self.assertTrue(row["exa_error"])
 
+    def test_arxiv_paper_is_summarized_from_its_full_text_page(self):
+        write_url_doc(self.root, "research__c.txt", "2024-06-01", "https://arxiv.org/abs/2504.12170", "body c")
+        self.exa.summaries["https://arxiv.org/html/2504.12170"] = json.dumps({"decisions": [self.DECISION]})
+        timesplit.exa_extract(self.researcher, self.exa)
+        row = next(r for r in self.rows() if r["doc"] == "research__c.txt")
+        self.assertEqual((row["decisions"], row["url"]), ([self.DECISION], "https://arxiv.org/abs/2504.12170"))
+
     def test_rerun_skips_documents_already_extracted(self):
         timesplit.exa_extract(self.researcher, self.exa)
         calls = self.exa.calls
