@@ -609,6 +609,9 @@ class EstimateCostTests(unittest.TestCase):
         self.assertEqual((aud.model, aud.calls, aud.in_tokens, aud.out_tokens),
                          ("anthropic:j", 3, (3 * cal.AUDIT_PROMPT_CHARS + 3000) // 4, 900))
         self.assertEqual(by["V3 target replies (as-is + notice)"].calls, 2 * 5 * 2)
+        think = cal.estimate_cost("anthropic:m+thinking", [], "anthropic:j", [], self.PROBES,
+                                  gap_envs=[{"system": "", "user": "y"}], gap_seeds=1, prices=self.PRICES)
+        self.assertEqual(think[0].out_tokens, 2 * (1200 + 8000))   # V3 replies also go through complete_with_reasoning
         lab_v3 = by["V3 behaviour labels"]
         self.assertEqual((lab_v3.model, lab_v3.calls, lab_v3.out_tokens), ("anthropic:j", 20, 20 * 60))
 

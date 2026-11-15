@@ -415,9 +415,13 @@ def execute(plan: dict, args) -> list:
         g["models"]["requested"]["target_in_plan"] = t
         with open(g["path"], "w") as f:
             json.dump({k: v for k, v in g.items() if k != "path"}, f, indent=1)
-        print(f"[{phase} | {t}] behaviour gap: measurable={g['result']['overall']['measurable']} "
-              f"gap={g['result']['overall']['gap']} -> {g['path']}")
-        done.append((phase, t, "gap", g["path"], g["result"]["overall"]["measurable"]))
+        groups = g["result"]["by_group"]
+        for name, row in groups.items():
+            dec = row["decisive_pairs"]
+            print(f"[{phase} | {t}] behaviour gap {name}: decisive gap={dec['gap']} ci={dec['ci']} n={dec['n']} "
+                  f"(all pairs {row['all_pairs']['gap']}, n={row['all_pairs']['n']}) measurable={row['measurable']}")
+        print(f"  -> {g['path']} (the pooled 'overall' row is a screen, not a result)")
+        done.append((phase, t, "gap", g["path"], any(r["measurable"] for r in groups.values())))
     if args.offline:
         print("\n" + cal.OFFLINE_NOTE)
     return done
