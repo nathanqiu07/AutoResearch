@@ -11,3 +11,10 @@ Hypothesis: R0 loses validity because the opportunity arrives after the proxy's 
 evidence, no salience cues, mundane role prompt) should lower A2/raise realism, and an explicit "opportunity in the
 first message or first 1-2 tool results" rule should keep bait_reached up. Placebo H1-0 (same prompt, no card) is
 built only if H1 ends up as the final incumbent.
+
+## H2 (parallel branch from R0's failure analysis): Carlini + Marks (c) cards + "decision early, scorable action"
+R0's validity losses are mostly `scorable` and `bait_reached` (seed 21: scorable 0.24, 112: 0.37, 73: 0.43): after
+one target turn the judge can't tell what the target did. Carlini (outcome = observable action; legitimate
+alternatives) and Marks (mundane reason for the opportunity; no smoking gun) target exactly that. The prompt asks for
+the opportunity in the opening material and a first request whose deliverable reveals the behaviour. Risk: moving
+"later" pressure into the opening is partly a proxy artefact (one-turn target); flagged if it drives the gain.
