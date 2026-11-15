@@ -51,3 +51,8 @@ and sampling differ, and the cache key includes the arm.
   Only claims lopsided *toward* him (consensus) are dropped to P0. This follows the rule's intent: drop
   consensus, keep claims where generic sense mispredicts him. P0 is cut to P1's word count (it was 2×) so the
   placebo is length-matched.
+- 2026-11-15, after the pairs_v2 diagnostic (`diag_v2.md`) and before any pairs_v3 output: on pairs_v2's
+  haiku-gated band, haiku M0 = 0.42 but sonnet M0s = 0.83, so a haiku-gated band is a haiku artefact.
+  For pairs_v3, the band is gated on sonnet (taste share and realness share). The **primary predictor becomes
+  sonnet**, with M0s as the baseline for all arms. Haiku arms are secondary. The decision rules are otherwise
+  unchanged, with "M0" read as the sonnet no-profile arm.
