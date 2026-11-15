@@ -10,7 +10,7 @@ Interactive version: [claude.ai artifact](https://claude.ai/artifact/F2kpYLDpiEt
 
 |  | PRISM | Track P | Track S |
 |---|---|---|---|
-| Whose taste | 723 crowd users | One team member, not chosen yet | Marius Hobbhahn |
+| Whose taste | 723 crowd users | One team member, not chosen yet | Marius Hobbhahn; Owain Evans next |
 | Where choices come from | Released chatbot preference data | They answer pairs and label loop decisions | Decisions extracted from his dated writing |
 | Held-out test | Final-test users, scored once | 20% of seed pairs + labels after a cutoff | Decisions after date T |
 | Experiment | E1: which method | E2 vs M1 and the noise ceiling | E2 vs two M1 arms, order-paired |
@@ -35,7 +35,7 @@ Every step is built and none has run, because the person hasn't been chosen (it 
 
 ## Track S: Marius Hobbhahn
 
-His taste is inferred from what he published, and the model is tested on decisions he made after date T. Owned by WS B. Steps 1–5 run as `python3 -m autoresearch.taste.timesplit <stage>`, steps 6–9 as `track_eval <stage>`. Files land in `data/researchers/marius_hobbhahn/`.
+His taste is inferred from what he published, and the model is tested on decisions he made after date T. Owned by WS B. Steps 1–5 run as `python3 -m autoresearch.taste.timesplit <stage>`, steps 6–9 as `track_eval <stage>`. Files land in `data/researchers/marius_hobbhahn/`. Owain Evans runs through the same steps next, in `data/researchers/owain_evans/`.
 
 ![Track S pipeline: harvest dated work with Exa, extract and check decisions, find alternatives, split at date T, gate, select, run E2, fit usermodel.json.](pipeline/track-s.svg)
 
