@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import time
+import urllib.error
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -44,6 +46,31 @@ def normalize_row(row, dataset, outer_split, seed=0) -> PreferenceRecord:
                             inner[row["split"]], outer_split)
 
 
+def content_key(choice):
+    return digest([choice.user_id, choice.context, sorted([choice.a_text, choice.b_text])])
+
+
+def drop_exact_repeats(records):
+    """Keep one copy of a choice the same person made twice with the same answer.
+
+    PRISM repeats a few rows and conversations verbatim. Scoring both copies would count
+    one decision twice. Repeats that disagree on the answer or cross a partition are kept,
+    so build_manifest still rejects them.
+    """
+    groups = {}
+    for r in records:
+        c = r.choice
+        chosen = c.a_text if c.chosen == "a" else c.b_text
+        groups.setdefault((content_key(c), r.user_split, r.choice_split, chosen), []).append(r)
+    kept, removed = [], []
+    for group in groups.values():
+        group.sort(key=lambda r: (r.choice.example_id, r.choice.group_id))
+        kept.append(group[0])
+        removed += [{"example_id": r.choice.example_id, "group_id": r.choice.group_id,
+                     "duplicate_of": group[0].choice.example_id} for r in group[1:]]
+    return kept, removed
+
+
 def build_manifest(records, seed=0):
     records = list(records)
     users, seen, groups, content_groups = {}, set(), {}, {}
@@ -65,7 +92,7 @@ def build_manifest(records, seed=0):
             raise ValueError("conversation crosses choice partition boundary")
         groups[c.group_id] = boundary
         # Catch a repeated query under another conversation ID for the same person.
-        content = digest([c.user_id, c.context, sorted([c.a_text, c.b_text])])
+        content = content_key(c)
         if content in content_groups:
             raise ValueError("duplicate preference content")
         content_groups[content] = boundary
@@ -135,7 +162,14 @@ def download_dataset(dataset, cache_root, seed=0, fetch=None):
         path = root / (digest([endpoint, params]) + ".json")
         if path.exists():
             return json.loads(path.read_text())
-        data = (fetch or network)(endpoint, params)
+        for attempt in range(8):
+            try:
+                data = (fetch or network)(endpoint, params)
+                break
+            except urllib.error.HTTPError as e:
+                if e.code not in (429, 500, 502, 503, 504) or attempt == 7:
+                    raise
+                time.sleep(min(300, 5 * 2 ** attempt))
         with path.open("x") as f:
             json.dump(data, f)
         return data
@@ -159,5 +193,4 @@ def download_dataset(dataset, cache_root, seed=0, fetch=None):
             offset += len(page["rows"])
     if not records:
         raise ValueError("empty preference dataset")
-    build_manifest(records, seed)  # validate before the caller persists any split
     return records

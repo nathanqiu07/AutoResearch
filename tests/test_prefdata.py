@@ -51,6 +51,41 @@ class PreferenceDataTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build([a, b])
 
+    def test_drops_exact_repeats_but_keeps_conflicts_strict(self):
+        from autoresearch.taste.prefdata import drop_exact_repeats
+        normalize, build, _ = self.api()
+        a = normalize(row(), "arena", "train")
+        again = normalize(row(group="g2"), "arena", "train")
+        again = replace(again, choice=replace(again.choice, context=a.choice.context))
+        kept, removed = drop_exact_repeats([a, a, again])
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(len(removed), 2)
+        self.assertEqual(len(build(kept)["users"]["arena:u"]["history"]), 1)
+        flipped = replace(a, choice=replace(a.choice, chosen="b" if a.choice.chosen == "a" else "a",
+                                            example_id="other", group_id="arena:u:g3"))
+        for bad in (flipped, replace(a, choice=replace(a.choice, example_id="x2"), choice_split="test")):
+            with self.subTest(bad=bad):
+                kept, removed = drop_exact_repeats([a, bad])
+                self.assertEqual(removed, [])
+                with self.assertRaises(ValueError):
+                    build(kept)
+
+    def test_download_retries_rate_limited_requests(self):
+        import urllib.error
+        from unittest import mock
+        from autoresearch.taste import prefdata
+        calls = []
+        def fetch(endpoint, params):
+            calls.append(endpoint)
+            if len(calls) == 2:
+                raise urllib.error.HTTPError("u", 429, "Too Many Requests", {}, None)
+            if endpoint == "splits":
+                return {"splits": [{"config": "default", "split": "train"}]}
+            return {"rows": [{"row": row(), "truncated_cells": []}], "num_rows_total": 1}
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(prefdata.time, "sleep"):
+            self.assertEqual(len(prefdata.download_dataset("arena", d, fetch=fetch)), 1)
+        self.assertEqual(calls, ["splits", "rows", "rows"])
+
     def test_unknown_split_and_null_options_fail(self):
         normalize, _, _ = self.api()
         with self.assertRaises(ValueError):

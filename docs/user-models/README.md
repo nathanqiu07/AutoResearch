@@ -83,13 +83,15 @@ python3 -m autoresearch.taste prepare --datasets prism \
   --output runs/prefdata/prism.jsonl --manifest data/prefdata/prism-splits.json
 ```
 
-PRISM's row service hit HTTP 429. A later canonical Parquet download retrieved all
-16,705 rows (723 users), pinned to upstream revision
-`a03cab5122c397f1307ed092423a05732cc2aa93`, using an already installed external
-reader. All 6,969 cached API rows matched. Validation found 12 duplicate-content
-pairs, including nine duplicate IDs. Their labels agree and they stay within their
-partitions. The strict loader rejects this snapshot; no normalized PRISM records
-or manifest have been published. Gio's deduplication-policy decision is pending.
+PRISM is prepared: 16,693 choices from 723 users (345 development, 378 final test),
+manifest `data/prefdata/prism-splits.json`. Upstream has 16,705 rows; 12 are exact
+repeats (same person, same prompt and responses, same answer, same partition) and
+are dropped by `drop_exact_repeats`, with each removal listed in
+`data/prefdata/prism-splits-removed.json`. Repeats that disagree on the answer or
+cross a partition still fail the strict manifest check. The same manifest ID came out
+of the canonical Parquet files at upstream revision
+`a03cab5122c397f1307ed092423a05732cc2aa93`. The downloader backs off and retries on
+HTTP 429 and 5xx; cached pages make a rerun resume.
 The public rows service may return an error or truncated cells; the loader fails
 rather than score partial conversations. Source links:
 [Arena](https://huggingface.co/datasets/MichaelR207/chatbot_arena_personalized_0125),

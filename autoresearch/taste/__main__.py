@@ -7,7 +7,7 @@ from ..llm import Budget, get_llm
 from .backends import CodexLLM, OpenAILLM
 from .fidelity import run_fidelity, select_users
 from .methods import create_method
-from .prefdata import build_manifest, download_dataset, load_records, save_records, write_manifest
+from .prefdata import build_manifest, download_dataset, drop_exact_repeats, load_records, save_records, write_manifest
 from .usermodel import load_model
 
 
@@ -65,13 +65,19 @@ def main(argv=None):
         if len(set(args.datasets)) != len(args.datasets):
             raise ValueError("duplicate dataset selection")
         records = [r for dataset in args.datasets for r in download_dataset(dataset, args.raw_cache, args.seed)]
+        records, removed = drop_exact_repeats(records)
         manifest = build_manifest(records, args.seed)
         if Path(args.output).exists() and build_manifest(load_records(args.output), args.seed) != manifest:
             raise ValueError("existing normalized records differ; use a new snapshot path")
         write_manifest(args.manifest, manifest)
+        if removed:
+            removal = Path(args.manifest)
+            write_manifest(removal.with_name(removal.stem + "-removed.json"),
+                           {"manifest_id": manifest["manifest_id"], "removed": removed})
         if not Path(args.output).exists():
             save_records(args.output, records)
-        print(json.dumps({"n_examples": len(records), "n_users": len(manifest["users"]),
+        print(json.dumps({"n_examples": len(records), "n_removed_repeats": len(removed),
+                          "n_users": len(manifest["users"]),
                           "manifest_id": manifest["manifest_id"]}))
     elif args.command == "fidelity":
         records = load_records(args.records)
