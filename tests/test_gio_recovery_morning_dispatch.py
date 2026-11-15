@@ -74,4 +74,30 @@ class MorningDispatchTests(unittest.TestCase):
   registry=Registry.create(self.root/'root.sqlite',budget,producer_limits={'lane01':1})
   ref,packet,d=self.lease(cap=6)
   with self.assertRaises(ValueError):registry.register(ref,packet,now=NOW)
+ def test_output_root_reserved_before_native_directory_creation(self):
+  first,packet1,one=self.lease('one');second,packet2,two=self.lease('two')
+  two['output_root']=one['output_root'];Path(second['path']).write_text(json.dumps(two));second=file_ref(second['path'])
+  self.registry.register(first,packet1,now=NOW);self.registry.claim('one',now=NOW)
+  self.assertFalse(Path(one['output_root']).exists())
+  with self.assertRaises(ValueError):self.registry.register(second,packet2,now=NOW)
+  with self.assertRaises(ValueError):self.registry.claim('two',now=NOW)
+  self.assertFalse(Path(one['output_root']).exists())
+ def test_output_root_lexical_and_symlink_aliases_rejected(self):
+  first,packet,one=self.lease('one');self.registry.register(first,packet,now=NOW)
+  link=self.root/'alias';link.symlink_to(self.root,target_is_directory=True)
+  aliases=[str(self.root/'absent'/'..'/'one-out'),str(link/'one-out')]
+  for i,alias in enumerate(aliases):
+   with self.subTest(alias=i):
+    second,other,two=self.lease('alias'+str(i));two['output_root']=alias;Path(second['path']).write_text(json.dumps(two))
+    with self.assertRaises(ValueError):self.registry.register(file_ref(second['path']),other,now=NOW)
+  self.assertFalse(Path(one['output_root']).exists())
+ def test_concurrent_distinct_packets_cannot_reserve_same_output(self):
+  inputs=[]
+  for name in ('one','two'):
+   reference,packet,lease=self.lease(name);lease['output_root']=str(self.root/'shared');Path(reference['path']).write_text(json.dumps(lease));inputs.append((file_ref(reference['path']),packet))
+  def register(item):
+   try:Registry(self.root/'registry.sqlite').register(*item,now=NOW);return True
+   except ValueError:return False
+  with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(register,inputs))
+  self.assertEqual(sum(results),1);self.assertFalse((self.root/'shared').exists())
 if __name__=='__main__':unittest.main()

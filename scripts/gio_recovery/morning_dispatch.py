@@ -112,7 +112,7 @@ class Registry:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         os.close(fd)
         with sqlite3.connect(str(path)) as db:
-            db.executescript('CREATE TABLE policy (body TEXT NOT NULL); CREATE TABLE leases (id TEXT PRIMARY KEY, packet_sha TEXT UNIQUE NOT NULL, body TEXT NOT NULL, reference TEXT NOT NULL, packet TEXT NOT NULL, state TEXT NOT NULL); CREATE TABLE calls (id INTEGER PRIMARY KEY, lease_id TEXT NOT NULL, provider TEXT NOT NULL, request_sha TEXT NOT NULL, reserved INTEGER NOT NULL, charged INTEGER, state TEXT NOT NULL);')
+            db.executescript('CREATE TABLE policy (body TEXT NOT NULL); CREATE TABLE leases (id TEXT PRIMARY KEY, packet_sha TEXT UNIQUE NOT NULL, body TEXT NOT NULL, reference TEXT NOT NULL, packet TEXT NOT NULL, state TEXT NOT NULL, output_root TEXT UNIQUE NOT NULL); CREATE TABLE calls (id INTEGER PRIMARY KEY, lease_id TEXT NOT NULL, provider TEXT NOT NULL, request_sha TEXT NOT NULL, reserved INTEGER NOT NULL, charged INTEGER, state TEXT NOT NULL);')
             db.execute('INSERT INTO policy VALUES (?)', (canonical(policy),))
         return cls(path)
 
@@ -176,9 +176,9 @@ class Registry:
                 if sum(nanos(r['provider_allocations_usd'][provider]) for r in existing) + nanos(caps[provider]) > nanos(policy['provider_allocations_usd'][provider]):
                     raise ValueError('Aggregate provider envelope exceeded')
             try:
-                db.execute('INSERT INTO leases VALUES (?,?,?,?,?,?)', (lease['lease_id'], lease['packet_checksums_sha256'], canonical(lease), canonical(lease_ref), packet, 'registered'))
+                db.execute('INSERT INTO leases VALUES (?,?,?,?,?,?,?)', (lease['lease_id'], lease['packet_checksums_sha256'], canonical(lease), canonical(lease_ref), packet, 'registered', str(Path(lease['output_root']).resolve())))
             except sqlite3.IntegrityError as exc:
-                raise ValueError('Lease or packet already registered; no retry') from exc
+                raise ValueError('Lease, packet or canonical output root already registered; no retry') from exc
         return lease['lease_id']
 
     def claim(self, lease_id, *, now=None):
@@ -189,6 +189,8 @@ class Registry:
                 raise ValueError('Lease already claimed; no retry')
             read_ref(json.loads(row['reference']))
             verify_packet(row['packet'], row['packet_sha'])
+            if str(Path(lease['output_root']).resolve()) != row['output_root']:
+                raise ValueError('Reserved output root identity changed')
             if Path(lease['output_root']).exists():
                 raise ValueError('Output root already exists')
             db.execute("UPDATE leases SET state='claimed' WHERE id=?", (lease_id,))
@@ -251,6 +253,8 @@ class Registry:
             selected = [c for c in calls if c['provider'] == provider]
             accounting[provider] = {'known_attempts': sum(c['charged'] is not None for c in selected), 'unknown_attempts': sum(c['state'] == 'unknown' for c in selected), 'pending_attempts': sum(c['state'] == 'pending' for c in selected), 'known_usd': sum(c['charged'] or 0 for c in selected) / NANOS, 'held_usd': sum(c['reserved'] for c in selected if c['charged'] is None) / NANOS}
         root = Path(lease['output_root']).resolve()
+        if str(root) != row['output_root']:
+            raise ValueError('Reserved output root identity changed')
         refs = {}
         for name, relative in artifacts.items():
             candidate = Path(relative)
