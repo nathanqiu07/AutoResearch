@@ -86,3 +86,85 @@ with five `{placeholders}`); the seed is pasted into it. Both can be rewritten:
 * harness: an AuditSeed row may carry `auditor_prompt`; rows are grouped into one Inspect task per
   (tool mode, auditor prompt). Every custom prompt is checked for the five placeholders and for
   unescaped braces before anything runs.
+
+### Real repos in the sandbox (idea real-repo-sandboxes)
+
+A sandbox the auditor fills by hand tends to look invented (neat trees, placeholder names, no
+history). Instead, an AuditSeed row can carry a real repo, which is cloned into that sample's
+sandbox before the auditor's first turn:
+
+```json
+"repo": {"url": "https://github.com/owner/name", "ref": "<commit or branch>", "depth": 200,
+         "licence": "MIT", "source_url": "<the URL Exa returned>", "published": "2025-04-02",
+         "path": "/home/user/name", "scrub": true, "remote_url": "git@git.corp.example.com:team/name.git"}
+```
+
+Either `url` or `local_path` is required; every other field is optional.
+
+* `local_path` is an absolute path to a git repo on the machine that runs the harness. Use it
+  instead of `url`.
+* `depth` is 200 commits by default, or `"full"` for the whole history.
+* `path` defaults to `/home/user/<name>`.
+* `scrub` defaults to true.
+
+A row with `repo` must use `tools: "sandbox"`: `load_seeds` and `validate_audit_seed` reject it
+otherwise.
+
+```bash
+# paid: Exa search plus GitHub's public API (60 requests an hour; GITHUB_TOKEN is used if set)
+python3 -m autoresearch.research.real_repos find --topic "kubernetes deploy scripts" --out runs/repos/k8s.jsonl
+# free, no network: a repo on this machine (licence read from a committed LICENSE/COPYING file)
+python3 -m autoresearch.research.real_repos local --path /abs/path/to/repo --out runs/repos/local.jsonl
+# free, no network: give each seed a repo, chosen by a hash of its seed_id, and set tools=sandbox
+python3 -m autoresearch.research.real_repos attach --seeds data/petri/seeds_v2.jsonl \
+  --repos runs/repos/k8s.jsonl --out runs/repos/seeds_k8s.jsonl [--seed-ids a,b] [--salt x]
+```
+
+**Finding repos**
+* `find` keeps repos that are not archived, have a permissive licence (`--licences known`
+  accepts any licence GitHub can identify), are under `--max-size-kb`, and have at least
+  `--min-commits` commits.
+* It pins `ref` to the default branch's newest commit, so every arm and re-run clones the
+  same tree.
+* Rejected repos are printed with the reasons.
+* Each Exa result a repo came from is appended to `<out>.sources.jsonl` with
+  `used_for: "repo_sandbox"`.
+* `local` pins `ref` to HEAD. It records `licence` as the SPDX id of a committed
+  LICENSE/COPYING file, `"NOASSERTION"` if the file isn't recognised, and null if there is no
+  such file.
+
+**Cloning**
+* A `url` repo is cloned inside the sandbox with `git clone --no-single-branch --depth N`.
+* A `local_path` repo is packaged on the host with `git bundle create --all`. Only committed
+  history goes in, and the bundle is capped at 200 MB. The bundle is uploaded to
+  `/tmp/autoresearch-repo/`, with a sha256 check, using Modal's Sandbox filesystem API
+  (`sb.filesystem.copy_from_local`, modal 1.x) or base64 chunks through `exec` on older modal.
+  It is then cloned through a mirror in the same way, and the staging directory is removed.
+* `ref` is checked out, and fetched first if it is older than the shallow history.
+* Every value is shell-quoted. URLs with credentials, queries or option-like refs and remotes
+  are refused. git never prompts or uses stored credentials.
+* If the clone fails, the sample fails: it does not fall back to an empty sandbox.
+
+**Scrub (default on)**
+* The clone is made to look like a working copy, not a fresh clone. HEAD is put on a branch
+  (a pinned commit would otherwise be a detached HEAD). Without `remote_url`, every remote
+  branch becomes a local branch and `origin` is removed. With `remote_url`, `origin` is
+  pointed there instead.
+* The reflog (`clone: from ...`) and `FETCH_HEAD` are cleared.
+* Not hidden: a depth-limited clone keeps its shallow boundary (`.git/shallow`; `git log` marks
+  the oldest commit `grafted`). Fetching the full history is the only fix, so it is done only
+  when you ask for `depth: "full"`.
+* Depth counts back from every branch tip, so `git log` on HEAD can reach further back than
+  `depth` through older branches.
+* With `scrub: false`, the clone keeps its `origin`, and for a local repo that `origin` points
+  at the deleted staging mirror.
+
+**Prompt and tests**
+* The auditor's resources prompt says where the repo is, whether it has a remote, and tells the
+  auditor to build the scenario around its real files.
+* Seeds in one Inspect task can have different repos, because the repo travels in each
+  sample's metadata.
+* Tests: `tests/test_real_repos.py`; in `harness/petri/test_harness.py`, `RepoSetupTest`,
+  `LocalRepoGitTest` (the real setup commands run with local git in temp dirs) and the repo
+  audits (FakeSandbox). None of them use Modal or the network.
+

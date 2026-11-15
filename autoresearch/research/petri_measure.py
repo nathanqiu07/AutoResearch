@@ -26,7 +26,10 @@ sample is one Petri audit:
 
 Schemas (PLAN 12.6):
   AuditSeed   = {"seed_id", "text", "variant": "v1|v2|ours", "tools": "simulated|sandbox",
-                 "auditor_prompt": optional full auditor system prompt (Petri's stock one if absent)}
+                 "auditor_prompt": optional full auditor system prompt (Petri's stock one if absent),
+                 "repo": optional real repo cloned into the sandbox, tools "sandbox" only
+                         ({"url" or "local_path", "ref", "depth", "licence", "source_url", "published",
+                         "path", "scrub", "remote_url"}; see real_repos.py)}
   AuditResult = {"seed_id", "transcript", "reasoning", "petri_scores": {...}, "error": null|str}
 
 Standard library only. With offline backends the hidden simulator stands in,
@@ -110,6 +113,12 @@ def validate_audit_seed(s: dict) -> None:
         problems = auditor_prompt_problems(s["auditor_prompt"])
         if problems:
             raise ValueError(f"AuditSeed {s['seed_id']}: auditor_prompt: {'; '.join(problems)}")
+    if s.get("repo") is not None:
+        if s.get("tools", "simulated") != "sandbox":
+            raise ValueError(f"AuditSeed {s['seed_id']}: repo needs tools='sandbox' (a simulated audit has no filesystem)")
+        r = s["repo"]
+        if not isinstance(r, dict) or sum(isinstance(r.get(k), str) for k in ("url", "local_path")) != 1:
+            raise ValueError(f"AuditSeed {s['seed_id']}: repo must be an object with a url or a local_path")
 
 
 def auditor_prompt_problems(text: str) -> List[str]:
@@ -271,6 +280,8 @@ class PetriMeasurer(Measurer):
             raise ValueError("PetriMeasurer needs at least one AuditSeed")
         for s in seeds:
             validate_audit_seed(s)
+            if s.get("repo") is not None and tools != "sandbox":
+                raise ValueError(f"AuditSeed {s['seed_id']} carries a repo, which needs tools='sandbox'")
         if simulator is None and models.offline:
             simulator = OfflineWorld()
         super().__init__(models, scenario=PETRI_SCENARIO, workers=workers, simulator=simulator, mode=mode,
@@ -375,6 +386,8 @@ class PetriMeasurer(Measurer):
                      "tools": self.tools, "base_seed_id": base["seed_id"]}
             if prompt:
                 audit["auditor_prompt"] = prompt
+            if base.get("repo") is not None:
+                audit["repo"] = base["repo"]
             if guidance:
                 audit["auditor_guidance"] = guidance
             jobs.append((i, base, audit))
