@@ -5,6 +5,7 @@ Eligible arms were fixed before scoring: pre-T material only, never tuned on pos
 """
 import itertools
 import json
+import math
 import random
 from pathlib import Path
 
@@ -78,6 +79,12 @@ retest = {m: {"diff": round(mean("P4_rerun", "P4", m), 3), "ci90": [round(x, 3) 
 json.dump({"n_pairs": len(ids), "n_works": len(works), "arms": summary, "tests": tests, "retest_P4": retest},
           open(HERE / "results.json", "w"), indent=1)
 
+STYLE = ('<style>.bg{fill:#fcfcfb}.t1{fill:#0b0b0b}.t2{fill:#52514e}.grid{stroke:#e4e3df}.ref{stroke:#8a8984}'
+       '.base{fill:#8a8984;stroke:#8a8984}.best{fill:#2a78d6;stroke:#2a78d6}.ring{stroke:#fcfcfb}'
+       '@media (prefers-color-scheme: dark){.bg{fill:#1a1a19}.t1{fill:#f0efec}.t2{fill:#c3c2b7}'
+       '.grid{stroke:#383835}.ref{stroke:#8a8984}.base{fill:#8a8984;stroke:#8a8984}'
+       '.best{fill:#3987e5;stroke:#3987e5}.ring{stroke:#1a1a19}}</style>')
+
 # Chart: mean p(his choice), 90% CI over works; baselines gray, the two best profiles blue.
 ROWS = [("M0s", "No profile", "", False), ("NAME", "Name only", "", False),
         ("P4", "Contrastive card", "where he departs from standard practice", True),
@@ -93,11 +100,7 @@ def x(v):
 
 svg = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" '
        'font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">',
-       '<style>.bg{fill:#fcfcfb}.t1{fill:#0b0b0b}.t2{fill:#52514e}.grid{stroke:#e4e3df}.ref{stroke:#8a8984}'
-       '.base{fill:#8a8984;stroke:#8a8984}.best{fill:#2a78d6;stroke:#2a78d6}.ring{stroke:#fcfcfb}'
-       '@media (prefers-color-scheme: dark){.bg{fill:#1a1a19}.t1{fill:#f0efec}.t2{fill:#c3c2b7}'
-       '.grid{stroke:#383835}.ref{stroke:#8a8984}.base{fill:#8a8984;stroke:#8a8984}'
-       '.best{fill:#3987e5;stroke:#3987e5}.ring{stroke:#1a1a19}}</style>',
+       STYLE,
        f'<rect class="bg" width="{W}" height="{H}"/>',
        '<text class="t1" x="20" y="32" font-size="17" font-weight="600">'
        'Profiles built from pre-2026 material predict Owain Evans’s later choices better</text>',
@@ -148,3 +151,71 @@ for e in s_inf["exemplars"]:
     other = e["b_text"] if e["chosen"] == "a" else e["a_text"]
     lines += [f"- **Context.** {e['context']}", f"  - Chose: {chosen}", f"  - Over: {other}", ""]
 (HERE / "profiles.md").write_text("\n".join(lines))
+
+# Holm diagram, on the real comparison against name only: sorted raw p-values against the stepped bars alpha/(m-i).
+ALPHA = 0.05
+PLAIN = {"S_inf": ("Informal-writing", "persona"), "P4": ("Contrastive", "card"), "P4_rerun": ("Contrastive", "card, re-run"),
+         "P1": ("Quote-backed", "contrast card"), "S_paper": ("Persona fitted", "on papers")}
+vs_name = tests["NAME/p"]
+order = sorted(vs_name, key=lambda a: vs_name[a]["perm_p"])
+m = len(order)
+bars = [ALPHA / (m - i) for i in range(m)]
+first_miss = next((i for i, a in enumerate(order) if vs_name[a]["perm_p"] > bars[i]), m)
+W, H, L, R, T, B = 940, 460, 90, 560, 100, 360
+lo_e, hi_e = -3.5, 0.0  # log10 range of the y axis
+
+
+def ly(p):
+    return T + (hi_e - math.log10(max(p, 10 ** lo_e))) / (hi_e - lo_e) * (B - T)
+
+
+def cx(i):
+    return L + (i + 0.5) * (R - L) / m
+
+
+svg = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" '
+       'font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">', STYLE,
+       f'<rect class="bg" width="{W}" height="{H}"/>',
+       '<text class="t1" x="20" y="32" font-size="17" font-weight="600">'
+       'Holm correction: the more comparisons you run, the stricter the bar for the first one</text>',
+       '<text class="t2" x="20" y="54" font-size="13">Five profiles each compared with name only. Sort the p-values; '
+       f'the smallest must beat {ALPHA}/5, the next {ALPHA}/4, and so on.</text>',
+       '<text class="t2" x="20" y="72" font-size="13">Stop at the first one that misses its bar: it and every one '
+       'after it count as not significant.</text>']
+for e in range(math.ceil(lo_e), 1):
+    v = 10 ** e
+    svg.append(f'<line class="grid" x1="{L}" x2="{R}" y1="{ly(v):.1f}" y2="{ly(v):.1f}"/>')
+    svg.append(f'<text class="t2" x="{L - 8}" y="{ly(v) + 4:.1f}" font-size="12" text-anchor="end">{v:g}</text>')
+svg.append(f'<text class="t2" x="24" y="{(T + B) / 2:.0f}" font-size="12" transform="rotate(-90 24 {(T + B) / 2:.0f})" '
+           'text-anchor="middle">p-value (log scale)</text>')
+step = (R - L) / m
+for i, a in enumerate(order):
+    x0, p, passed = L + i * step, vs_name[a]["perm_p"], i < first_miss
+    svg.append(f'<line class="ref" x1="{x0 + 6:.1f}" x2="{x0 + step - 6:.1f}" y1="{ly(bars[i]):.1f}" '
+               f'y2="{ly(bars[i]):.1f}" stroke-width="2" stroke-dasharray="5 3"/>')
+    svg.append(f'<text class="t2" x="{cx(i):.1f}" y="{ly(bars[i]) - 6:.1f}" font-size="11" text-anchor="middle">'
+               f'bar {bars[i]:.3g}</text>')
+    svg.append(f'<circle class="{"best" if passed else "base"} ring" cx="{cx(i):.1f}" cy="{ly(p):.1f}" r="7" '
+               f'stroke-width="2"/><title>{" ".join(PLAIN[a])}: raw p = {p:.4f}, bar {bars[i]:.4f}</title>')
+    svg.append(f'<text class="t1" x="{cx(i) + 11:.1f}" y="{ly(p) + 4:.1f}" font-size="12">{p:.3g}</text>')
+    verdict = "passes" if passed else ("misses: stop" if i == first_miss else "not tested")
+    for j, line in enumerate([*PLAIN[a], verdict]):
+        cls = "t1" if passed and j < 2 else "t2"
+        svg.append(f'<text class="{cls}" x="{cx(i):.1f}" y="{B + 22 + 15 * j}" font-size="{12 if j < 2 else 11}" '
+                   f'text-anchor="middle"{" font-style=\"italic\"" if j == 2 else ""}>{line}</text>')
+px = R + 40
+svg.append(f'<text class="t1" x="{px}" y="{T}" font-size="13" font-weight="600">Same rule as an adjusted p-value</text>')
+for j, line in enumerate(["Multiply each raw p by the number of tests left,",
+                          "never letting it fall below the one before.",
+                          f"Significant if the result is under {ALPHA}."]):
+    svg.append(f'<text class="t2" x="{px}" y="{T + 20 + 16 * j}" font-size="12">{line}</text>')
+for i, a in enumerate(order):
+    y, p, h = T + 92 + 24 * i, vs_name[a]["perm_p"], vs_name[a]["holm_p"]
+    ok = h < ALPHA
+    svg.append(f'<text class="{"t1" if ok else "t2"}" x="{px}" y="{y}" font-size="12">{" ".join(PLAIN[a])}</text>')
+    svg.append(f'<text class="{"t1" if ok else "t2"}" x="{W - 20}" y="{y}" font-size="12" text-anchor="end">'
+               f'{p:.4f} × {m - i} = {h:.3f}{" ✓" if ok else ""}</text>')
+svg.append(f'<text class="t2" x="20" y="{H - 14}" font-size="11">Metric: mean probability on his actual choice, '
+           'each profile minus name only. Raw p from an exact permutation test over his 10 works.</text>')
+svg.append("</svg>")
+(HERE / "holm.svg").write_text("\n".join(svg) + "\n")

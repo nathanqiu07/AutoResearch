@@ -2,8 +2,25 @@
 
 ![Mean probability given to his actual choice](figure.svg)
 
+## Every person benchmarked on held-out preferences
+
+![Best profile minus baseline, per person](people.svg)
+
+`people.py` writes `people.svg` and `people.json` (each row's source). Rows differ in metric, baseline, model and
+label source, so read signs, not sizes. Ethan's row rests on 4 test questions. Hobbhahn's development labels were
+inferred by AI, not given by him. Hobbhahn's offline ranking model (68% on held-out documents) has no matched
+no-profile baseline, and a two-researcher writing panel was at ceiling (every arm 28/28), so neither is plotted.
+
+## What Holm correction does
+
+![Holm correction on the five comparisons with name only](holm.svg)
+
+Testing five profiles gives five chances to get a low p-value by luck. Holm's rule sorts the p-values and makes the
+smallest beat 0.05/5, the next 0.05/4, and so on, stopping at the first miss. The chance of any false win stays at or
+under 5% overall. It is less conservative than dividing every p-value by 5 (Bonferroni).
+
 Test set: e2_v4's 96 post-T pairs (10 works), sonnet, both orders. Nothing new was run: `make.py` re-scores the cached
-predictions and writes `results.json`, `figure.svg` and `profiles.md` (the two winning profiles, verbatim). Run it from
+predictions and writes `results.json`, `figure.svg`, `holm.svg` and `profiles.md` (the two winning profiles, verbatim). Run it from
 `experiments/taste_petri`. `figure.png` is a 2x render of the SVG.
 
 **How the arms were picked.** Eligibility was fixed before scoring: a profile counts only if it was built from pre-T
