@@ -10,9 +10,9 @@ from unittest import mock
 from autoresearch.integrations.shared_memory import LocalSharedMemory, parse_fact
 from autoresearch.llm import Budget, GpuMeter
 from autoresearch.research import market as market_mod
-from autoresearch.research.market import (P_FLOOR, Bid, GpuUsage, Market, Wallets, audit_ledger, gpu_s_to_usd,
-                                          halving_plan, ledger_facts, log_score_payoff, usd_per_gpu_hour,
-                                          usd_to_gpu_s)
+from autoresearch.research.market import (P_FLOOR, USER_MODEL, Bid, GpuUsage, Market, Wallets, audit_ledger,
+                                          gpu_s_to_usd, halving_plan, ledger_facts, log_score_payoff,
+                                          usd_per_gpu_hour, usd_to_gpu_s, user_model_p)
 
 
 def _simulate(bias: float, n: int = 4000, seed: int = 0) -> float:
@@ -403,6 +403,72 @@ class TestLedgerAudit(unittest.TestCase):
                 self.assertEqual(market_mod.main(["audit", path, "--wallets", wpath]), 0)
                 self._tamper(path, "SETTLE", "balance", "1.0")
                 self.assertEqual(market_mod.main(["audit", path]), 1)
+
+
+class TestUserModelBids(unittest.TestCase):
+    """Experiments are prioritised by the user model and the sub-agents' bids together."""
+
+    def test_user_model_p_shifts_the_prior_by_taste(self):
+        self.assertAlmostEqual(user_model_p(0.3, 0.0), 0.3)
+        self.assertAlmostEqual(user_model_p(0.3, 2.0, weight=0.0), 0.3)      # unreliable taste: the prior
+        self.assertGreater(user_model_p(0.3, 1.0), 0.3)
+        self.assertLess(user_model_p(0.3, -1.0), 0.3)
+        self.assertGreater(user_model_p(0.3, 1.0, weight=1.5), user_model_p(0.3, 1.0, weight=0.5))
+        self.assertAlmostEqual(user_model_p(0.5, math.log(3)), 0.75)       # log-odds 0 + ln 3
+        self.assertAlmostEqual(user_model_p(0.5, 50.0), 1 - P_FLOOR)       # clipped like every bid
+
+    def test_user_model_bids_are_advisory(self):
+        m = Market(Wallets())
+        up = m.bid_user_model("liked", prior=0.4, taste_score=0.8, it=1)
+        down = m.bid_user_model("disliked", prior=0.4, taste_score=-0.8, it=1)
+        self.assertEqual((up.agent, up.against, down.against), (USER_MODEL, False, False))
+        self.assertEqual(m.priority("liked"), 0.0)        # moves the consensus, never funds on its own
+        self.assertEqual(m.order(["liked", "disliked"]), [])
+        self.assertGreater(up.p_validated, 0.4)
+        self.assertLess(down.p_validated, 0.4)
+        self.assertEqual(up.resource, "usd")                                  # never asks for GPU time
+        self.assertIsNone(m.bid_user_model("neutral", prior=0.4, taste_score=0.0))
+        self.assertIsNone(m.bid_user_model("ignored", prior=0.4, taste_score=1.0, weight=0.0))
+        self.assertNotIn((USER_MODEL, "neutral"), m.open)
+
+    def test_taste_breaks_a_tie_between_equal_agent_bids(self):
+        m = Market(Wallets())
+        for c in ("a", "b"):
+            m.bid("proposer", c, 0.5)
+        self.assertEqual(m.order(["a", "b"]), ["a", "b"])                    # tie: stable order
+        m.bid_user_model("a", prior=0.5, taste_score=-1.0)
+        m.bid_user_model("b", prior=0.5, taste_score=1.0)
+        self.assertEqual(m.order(["a", "b"]), ["b", "a"])
+
+    def test_agents_can_outbid_the_user_model(self):
+        m = Market(Wallets())
+        m.bid("scout", "a", 0.9)
+        m.bid("proposer", "b", 0.3)
+        m.bid_user_model("a", prior=0.5, taste_score=-0.3)
+        m.bid_user_model("b", prior=0.5, taste_score=0.3)
+        self.assertEqual(m.order(["a", "b"])[0], "a")
+
+    def test_settlement_moves_the_user_models_influence(self):
+        good, bad = Market(Wallets()), Market(Wallets())
+        for it in range(10):
+            for m, sign in ((good, 1.0), (bad, -1.0)):
+                m.bid_user_model(f"win{it}", prior=0.5, taste_score=sign)
+                m.bid_user_model(f"lose{it}", prior=0.5, taste_score=-sign)
+                m.settle({f"win{it}": True, f"lose{it}": False}, it=it)
+        self.assertGreater(good.wallets.balance(USER_MODEL), 100.0)
+        self.assertLess(bad.wallets.balance(USER_MODEL), 100.0)
+        self.assertGreater(good.stake_for(USER_MODEL), bad.stake_for(USER_MODEL))
+
+    def test_user_model_bids_go_to_the_ledger_and_audit(self):
+        with tempfile.TemporaryDirectory() as d:
+            sm = LocalSharedMemory(os.path.join(d, "shared.jsonl"))
+            m = Market(Wallets(), shared=sm, run_id="r1")
+            m.bid_user_model("c", prior=0.5, taste_score=1.0, it=0)
+            m.settle({"c": True}, it=0)
+            facts, _ = ledger_facts(sm)
+            self.assertEqual({(f["kind"], f["agent"]) for f in facts if f.get("agent") == USER_MODEL},
+                             {("BID", USER_MODEL), ("SETTLE", USER_MODEL)})
+            self.assertTrue(audit_ledger(facts)["ok"])
 
 
 if __name__ == "__main__":

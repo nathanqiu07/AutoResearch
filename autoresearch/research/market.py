@@ -11,7 +11,11 @@ the arms of E5:
            half gets the rest of a full measurement.
   market   successive halving where the order comes from bids. Each agent
            (proposer, contrarian, scout, critic, ...) states P(validated) for
-           a candidate and stakes credits from its wallet. Candidates are
+           a candidate and stakes credits from its wallet. In a taste arm the
+           user model bids too (`bid_user_model`): its taste score shifts the
+           memory's prior, so which experiments run first depends on the
+           researcher's taste and the sub-agents' bids together, and the
+           user model's weight is earned in the same way. Candidates are
            funded in order of consensus P x supporting stake / cost. Once the
            outcome is known, every bid is paid its log score against it,
            scaled by its stake, so calibrated agents gain credits (and with
@@ -59,6 +63,7 @@ P_FLOOR = 0.05              # bids are clipped to [P_FLOOR, 1 - P_FLOOR]: a loss
 INITIAL_CREDITS = 100.0
 RESOURCES = ("usd", "gpu_s")   # usd: the existing credit bids on sample budget; gpu_s: self-hosted target time
 RATE_ENV = "OPENAI_COMPAT_USD_PER_HOUR"   # the same rate llm.OpenAICompatLLM bills GPU time at
+USER_MODEL = "user_model"   # the researcher's user model, bidding alongside the sub-agents (bid_user_model)
 
 
 def clip_p(p: float) -> float:
@@ -134,6 +139,20 @@ class Bid:
             d.pop("resource")
             d.pop("gpu_s")
         return d
+
+
+def user_model_p(prior: float, taste_score: float, weight: float = 1.0) -> float:
+    """P(validated) the user model states for a candidate.
+
+    `taste_score` is the loop's D1 score, ln(k x P(the user picks this one of
+    k)): 0 when the user model is indifferent, positive when it prefers the
+    candidate to an average one. It shifts the log-odds of `prior` (the
+    memory's credence that the candidate validates), scaled by `weight` (the
+    loop's learned taste reliability, 0 = ignore taste). So an indifferent or
+    unreliable user model states the prior and a confident one moves away
+    from it, in the direction of its preference."""
+    q = clip_p(prior)
+    return clip_p(1.0 / (1.0 + math.exp(-(math.log(q / (1.0 - q)) + weight * taste_score))))
 
 
 def log_score_payoff(p_validated: float, outcome: bool, stake: float) -> float:
@@ -366,6 +385,26 @@ class Market:
                 exp_delta=round(exp_delta, 4), against=against, run=self.run_id, **extra))
         return b
 
+    def bid_user_model(self, candidate_id: str, prior: float, taste_score: float, weight: float = 1.0,
+                       it: Optional[int] = None) -> Optional[Bid]:
+        """The user model's bid (agent USER_MODEL), so experiments are funded on
+        the researcher's taste and the sub-agents' bids together.
+
+        P(validated) is `user_model_p(prior, taste_score, weight)`. The bid is
+        advisory: it enters the stake-weighted consensus P like any bid, but
+        adds no supporting stake (`priority`), so a candidate is still funded
+        by the agent that brought it, and the user model moves the order in
+        proportion to how far its belief departs from the others' and to its
+        stake. With no preference (a zero shift) it does not bid: a bid at the
+        prior would carry no information. The bid is settled like any other,
+        so the user model's stake, and with it its say over what gets
+        measured, grows only while its taste keeps predicting which
+        experiments validate. It never asks for GPU time: that is requested by
+        the agent that brought the candidate."""
+        if abs(weight * taste_score) < 1e-9:
+            return None
+        return self.bid(USER_MODEL, candidate_id, user_model_p(prior, taste_score, weight), it=it)
+
     def bids_on(self, candidate_id: str) -> List[Bid]:
         return [b for (_, c), b in self.open.items() if c == candidate_id]
 
@@ -376,9 +415,12 @@ class Market:
         return sum(b.stake * b.p_validated for b in bs) / tot if tot else None
 
     def priority(self, candidate_id: str, cost: float = 1.0) -> float:
-        """Funding priority = consensus P x supporting stake / cost (PLAN 8.3)."""
+        """Funding priority = consensus P x supporting stake / cost (PLAN 8.3).
+        Supporting stake comes from the agents that brought the candidate; the
+        critic's bids against it and the user model's advisory bid move only
+        the consensus."""
         p = self.consensus(candidate_id)
-        support = sum(b.stake for b in self.bids_on(candidate_id) if not b.against)
+        support = sum(b.stake for b in self.bids_on(candidate_id) if not b.against and b.agent != USER_MODEL)
         return 0.0 if p is None or cost <= 0 else p * support / cost
 
     def cost_usd(self, candidate_id: str, usd: float = 0.0) -> Optional[float]:
