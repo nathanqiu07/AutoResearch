@@ -1,5 +1,6 @@
 """Reference-lane boundaries: final isolation, immutable inputs, and spending admission."""
 import importlib.util
+import hashlib
 import json
 import os
 import shutil
@@ -349,3 +350,277 @@ class SuccessorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FirstEightBoundaryTests(unittest.TestCase):
+    def setUp(self):
+        self.mod = module()
+        from autoresearch.llm import Budget
+        self.backend = self.mod.ReferenceBackend("gpt-6-luna", budget=Budget(max_calls=1000), max_usd=2)
+
+    def factory(self, method, unavailable=None):
+        factory = getattr(self.mod, "first8_model", None)
+        self.assertTrue(callable(factory), "first-eight guarded factory is not implemented")
+        return factory(method, self.backend, unavailable or {}, seed=0, max_calls=1000, **self.mod.CONFIG)
+
+    def choice(self, split):
+        return normalize_row({"user_id": "user347", "conversation_id": split,
+            "context": [{"role": "user", "content": split}], "chosen": {"content": "A"},
+            "rejected": {"content": "B"}, "split": split}, "prism", "train", 0).choice
+
+    def test_hybrid_component_fit_cache_miss_cannot_reach_transport(self):
+        model = self.factory("m5")
+        with patch.object(self.mod.OpenAILLM, "complete", return_value='{}') as transport:
+            with self.assertRaisesRegex(RuntimeError, "component.*cache"):
+                model.fit([self.choice("train")], [self.choice("val")])
+        self.assertEqual(transport.call_count, 0)
+        self.assertEqual(self.backend.request_audit, [])
+        self.assertFalse(self.backend.cache_only_components)
+
+    def test_verified_hybrid_filter_can_call_after_cached_component_fit(self):
+        model = self.factory("m6")
+        # Empty history makes the real M2/M3 fits require no calls; the real M6
+        # validation filter still must score its empty set once.
+        with patch.object(self.mod.OpenAILLM, "complete", return_value='{"probabilities":[0.6,0.4]}') as transport:
+            model.fit([], [self.choice("val")])
+        self.assertEqual(transport.call_count, 1)
+        self.assertFalse(self.backend.cache_only_components)
+        self.assertEqual(self.backend.request_audit[0]["state"], "completed")
+
+    def test_unavailable_arm_preserves_every_planned_target_cell(self):
+        model = self.factory("m5", {"m5": "historical_fit_request_withheld"})
+        from autoresearch.taste.fidelity import run_fidelity
+        records = [normalize_row({"user_id": "user347", "conversation_id": split+str(i),
+            "context": [{"role": "user", "content": split+str(i)}],
+            "chosen": {"content": "A"}, "rejected": {"content": "B"}, "split": split},
+            "prism", "train", 0) for split,count in [("train",1),("val",1),("test",2)] for i in range(count)]
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d);manifest=root/"manifest.json";manifest.write_text(json.dumps(build_manifest(records,0)))
+            report=run_fidelity(records,manifest,{"m5":lambda user:model},root/"out","prism")
+            predictions=[json.loads(x) for x in (root/"out/predictions.jsonl").read_text().splitlines()]
+        self.assertEqual(report["methods"]["m5"]["n_pairs"],2)
+        self.assertEqual(report["methods"]["m5"]["failures"],2)
+        self.assertTrue(all(r["prediction"] is None and "predeclared unavailable" in r["error"] for r in predictions))
+        self.assertEqual(self.backend.request_audit,[])
+
+    def test_both_historical_identity_conventions_block_before_network(self):
+        self.assertTrue(callable(getattr(self.mod,"body_identity",None)), "body identity guard is not implemented")
+        from autoresearch.llm import Budget
+        compact = self.mod.body_identity("gpt-6-luna","prompt","system",2048)
+        backend=self.mod.ReferenceBackend("gpt-6-luna",budget=Budget(),max_usd=2,forbidden_body_hashes=[compact])
+        with patch.object(self.mod.OpenAILLM,"complete") as transport:
+            with self.assertRaisesRegex(RuntimeError,"forbidden"):
+                backend.complete("prompt",system="system",max_tokens=2048)
+        self.assertEqual(transport.call_count,0)
+        self.assertEqual(backend.request_audit,[])
+
+
+class FirstEightAdmissionTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name);self.mod=module()
+        self.users=['prism:user949','prism:user903','prism:user347','prism:user681','prism:user557','prism:user480','prism:user634','prism:user671']
+        self.records=[]
+        for user in self.users:
+            for split in ('train','val','test'):
+                self.records.append(normalize_row({'user_id':user.split(':')[1],'conversation_id':user+split,
+                    'context':[{'role':'user','content':user+split}], 'chosen':{'content':'A'},
+                    'rejected':{'content':'B'},'split':split},'prism','train',0))
+        raw=self.root/'raw.jsonl';raw.write_text(''.join(json.dumps(asdict(x))+'\n' for x in self.records))
+        canonical=self.root/'canonical.json';canonical.write_text(json.dumps(build_manifest(self.records,0)))
+        self.source=self.root/'original';source_plan=self.mod.prepare(raw,canonical,self.source,n_users=8)
+        p=json.loads(source_plan.read_text());p['user_ids']=self.users;source_plan.write_text(json.dumps(p))
+        (self.source/'output').mkdir();report=self.source/'output/report.json';report.write_text(json.dumps({'user_ids':self.users,'user_partition':'dev'}))
+        completion=self.source/'completion.json';completion.write_text(json.dumps({'report_sha256':self.mod.file_sha(report),'budgets':[{'reserved_usd':.001774}]}))
+        cache=self.source/'cache';cache.mkdir();entry=cache/('a'*64+'.json');entry.write_text('{"known":true}')
+        from autoresearch.taste.usermodel import digest
+        self.cache_sha=digest({entry.name:self.mod.file_sha(entry)})
+        def ref(path):return {'path':str(path),'sha256':self.mod.file_sha(path)}
+        self.proposal={'user_ids':self.users,'methods':['m4_full','m4_matched5','m5','m6'],
+            'evidence':{'original_plan':ref(source_plan),'original_report':ref(report),'original_completion':ref(completion)},
+            'cache_lineage':{'original_source_entries':1,'original_source_map_sha256':self.cache_sha},
+            'unknown_and_failure_exclusions':{},'users':[{'user_id':u} for u in self.users]}
+        denied=self.root/'denylist.json';denied.write_text(json.dumps({'schema_version':'provider-unknown-wire-denylist-v2','identity_denylists':{'body_compact_json_sha256':['1'*64,'2'*64,'3'*64,'4'*64],'endpoint_body_sorted_json_sha256':['5'*64,'6'*64,'7'*64,'8'*64,'9'*64]}}))
+        self.proposal['unknown_and_failure_exclusions']['typed_denylist']=ref(denied)
+        self.proposal_path=self.root/'proposal.json';self.proposal_path.write_text(json.dumps(self.proposal))
+
+    def prepare(self,user='prism:user949'):
+        fn=getattr(self.mod,'prepare_first8',None)
+        self.assertTrue(callable(fn),'first-eight preparation is not implemented')
+        with patch.object(self.mod,'FIRST8_PROPOSAL_SHA',self.mod.file_sha(self.proposal_path)):
+            return fn(self.proposal_path,user,self.root/'packet')
+
+    def test_shared_parent_hold_is_preserved_while_withheld_cells_remain_planned(self):
+        p=self.prepare();plan=json.loads(p.read_text())
+        self.assertEqual(plan['user_ids'],['prism:user949'])
+        self.assertEqual(plan['n_predictions'],4)
+        self.assertEqual(plan['methods'],['m4_full','m4_matched5','m5','m6'])
+        self.assertEqual(set(plan['unavailable_methods']),{'m5','m6','m7'})
+        self.assertEqual(len(plan['initial_cache']),1)
+        self.assertEqual(json.loads((p.parent/'source-completion.json').read_text())['budgets'][0]['reserved_usd'],.001774)
+        self.assertEqual(len(self.mod.load_records(p.parent/'records.jsonl')),3)
+
+    def test_original903_cannot_enable_hybrids_without_known_recovery(self):
+        p=self.prepare('prism:user903');plan=json.loads(p.read_text())
+        self.assertEqual(set(plan['unavailable_methods']),{'m5','m6','m7'})
+        self.assertEqual(plan['limits'],{'max_usd':.08,'max_calls':39,'max_seconds':1800})
+        self.assertFalse(plan['recovery903_enabled'])
+
+    def test_missing_component_cache_blocks_available_user_before_packet_creation(self):
+        self.assertTrue(callable(getattr(self.mod,'prepare_first8',None)),'first-eight preparation is not implemented')
+        with self.assertRaisesRegex(RuntimeError,'component.*cache'):
+            self.prepare('prism:user347')
+        self.assertFalse((self.root/'packet').exists())
+
+    def test_changed_original_cache_is_rejected_before_copy(self):
+        self.assertTrue(callable(getattr(self.mod,'prepare_first8',None)),'first-eight preparation is not implemented')
+        (self.source/'cache'/('a'*64+'.json')).write_text('{"changed":true}')
+        with self.assertRaisesRegex(ValueError,'cache'):
+            self.prepare()
+        self.assertFalse((self.root/'packet').exists())
+
+
+    def lease(self, path):
+        plan=json.loads(path.read_text());claims=self.root/'claims';claims.mkdir(exist_ok=True)
+        lease={'job_id':'synthetic-original-eight','role':'10','state':'authorized','provider':'openai','model':'gpt-6-luna',
+            'plan_sha256':self.mod.file_sha(path),'methods':plan['methods'],'protocol':plan['protocol'],
+            'user_partition':'dev','final_authorized':False,'deadline':plan['deadline'],
+            'claim_path':str(claims/'job.json'),**plan['limits']}
+        lp=self.root/'lease.json';lp.write_text(json.dumps(lease));return lp
+
+    def validate(self,path):
+        with patch.object(self.mod,'FIRST8_PROPOSAL_SHA',self.mod.file_sha(self.proposal_path)):
+            return self.mod.validate_execution(path,self.lease(path),now=1)
+
+    def test_new_protocol_validates_exact_source_and_preserves_shared_hold(self):
+        p=self.prepare();plan,lease,records,deadline=self.validate(p)
+        self.assertEqual(len(records),3);self.assertEqual(plan['n_predictions'],4)
+        self.assertFalse((self.root/'claims/job.json').exists())
+
+    def test_new_protocol_cannot_rebind_changed_cache(self):
+        p=self.prepare();plan=json.loads(p.read_text());entry=p.parent/'cache'/('a'*64+'.json');entry.write_text('{"changed":true}')
+        plan['initial_cache'][entry.name]=self.mod.file_sha(entry)
+        manifest=p.parent/'initial-cache-manifest.json';manifest.write_text(json.dumps(plan['initial_cache']))
+        plan['snapshots'][manifest.name]=self.mod.file_sha(manifest);p.write_text(json.dumps(plan))
+        with self.assertRaisesRegex(ValueError,'cache'):
+            self.validate(p)
+
+    def test_new_protocol_cannot_rebind_changed_labels(self):
+        p=self.prepare();plan=json.loads(p.read_text());rp=p.parent/'records.jsonl';rows=[json.loads(x) for x in rp.read_text().splitlines()]
+        rows[0]['choice']['chosen']='a' if rows[0]['choice']['chosen']=='b' else 'b';rp.write_text(''.join(json.dumps(x)+'\n' for x in rows))
+        records=self.mod.load_records(rp);mp=p.parent/'manifest.json';manifest=build_manifest(records,0);mp.write_text(json.dumps(manifest))
+        plan['derived_manifest_id']=manifest['manifest_id'];plan['snapshots']['records.jsonl']=self.mod.file_sha(rp);plan['snapshots']['manifest.json']=self.mod.file_sha(mp);p.write_text(json.dumps(plan))
+        with self.assertRaisesRegex(ValueError,'source|subset'):
+            self.validate(p)
+
+    def test_withheld_hybrid_cannot_be_enabled_by_resigning_lease(self):
+        p=self.prepare();plan=json.loads(p.read_text());plan['unavailable_methods'].pop('m5');p.write_text(json.dumps(plan))
+        with self.assertRaisesRegex(ValueError,'contract|unavailable'):
+            self.validate(p)
+
+    def test_invalid_json_m4_feature_is_not_dispatched_again_by_matched_five(self):
+        p=self.prepare();lease=self.lease(p)
+        with patch.object(self.mod,'FIRST8_PROPOSAL_SHA',self.mod.file_sha(self.proposal_path)), \
+                patch.dict(os.environ,{'OPENAI_API_KEY':'unit-test-only'}), \
+                patch.object(self.mod.OpenAILLM,'complete',return_value='invalid json') as transport:
+            self.mod.execute(p,lease)
+        self.assertEqual(transport.call_count,1)
+        rows=[json.loads(x) for x in (p.parent/'output/predictions.jsonl').read_text().splitlines()]
+        self.assertEqual(len(rows),4)
+        matched=next(x for x in rows if x['method']=='m4_matched5')
+        self.assertIn('already consumed',matched['error'])
+        completion=json.loads((p.parent/'completion.json').read_text());self.assertEqual(len(completion['request_audit']),1)
+
+    def recovery_fixture(self,hold=0):
+        folder=self.root/'recovery';folder.mkdir();raw=folder/'records.jsonl'
+        records=[r for r in self.records if r.choice.user_id=='prism:user903']
+        raw.write_text(''.join(json.dumps(asdict(r))+'\n' for r in records))
+        manifest=folder/'manifest.json';manifest.write_text(json.dumps(build_manifest(records,0)))
+        plan=json.loads((self.source/'plan.json').read_text());plan.update(user_ids=['prism:user903'],snapshots={'records.jsonl':self.mod.file_sha(raw),'manifest.json':self.mod.file_sha(manifest)})
+        pp=folder/'plan.json';pp.write_text(json.dumps(plan));self.recovery_plan_sha=self.mod.file_sha(pp)
+        (folder/'output').mkdir();report=folder/'output/report.json';report.write_text(json.dumps({'user_ids':['prism:user903']}))
+        completion=folder/'completion.json';completion.write_text(json.dumps({'job_id':'gio-reference-unattempted-user903-tranche-01','report_sha256':self.mod.file_sha(report),'budgets':[{'reserved_usd':hold}]}))
+        terminal=folder/'terminal.json';terminal.write_text(json.dumps({'job_id':'gio-reference-unattempted-user903-tranche-01','outcome':'terminal_known_usage','returncode':0,'reported_hold_usd':hold,'completion_sha256':self.mod.file_sha(completion),'report_sha256':self.mod.file_sha(report)}))
+        diag=folder/'diagnostics.json';diag.write_text(json.dumps({'observed_terminal_valid':True,'actual_wrapper_returncode':0,'terminal_sha256':'b'*64,'events_sha256':'c'*64}))
+        cache=folder/'cache';cache.mkdir();(cache/('b'*64+'.json')).write_text('{"known":true}')
+        def ref(p):return {'path':str(p),'sha256':self.mod.file_sha(p)}
+        events=folder/'events.jsonl';events.write_text(json.dumps({'sequence':0,'stage':'open','endpoint_body_sha256':'d'*64})+'\n')
+        envelope={'inputs':{'plan':ref(pp)},'runtime_commit':plan['runtime']['commit'],'kind':'reference'}
+        envelope_hash=hashlib.sha256(json.dumps(envelope,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()).hexdigest()
+        claim=folder/'envelope-claim.json';claim.write_text(json.dumps({'envelope':envelope,'canonical_envelope_sha256':envelope_hash}))
+        et=folder/'envelope-terminal.json';et.write_text(json.dumps({'canonical_envelope_sha256':envelope_hash,'status':'complete','entry_exit_code':0,'wrapper_exit_code':0,'scientific_runtime_commit':plan['runtime']['commit'],'events_sha256':self.mod.file_sha(events),'event_count':1,'diagnostics':{'diagnostic_write_failed':False,'dropped_event_count':0,'diagnostic_close_failed':False}}))
+        diag.write_text(json.dumps({'observed_terminal_valid':True,'actual_wrapper_returncode':0,'canonical_envelope_sha256':envelope_hash,'terminal_sha256':self.mod.file_sha(et),'events_sha256':self.mod.file_sha(events),'event_count':1}))
+        cm=folder/'cache-manifest.json';cm.write_text(json.dumps(self.mod.cache_hashes(cache)))
+        evidence=folder/'evidence.json';evidence.write_text(json.dumps({'plan':ref(pp),'terminal':ref(terminal),'diagnostics_verified':ref(diag),'envelope_claim':ref(claim),'envelope_terminal':ref(et),'events':ref(events),'cache_manifest':ref(cm)}))
+        return evidence
+
+    def test_conditional903_rejects_uncertain_terminal_before_cache_read(self):
+        evidence=self.recovery_fixture(hold=.1)
+        with patch.object(self.mod,'FIRST8_PROPOSAL_SHA',self.mod.file_sha(self.proposal_path)), \
+                patch.object(self.mod,'RECOVERY903_PLAN_SHA',self.recovery_plan_sha,create=True):
+            with self.assertRaisesRegex(ValueError,'known|held|terminal'):
+                self.mod.prepare_first8(self.proposal_path,'prism:user903',self.root/'packet',recovery_terminal=evidence)
+        self.assertFalse((self.root/'packet').exists())
+
+    def test_conditional903_requires_real_cache_only_replay(self):
+        evidence=self.recovery_fixture()
+        with patch.object(self.mod,'FIRST8_PROPOSAL_SHA',self.mod.file_sha(self.proposal_path)), \
+                patch.object(self.mod,'RECOVERY903_PLAN_SHA',self.recovery_plan_sha,create=True):
+            with self.assertRaisesRegex(RuntimeError,'component.*cache'):
+                self.mod.prepare_first8(self.proposal_path,'prism:user903',self.root/'packet',recovery_terminal=evidence)
+        self.assertFalse((self.root/'packet').exists())
+
+    def test_known903_recovery_replays_real_cached_components_and_enables_only_two_arms(self):
+        evidence=self.recovery_fixture();folder=evidence.parent
+        from tests.test_taste_methods import ColorOracle
+        from autoresearch.llm import Budget
+        from autoresearch.taste.methods.m5_hybrid import Hybrid
+        oracle=ColorOracle();backend=self.mod.ReferenceBackend('gpt-6-luna',budget=Budget(),max_usd=2)
+        model=Hybrid(backend,seed=0,cache_dir=folder/'cache',max_calls=2000,**self.mod.CONFIG)
+        records=self.mod.load_records(folder/'records.jsonl')
+        with patch.object(self.mod.OpenAILLM,'complete',side_effect=lambda prompt,*args,**kwargs:oracle.complete(prompt)):
+            model.fit([r.choice for r in records if r.choice_split=='history'],[r.choice for r in records if r.choice_split=='val'])
+        before=self.mod.cache_hashes(folder/'cache')
+        cm=folder/'cache-manifest.json';cm.write_text(json.dumps(before));ev=json.loads(evidence.read_text());ev['cache_manifest']['sha256']=self.mod.file_sha(cm);evidence.write_text(json.dumps(ev))
+        with patch.object(self.mod,'FIRST8_PROPOSAL_SHA',self.mod.file_sha(self.proposal_path)), \
+                patch.object(self.mod,'RECOVERY903_PLAN_SHA',self.recovery_plan_sha), \
+                patch.object(self.mod.OpenAILLM,'complete',side_effect=AssertionError('no network permitted')):
+            path=self.mod.prepare_first8(self.proposal_path,'prism:user903',self.root/'packet',recovery_terminal=evidence)
+            plan,_,_,_=self.mod.validate_execution(path,self.lease(path),now=1)
+        self.assertEqual(plan['unavailable_methods'],{'m7':self.mod.M7_UNAVAILABLE})
+        self.assertEqual(plan['limits'],{'max_usd':1.48,'max_calls':260,'max_seconds':1800})
+        self.assertTrue(plan['recovery903_enabled'])
+        self.assertIn('d'*64,plan['forbidden_wire_hashes'])
+        self.assertGreater(plan['cached_component_replay']['cache_hits'],0)
+        self.assertEqual(plan['cached_component_replay']['api_calls'],0)
+        self.assertEqual(before,self.mod.cache_hashes(folder/'cache'))
+        self.assertEqual(json.loads((path.parent/'source-completion.json').read_text())['budgets'][0]['reserved_usd'],.001774)
+
+    def test_conflicting_recovery_cache_cannot_replace_original_known_response(self):
+        fn=getattr(self.mod,'merge_cache_maps',None);self.assertTrue(callable(fn))
+        with self.assertRaisesRegex(ValueError,'conflict'):
+            fn({'same.json':'old'},{'same.json':'new'})
+
+    def test_recovery_diagnostics_from_another_run_cannot_enable903(self):
+        evidence=self.recovery_fixture();ev=json.loads(evidence.read_text());diag=Path(ev['diagnostics_verified']['path'])
+        data=json.loads(diag.read_text());data['terminal_sha256']='0'*64;diag.write_text(json.dumps(data));ev['diagnostics_verified']['sha256']=self.mod.file_sha(diag);evidence.write_text(json.dumps(ev))
+        with patch.object(self.mod,'FIRST8_PROPOSAL_SHA',self.mod.file_sha(self.proposal_path)), patch.object(self.mod,'RECOVERY903_PLAN_SHA',self.recovery_plan_sha):
+            with self.assertRaisesRegex(ValueError,'diagnostic|envelope'):
+                self.mod.prepare_first8(self.proposal_path,'prism:user903',self.root/'packet',recovery_terminal=evidence)
+
+    def test_recovery_cache_must_match_separately_frozen_terminal_snapshot(self):
+        evidence=self.recovery_fixture();(evidence.parent/'cache'/('b'*64+'.json')).write_text('{"changed":true}')
+        with patch.object(self.mod,'FIRST8_PROPOSAL_SHA',self.mod.file_sha(self.proposal_path)), patch.object(self.mod,'RECOVERY903_PLAN_SHA',self.recovery_plan_sha):
+            with self.assertRaisesRegex(ValueError,'cache'):
+                self.mod.prepare_first8(self.proposal_path,'prism:user903',self.root/'packet',recovery_terminal=evidence)
+
+    def test_historical_denial_stops_all_later_network_admission(self):
+        from autoresearch.llm import Budget
+        wire=self.mod.wire_identity('gpt-6-luna','historical','',2048)
+        backend=self.mod.ReferenceBackend('gpt-6-luna',budget=Budget(),max_usd=2,forbidden_wire_hashes=[wire])
+        with patch.object(self.mod.OpenAILLM,'complete',return_value='{}') as transport:
+            with self.assertRaisesRegex(RuntimeError,'forbidden'):
+                backend.complete('historical',max_tokens=2048)
+            with self.assertRaisesRegex(RuntimeError,'historical.*denial'):
+                backend.complete('different new request',max_tokens=2048)
+        self.assertEqual(transport.call_count,0)
+        self.assertEqual(backend.guard_denials[0]['request_sha256'],wire)
