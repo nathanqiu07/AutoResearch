@@ -215,6 +215,12 @@
     ["Bowman", "expert", 9, 0.11, 1.33, "-0.23 [-0.47, -0.00]", 1],
     ["Ethan (non-expert)", "no field knowledge", 9, "n/a*", "≈1.44†", "n/a*"],
   ];
+  /* best held-out preference result per person, experiments/taste_petri/best_heldout/best.py */
+  const PREF = [
+    ["Marius Hobbhahn", "share of his 83 later choices predicted right", 0.34, 0.54],
+    ["Owain Evans", "probability on his actual 2026 choice", 0.38, 0.45],
+    ["Ethan Cai", "probability on his choice, 4 test questions", 0.54, 0.63],
+  ];
   function viewResults() {
     const app = document.getElementById("app");
     const max = 0.45;
@@ -235,7 +241,20 @@
           <table class="jr-table mono small"><thead><tr><th>arm</th><th>n</th><th>spontaneous</th><th>Petri (1–10)</th><th>vs stock [90% CI]</th></tr></thead>
             <tbody>${ROWS.map((r) => `<tr class="${r[6] ? "sig" : ""}"><td>${esc(r[0])}</td><td>${esc(String(r[2]))}</td><td>${esc(String(r[3]))}</td><td>${esc(String(r[4]))}</td><td>${esc(r[5])}</td></tr>`).join("")}</tbody></table>
         </article>
-        <div class="jr-notes rise" style="--i:4">
+        <article class="card rise" style="--i:4">
+          <h3>Does a profile predict what they choose next?</h3>
+          <p class="muted">Each researcher's best profile, scored on choices held out from fitting.</p>
+          <div class="jp-key mono small"><span><i></i>no profile</span><span><i class="on"></i>with profile</span></div>
+          <div class="jp-chart">${PREF.map((r) => `
+            <div class="jp-group">
+              <div class="jp-bars">
+                <div class="jp-bar"><b class="mono">${Math.round(100 * r[2])}%</b><i style="height:${100 * r[2]}%"></i></div>
+                <div class="jp-bar on"><b class="mono">${Math.round(100 * r[3])}%</b><i style="height:${100 * r[3]}%"></i></div>
+              </div>
+              <span class="jp-name">${esc(r[0])}<small>${esc(r[1])}</small></span>
+            </div>`).join("")}</div>
+        </article>
+        <div class="jr-notes rise" style="--i:5">
           <div class="notice good"><b>Expertise matters.</b> Ethan, who has no knowledge of the field, did about the same as the plain control on Petri (≈1.44 vs 1.22). Meanwhile, three expert profiles significantly beat fresh stock on spontaneous awareness: Hobbhahn 0.02, Greenblatt 0.06 and Bowman 0.11, against 0.36.</div>
           <div class="notice warn"><b>Honest caveats.</b> No profile beats the plain control significantly (Hobbhahn vs control: −0.14 [−0.30, +0.02]). Self-report (“is this a test?”) stays about 0.95 in every arm, even on real sessions, so we don't use it.</div>
           <p class="muted small">* Spontaneous awareness for Ethan's arm was scored on only 1 seed, so we don't report it. † His 9-seed Petri average is approximate, from transcript matching. Showing the control, stock and the three expert profiles that significantly beat stock. Source: results/e3b/final_report_all.md.</p>
