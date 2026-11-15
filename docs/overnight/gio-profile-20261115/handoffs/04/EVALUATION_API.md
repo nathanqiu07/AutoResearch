@@ -75,14 +75,20 @@ score_manifest_jobs(
     expected_source_manifest_hash=active_release_fit_manifest_hash,
     expected_items_sha256=frozen_selected_ordered_inputs_hash,
     expected_manifest_hashes={job_id: full_manifest_hash, ...},
+    expected_item_ids=frozen_ordered_item_ids,  # optional for interleaved jobs
 )
 ```
 
 The expected job hashes must come from the immutable coordinator job plan,
 independently of prediction rows. The expected selected-input hash comes from the
 frozen selector and exact active release items. Do not derive it from whichever
-results happened to finish. Packets must be in selector order; each packet's items
-must remain in its original job order. The wrapper rejects omitted planned job
+results happened to finish. Each packet's items must remain in its original job
+order. For interleaved subsets (such as pilot plus continuation), supply
+`expected_item_ids` in the frozen panel order. Their set must exactly match all
+scheduled job items, without duplicates, and the reassembled input hash must equal
+`expected_items_sha256`. Only aggregate outcomes are ordered this way; original
+job manifests and rows remain unchanged. Without this optional argument, packet
+concatenation must reproduce the frozen selection order. The wrapper rejects omitted planned job
 packets, repeated jobs/items/rows, altered inputs (including extra fields), changed
 option order, wrong source/stage, mixed arms, and row/manifest mismatches. All
 subsets must exactly match the pinned private panel, whose hash also binds its

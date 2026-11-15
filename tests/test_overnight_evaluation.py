@@ -119,6 +119,23 @@ class ManifestSubsetScoringTests(unittest.TestCase):
         self.assertEqual(b["job_provenance"][0]["manifest"],separate[0]["manifest"])
         self.assertEqual(ev.paired_comparison(a,b)["difference"],0)
 
+    def test_interleaved_jobs_preserve_job_order_and_frozen_aggregate_order(self):
+        packets = [job_packet(self.bundle,["t1","t3"]),job_packet(self.bundle,["t2"])]
+        original = copy.deepcopy(packets)
+        report = subset_score(self.bundle,packets,expected_item_ids=["t1","t2","t3"],
+                              expected_items_sha256=self.bundle["items_sha256"])
+        self.assertEqual([r["item_id"] for r in report["per_item"]],["t1","t2","t3"])
+        self.assertEqual(packets,original)
+        self.assertEqual(report["per_item"][2]["job_id"],packets[0]["manifest"]["job_id"])
+        self.assertEqual(report["per_item"][2]["items_sha256"],packets[0]["manifest"]["items_hash"])
+
+    def test_explicit_aggregate_order_cannot_hide_missing_duplicate_or_changed_items(self):
+        packets = [job_packet(self.bundle,["t1","t3"]),job_packet(self.bundle,["t2"])]
+        for order in (["t1","t2"],["t1","t1","t2","t3"],["t1","t2","unknown"],["t3","t2","t1"]):
+            with self.assertRaises(ValueError):
+                subset_score(self.bundle,packets,expected_item_ids=order,
+                             expected_items_sha256=self.bundle["items_sha256"])
+
     def test_missing_predictions_keep_planned_denominator(self):
         packets = [job_packet(self.bundle,["t1"]),job_packet(self.bundle,["t2"])]
         packets[1]["predictions"] = []

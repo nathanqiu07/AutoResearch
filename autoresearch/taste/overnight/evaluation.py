@@ -333,14 +333,15 @@ def score_predictions(bundle, predictions, *, expected_target_bundle_sha256, exp
 
 def score_manifest_jobs(bundle, jobs, *, expected_target_bundle_sha256,
                         expected_source_manifest_hash, expected_items_sha256,
-                        expected_manifest_hashes):
+                        expected_manifest_hashes, expected_item_ids=None):
     """Score one arm's pinned jobs on an exact ordered subset of a private panel.
 
     Each job packet contains manifest, strict label-free items and original
     predictions. Pins must come from the frozen coordinator plan, not be derived
     from untrusted result rows. Supply planned jobs with predictions=[] when no
     result exists: missing outcomes stay in the denominator. Packet order defines
-    the combined schedule. No original manifest or prediction row is rewritten.
+    the combined schedule unless expected_item_ids pins an explicit aggregate
+    order (for interleaved subsets). Original job orders/rows are never rewritten.
     """
     targets = _validated_targets(bundle, expected_target_bundle_sha256)
     by_id = {t["item_id"]: t for t in targets}
@@ -416,6 +417,14 @@ def score_manifest_jobs(bundle, jobs, *, expected_target_bundle_sha256,
         provenance.append({"manifest":json.loads(json.dumps(manifest)), "manifest_sha256":manifest_hash})
     if seen_jobs != set(expected_manifest_hashes):
         raise ValueError("planned job packet missing; supply its manifest and empty predictions")
+    if expected_item_ids is not None:
+        order = list(expected_item_ids)
+        if len(order) != len(set(order)) or set(order) != seen_items:
+            raise ValueError("aggregate schedule has duplicate, missing or unexpected items")
+        input_by_id = {i["item_id"]:i for i in all_inputs}
+        outcome_by_id = {o["item_id"]:o for o in outcomes}
+        all_inputs = [input_by_id[identity] for identity in order]
+        outcomes = [outcome_by_id[identity] for identity in order]
     if canonical_hash(all_inputs) != expected_items_sha256:
         raise ValueError("combined subset schedule differs from frozen selection")
     report = _summary(outcomes)
