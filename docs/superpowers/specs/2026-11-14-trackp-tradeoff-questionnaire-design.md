@@ -30,7 +30,8 @@ Asking both shows the person's general position and whether it holds in concrete
 ## Non-goals
 
 * No change to `Choice`, `UserModel.fit`, the hold-out rule, labels, recheck or the loop.
-* No graded-strength answers; answers stay a forced choice plus an optional reason.
+* No graded-strength answers; answers are a forced choice. No reason is asked for: no user
+  model (M0–M7) reads `Choice.reason`.
 
 ## Anti-goals
 
@@ -119,20 +120,18 @@ fast reader (about 400 words a minute) who decides quickly:
 | 13 stance items (~40 words) | ~15 s | ~3 min |
 | 10 item contexts, read once (~250 words) | ~40 s | ~7 min |
 | 37 scenario options (~60 words) and the choice | ~15 s | ~9 min |
-| optional one-sentence reason | ~10 s | up to ~8 min |
 
-So about **20 minutes**, or about **30 minutes** with a reason on every answer. That
+So about **20 minutes**. That
 assumes scenario items are grouped by item, so each context is read once; shown in random
 order, the context is re-read for every item and the session takes about 35–45 minutes.
 
 ## Administering the test (agent instructions)
 
 `docs/trackp-runbook.md` §2 already tells an agent how to collect answers in chat. This build
-extends it, and `pending` serves items in the order below so the agent doesn't have to sort
+extends it and drops its step 2 ("ask why in one sentence"), and `pending` serves items in the order below so the agent doesn't have to sort
 them:
 
-1. **Before the first item,** tell the person once: it takes about 20 minutes (30 with
-   reasons), they can stop and resume at any point, there are no right answers, and each
+1. **Before the first item,** tell the person once: it takes about 20 minutes, they can stop and resume at any point, there are no right answers, and each
    question asks what *they* would do.
 2. **Order:** scenario items first, grouped by item context; stance items last. Asking the
    general stance first would invite the person to answer the scenarios to match it, which
@@ -143,7 +142,8 @@ them:
 4. **Say nothing about the content:** no opinion, no hint, no paraphrase, no "good choice".
    If the person asks what an option means, re-show it word for word and say it is meant to be
    read as written.
-5. **Record each answer at once** with `record`, the reason word for word. A skipped item is
+5. **Record each answer at once** with `record`. Don't ask why they chose it.
+   If they volunteer a reason, pass it to `--reason` word for word. A skipped item is
    not recorded. If they want to pick neither, record nothing and note their words in the
    reply, never as a choice.
 6. **Pace:** offer a break at the halfway point. At the end, run `status` and report how many
