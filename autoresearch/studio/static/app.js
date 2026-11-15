@@ -138,74 +138,272 @@ async function viewHome(seq) {
   });
 }
 
+// ---------- typeform engine ----------
+/* flow(container, steps, opts) shows one step at a time.
+   A step: { icon, color, q(state) -> html, help?(state) -> html, body?(state) -> html,
+             bind?(screen, state, ctl), submit?(state, screen) -> Promise (throw to stay),
+             skip?(state) -> bool, ok?: label, choices?: { multi, items(state) -> [{html, value}], key } }
+   ctl: { next(), back(), state }. Enter continues (Shift+Enter is a newline), letter keys pick
+   choices, ↑/↓ move between steps. opts.onDone(state) runs after the last step. */
+const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+function flow(container, steps, opts = {}) {
+  const state = opts.state || {};
+  let i = -1, busy = false;
+  container.innerHTML = `<div class="tf"><div class="tf-progress"><div></div></div><div class="tf-stage"></div>
+    <div class="tf-nav"><button class="btn small" data-nav="back" aria-label="Previous question">↑</button>
+    <button class="btn small" data-nav="next" aria-label="Next question">↓</button></div></div>`;
+  const stage = container.querySelector(".tf-stage"), bar = container.querySelector(".tf-progress > div");
+  container.querySelector('[data-nav="back"]').addEventListener("click", () => ctl.back());
+  container.querySelector('[data-nav="next"]').addEventListener("click", () => ctl.next());
+  const visible = () => steps.map((st, k) => k).filter(k => !(steps[k].skip && steps[k].skip(state)));
+
+  function choicesHtml(st) {
+    const c = st.choices, items = c.items(state), sel = state[c.key];
+    const isOn = v => (c.multi ? (sel || []).includes(v) : sel === v);
+    return `<div class="choices">${items.map((it, k) => `
+      <button type="button" class="option ${isOn(it.value) ? "chosen" : ""}" data-choice="${k}">
+        <span class="n">${LETTERS[k]}</span><span style="flex:1">${it.html}</span>
+        <span class="tick">${doodle("check", { size: 22, color: "sage", tilt: -6 })}</span></button>`).join("")}</div>`;
+  }
+  function draw(dir) {
+    const st = steps[i], vis = visible(), pos = vis.indexOf(i);
+    bar.style.width = `${(100 * pos) / vis.length}%`;
+    const old = stage.querySelector(".tf-screen");
+    if (old) { old.classList.add(dir < 0 ? "leave-back" : "leave"); setTimeout(() => old.remove(), 330); }
+    const screen = document.createElement("div");
+    screen.className = `tf-screen ${dir < 0 ? "enter-back" : "enter"}`;
+    screen.innerHTML = `
+      <div class="tf-deco" aria-hidden="true"><span class="bob">${doodle(st.icon || "sparkle", { size: 132, color: st.color, tilt: pos % 2 ? 8 : -7 })}</span>
+        <span class="bob">${doodle(["sparkle", "star", "heart", "lightbulb"][pos % 4], { size: 48, tilt: pos % 2 ? -12 : 10, seed: pos })}</span></div>
+      <div class="tf-num">${pos + 1} → ${doodle(st.icon || "sparkle", { size: 30, color: st.color, tilt: (pos % 2 ? 7 : -6) })}</div>
+      <h2 class="tf-q">${st.q(state)}</h2>
+      ${st.help ? `<p class="tf-help">${st.help(state)}</p>` : ""}
+      <div class="tf-body">${st.body ? st.body(state) : ""}${st.choices ? choicesHtml(st) : ""}</div>
+      <div class="tf-actions"><button type="button" class="btn primary" data-ok>${st.ok || "OK"} ${doodle("check", { size: 18, color: "clay", tilt: 0 })}</button>
+        <span class="tf-hint">press <kbd>Enter ↵</kbd></span><span class="tf-error muted small" role="alert"></span></div>`;
+    stage.appendChild(screen);
+    screen.querySelector("[data-ok]").addEventListener("click", () => ctl.next());
+    if (st.choices) screen.querySelectorAll("[data-choice]").forEach(b => b.addEventListener("click", () => pick(+b.dataset.choice)));
+    if (st.bind) st.bind(screen, state, ctl);
+    const first = screen.querySelector("input:not([type=checkbox]):not([type=radio]), textarea");
+    if (first) setTimeout(() => { first.focus({ preventScroll: true }); if (first.setSelectionRange && first.value) first.setSelectionRange(first.value.length, first.value.length); }, 380);
+    container.querySelector('[data-nav="back"]').disabled = pos === 0;
+  }
+  function pick(k) {
+    const st = steps[i], c = st.choices, items = c.items(state);
+    if (!items[k]) return;
+    const v = items[k].value, screen = stage.querySelector(".tf-screen:not(.leave):not(.leave-back)");
+    if (c.multi) {
+      const cur = new Set(state[c.key] || []);
+      cur.has(v) ? cur.delete(v) : cur.add(v);
+      state[c.key] = items.map(it => it.value).filter(x => cur.has(x));
+    } else state[c.key] = v;
+    screen.querySelectorAll("[data-choice]").forEach((b, j) => {
+      const on = c.multi ? state[c.key].includes(items[j].value) : j === k;
+      b.classList.toggle("chosen", on);
+      if (j === k) { b.classList.remove("flash"); void b.offsetWidth; b.classList.add("flash"); }
+    });
+    if (!c.multi && c.autoNext !== false) setTimeout(() => ctl.next(), 420);
+  }
+  const ctl = {
+    state,
+    async next() {
+      if (busy) return;
+      const st = steps[i], screen = stage.querySelector(".tf-screen:not(.leave):not(.leave-back)");
+      const ok = screen && screen.querySelector("[data-ok]"), err = screen && screen.querySelector(".tf-error");
+      if (st && st.submit) {
+        busy = true; if (ok) { ok.disabled = true; ok.dataset.label = ok.innerHTML; ok.innerHTML = `<span class="spinner"></span> one moment`; }
+        try { await st.submit(state, screen); }
+        catch (e) {
+          busy = false;
+          if (ok) { ok.disabled = false; ok.innerHTML = ok.dataset.label; }
+          if (err) { err.textContent = e.message; err.style.color = "var(--bad)"; }
+          screen.classList.remove("shake"); void screen.offsetWidth; screen.classList.add("shake");
+          return;
+        }
+        busy = false;
+      }
+      const vis = visible(), nxt = vis.find(k => k > i);
+      if (nxt === undefined) { bar.style.width = "100%"; if (opts.onDone) opts.onDone(state, container); return; }
+      i = nxt; draw(1);
+    },
+    back() { const prev = visible().filter(k => k < i).pop(); if (prev !== undefined && !busy) { i = prev; draw(-1); } },
+  };
+  setKeys(e => {
+    const st = steps[i];
+    if (!st) return;
+    if (e.key === "Enter" && !e.shiftKey && !(e.target.tagName === "TEXTAREA" && e.altKey)) {
+      if (e.target.tagName === "BUTTON" && e.target.closest(".tf-screen") && !e.target.hasAttribute("data-ok")) return;
+      ctl.next(); return true;
+    }
+    if (typing(e)) return;
+    if (st.choices && e.key.length === 1 && /[a-z]/i.test(e.key) && !e.metaKey && !e.ctrlKey) {
+      const k = LETTERS.indexOf(e.key.toUpperCase()); if (k >= 0) { pick(k); return true; }
+    }
+    if (e.key === "ArrowDown") { ctl.next(); return true; }
+    if (e.key === "ArrowUp") { ctl.back(); return true; }
+  });
+  ctl.next();
+  return ctl;
+}
+
+/* little celebration: tiny doodles flying out from a point */
+function burst(x, y, n = 12) {
+  const box = document.createElement("div"); box.className = "burst"; box.style.left = x + "px"; box.style.top = y + "px";
+  const names = ["sparkle", "star", "heart", "check"], colors = ["clay", "ochre", "sage", "sky", "rose"];
+  box.innerHTML = Array.from({ length: n }, (_, k) => {
+    const a = (k / n) * Math.PI * 2 + Math.random() * .4, r = 70 + Math.random() * 90;
+    return `<span style="--dx:${Math.cos(a) * r}px;--dy:${Math.sin(a) * r - 30}px;--rot:${(Math.random() * 120 - 60) | 0}deg;left:-12px;top:-12px;position:absolute">
+      ${doodle(names[k % 4], { size: 22 + (k % 3) * 6, color: colors[k % 5], seed: k })}</span>`;
+  }).join("");
+  box.querySelectorAll(":scope > span").forEach(s => { s.style.animation = "burst 1.1s cubic-bezier(.2,.8,.2,1) forwards"; s.style.transform = ""; });
+  document.body.appendChild(box); setTimeout(() => box.remove(), 1300);
+}
+function burstAt(el) { const r = el.getBoundingClientRect(); burst(r.left + r.width / 2, r.top + r.height / 2); }
+
+function doneScreen(container, { title, text, actions, icon = "sparkle" }) {
+  container.querySelector(".tf-stage").innerHTML = `
+    <div class="tf-screen enter" style="text-align:center">
+      <div>${doodle(icon, { size: 96, color: "ochre", tilt: -8, cls: "pop" })}</div>
+      <h2 class="tf-q" style="margin-top:1rem"><span class="hand">${title}</span></h2>
+      <p class="tf-help">${text}</p>
+      <div class="row" style="justify-content:center">${actions}</div>
+    </div>`;
+  container.querySelector(".tf-nav").remove();
+  const d = container.querySelector(".tf-screen .doodle"); if (d) setTimeout(() => burstAt(d), 250);
+}
+
+async function slugFree(slug) {
+  const list = await api("GET", "/api/profiles");
+  if (list.some(p => p.slug === slug)) throw new Error(`“${slug}” is taken. Try another id.`);
+}
+
 // ---------- new personal ----------
 function viewNewPersonal() {
-  app.innerHTML = `
-    <p><a href="#/">← Profiles</a></p>
-    <div class="card" style="max-width:640px">
-      <h1>Your own profile</h1>
-      <p class="muted">Start with who you are. You'll add material and answer questions next; you can stop and come back at any point.</p>
-      <div class="stack">
-        <label class="field"><span>Full name</span><input id="np-name" type="text" autocomplete="name"></label>
-        <label class="field"><span>Profile id</span><input id="np-slug" type="text" class="mono" placeholder="from your name">
-          <small>Lowercase letters, digits and _. This is what you pass to <code>--researcher</code>.</small></label>
-        <label class="field"><span>Affiliation <span class="muted">(optional)</span></span><input id="np-aff" type="text"></label>
-        <div class="row end"><button class="btn primary" id="np-create">Create profile</button></div>
-      </div>
-    </div>`;
-  const name = document.getElementById("np-name"), slug = document.getElementById("np-slug");
-  name.focus();
-  name.addEventListener("input", () => { if (!slug.dataset.touched) slug.value = slugify(name.value); });
-  slug.addEventListener("input", () => (slug.dataset.touched = "1"));
-  on("#np-create", "click", async () => {
-    try {
-      const meta = await api("POST", "/api/profiles", { name: val("np-name"), mode: "personal", slug: val("np-slug") });
-      if (val("np-aff")) await api("PATCH", `/api/profiles/${meta.slug}`, { affiliation: val("np-aff") });
-      go(`#/p/${meta.slug}/about`);
-    } catch (e) { fail(e); }
+  const consentItems = [
+    ["store", "My choices, decision labels and written reasons are stored in this repo."],
+    ["steer", "A user model fitted on them steers the research loop and is reported in results."],
+    ["memory", "The fitted model is kept in shared memory (past.dev when it's configured)."],
+  ];
+  flow(app, [
+    { icon: "person", color: "clay", q: () => `Hello! What's your <span class="hand">name</span>?`,
+      help: () => "This goes on your profile card.",
+      body: st => `<input class="tf-input" id="f-name" type="text" autocomplete="name" placeholder="Type your name here…" value="${esc(st.name || "")}">`,
+      bind: (sc, st) => sc.querySelector("#f-name").addEventListener("input", e => { st.name = e.target.value; }),
+      submit: async st => { if (!(st.name || "").trim()) throw new Error("A name, please."); st.name = st.name.trim(); if (!st.slugTouched) st.slug = slugify(st.name); } },
+    { icon: "key", color: "ochre", q: st => `Nice to meet you, <span class="hand">${esc(st.name.split(" ")[0])}</span>. What id should the profile have?`,
+      help: () => `This is what you'll pass to the loop as <code>--researcher &lt;id&gt;</code>. Lowercase letters, digits and _.`,
+      body: st => `<input class="tf-input mono" id="f-slug" type="text" value="${esc(st.slug || "")}" spellcheck="false">`,
+      bind: (sc, st) => sc.querySelector("#f-slug").addEventListener("input", e => { st.slug = e.target.value; st.slugTouched = true; }),
+      submit: async st => { st.slug = slugify(st.slug || ""); if (!st.slug) throw new Error("The id can't be empty."); await slugFree(st.slug); } },
+    { icon: "cap", color: "sky", q: () => `Where do you <span class="hand">work</span>?`, help: () => "Optional. Press Enter to skip.",
+      body: st => `<input class="tf-input" id="f-aff" type="text" placeholder="Lab, company, university…" value="${esc(st.aff || "")}">`,
+      bind: (sc, st) => sc.querySelector("#f-aff").addEventListener("input", e => { st.aff = e.target.value; }) },
+    { icon: "heart", color: "rose", q: () => `Before we start: how may your answers be <span class="hand">used</span>?`,
+      help: () => "Pick any with the letter keys. The trade-off questions stay locked until all three are ticked; you can change this later.",
+      choices: { key: "consent", multi: true, items: () => consentItems.map(([v, t]) => ({ value: v, html: esc(t) })) },
+      ok: "Create my profile",
+      submit: async st => {
+        const meta = await api("POST", "/api/profiles", { name: st.name, mode: "personal", slug: st.slug });
+        st.slug = meta.slug;
+        if ((st.aff || "").trim()) await api("PATCH", `/api/profiles/${meta.slug}`, { affiliation: st.aff.trim() });
+        await api("POST", `/api/profiles/${meta.slug}/consent`, { ticked: consentItems.map(([v]) => (st.consent || []).includes(v)) });
+      } },
+  ], {
+    onDone: (st, c) => doneScreen(c, {
+      title: "You're all set up!", icon: "seedling",
+      text: "Next, add some of your writing, or answer a few questions about how you work. Either order is fine.",
+      actions: `<a class="btn primary" href="#/p/${esc(st.slug)}/materials">Add materials ${doodle("stack", { size: 20, color: "ochre" })}</a>
+                <a class="btn" href="#/p/${esc(st.slug)}/questionnaire">Questions first ${doodle("chat", { size: 20, color: "sky" })}</a>`,
+    }),
   });
 }
 function slugify(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""); }
 
 // ---------- new public ----------
-function viewNewPublic() {
-  app.innerHTML = `
-    <p><a href="#/">← Profiles</a></p>
-    <div class="card">
-      <h1>Profile a known researcher</h1>
-      <p class="muted">Search by name, then pick the right person. Several authors often share a name, so check the affiliation and top papers.</p>
-      <div class="row">
-        <input id="pub-name" type="text" placeholder="e.g. a researcher's full name" style="flex:1;min-width:220px">
-        <button class="btn primary" id="pub-search">Search</button>
-      </div>
-      <div id="pub-results" style="margin-top:1.25rem"></div>
-    </div>`;
-  const input = document.getElementById("pub-name");
-  input.focus();
-  input.addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
-  on("#pub-search", "click", doSearch);
-
-  async function doSearch() {
-    const name = input.value.trim();
-    if (!name) return;
-    const box = document.getElementById("pub-results");
-    box.innerHTML = `<div class="row muted"><span class="spinner"></span> Searching Semantic Scholar and Wikipedia…</div>`;
-    const [cands, wiki] = await Promise.all([
-      api("GET", `/api/search/s2?name=${encodeURIComponent(name)}`).catch(e => ({ error: e.message })),
-      api("GET", `/api/search/wikipedia?name=${encodeURIComponent(name)}`).catch(() => null),
-    ]);
-    renderCandidates(box, name, cands, wiki, async (picked, useWiki) => {
+function candidateHtml(c) {
+  return `<span class="cname">${esc(c.name)}</span>
+    ${c.affiliations.length ? `<span class="muted small" style="margin-left:.4rem">${esc(c.affiliations.join("; "))}</span>` : ""}
+    <span class="stats"><span><b>${fmtNum(c.papers)}</b> papers</span><span><b>${fmtNum(c.citations)}</b> citations</span><span>h-index <b>${fmtNum(c.h_index)}</b></span>
+    <a href="${esc(c.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Semantic Scholar ↗</a>
+    <span class="linklike" data-titles="${esc(c.author_id)}" role="button" tabindex="0" onclick="event.stopPropagation()">top papers ▾</span></span>
+    <span class="titles" data-titles-for="${esc(c.author_id)}"></span>`;
+}
+function bindTopPapers(root) {
+  root.querySelectorAll("[data-titles]").forEach(b => {
+    const load = async e => {
+      e.stopPropagation(); e.preventDefault();
+      const holder = root.querySelector(`[data-titles-for="${b.dataset.titles}"]`);
+      if (holder.dataset.loaded) { holder.hidden = !holder.hidden; return; }
+      holder.innerHTML = `<span class="muted small"><span class="spinner"></span> reading their papers…</span>`;
       try {
-        const meta = await api("POST", "/api/profiles", { name: val("pub-final-name") || name, mode: "public", slug: val("pub-final-slug") });
-        const patch = {};
-        if (picked) patch.s2_author = picked;
-        if (picked && picked.affiliations && picked.affiliations.length) patch.affiliation = picked.affiliations.join("; ");
-        if (useWiki && wiki) { patch.bio = wiki.extract; patch.bio_source = wiki.url; }
+        const titles = await api("GET", `/api/search/s2/${b.dataset.titles}/titles`);
+        holder.innerHTML = titles.length ? `<ul>${titles.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : `<span class="muted small">no papers listed</span>`;
+        holder.dataset.loaded = "1";
+      } catch (err) { holder.innerHTML = `<span class="muted small">${esc(err.message)}</span>`; }
+    };
+    b.addEventListener("click", load);
+    b.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") load(e); });
+  });
+}
+function viewNewPublic() {
+  const NONE = "__none__";
+  flow(app, [
+    { icon: "telescope", color: "sage", q: () => `Whose research <span class="hand">taste</span> should the loop learn?`,
+      help: () => "Type a researcher's full name. We'll look them up on Semantic Scholar and Wikipedia.",
+      body: st => `<input class="tf-input" id="f-who" type="text" placeholder="e.g. a researcher's full name" value="${esc(st.who || "")}">`,
+      bind: (sc, st) => sc.querySelector("#f-who").addEventListener("input", e => { st.who = e.target.value; }),
+      ok: "Search",
+      submit: async st => {
+        st.who = (st.who || "").trim();
+        if (!st.who) throw new Error("Who are we looking for?");
+        const [cands, wiki] = await Promise.all([
+          api("GET", `/api/search/s2?name=${encodeURIComponent(st.who)}`).catch(e => ({ error: e.message })),
+          api("GET", `/api/search/wikipedia?name=${encodeURIComponent(st.who)}`).catch(() => null),
+        ]);
+        st.s2error = cands && cands.error; st.cands = Array.isArray(cands) ? cands.slice(0, 8) : []; st.wiki = wiki;
+        st.author = undefined; st.name = st.who; st.slug = slugify(st.who);
+      } },
+    { icon: "magnifier", color: "ochre",
+      q: st => st.cands.length ? `Which <span class="hand">${esc(st.who)}</span> do you mean?` : `No Semantic Scholar author called <span class="hand">${esc(st.who)}</span>.`,
+      help: st => st.s2error ? `Semantic Scholar didn't answer (${esc(st.s2error)}). You can continue with arXiv and web sources.`
+        : st.cands.length ? "Namesakes are common: check the affiliation and top papers. Press a letter to choose."
+        : "You can still continue with arXiv and web sources.",
+      choices: { key: "author", items: st => [...st.cands.map(c => ({ value: c.author_id, html: candidateHtml(c) })),
+                                               { value: NONE, html: `<span class="muted">None of these: continue without Semantic Scholar</span>` }] },
+      bind: sc => bindTopPapers(sc),
+      submit: async st => { if (st.author === undefined) throw new Error("Pick one (or “none of these”)."); } },
+    { icon: "book", color: "sky", skip: st => !st.wiki,
+      q: st => `Found a Wikipedia article for <span class="hand">${esc(st.wiki.title)}</span>. Use it as the bio?`,
+      help: st => `<em>${esc(st.wiki.extract)}</em><br><span class="small mono">Shown on the profile card only; it isn't used as taste evidence, since it's about them, not by them.</span>`,
+      choices: { key: "useWiki", items: () => [{ value: true, html: "Yes, use it" }, { value: false, html: "No, leave the bio empty" }] },
+      submit: async st => { if (st.useWiki === undefined) st.useWiki = true; } },
+    { icon: "key", color: "clay", q: () => `Last thing: what should this profile be <span class="hand">called</span>?`,
+      help: () => `The id is what you pass to the loop as <code>--researcher &lt;id&gt;</code>.`,
+      body: st => `<input class="tf-input" id="f-pname" type="text" value="${esc(st.name)}">
+        <div style="margin-top:1rem"><span class="tf-hint">id</span> <input class="tf-input mono" id="f-pslug" type="text" value="${esc(st.slug)}" spellcheck="false" style="font-size:1.1rem"></div>`,
+      bind: (sc, st) => {
+        sc.querySelector("#f-pname").addEventListener("input", e => { st.name = e.target.value; if (!st.slugTouched) { st.slug = slugify(st.name); sc.querySelector("#f-pslug").value = st.slug; } });
+        sc.querySelector("#f-pslug").addEventListener("input", e => { st.slug = e.target.value; st.slugTouched = true; });
+      },
+      ok: "Create profile",
+      submit: async st => {
+        st.slug = slugify(st.slug || ""); if (!(st.name || "").trim() || !st.slug) throw new Error("A name and an id, please.");
+        await slugFree(st.slug);
+        const meta = await api("POST", "/api/profiles", { name: st.name.trim(), mode: "public", slug: st.slug });
+        const picked = st.cands.find(c => c.author_id === st.author), patch = {};
+        if (picked) { patch.s2_author = picked; if (picked.affiliations.length) patch.affiliation = picked.affiliations.join("; "); }
+        if (st.useWiki && st.wiki) { patch.bio = st.wiki.extract; patch.bio_source = st.wiki.url; }
         if (Object.keys(patch).length) await api("PATCH", `/api/profiles/${meta.slug}`, patch);
-        go(`#/p/${meta.slug}/sources`);
-      } catch (e) { fail(e); }
-    });
-  }
+        st.slug = meta.slug; st.picked = picked;
+      } },
+  ], {
+    onDone: (st, c) => doneScreen(c, {
+      title: `${esc(st.name)} has a profile`, icon: "telescope",
+      text: st.picked ? `Linked to ${esc(st.picked.name)} on Semantic Scholar (${fmtNum(st.picked.papers)} papers). Now let's gather their work.` : "Now let's gather their work.",
+      actions: `<a class="btn primary" href="#/p/${esc(st.slug)}/sources">Gather sources ${doodle("telescope", { size: 20, color: "sage" })}</a>`,
+    }),
+  });
 }
 
 /* Candidate list shared by the public flow and "import my publications". onPick(candidate|null, useWiki). */
