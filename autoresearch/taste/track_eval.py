@@ -54,20 +54,21 @@ def paired_correct(model, c: Choice) -> bool:
 
 class JsonReply(LLM):
     """Passes calls to `inner`; a reply that wraps its JSON object in a code fence or prose comes
-    back as the bare object, which the user models' parser (usermodel._json) requires."""
+    back as the bare object, which the user models' parser (usermodel._json) requires. A reply
+    with no JSON object at all (the model argued in prose) is asked for once more."""
 
     def __init__(self, inner: LLM):
         self.inner, self.budget, self.name = inner, inner.budget, inner.name
         self.model = getattr(inner, "model", "")
 
     def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
-        text = self.inner.complete(prompt, system=system, max_tokens=max_tokens, temperature=temperature)
-        try:
-            json.loads(text)
-            return text
-        except (TypeError, json.JSONDecodeError):
+        for attempt in range(2):
+            text = self.inner.complete(prompt, system=system, max_tokens=max_tokens, temperature=temperature)
             found = extract_json(text or "")
-            return json.dumps(found) if isinstance(found, dict) else text
+            if isinstance(found, dict):
+                return json.dumps(found)
+            system = (system + "\n\n" if system else "") + "Reply with only the JSON object asked for, no other text."
+        return text
 
 
 def _each(fn, choices: List[Choice], workers: Optional[int] = None) -> list:
