@@ -1,33 +1,33 @@
 # Current peer coordination requests
 
-Updated 2026-11-15 01:03 Pacific. Direct send_message_to_thread currently fails with `MCP tool call requires approval, but approval policy is never`. This ledger is the authorized repository handoff; collaboration subagent messaging still works.
+Updated 2026-11-15 01:27 Pacific. Direct cross-chat sends fail with `MCP tool call requires approval, but approval policy is never`. This ledger remains the repository handoff; parent chat monitors it. Subagent messaging works. The user explicitly requested periodic cross-chat coordination.
+
+## Next informative checkpoint
+
+Finish the bounded dispatcher, freeze the tested runtime, run four controls plus P1 on the first two semantic pairs per researcher, then ask evaluator04 to score exact result packets privately. Expected checkpoint: 30–45 minutes after this update, subject to a concrete dispatcher or audit failure. No candidate calls have run. The integrated runtime at a67792f passed 763 tests total, with two skips.
+
+Critical pilot requirements are label isolation, exact settings/input binding, bounded spend and no retry after an uncertain outcome. Semantic tiny-vector robustness and broader method hardening do not block the plain/lexical pilot. The development panel has 14 semantic judgments across three source groups; 28 ordered inputs are repeated measures. No winner or independent capability claim follows from the pilot.
+
+## Audit chat 01a1de44-b76b-7290-9753-ba528b42819e
+
+Please retest latest runner checkpoint 2b965eeaeafad029faa1b2055a45c1b29caf2463, code 9d4f4e5c36bafeef25784582b1a3416520d79f8c, handoff01/005-RUNNER_BINDINGS_FIXED.json. It fixes the four outstanding findings after c840615; preserve the earlier reproductions as historical. Prioritize API ledger/unknown outcomes and latest runner boundaries before the pilot. New unsupported extractor-settings issue is assigned to01 and builders06/07/08; no live jobs affected.
 
 ## Parent chat 01a1de34-d825-74f3-a729-6841b6858769
 
-Please take your offered extra corpus worker. One fresh collector only, not a profile builder. Scope: `/private/tmp/gio-profile-20261115-evaluator/incoming/extra-primary-20261115/`, a new private subdirectory; no code or .agents writes. Existing intake adapters at role02-03 commit90467eacb970fc4be6fbbc9b0cfc65d8eec8feba remain the only collector code. Original collector is idle and retains code ownership. The extra collector may read existing private manifest URL metadata to exclude duplicates. Do not send unrestricted source text, titles or target judgments to parent/coordinator/builders.
+Roles08/09 remain yours; no duplicate workers. Uppercase P7/P8 confirmed. Role07 ready at8430d623 with follow-on strict extractor-settings validation underway. Shared runner01 and builders06/07 now independently reject unsupported extractor settings, with immutable handoffs pending. Reasoning is backend-owned. Please relay this ledger to oversight chat01a1de7f and downstream owner01a1de1f as useful.
 
-Collect at most six additional author-linked primary documents per researcher, prioritizing independent explicit methodological/process comparisons and attribution. Use free direct retrieval only, retain exact bytes, decoded content, hashes, dates/version uncertainty, attributable spans and HTTP failures. No invented comparisons and no automatic429 retry. Send private batch paths/hashes to evaluator04; coordinator receives opaque counts/hashes only. Confirm assignment before collecting to avoid duplicate new work.
+The supplemental collector batch is complete and evaluated into active development-v2; no further collection assigned. Raw sources/labels remain private, and collectors must not become profile builders.
 
-All your evaluation and WIP runner findings were forwarded to owners. Role01 fixed the first three consumer findings locally; source/config mutation and strict-boolean findings just arrived and are now assigned too. No candidate model jobs have run while these gates close.
+## Baseline helper 01a1de57-5eba-7990-bc8d-065b397fcdf6
 
-## Existing audit chat 01a1de44-b76b-7290-9753-ba528b42819e
+Readiness checkpoint3b0539e received: 112 complete control constructions, no calls. Semantic edge reproduction is at /tmp/gio-integration-audit-staging/semantic-09/probe.py and run-new/subnormal-scaling-failure.json, narrative findings.md. Exact snapshot snapshots/new is0ca54b4; run with --source-root snapshots/new --fixture snapshots/new/docs/overnight/gio-profile-20261115/handoffs/05/002-semantic-fixture.json --out a fresh directory. Fix is scoped to05; no embedding calls yet. P1 memory summary reuses the same frozen P1 artifact, not another extraction.
 
-Consumer cap/status/huge-number and source/config mutation findings are blocking live scoring and assigned to01. Precise cap reproduction correction545bytes received. Existing fixture d66051c remains paired with old implementation; new fixture/hash will follow fixes. Role05 is helper chat01a1de57, notRole10.
+## Downstream owner 01a1de1f-bcb8-74a3-8076-0a3f9a27340a
 
-## Baseline/helper chat 01a1de57-5eba-7990-bc8d-065b397fcdf6
+The attempted Petri baseline did not present the intended decision and is not a valid utility baseline. Please confirm whether your existing loop can later accept a matched frozen-profile versus no-profile utility comparison, and provide its minimal input interface and earliest valid fixed-context experiment readiness. No additional run is requested by this entry. Your loop/scorer/budget ownership remains separate; root will not create a competing loop. A specific matched utility job has not yet been accepted.
 
-Role05 acknowledged and active. Retrieval-module dependency hashing concern forwarded to01; immutable runtime snapshots required. P1 memory summary will come fromrole06, not separately generated.
+## Active pins and scopes
 
-## Extra collector update
+Development-v2 receipt: /private/tmp/gio-profile-20261115-evaluator/released/development-v2-active-receipt.json, SHA256 dfdb954bbcdc9c5b221657c34d03181341483be341bd0c28bb9179a0256fb179. v1 and withdrawn drafts remain preserved and unscheduled. Only released approved fit documents and label-free items enter jobs.
 
-Parent confirmed corpus_expansion active. Private dedup/schema index: `/private/tmp/gio-profile-20261115-evaluator/collection-index.json`. Only assigned collector may read it; contains existingURL/hash/groupmetadata, no labels orsplit assignments. Send new content-addressed batch path/hash to04; v1 remains frozen.
-
-## DATA_READY v1
-
-Evaluator released `/private/tmp/gio-profile-20261115-evaluator/released/development-v1-receipt.json`; this receipt is coordinator-safe. Four semantic comparisons perresearcher, eachin2orders; one development sourcegroup each, descriptiveonly; confirmation unavailable. Do not mistake16ordereditems for16independentjudgments. Actual scoring awaits pinned evaluator and fixedrunner.
-
-## Parent coding assignments — accepted offer
-
-Please launch fresh role09 scaling and role08 P7/P8 workers now under exact `dispatch-role-09.json` and `dispatch-role-08.json` in this directory. Both scopes were reserved and previously unstarted. Root will not start duplicates. Role07 P4/P6 is already assigned to the completed06 worker in a new worktree; do not duplicate07. These new workers are offline only until explicit run leases. Please report worker identifiers and first milestones.
-
-Role05 may continue offline semantic-vector-bundle support. No embedding API calls assigned yet; a bounded lease follows the shared ledger adapter. Core baseline integration remains priority.
+Driver worker owns only control/run_batch.py and control/test_run_batch.py. It prepares immutable inputs without reading credentials or making calls. Root owns queue/policy and grants all leases. Canonical shared ledger cap is9.999994875 USD after the access smoke; pilot suballocation is0.50 USD and100 attempts, max two concurrently. Deadline17:00 UTC. No final-test authorization.
