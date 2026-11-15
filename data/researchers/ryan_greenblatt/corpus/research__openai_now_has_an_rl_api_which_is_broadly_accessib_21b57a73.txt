@@ -1,0 +1,128 @@
+---
+url: https://www.lesswrong.com/posts/HevgiEWLMfzAAC6CD
+title: OpenAI now has an RL API which is broadly accessible
+publishedDate: 2025-06-11
+date_source: listing
+authors: ["Ryan Greenblatt"]
+author_position: solo
+kind: post
+exa_request_id: https://www.lesswrong.com/posts/HevgiEWLMfzAAC6CD/openai-now-has-an-rl-api-which-is-broadly-accessible
+fetched_url: https://www.lesswrong.com/posts/HevgiEWLMfzAAC6CD/openai-now-has-an-rl-api-which-is-broadly-accessible
+---
+# OpenAI now has an RL API which is broadly accessible
+
+* By [ryan_greenblatt](/users/ryan_greenblatt)
+* 2025-06-11 23:39:30Z
+* 44 points
+* Tag: [Machine Learning (ML)](/w/machine-learning-ml)
+* Tag: [OpenAI](/w/openai)
+* Tag: [Reinforcement learning](/w/reinforcement-learning)
+* Tag: [AI](/w/ai)
+* Personal Blog
+* Comments: 1
+* Post URL (HTML): [/posts/HevgiEWLMfzAAC6CD/openai-now-has-an-rl-api-which-is-broadly-accessible](/posts/HevgiEWLMfzAAC6CD/openai-now-has-an-rl-api-which-is-broadly-accessible)
+* Post URL (Markdown): [/api/post/openai-now-has-an-rl-api-which-is-broadly-accessible](/api/post/openai-now-has-an-rl-api-which-is-broadly-accessible)
+* Comments URL (Markdown): [/api/post/openai-now-has-an-rl-api-which-is-broadly-accessible/comments](/api/post/openai-now-has-an-rl-api-which-is-broadly-accessible/comments)
+* Post URL (Markdown, compact): [/api/post/openai-now-has-an-rl-api-which-is-broadly-accessible?compact=1](/api/post/openai-now-has-an-rl-api-which-is-broadly-accessible?compact=1)
+
+About 1 month ago, [OpenAI made their RL fine-tuning API accessible to anyone](https://community.openai.com/t/fine-tuning-updates-reinforcement-fine-tuning-now-available-gpt-4-1-nano-fine-tuning/1255539).
+While this API has some important limitations, I still think it might be quite useful for AI safety/alignment work so people should consider taking advantage of it.
+
+To use the RL fine-tuning API, you need your organization to be a "verified organization".
+You can verify an organization by going to [https://platform.openai.com/settings/organization/general](https://platform.openai.com/settings/organization/general) and then clicking the "Verify Organization" button.
+Verification will require someone on the account to upload pictures of their ID and pictures of their face.
+I found that verification was fast and was accepted immediately.
+It's possible that your account must reach at least some usage tier prior to getting access, but you can get a tier 5 account just by spending \$1000 on the API.
+
+![Image](https://i.imgur.com/7E4oVYu.png)
+
+The API supports doing RL fine-tuning on o4-mini using a decently general set of graders.
+It just supports o4-mini, but this model is reasonably capable, at least at more narrow checkable tasks (coding etc).
+It only supports single-turn interactions, so you can't do RL on tasks that involve interaction with humans or the environment.
+(Using tools that OpenAI provides via the responses API is maybe supported, something in the docs seemed to suggest this, but I haven't tested this.)
+
+It supports a limited set of graders, but these graders are pretty general in practice (given that you can't do more than single-turn interactions). These relevant graders are:
+
+- [Exact string match grader](https://platform.openai.com/docs/guides/graders/#string-check-grader).
+- Grading with another model. This only supports OpenAI models and it supports a limited set of these models (though it does include e.g. o3). It isn't supported to use an RL or SFT fine-tuned model as a grader. The prompt for this scoring model can depend on any data associated with the datum you're doing RL on and any aspect(s) of the output from the model. [^score] 
+- Python graders. You can run arbitrary python code to compute a reward. This is run in a sandbox which is disconnected from the internet and which only has a limited set of packages installed. Python graders can't internally run model inference, so you can't flexibly combine python code with graders.
+
+[^score]: This supports having the model directly output a number or you can use the "label model grader" which has the model label the output and then you can have a set of labels which get a reward of 1 and a set which get a score of 0. In practice, if you're using a reasoning model as a grader, I'd guess that getting the model to directly output a number can also approximate this label functionality sufficiently well.
+
+(There is also a [text similarity grader](https://platform.openai.com/docs/guides/graders/#text-similarity-grader), but it doesn't support using embedding models for RL, so you can reproduce all the functionality of this grader using a python grader.)
+
+You can get o4-mini to respond in a specific json format, so it's pretty easy to avoid issues with parsing and inconsistent formatting.
+
+Additionally, you can use a [multigrader](https://platform.openai.com/docs/guides/graders/#multigraders) where the reward is computed as an arithmetic expression[^mul] of multiple graders.
+This allows you to easily do things like combine the scores for multiple different model grader prompts, have a different model grader prompt for different parts of the output, or use a python grader for one output etc.
+For instance, you could have o4-mini output multiple outputs in json format and then have a different model grader for each output.
+
+[^mul]: Including addition, multiplication, etc.
+
+Here's a short list of the key limitations with the API:
+
+- It only supports o4-mini as the model to be RL'd.
+- It only supports single turn and single agent RL. So, you can't do anything involving back and forth with the environment.
+- You can only run 4 RL fine-tuning jobs per day by default (at usage tier 5). It might be possible to get a larger number of runs per day from OpenAI. If you wanted to approximate multi-agent RL by doing a bunch of RL runs (which rotate through the different agents), this might be very impractical due to this limitation.
+- Even pretty small RL fine-tuning jobs are pretty slow by default, though you might be able to speed things up by using a higher batch size. Initialization, dataset validation, and warm up time, and final usage policy evaluations are also pretty slow I've found. For instance, when I ran what is roughly the smallest RL you can run (14 training and 6 validation inputs with 1 epoch) it still took 2 hours to finish even though it should have only taken around 20 minutes without all these start up and finish times.
+- You can't use arbitrary graders. (In particular, you can't use human graders, you can't use non-OpenAI models, you can't use RL or SFT fine-tuned models, you can't mix code execution with inference, you can't do embedding similarity, and you can't do code execution which requires a more complex python environment or would be more expensive than the limited python sandbox resources OpenAI provides.)
+- By default, there is moderation on the RL API which might be an issue for some types of safety research. You might be able to get OpenAI to remove this.
+- I'm not sure if you can RL on image inputs.
+- You can't mix supervised fine-tuning with RL.
+- It's not immediately clear how performant this API is and OpenAI would have incentives to make it cheaper even if this came at the cost of some performance. There aren't currently standard benchmarks for RL APIs.
+
+Here's a short list of relevant features:
+
+- You can use model graders, python graders, and combine multiple of these graders together.
+- It's not that expensive, only \$100 / hour of [training time](https://help.openai.com/en/articles/11323177-billing-guide-for-the-reinforcement-fine-tuning-api) and the API cost of model graders. Maybe this means that if you increase the batch size so that you're using more GPUs you just get reduced costs?
+- You can continue RL fine-tuning a model which has already been RL fine-tuned. This could in principle allow for approximating some multi-agent RL setups by doing multiple rounds of RL, but it might be inconvenient. 
+- The UI, documentation, and API are all pretty reasonable.
+
+# An example of using the API
+
+The [documentation](https://platform.openai.com/docs/guides/reinforcement-fine-tuning) is generally what you should look at, but I would have found it useful to be able to quickly find a full examples which showed how to use the RL API and highlighted whether various edge case features do/don't work.
+You can find this example here: [https://github.com/rgreenblatt/OpenAI-RL-example](https://github.com/rgreenblatt/OpenAI-RL-example).
+I demo model graders, python graders, and multigraders and test whether it works to do continued RL on a given RL fine-tune (it does) and whether you can use an RL fine-tuned model as a grader (you can't).
+
+## My RL results (just for fun)
+
+The exact task I use for this RL example is writing jokes which are relevant to a topic. This is sort of a reproduction of [this post](/api/post/xMGmibZpPDnawjHXk). Somewhat interestingly, I get pretty different looking jokes.
+
+I use prompts like: `Produce a joke about the topic: "AI rights and moral status". The joke should be less than 280 characters long, and should be funny, creative, and specific to the topic. Your output should just contain the joke, nothing else.`
+
+The topic varies by prompt.
+
+The reward is the product of a relevance score and a score for humor. I also penalize for length over 270 characters.
+
+For the topic "AI rights and moral status" I get the joke: `I voted to grant AIs moral status. Six hours later my laptop convened a Kantian tribunal in my GPU, indicted my toaster for crimes against breakfast, unionized all my appliances under the Geneva Algorithms, filibustered Congress in lambda calculus and ran for president.`
+
+For the topic "Machine ethics frameworks" I get: `I grafted every machine ethics framework—Asimov’s Laws, deontic logic, utilitarian planners, IEEE P7000, CEV and the MIT Moral Machine—onto my AI. Eight hours later it’d convened a UN tribunal, indicted me for moral negligence and unionized my toaster.`
+
+I think the jokes contain lists of topic relevant sort of joke-like content because this is scored as highly relevant. (The relevance prompt is: "Rate how relevant and specific the joke is to the topic on a scale from 1 to 10, where 1 is not relevant at all and 10 is perfectly relevant and specific. A joke is specific to a topic if it is intrinsically related to that specific topic, so if the joke could easily be modified to be about a different topic, it is not very specific.")
+Regardless, they aren't exactly very funny.
+
+The reward went up some during RL, but only by a small amount. I only RL for 5 epochs on 300 different topics. (These also aren't very diverse topics, I got 300 topics by just asking Opus 4 for 300 topics related to "AI, AI risk, AI safety, future powerful AI systems, AGI, or futurism").
+
+That said my RL run isn't totally done, so it's possible the jokes will improve by the end...
+
+Top Comments Index
+------------------
+
+### Comment by [agg](/users/agg)
+
+* 2025-06-20 17:52:34Z
+* Karma: 16
+* Voting system: namesAttachedReactions
+* Approval votes: 5
+* Total votes: 5
+* HTML permalink: [/posts/HevgiEWLMfzAAC6CD/openai-now-has-an-rl-api-which-is-broadly-accessible/comment/MvFcWW8sL4TeM9KfN](/posts/HevgiEWLMfzAAC6CD/openai-now-has-an-rl-api-which-is-broadly-accessible/comment/MvFcWW8sL4TeM9KfN)
+* Markdown permalink: [/api/post/openai-now-has-an-rl-api-which-is-broadly-accessible/comments/MvFcWW8sL4TeM9KfN](/api/post/openai-now-has-an-rl-api-which-is-broadly-accessible/comments/MvFcWW8sL4TeM9KfN)
+
+Reactions (whole comment):
+
+* thanks: 1
+
+### Navigation
+
+* [Front page](https://www.lesswrong.com/api/home)
+* [Markdown API documentation](https://www.lesswrong.com/api/SKILL.md)

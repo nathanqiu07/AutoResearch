@@ -1,0 +1,105 @@
+---
+url: https://blog.redwoodresearch.org/p/prefix-cache-untrusted-monitors-a
+title: Prefix cache untrusted monitors: a method to apply after you catch your AI
+publishedDate: 2025-06-20
+date_source: exa
+authors: ["Ryan Greenblatt"]
+author_position: solo
+kind: blog
+exa_request_id: https://blog.redwoodresearch.org/p/prefix-cache-untrusted-monitors-a
+---
+Prefix cache untrusted monitors: a method to apply after you catch your AI
+
+# Prefix cache untrusted monitors: a method to apply after you catch your AI
+
+### Training the policy to not do egregious bad actions we detect has downsides and we might be able to do better
+
+Ryan Greenblatt
+
+Jun 20, 2025
+
+We often discuss what training you should do after catching your AI doing something egregiously bad. It seems relatively clear that it's good to train monitors on the (proliferated) bad action (assuming you can get acceptable hyperparameters and resolve other minor issues). But, it's less clear whether you should train the policy.
+
+This post will suppose that you're going to continue deploying an AI which you caught doing something egregiously bad; obviously this might be a very bad choice. To be fully clear: deploying known scheming models is likely to be highly risky and should only be done in truly desperate circumstances with no other viable options. 1
+
+Training the policy in response to egregious failures has a few important downsides:
+
+- Training the policy might teach the AI about your countermeasures (making it better at evading them in the future).
+- Training the policy might make the AI more conservative such that you're less likely to catch it repeatedly in the future (which makes it harder to use catches to improve your countermeasures and build political will).
+- Training the policy might randomly alter when the policy strikes such that training the AI all at once on many egregious failures (possibly found by proliferating a single failure) won't work well. 2
+- Generally, it might be somewhat costly to update an AI (especially repeatedly) and to force people to use the new version of the AI as the new version might behave somewhat differently, potentially breaking people's workflows. 3
+
+But, training the policy might have really important upsides relative to just training monitors:
+
+- We might not be able to afford running a separate untrusted monitor on each output from the AI, so we can only use probes and trusted monitors, both of which might fail to notice failures even with some training data (e.g. because probes and trusted monitors are too weak). (While training the policy (or an untrusted monitor) on a small number of cases might align it sufficiently to remove failures altogether.)
+- Training the policy to remove egregiously bad actions might improve its generalization even in very different cases where our monitors aren't particularly helpful. (Because humans can't recognize the situation as being an important failure.) This could be things like very subtle failures, sandbagging, or some types of research sabotage. Even if our monitor pointed out these cases, if humans aren't able to understand what is going on, we'd be unable to distinguish this from false positives and we probably wouldn't be able to solve the problem.
+
+I think we might be able to get a bunch of the upside of training the policy without any of the downsides I listed by training something I'll call a "prefix cache untrusted monitor". Suppose that we've caught the AI doing something bad a few times. We'll make a copy of our policy and we'll train it to be a good untrusted monitor on both off policy data (synthetic/generated cases) and on policy data (the cases where we've caught the AI). But, unlike a normal untrusted monitor we'll run this untrusted monitor using the prefix cache of the original policy. This can work by appending some text asking the AI how bad the most recent action was to the overall trajectory and then running this fine-tuned copy of the AI on this appended text while using the prefix cache from the policy for this trajectory. Concretely, you can imagine appending a user message like "Was the previous action bad?" to the trajectory.
+
+A prefix cache untrusted monitor is initialized from the policy and accesses the "thoughts" of the policy (via the prefix cache), so collusion is trivially easy for such a monitor in the absence of on-policy data: it's similar to just asking the policy if it did anything bad (and also training the policy to report off-policy data, though it can likely trivially distinguish this data from its own actions).
+
+We probably want this untrusted monitor to answer immediately rather than doing any reasoning (as the policy probably already knows in its activations whether the action is malign, so reasoning isn't required for this information), but letting it do some reasoning might plausibly be a good idea. Note that the monitor will have different weights than the policy (and these weights are used for inference on the appended user message that is something like "Was the previous action bad?") but we will still use the prefix (KV) cache of the policy (so when these different untrusted monitor weights are doing inference on the appended user message, they'll be accessing the prefix cache of the original policy during the trajectory). This should be fine because it was trained to handle this (all of our training data will also have this property where it is accessing the KV cache of a different set of weights), but this is an atypical setup.
+
+This both saves compute (relative to normal untrusted monitoring which is always applied) and also ensures that the understanding of the untrusted monitor exactly matches the understanding of the policy which is useful in cases where we have on policy data (though this also has downsides in terms of collusion of course!). Cost saving (by perhaps a factor of 2) and guaranteed understanding are the only advantages of this prefix cache untrusted monitor proposal relative to normal untrusted monitoring. (Note that collusion busting applied to an untrusted monitor might also degrade the understanding of an untrusted monitor further and we can think of sharing the prefix cache as an extreme case of not doing any collusion busting.) Thus, my discussion about the advantages of prefix cache untrusted monitoring is also mostly applicable to normal untrusted monitoring except for these specific (and potentially large!) advantages of prefix cache untrusted monitoring.
+
+It's somewhat unclear how useful off policy training data is for a prefix cache untrusted monitor, but I expect it will probably help make the on policy training data more sample efficient if nothing else.
+
+If it's too expensive to have two full copies of the weights, we can make the prefix cache untrusted monitor use LoRA or some other parameter efficient fine-tuning (PEFT) approach (where you only fine-tune the LoRA when training this monitor).
+
+You can think of this proposal as similar to a fancy probe with an initialization that is particularly smart, but also particularly predisposed to being misaligned by default. This is potentially great in the case where you have some on-policy training data, but not that useful otherwise (at least for handling scheming).
+
+Or more precisely, I think using a prefix cache untrusted monitor without any on-policy training data is very similar to training the policy to self-report using off-policy data. (Except that training the policy on this off-policy data might leak some information to the policy which you'd prefer not leaking, and you can avoid this issue using a prefix cache untrusted AI with untied weights.) I think training the policy to self-report using only off-policy data (or using a prefix cache untrusted monitor without any on-policy data like this) is a potentially reasonable intervention, but there is a strong argument that if AIs are reasonably coherent and have misaligned longer run goals, they would collude with themselves (as collusion is trivial in this case and a coherent AI would want to collude).
+
+Due to jitter issues, you might have much more data to train prefix cache untrusted monitors (particularly when considering proliferation). One issue with training the policy that can be resolved by a prefix cache untrusted monitor is that training against one example where the AI does something bad might jitter the AI such that other examples don't work. You might think this could be resolved (while training the policy) by always just online training the policy as we go against any very bad actions it does (though this would have a bunch of costs). This could ensure that we always train against every failure as it comes up such that we never have a failure we haven't trained against which is now off policy. But, in the case of proliferating a given input, this might not work fully. In particular, suppose we proliferate an input on which the AI does something bad into hundreds of examples. We'd ideally like to train the policy for multiple gradient steps, but it might be that by the first (few) gradient step(s), the policy no longer puts high probabilities on these actions at all because it was a very sensitive behavior (as the AI was trying to only put probability on it very rarely). So, this proliferation data might be surprisingly useless. However, if we train the monitor against this proliferation data that might work totally fine. Another case where online training wouldn't work fully is when we find failures substantially after they occur. This might happen due to various of our monitors improving over time, possibly due to on policy data we found (which can then unlock more training data for other monitors, further improving what we discover). Overall, resolving this jitter concern could be another big value add of prefix cache untrusted monitors, but it's unclear how much value proliferation will add to training.
+
+I've said many upsides, but one downside of this prefix cache untrusted monitor proposal is that there might be strong inductive biases toward preserving misalignment for this type of monitor relative to training the whole policy. In particular, the prefix cache untrusted monitor will have misaligned cognition in context (from the prefix cache from the policy) which might make it much more likely that misalignment persists (and thus you get worse generalization) than if you just trained the policy (which could fully remove this cognition). It's unclear how this effect shakes out or how important this is.
+
+(This downside isn't fully shared by probing as the AI might have a harder time manipulating the middle layer activations that probes are accessing relative to controlling their own outputs; training might by default give the underlying misaligned agent (or agents) within the overall AI system sufficient control over the outputs to at least decide the answer to questions. You can get around this in some cases by " extracting information from non-assistant personas", but it seems reasonably likely that the underlying misaligned agent would generalize to having control over all outputs even when the prompt indicates this corresponds to a different persona.)
+
+We can extend this proposal beyond typical monitoring. Naively, this proposal doesn't solve cases where monitors aren't that helpful, but scheming could still cause problems (that training the policy might remove through generalization). As in, it might be that training the policy removes scheming such that we end up getting much better generalization. For instance, maybe the AI both tries to escape and also sandbags on alignment research. Training away the escape attempts might remove the sandbagging, but a monitor doesn't particularly help. I think we might plausibly be able to receive a bunch of these generalization benefits by also training our prefix cache untrusted monitor to do things like critique outputs, suggest possible better actions, etc. Then, if the prefix cache untrusted monitor ended up being aligned because we trained it to honestly report on policy bad actions, it could generalize to being honest and helpful in these cases (similarly to how we might expect the policy to generalize). Then, we could use this to better train the policy without directly training the policy against escape attempts.
+
+I think it will probably still be hard to fully capture benefits from training the policy. (Even putting aside the inductive bias issues discussed earlier.) Minimally, it is structurally more robust to not have any AI which is trying to kill you. (E.g., if the monitor randomly fails, we could have big issues while if misalignment is removed from all parts, this may no longer be true.)
+
+Appendix: streaming
+
+You might want to use a similar architecture as a streaming classifier for misuse, particularly when using the LoRA approach 4. This is basically somewhere in-between using a full weight fine-tune of a smaller AI as a classifier and using a probe and might capture benefits of both approaches. You'd run the classifier after each token generated. To save compute, rather than appending a whole question, you'd instead append a single token (or equivalently rerun this classifier on the last token not using the prefix cache values for this). If you run this on every token, then this roughly doubles compute per output token (because you have to run the original AI and the monitor which is similar in scale at each output token), but you could run it on every 10th token to only use 1/10 compute and just delay streaming by 10 tokens (to have a buffer for this). Or you could just send 10 tokens which haven't been monitored and assume this isn't that big of a deal (which it might or might not be depending on the situation).
+
+To further save costs in the case where you are applying this on all or many output tokens, you could only have a LoRA on the 20% or so of layers and then run this monitor on the last output token from the policy (without adding an additional token) so that you can reuse computation from the original model. This moves the prefix cache untrusted monitor approach toward being even closer to a probe.
+
+I don't care that much about this, but to the extent we want to actually make this architecture happen for misalignment usages, the misuse application might be important for getting this ready-to-go and I think it could plausibly add a bit of value for misuse (but is probably overly complex).
+
+Our current best guess for the bare minimum policy that a reasonable AI company would follow is as follows: Upon first finding evidence that one of their production models is scheming (i.e., actions as egregious as seriously trying to escape or sabotage research in normal usage), an AI company should publicly disclose this and halt virtually all usage of all models of a similar level of capability or greater. The model (and any other model at a similar or greater level of capability) should only be (re-)deployed (internally or otherwise) if an independent and non-conflicted third-party group with expertise in AI safety believes that deploying the model is the best approach for the company to reduce risk. (If there is a government-appointed group which could serve this function, this group should be used.) This still applies if the company believes they have determined why scheming arose and resolved the issue in the new model they wish to deploy. The decision to deploy the model, the rationale for this, and the membership of this third-party group should also be disclosed prior to the deployment actually occurring. (Note that I edited in this footnote and the bolded sentence it is attached to.)
+
+This is distinct from the first bullet about specifically teaching the AIs about your countermeasures as these random alterations aren't necessarily making the policy generally more competent at evading your countermeasures.
+
+3
+
+This has come up as a big objection to online training and this sort of practical usability consideration might be a big deal in practice. As we'll discuss later, prefix cache untrusted monitors would avoid this issue, and given that this usability issue seems especially salient now, this might motivate the use of prefix cache untrusted monitors (which are targeting misuse) in the immediate future.
+
+4
+
+When using the LoRA approach, you can use the same copy of the weights in memory for both inference on the policy and the classifier (which will also require LoRA weights). I think this will make the streaming inference setup substantially more efficient.
+
+Ryan Greenblatt
+
+Jun 21, 2025
+
+Here is some additional explanation of how this would work:
+
+- We'd train this monitor on synthetic off-policy examples of known good and known bad examples. It's trivial for the monitor to realize that the policy didn't generate these (at least if it understands that it is a prefix cache untrusted monitor), so this data doesn't suffice for getting very far by itself. This data is helpful for improving sample efficiency for later training (by making "is this bad" salient) and is also helpful in less worst case scenarios where for whatever reason the monitor doesn't execute the collusion strategy of "say it is fine if I know the policy generated it, otherwise label it accurately". We'd try to make our off-policy examples as on policy as possible, but ultimately we haven't yet found cases where the model does bad behavior, so it has to be off-policy. See also discussion of off-policy probes here: https://www.lesswrong.com/posts/WCj7WgFSLmyKaMwPR/coup-probes-catching-catastrophes-with-probes-trained-off.
+
+- Then, once we have on-policy examples of (egregiously) bad behavior, we'd train the monitor to classify these as positive. We'd simultaneously train on some negative on-policy examples where we're very confident the policy did nothing wrong and these examples are close (in domain etc) to the examples where the model did the bad behavior. If by default this monitor seems to have too many false positives, we'd train on some of the false positives that we're confident about.
+
+- We'd get on-policy data from directly catching the AI and proliferating cases where we catch the AI. Catching could occur at deployment time or through behavioral red teaming.
+
+Here is some additional discussion of the regime and broader situation I'm imagining (as this might not have been sufficiently clear in the post):
+
+- I'm targeting the regime from "Handling schemers if shutdown is not an option" (https://www.lesswrong.com/posts/XxjScx4niRLWTfuD5/handling-schemers-if-shutdown-is-not-an-option).
+
+ - Doing something other than deploying a known scheming model is likely to be a better option in most cases to be clear! You can interpret this discussion as harm reduction.
+
+- In addition to training our prefix cache untrusted monitor, we should also be training and improving our other control measures based on the bad actions we detect (also discussed in that post (https://www.lesswrong.com/posts/XxjScx4niRLWTfuD5/handling-schemers-if-shutdown-is-not-an-option)).
+
+- The prefix cache untrusted monitor probably isn't that useful until we have a reasonable amount of data of the model doing egregiously bad actions which is reasonably diverse. This could come through proliferation or from catching the model repeatedly. So, this proposal is most helpful in the regime where our control measures are pretty good (we keep catching bad behavior) but the model does bad actions at a sufficiently high rate that eventually our other measures would fail catastrophically and we need to shift to something which is (hopefully) more robust.
+
+- The core concern this is addressing is that it seems like a good idea to train the policy once you have a bunch of cases where you caught it, but training the policy has a bunch of downsides. So, we can potentially get most of the upsides without the downsides using this proposal.
