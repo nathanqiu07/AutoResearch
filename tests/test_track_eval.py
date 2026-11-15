@@ -58,9 +58,9 @@ def write_corpus(root, name, published, body):
 
 
 def write_agreement(root, ids, agreeing=()):
-    """Agreement rows as the 'agree' command records them: pairs in `agreeing` get 0.9 both ways."""
+    """Agreement rows as the 'agree' command records them: pairs in `agreeing` get 10 of 10 votes, the rest 6."""
     with open(os.path.join(root, agreement.AGREEMENT), "w") as f:
-        f.writelines(json.dumps({"example_id": k, "p_chosen": [0.9, 0.9] if k in agreeing else [0.5, 0.5],
+        f.writelines(json.dumps({"example_id": k, "votes": [[True] * 5] * 2 if k in agreeing else [[True, False] * 2 + [True]] * 2,
                                  "judge": "fake", "timestamp": "t"}) + "\n" for k in ids)
 
 

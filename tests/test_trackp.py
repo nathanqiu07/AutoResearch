@@ -62,10 +62,10 @@ class TrackPTest(unittest.TestCase):
         return self.answer("seed", prefer, limit=n)
 
     def agree(self, agreeing=()):
-        """Agreement rows for every answer, as 'agree' records them: `agreeing` ids get 0.9 both ways."""
+        """Agreement rows for every answer, as 'agree' records them: `agreeing` ids get 10 of 10 votes, the rest 6."""
         ids = [c.example_id for part in trackp.split(self.root, SLUG).values() for c in part]
         with open(os.path.join(self.dir, agreement.AGREEMENT), "w") as f:
-            f.writelines(json.dumps({"example_id": k, "p_chosen": [0.9, 0.9] if k in agreeing else [0.5, 0.5],
+            f.writelines(json.dumps({"example_id": k, "votes": [[True] * 5] * 2 if k in agreeing else [[True, False] * 2 + [True]] * 2,
                                      "judge": "fake", "timestamp": "t"}) + "\n" for k in ids)
 
     def label_run(self, run_id, records):

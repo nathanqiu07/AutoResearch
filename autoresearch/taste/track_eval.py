@@ -10,8 +10,8 @@ Arms, all scored on the held-out pairs:
   selected:X  the method chosen on history alone (select_method)
 
 A pair counts as right only if the model picks his option in both a/b orders. History and
-held-out both pass the agreement filter (agreement.py) first: a pair a blind judge gives his
-option more than 0.8 in both orders is dropped. Intervals
+held-out both pass the agreement filter (agreement.py) first: a pair is dropped when more than
+80% of a blind Sonnet 5.5 judge's 10 votes (5 per option order) go to his option. Intervals
 resample source documents (group_id), since pairs from one document are not independent.
 The selected method succeeds if its gain over both m1 arms has a 90% interval above 0.
 
@@ -385,6 +385,8 @@ def main(argv=None):
         c.add_argument("--model", default="claude-sonnet-5-5")
         c.add_argument("--max-usd", type=float, required=True)
         c.add_argument("--workers", type=int, default=WORKERS, help="model calls run in parallel")
+        if name == "agree":
+            c.set_defaults(model=agreement.JUDGE_MODEL)
         if name == "gate":
             c.add_argument("--judge-model", default="claude-opus-5-5",
                            help="a different model from the one that wrote the pairs")
@@ -409,7 +411,7 @@ def main(argv=None):
     elif args.command == "agree":
         choices = [c for s in (timesplit.HISTORY, timesplit.HELDOUT)
                    for c in load_choices(os.path.join(researcher.root, s))]
-        rows = agreement.judge(researcher.root, choices, BlindJudge(llm, cache_dir=CACHE), WORKERS)
+        rows = agreement.judge(researcher.root, choices, llm, WORKERS)
         report = {"judged": len(rows), "pairs": len(choices),
                   "dropped": len(choices) - len(agreement.keep(researcher.root, choices))}
     elif args.command == "select":

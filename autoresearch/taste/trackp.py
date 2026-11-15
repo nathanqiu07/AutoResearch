@@ -7,7 +7,7 @@ Everything lives in data/researchers/<slug>/:
   seed_choices.jsonl   the person's answers, as text `Choice` rows (source "seed")
   labels.jsonl         the person's choice at logged loop decisions D1-D6
   recheck.jsonl        re-asked items, for the noise ceiling
-  agreement.jsonl      a blind judge's probability for each answer, per order (agreement.py)
+  agreement.jsonl      a blind judge's 10 votes on each answer, 5 per option order (agreement.py)
   usermodel.json       the fitted user model the loop loads (research/advisor.load_user_model)
   history.jsonl        the choices that model was fitted on, for the prompt arm (R1-P-prompt)
   CONSENT.md           who the person is and what they agreed to
@@ -15,7 +15,8 @@ Everything lives in data/researchers/<slug>/:
 Hold-out (fixed by hashing, so it never moves as answers arrive): 20% of seed
 pairs, plus every label from a run on or after --label-cutoff. The rest is
 split into history and val for `UserModel.fit`. E2 and fit use every split after the
-agreement filter: an answer a blind judge gives more than 0.8 in both orders is dropped.
+agreement filter: an answer is dropped when more than 80% of a blind Sonnet 5.5 judge's 10
+votes (5 per option order) go to the option the person chose.
 
 After `init`, --researcher defaults to the personal track (key P) in tracks.json. `status` says what to run
 next. The person answers in a terminal (answer / label / recheck), or an agent shows
@@ -557,12 +558,11 @@ def main(argv=None):
     b.add_argument("--threshold", type=float, default=0.75)
     b.add_argument("--max-calls", type=int, default=500)
     b.add_argument("--cache", default="runs/taste-cache")
-    ag = cmd("agree", "record a blind judge's probability for each answer; e2 and fit drop the ones it "
-                      "gives more than 0.8 in both orders (paid)")
-    ag.add_argument("--backend", required=True, help="a real backend: offline models give no probabilities (paid, ask first)")
+    ag = cmd("agree", "record a blind judge's 10 votes on each answer; e2 and fit drop the ones where more "
+                      "than 80%% go to the person's option (paid)")
+    ag.add_argument("--backend", required=True, help="a real backend (paid, ask first)")
     ag.add_argument("--model", default=agreement.JUDGE_MODEL)
-    ag.add_argument("--max-calls", type=int, default=500)
-    ag.add_argument("--cache", default="runs/taste-cache")
+    ag.add_argument("--max-calls", type=int, default=5000, help="10 calls per answer")
     rv = cmd("review", "list flagged pairs, or approve/drop one (not by the person answering)")
     rv.add_argument("--id", help="pair_id to decide")
     rv.add_argument("--decision", choices=["approve", "drop"])
@@ -619,11 +619,10 @@ def main(argv=None):
             _append(os.path.join(d, tradeoffs.BALANCE), r)
         print(f"checked {len(rows)} pairs, {sum(r['one_sided'] for r in rows)} flagged one-sided")
     elif args.command == "agree":
-        from .track_eval import BlindJudge, JsonReply
+        from .track_eval import JsonReply
         d = os.path.join(args.root, slug)
         choices = [c for part in split(args.root, slug).values() for c in part]
-        judge = BlindJudge(JsonReply(_llm(args.backend, args.model, args.max_calls)), cache_dir=args.cache)
-        rows = agreement.judge(d, choices, judge)
+        rows = agreement.judge(d, choices, JsonReply(_llm(args.backend, args.model, args.max_calls)))
         print(f"judged {len(rows)} answers; {len(choices) - len(agreement.keep(d, choices))} of {len(choices)} dropped")
     elif args.command == "review":
         d = os.path.join(args.root, slug)
