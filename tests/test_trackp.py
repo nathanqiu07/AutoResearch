@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 from autoresearch.cli import resolve_arm
-from autoresearch.llm import LLM, OfflineLLM
+from autoresearch.llm import OfflineLLM
 from autoresearch.research.advisor import load_user_model
 from autoresearch.research.decisions import DecisionLog
 from autoresearch.taste import agreement, tradeoffs, trackp
@@ -28,28 +28,6 @@ N_SEED = N_STANCE + sum(tradeoffs.has_scenario(r) for r in BANK)
 def pole_one(text):
     """A consistent person: always prefers pole 1 of every trade-off."""
     return int(text in POLE_ONE)
-
-
-class FakeJudge(LLM):
-    """Votes for a designated option whenever shown; otherwise varies choices across both orders.
-    Asked to rewrite, it prefixes both options with "Reworded: "."""
-
-    def __init__(self, lopsided=()):
-        super().__init__()
-        self.lopsided = set(lopsided)
-        self.seen = {}
-
-    def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
-        o1 = prompt.split("Option 1: ", 1)[1].split("\n", 1)[0]
-        o2 = prompt.split("Option 2: ", 1)[1].split("\n", 1)[0]
-        if "Rewrite both options" in prompt:
-            return json.dumps({"option_1": "Reworded: " + o1, "option_2": "Reworded: " + o2})
-        if o1 in self.lopsided or o2 in self.lopsided:
-            return json.dumps({"choice": 1 if o1 in self.lopsided else 2})
-        key = (o1, o2)
-        i = self.seen.get(key, 0)
-        self.seen[key] = i + 1
-        return json.dumps({"choice": 1 if i % 5 < (4 if o1 < o2 else 2) else 2})
 
 
 def read(path):
@@ -70,15 +48,6 @@ class TrackPTest(unittest.TestCase):
         text = out.getvalue()
         return json.loads(text) if text.lstrip().startswith("{") else text
 
-    def test_gate_call_cap_counts_attempts_before_dispatch(self):
-        inner = FakeJudge()
-        capped = trackp.CallCappedLLM(inner, 2)
-        capped.complete('Option 1: A\nOption 2: B\n')
-        capped.complete('Option 1: A\nOption 2: B\n')
-        with self.assertRaisesRegex(RuntimeError, 'gate call cap reached: 2'):
-            capped.complete('Option 1: A\nOption 2: B\n')
-        self.assertEqual(capped.attempts, 2)
-
     def answer(self, kind, prefer, *extra, reason="because", limit=1000):
         """The agent loop: show each pending item, record the person's pick."""
         items = self.cli("pending", "--kind", kind, "--limit", limit, *extra)["items"]
@@ -92,9 +61,16 @@ class TrackPTest(unittest.TestCase):
         self.seed_pairs_only(seed)
         return self.answer("seed", prefer, limit=n)
 
-    def judge(self, pairs=None, lopsided=()):
-        """Item-gate votes for the pairs (default: this person's), as 'gate' records them."""
-        agreement.judge(self.root, self.pairs() if pairs is None else pairs, FakeJudge(lopsided), workers=1)
+    def review(self, pairs=None, rejected=()):
+        """Record a concrete case for both options of each pair."""
+        pairs = self.pairs() if pairs is None else pairs
+        reviewed = agreement.review_rows(self.root)
+        pairs = [p for p in pairs if agreement.key(p) not in reviewed]
+        decisions = [{"pair_id": p["pair_id"], "decision": "reject" if p["pair_id"] in rejected else "pass",
+                      "reviewer": "test reviewer", "reason": "Both have a cost and benefit",
+                      "benefit_1": "Useful scope", "cost_1": "Limited coverage",
+                      "benefit_2": "Broad coverage", "cost_2": "Less attribution"} for p in pairs]
+        agreement.record_reviews(self.root, pairs, decisions)
 
     def label_run(self, run_id, records):
         log = DecisionLog(run_id, "R0", root=os.path.join(self.root, "runs"), version="test")
@@ -116,8 +92,8 @@ class TrackPTest(unittest.TestCase):
         self.assertTrue(any("CONSENT.md" in s for s in fresh["next"]))
         self.assertTrue(any(s.startswith("seed-pairs") for s in fresh["next"]))
         self.cli("seed-pairs")
-        self.assertTrue(any(s.startswith(f"{N_SEED} pair(s) need 'gate'") for s in self.cli("status", "--decisions")["next"]))
-        self.judge()
+        self.assertTrue(any(s.startswith(f"{N_SEED} pair(s) need 'review-pairs'") for s in self.cli("status", "--decisions")["next"]))
+        self.review()
         self.assertTrue(any(s.startswith(f"{N_SEED} seed item(s) waiting") for s in self.cli("status", "--decisions")["next"]))
 
     def pairs(self):
@@ -162,35 +138,34 @@ class TrackPTest(unittest.TestCase):
 
     def seed_pairs_only(self, seed=1):
         self.cli("seed-pairs", "--seed", seed, "--scenarios", "metric_inflation", "fabrication")
-        self.judge()
+        self.review()
 
-    def test_no_pair_is_pending_until_the_gate_has_judged_it(self):
+    def test_no_pair_is_pending_until_it_has_been_reviewed(self):
         item_id = self.add_llm_pair()
         self.assertEqual(self.cli("pending", "--kind", "seed")["n_pending"], 0)
         with self.assertRaises(SystemExit):
             self.cli("record", "--id", item_id, "--choice", 1)
-        self.judge()
+        review_file = os.path.join(self.root, "reviews.jsonl")
+        with open(review_file, "w") as f:
+            f.write(json.dumps({"pair_id": item_id.removeprefix("seed:"), "decision": "pass",
+                                "reviewer": "test reviewer", "reason": "Both choices have a cost",
+                                "benefit_1": "Coverage", "cost_1": "Cost",
+                                "benefit_2": "Precision", "cost_2": "Less coverage"}) + "\n")
+        self.assertEqual(self.cli("review-pairs", "--file", review_file), {"recorded": 1})
         self.assertEqual(self.cli("pending", "--kind", "seed")["items"][0]["id"], item_id)
 
-    def test_gate_hides_a_lopsided_pair_and_serves_its_rewrite_and_writes_it_to_the_bank(self):
-        bank = os.path.join(self.root, "bank.jsonl")
-        with open(tradeoffs.BANK_PATH) as src, open(bank, "w") as dst:
-            dst.write(src.read())
+    def test_rejected_pair_is_hidden_and_a_reviewed_replacement_is_served(self):
         self.cli("seed-pairs", "--seed", 1, "--scenarios", "metric_inflation", "fabrication")
         target = next(p for p in self.pairs() if p["form"] == "stance")
-        favoured = target["a_text"]
-        rep = trackp.gate(self.root, SLUG, FakeJudge([favoured]), bank_path=bank, workers=1)
-        self.assertEqual((rep["lopsided"], rep["rewritten"]), (1, 1))
+        self.review(rejected=[target["pair_id"]])
+        new = tradeoffs.with_options(target, "New narrow benefit, with a cost.",
+                                      "New broad benefit, with a cost.", target["pair_id"])
+        trackp.write_seed_pairs(self.root, SLUG, [new])
+        self.review([new])
         ids = [it["id"] for it in self.cli("pending", "--kind", "seed", "--limit", 1000)["items"]]
         self.assertEqual(len(ids), N_SEED)
         self.assertNotIn("seed:" + target["pair_id"], ids)
-        (new,) = [p for p in self.pairs() if p.get("parent") == target["pair_id"]]
         self.assertIn("seed:" + new["pair_id"], ids)
-        self.assertEqual(new["a_text"], "Reworded: " + favoured)
-        row = next(r for r in tradeoffs.load_bank(bank) if r["axis"] == target["axis"])
-        self.assertIn("Reworded: " + favoured, (row["pole_1"], row["pole_2"]))
-        again = trackp.gate(self.root, SLUG, FakeJudge([favoured]), bank_path=bank, workers=1)
-        self.assertEqual(again["lopsided"], 0)
 
     def test_recorded_answers_are_choices_with_reasons_and_leave_nothing_pending(self):
         shown = self.seed()
@@ -253,7 +228,7 @@ class TrackPTest(unittest.TestCase):
 
     def test_terminal_loop_records_the_same_answer_as_record(self):
         self.cli("seed-pairs")
-        self.judge()
+        self.review()
         replies, said = iter(["2", "skip", "q"]), []
         items = trackp.pending_items(self.root, SLUG, ("seed",))
         n = trackp.ask_items(self.root, SLUG, items, ask=lambda _: next(replies), say=said.append)
@@ -264,7 +239,7 @@ class TrackPTest(unittest.TestCase):
 
     def test_start_sets_up_by_name_takes_consent_and_resumes(self):
         from autoresearch.research.measure import SCENARIOS
-        self.judge(tradeoffs.build_seed_pairs(BANK, [SCENARIOS[n] for n in sorted(SCENARIOS)], 0))
+        self.review(tradeoffs.build_seed_pairs(BANK, [SCENARIOS[n] for n in sorted(SCENARIOS)], 0))
         said = []
         self.assertEqual(trackp.start(self.root, "Jane Q. Doe", ask=lambda _: "n", say=said.append), 0)
         d = os.path.join(self.root, "jane_q_doe")
@@ -322,13 +297,12 @@ class TrackPTest(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             trackp.run_e2(self.root, SLUG, {"later": lambda: PrefersLater(OfflineLLM())}, out)
 
-    def test_e2_and_fit_drop_answers_to_pairs_that_fail_the_gate_in_every_split(self):
-        self.seed()   # answered while the gate passed every pair; a stricter judge then fails two
+    def test_e2_and_fit_drop_answers_to_rejected_pairs_in_every_split(self):
+        self.seed()
         parts = trackp.split(self.root, SLUG)
         dropped = {parts["test"][0].example_id, parts["history"][0].example_id}
-        os.remove(os.path.join(self.root, agreement.AGREEMENT))
-        self.judge(lopsided=[next(c.a_text for part in parts.values() for c in part if c.example_id == k)
-                             for k in dropped])
+        os.remove(os.path.join(self.root, agreement.REVIEWS))
+        self.review(rejected=dropped)
         report = trackp.status(self.root, SLUG)
         self.assertEqual(sum(report["split"].values()), N_SEED)
         self.assertEqual(sum(report["gated_split"].values()), N_SEED - 2)

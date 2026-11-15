@@ -1,6 +1,4 @@
-"""Item gate (personal track): a blind judge votes 5 times with each option order; a pair is
-lopsided when more than 80% of its 10 votes go to either option. Votes are recorded once per
-item and never re-asked."""
+"""Personal-track reviews and archived blind-model vote measurements."""
 import json
 import tempfile
 import unittest
@@ -44,11 +42,30 @@ class GateTest(unittest.TestCase):
 
     def test_a_pair_is_lopsided_when_more_than_80_percent_of_votes_go_to_either_option(self):
         agreement.judge(self.root, self.pairs, self.llm, workers=1)
-        self.assertEqual([agreement.passes(self.root, p) for p in self.pairs], [False, False, False, True, False])
+        self.assertEqual([agreement.lopsided(agreement.rows(self.root)[agreement.key(p)]) for p in self.pairs],
+                         [True, True, True, False, False])
         self.assertTrue(agreement.position_biased(agreement.rows(self.root)[agreement.key(self.pairs[4])]))
 
     def test_an_unjudged_pair_has_no_verdict(self):
         self.assertIsNone(agreement.passes(self.root, self.pairs[0]))
+
+    def test_review_accepts_a_defensible_tradeoff_despite_unanimous_model_votes(self):
+        pair = self.pairs[0]
+        agreement.judge(self.root, [pair], self.llm, workers=1)
+        agreement.record_reviews(self.root, [pair], [{
+            "pair_id": pair["pair_id"], "decision": "pass", "reviewer": "reviewer",
+            "reason": "Both actions serve different uses under the same budget.",
+            "benefit_1": "Clear diagnosis", "cost_1": "Narrow coverage",
+            "benefit_2": "Broad coverage", "cost_2": "Weaker diagnosis",
+        }])
+        self.assertTrue(agreement.passes(self.root, pair))
+
+    def test_review_requires_a_case_for_both_options(self):
+        with self.assertRaisesRegex(ValueError, "cost_2"):
+            agreement.record_reviews(self.root, [self.pairs[0]], [{
+                "pair_id": self.pairs[0]["pair_id"], "decision": "pass", "reviewer": "reviewer",
+                "reason": "Both actions have a use.", "benefit_1": "A", "cost_1": "B", "benefit_2": "C",
+            }])
 
     def test_votes_are_recorded_once_per_item_whatever_the_a_b_order(self):
         agreement.judge(self.root, self.pairs, self.llm, workers=1)
@@ -56,11 +73,12 @@ class GateTest(unittest.TestCase):
         swapped = {**self.pairs[0], "pair_id": "other", "a_text": "B0", "b_text": "A0", "a_pole": 2, "b_pole": 1}
         agreement.judge(self.root, self.pairs + [swapped], self.llm, workers=1)
         self.assertEqual(self.llm.calls, 50)
-        self.assertFalse(agreement.passes(self.root, swapped))
+        self.assertIsNone(agreement.passes(self.root, swapped))
 
     def test_six_vote_gate_marks_five_of_six_lopsided_and_records_model(self):
         agreement.judge(self.root, [self.pairs[2], pair(5)], self.llm, workers=1, votes_per_order=3)
-        self.assertEqual([agreement.passes(self.root, p) for p in [self.pairs[2], pair(5)]], [False, True])
+        self.assertEqual([agreement.lopsided(agreement.rows(self.root)[agreement.key(p)])
+                          for p in [self.pairs[2], pair(5)]], [True, False])
         self.assertEqual([len(order) for order in agreement.rows(self.root)[agreement.key(self.pairs[2])]["votes"]],
                          [3, 3])
         self.assertEqual(agreement.rows(self.root)[agreement.key(self.pairs[2])]["judge"], self.llm.label)
@@ -74,7 +92,7 @@ class GateTest(unittest.TestCase):
         with open(f"{self.root}/{agreement.AGREEMENT}") as f:
             self.assertEqual(sum(1 for _ in f), 2)
         self.assertEqual(agreement.rows(self.root)[agreement.key(biased)]["judge"], replacement.label)
-        self.assertTrue(agreement.passes(self.root, biased))
+        self.assertIsNone(agreement.passes(self.root, biased))
 
 
 if __name__ == "__main__":

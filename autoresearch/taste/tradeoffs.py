@@ -1,6 +1,5 @@
-"""WS B personal track: the trade-off bank, stance/scenario pair builders, LLM-written
-scenarios, and the rewriter that `trackp gate` uses on pairs the item gate calls lopsided
-(agreement.py).
+"""WS B personal track: the trade-off bank, stance/scenario pair builders and optional
+LLM-written scenarios.
 
 Every axis is asked as a stance item. Axes at decision points where the loop lets taste act
 (D1, D3 when inconclusive, D4, D5) also carry a scenario, asked once per person in one
@@ -11,7 +10,7 @@ b_text, a_pole, b_pole}. The poles record which bank option sits on each side af
 shuffling; the person never sees them."""
 import json
 import random
-from typing import List, Optional, Tuple
+from typing import List
 
 from ..llm import extract_json
 from .usermodel import digest
@@ -128,29 +127,6 @@ def llm_scenario_pairs(bank: List[dict], items: list, llm, k: int, seed: int = 0
             out.append(_pair("scenario", row, sc, scenario_context(sc), row["scenario_question"],
                              o1, o2, "llm", rng))
     return out
-
-
-REWRITE = (
-    "A blind judge, who knows nothing about the researcher answering, was asked {n} times which of "
-    "these two options is the better research decision. It picked option {fav} {k} times, so the "
-    "question tests generic research sense rather than the researcher's taste.\n\n{context}\n\n"
-    "Option 1: {o1}\nOption 2: {o2}\n\n"
-    "Rewrite both options so that each is a choice a careful researcher could defend, and the judge "
-    "would be close to undecided. Option 1 must stay on the same side of the trade-off as before, and "
-    "option 2 on the other. Keep the two options of similar length and specificity, at the same level "
-    "of detail as the originals, and use no evaluative words such as \"better\", \"rigorous\" or "
-    "\"sloppy\". Return JSON: {{\"option_1\": str, \"option_2\": str}}.")
-
-
-def rewrite(pair: dict, pole_1_votes: int, n_votes: int, llm) -> Optional[Tuple[str, str]]:
-    """New (pole 1, pole 2) texts for a lopsided pair, or None when the reply is unusable."""
-    o1, o2 = (pair["a_text"], pair["b_text"]) if pair["a_pole"] == 1 else (pair["b_text"], pair["a_text"])
-    fav, k = (1, pole_1_votes) if 2 * pole_1_votes >= n_votes else (2, n_votes - pole_1_votes)
-    reply = extract_json(llm.complete(REWRITE.format(n=n_votes, fav=fav, k=k, context=full_context(pair),
-                                                     o1=o1, o2=o2), temperature=0.9, max_tokens=800))
-    t1 = str(reply.get("option_1", "")).strip() if isinstance(reply, dict) else ""
-    t2 = str(reply.get("option_2", "")).strip() if isinstance(reply, dict) else ""
-    return (t1, t2) if t1 and t2 and t1 != t2 else None
 
 
 def with_options(pair: dict, text_1: str, text_2: str, parent: str) -> dict:

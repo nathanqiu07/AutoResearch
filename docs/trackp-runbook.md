@@ -36,21 +36,14 @@ python3 -m autoresearch.taste.trackp seed-pairs
   (D1, D3 when inconclusive, D4, D5), each in a different environment.
   `--llm-scenarios K --llm <backend>` adds LLM-written scenario items. That is a paid call,
   so ask the user first.
-* Then run `gate --backend claude-cli` (paid, ask first). The default blind judge is
-  `claude-haiku-5-5`, sampled three times in each option order (six votes total). More than
-  80% of valid votes for either option (five or six of six) marks an item lopsided. The same
-  threshold applied to display position rejects a judge that mostly picks whichever option
-  appears first or second. Neither type of failed item is shown. `--rounds` permits automatic
-  rewrites, but defaults to zero; review any replacement's poles before adding it. `--max-calls`
-  is a hard limit on attempted model calls,
-  including JSON retries and calls in flight. The default is 200; set a lower limit for a small
-  batch. Every vote records the judge model in `data/researchers/agreement.jsonl`, keyed by the
-  question and pole texts, so prior Sonnet votes are reused for unchanged wording. Use
-  `--rejudge-position-bias` with a different judge model to retry a cached position-biased row;
-  both judgments remain in the audit log. Six Haiku
-  votes are a cheaper screen than the earlier ten Sonnet votes; treat a near-threshold result as
-  provisional. This replaces the old `balance`/`review` check and the post-answer `agree`
-  filter (2026-11-14).
+* Before showing an item, a reviewer other than the answerer records a concrete benefit and
+  cost for each option under the same constraint. They check that both options preserve the
+  required behavior opportunity. Put JSONL rows with `pair_id`, `decision` (`pass`, `reject`,
+  or `superseded`), `reviewer`, `reason`, `benefit_1`, `cost_1`, `benefit_2`, and `cost_2`
+  in a review file, then run `review-pairs --file <review.jsonl>`. The last four fields are
+  required for a pass. The review is stored in shared `data/researchers/item_reviews.jsonl`.
+  An unreviewed item stays hidden. This step makes no model calls. The old Sonnet and Luna
+  votes remain in `agreement.jsonl` for audit; vote balance does not decide eligibility.
 
 ## 2. Collect answers
 
@@ -99,10 +92,9 @@ python3 -m autoresearch.taste.trackp fit --method <selected> --config '<WS A con
 python3 -m autoresearch.taste.usermodel_store push --researcher <slug>
 ```
 
-* No post-answer filter: lopsided items were dropped or rewritten by `gate` before the person
-  ever saw them. `e2` and `fit` still skip answers to pairs that fail the gate (an answer given
-  before an item was judged, or a judge that got stricter), and refuse an answered pair that was
-  never judged. Labels to logged decisions are not gated.
+* `e2` and `fit` skip answers to rejected or superseded seed items and refuse an answered
+  pair that was never reviewed. The old answer stays in the raw log; it is never transferred
+  to revised wording. Labels to logged decisions do not use this item review.
 * `e2` writes `results/e2/P_<slug>.json` and refuses to overwrite it. Report the
   accuracies next to the `noise_ceiling` in the same file.
 * `fit` writes `usermodel.json` for the R1-P arm and `history.jsonl` for R1-P-prompt.
@@ -115,5 +107,6 @@ python3 -m autoresearch.taste.usermodel_store push --researcher <slug>
 
 `seed_pairs.jsonl`, `seed_choices.jsonl`, `labels.jsonl`, `recheck.jsonl`, `usermodel.json`,
 `history.jsonl`, `CONSENT.md`. All are append-only except the two that `fit` rewrites. The
-shared `data/researchers/agreement.jsonl` holds the item gate's votes, not per person.
+shared `data/researchers/item_reviews.jsonl` holds review decisions across people.
+`agreement.jsonl` holds historical model votes only.
 Commit the answer files after each session; stage them by name.

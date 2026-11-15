@@ -1,17 +1,10 @@
-"""Item gate for the personal-track questionnaire (Ethan, 2026-11-14). Before a trade-off pair is
-shown to anyone, a blind judge (no history about any person) is asked which option is the better
-research decision in both option orders. The pair is lopsided, and never shown, when
-more than 80% of valid votes go to either option: whoever answers it, it tests
-generic research sense, not taste. `trackp gate` rewrites a lopsided pair's options, keeping
-their poles, and judges the rewrite. Nobody re-checks a pair by hand.
+"""Personal-track item reviews and the archived blind-model vote gate.
 
-Votes, not the model's stated probability: stated confidence is poorly calibrated, and a vote
-share is a count anyone can check. A separate position check rejects judges that mostly pick
-the same display position regardless of the option placed there.
-
-The judge model and vote count are recorded per item in <root>/agreement.jsonl, keyed by
-the question and the two pole texts (not the a/b order), so an item is judged once for every
-person who gets it, and a new threshold needs no new calls."""
+An item may be shown only after a reviewer records why both options are defensible under the
+same constraint. Model vote parity is not an eligibility test: a strong preference may reflect
+a real preference, and a balanced vote share may come from display-position bias. The old
+votes remain in agreement.jsonl for audit and for experiments that use the voting functions.
+"""
 import concurrent.futures
 import datetime
 import json
@@ -23,9 +16,9 @@ from . import tradeoffs
 from .usermodel import digest
 
 AGREEMENT = "agreement.jsonl"
+REVIEWS = "item_reviews.jsonl"
 THRESHOLD = 0.8
 VOTES_PER_ORDER = 5
-JUDGE_MODEL = "claude-haiku-5-5"
 WORKERS = 4
 PROMPT = ("A researcher had to make a decision. Which of these two options is the better research "
           "decision?\n\nContext: {context}\n\nOption 1: {first}\n\nOption 2: {second}\n\n"
@@ -48,6 +41,44 @@ def rows(root: str) -> Dict[str, dict]:
         return {}
     with open(path) as f:
         return {r["key"]: r for r in map(json.loads, filter(str.strip, f))}
+
+
+def review_rows(root: str) -> Dict[str, dict]:
+    path = os.path.join(root, REVIEWS)
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        return {r["key"]: r for r in map(json.loads, filter(str.strip, f))}
+
+
+def record_reviews(root: str, pairs: List[dict], decisions: List[dict]) -> int:
+    """Append validated reviews; an existing question cannot silently change its decision."""
+    by_id = {p["pair_id"]: p for p in pairs}
+    seen = set(review_rows(root))
+    prepared = []
+    for item in decisions:
+        pair = by_id.get(item.get("pair_id"))
+        if pair is None:
+            raise ValueError(f"unknown pair_id: {item.get('pair_id')}")
+        decision = item.get("decision")
+        if decision not in ("pass", "reject", "superseded"):
+            raise ValueError("decision must be pass, reject or superseded")
+        fields = ["reviewer", "reason"]
+        if decision == "pass":
+            fields += ["benefit_1", "cost_1", "benefit_2", "cost_2"]
+        for field in fields:
+            if not isinstance(item.get(field), str) or not item[field].strip():
+                raise ValueError(f"review for {pair['pair_id']} needs {field}")
+        k = key(pair)
+        if k in seen:
+            raise ValueError(f"item {k} already has a review")
+        seen.add(k)
+        prepared.append({**item, "key": k,
+                         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")})
+    if prepared:
+        with _LOCK, open(os.path.join(root, REVIEWS), "a") as f:
+            f.writelines(json.dumps(row) + "\n" for row in prepared)
+    return len(prepared)
 
 
 def _vote(llm, context: str, first: str, second: str) -> Optional[int]:
@@ -119,7 +150,7 @@ def judge(root: str, pairs: List[dict], llm, workers: int = WORKERS,
     return {key(p): have[key(p)] for p in pairs}
 
 
-def passes(root: str, pair: dict, threshold: float = THRESHOLD) -> Optional[bool]:
-    """True when the pair may be shown, False when lopsided or position-biased."""
-    row = rows(root).get(key(pair))
-    return None if row is None else not (lopsided(row, threshold) or position_biased(row, threshold))
+def passes(root: str, pair: dict) -> Optional[bool]:
+    """True when reviewed as a useful trade-off, False when rejected or superseded."""
+    row = review_rows(root).get(key(pair))
+    return None if row is None else row["decision"] == "pass"

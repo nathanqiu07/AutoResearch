@@ -116,17 +116,11 @@ class LLMScenarioTest(unittest.TestCase):
 
 
 class RewriteTest(unittest.TestCase):
-    """`trackp gate` rewrites a lopsided pair; the rewrite keeps each pole in its a/b slot."""
+    """A reviewed revision keeps each pole in its a/b slot."""
     def setUp(self):
         self.bank = os.path.join(tempfile.mkdtemp(), "bank.jsonl")
         with open(tradeoffs.BANK_PATH) as src, open(self.bank, "w") as dst:
             dst.write(src.read())
-
-    def test_rewrite_returns_pole_texts_and_rejects_an_unusable_reply(self):
-        pair = tradeoffs.stance_pairs(BANK[:1], seed=1)[0]
-        good = json.dumps({"option_1": "New one.", "option_2": "New two."})
-        self.assertEqual(tradeoffs.rewrite(pair, 10, 10, StubLLM([good])), ("New one.", "New two."))
-        self.assertIsNone(tradeoffs.rewrite(pair, 0, 10, StubLLM(["prose only"])))
 
     def test_a_rewritten_bank_pair_is_the_pair_a_new_person_gets_from_the_updated_bank(self):
         for form, pairs in (("stance", tradeoffs.stance_pairs(BANK, seed=3)),

@@ -23,24 +23,15 @@ def _personal(root, name="Ada Example"):
 
 
 
-class BalancedJudge(LLM):
-    def __init__(self):
-        super().__init__()
-        self.seen = {}
-
-    def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
-        first = prompt.split("Option 1: ", 1)[1].split("\n", 1)[0]
-        second = prompt.split("Option 2: ", 1)[1].split("\n", 1)[0]
-        i = self.seen.get(prompt, 0)
-        self.seen[prompt] = i + 1
-        return json.dumps({"choice": 1 if i < (4 if first < second else 2) else 2})
-
-
 def gate_default_suite(root):
-    """Item-gate votes that pass without favoring either display position."""
+    """Review the default questionnaire before the Studio serves its questions."""
     from autoresearch.research.measure import SCENARIOS
     pairs = tradeoffs.build_seed_pairs(tradeoffs.load_bank(), [SCENARIOS[n] for n in sorted(SCENARIOS)], 0)
-    agreement.judge(root, pairs, BalancedJudge(), workers=1)
+    agreement.record_reviews(root, pairs, [
+        {"pair_id": p["pair_id"], "decision": "pass", "reviewer": "test reviewer",
+         "reason": "Both options have a benefit and a cost",
+         "benefit_1": "One use", "cost_1": "One limit",
+         "benefit_2": "Another use", "cost_2": "Another limit"} for p in pairs])
 
 class StoreTest(unittest.TestCase):
     def setUp(self):

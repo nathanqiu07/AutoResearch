@@ -10,12 +10,10 @@ Everything lives in data/researchers/<slug>/:
   history.jsonl        the choices that model was fitted on, for the prompt arm (R1-P-prompt)
   CONSENT.md           who the person is and what they agreed to
 
-The item gate (agreement.py) runs before anyone answers: a seed pair is shown only after `gate`
-has recorded a blind judge's votes in both option orders (in the shared
-<root>/agreement.jsonl) and neither option got more than 80% of them. Optional rewrites keep
-each pole and are judged again; a bank pair's passing
-rewrite also goes back into the bank. Answers to a pair that fails the gate stay on disk but
-leave every split.
+The item gate (agreement.py) runs before anyone answers: a reviewer records a benefit and cost
+for each option in the shared <root>/item_reviews.jsonl. Items without a passing review stay
+hidden. Old blind-model votes in <root>/agreement.jsonl are audit data, not an eligibility rule.
+Answers to superseded or rejected pairs stay on disk but leave every split.
 
 Hold-out (fixed by hashing, so it never moves as answers arrive): 20% of seed
 pairs, plus every label from a run on or after --label-cutoff. The rest is
@@ -28,7 +26,7 @@ them `pending` items in chat and saves each reply with `record` (docs/trackp-run
     python3 -m autoresearch.taste.trackp start [--name "<full name>"]   # set up, consent, answer: one sitting
     python3 -m autoresearch.taste.trackp init --researcher <slug> --name "<full name>"
     python3 -m autoresearch.taste.trackp seed-pairs [--llm-scenarios K --llm anthropic]
-    python3 -m autoresearch.taste.trackp gate --backend ...   # paid, before pairs are shown
+    python3 -m autoresearch.taste.trackp review-pairs --file reviews.jsonl
     python3 -m autoresearch.taste.trackp status
     python3 -m autoresearch.taste.trackp answer | label | recheck        # interactive
     python3 -m autoresearch.taste.trackp pending [--kind seed|label|recheck] [--limit N]   # JSON
@@ -41,14 +39,12 @@ Labels read runs/*/decisions.jsonl unless --decisions names files.
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import datetime
 import glob
 import json
 import os
 import random
 import re
-import threading
 from dataclasses import asdict
 from typing import Callable, Dict, List, Optional
 
@@ -369,53 +365,15 @@ def split(root: str, slug: str, label_cutoff: Optional[str] = None, test_frac: f
 
 def filtered_split(root: str, slug: str, label_cutoff: Optional[str] = None) -> Dict[str, List[Choice]]:
     """split() without answers to seed pairs that fail the item gate. Refuses if an answered
-    pair was never judged, so no split is silently left ungated."""
+    pair was never reviewed, so no split is silently left unreviewed."""
     pairs = {p["pair_id"]: p for p in _read(os.path.join(root, slug, SEED_PAIRS))}
     parts = split(root, slug, label_cutoff)
     ok = {c.example_id: agreement.passes(root, pairs[c.example_id])
           for part in parts.values() for c in part if c.source == "seed"}
     missing = [k for k, v in ok.items() if v is None]
     if missing:
-        raise ValueError(f"{len(missing)} answered pair(s) were never judged; run 'gate' first")
+        raise ValueError(f"{len(missing)} answered pair(s) were never reviewed; run 'review-pairs' first")
     return {k: [c for c in v if c.source != "seed" or ok[c.example_id]] for k, v in parts.items()}
-
-
-def gate(root: str, slug: str, llm, rounds: int = 3, bank_path: str = tradeoffs.BANK_PATH,
-         workers: int = agreement.WORKERS, votes_per_order: int = agreement.VOTES_PER_ORDER,
-         rejudge_position_bias: bool = False) -> dict:
-    """Judge every seed pair, then rewrite each lopsided pair that has no passing rewrite yet, up
-    to `rounds` times, judging each version. The passing version is appended to the person's
-    pairs (and, for a bank pair, written back to the bank); earlier versions stay, never shown."""
-    pairs = _read(os.path.join(root, slug, SEED_PAIRS))
-    verdicts = agreement.judge(root, pairs, llm, workers, votes_per_order, rejudge_position_bias)
-    fixed = {p.get("parent") for p in pairs}
-    todo = [p for p in pairs if agreement.lopsided(verdicts[agreement.key(p)]) and p["pair_id"] not in fixed
-            and not p.get("parent")]
-
-    def fix(p):
-        cur = p
-        for _ in range(rounds):
-            row = agreement.rows(root)[agreement.key(cur)]
-            valid = [v for order in row["votes"] for v in order if v is not None]
-            texts = tradeoffs.rewrite(cur, sum(valid), len(valid), llm)
-            if texts is None:
-                continue
-            cur = tradeoffs.with_options(cur, *texts, parent=p["pair_id"])
-            agreement.judge(root, [cur], llm, 1, votes_per_order)
-            if agreement.passes(root, cur):
-                return cur, texts
-        return None
-
-    with concurrent.futures.ThreadPoolExecutor(workers) as pool:
-        results = list(pool.map(fix, todo))
-    for p, res in zip(todo, results):
-        if res and p["origin"] == "bank":
-            tradeoffs.update_bank(p, *res[1], path=bank_path)
-    write_seed_pairs(root, slug, [res[0] for res in results if res])
-    return {"judged": len(pairs), "lopsided": len(todo),
-            "position_biased": sum(agreement.position_biased(verdicts[agreement.key(p)]) for p in pairs),
-            "rewritten": sum(bool(r) for r in results),
-            "still_lopsided": [p["pair_id"] for p, r in zip(todo, results) if not r]}
 
 
 def next_steps(root: str, slug: str, decision_paths: List[str] = ()) -> List[str]:
@@ -432,7 +390,7 @@ def next_steps(root: str, slug: str, decision_paths: List[str] = ()) -> List[str
         steps.append("seed-pairs")
     unjudged = sum(agreement.passes(root, p) is None for p in _read(os.path.join(d, SEED_PAIRS)))
     if unjudged:
-        steps.append(f"{unjudged} pair(s) need 'gate' before they are shown (paid, ask first)")
+        steps.append(f"{unjudged} pair(s) need 'review-pairs' before they are shown")
     for kind in ("seed", "label", "recheck"):
         n = len(pending_items(root, slug, (kind,), decision_paths, warn=lambda _: None))
         if n:
@@ -459,6 +417,7 @@ def status(root: str, slug: str, label_cutoff: Optional[str] = None, decision_pa
     parts = split(root, slug, label_cutoff)
     passing = {p["pair_id"] for p in _read(os.path.join(d, SEED_PAIRS)) if agreement.passes(root, p)}
     return {"next": next_steps(root, slug, decision_paths), "researcher": slug, "seed_pairs": len(_read(os.path.join(d, SEED_PAIRS))),
+            "active_seed_pairs": len(passing),
             "seed_choices": len(_read(os.path.join(d, SEED_CHOICES))),
             "labels": len(labels), "labels_per_point": {p: sum(r["point"] == p for r in labels)
                                                         for p in sorted({r["point"] for r in labels})},
@@ -552,22 +511,6 @@ def _llm(backend: str, model: str, max_calls: int):
     return get_llm(backend, model, Budget(max_calls=max_calls))
 
 
-class CallCappedLLM:
-    """Count attempts before dispatch, including retries and concurrent requests."""
-
-    def __init__(self, inner, max_calls: int):
-        self.inner, self.max_calls, self.attempts = inner, max_calls, 0
-        self.label, self.name, self.model, self.budget = inner.label, inner.name, getattr(inner, "model", ""), inner.budget
-        self._lock = threading.Lock()
-
-    def complete(self, *args, **kwargs):
-        with self._lock:
-            if self.attempts >= self.max_calls:
-                raise RuntimeError(f"gate call cap reached: {self.max_calls}")
-            self.attempts += 1
-        return self.inner.complete(*args, **kwargs)
-
-
 def main(argv=None):
     p = argparse.ArgumentParser(description="Personal track: a team member's research choices (PLAN 6.3, 12.2)")
     p.add_argument("--root", default=DEFAULT_ROOT)
@@ -594,7 +537,7 @@ def main(argv=None):
     s.add_argument("--scenario", default="metric_inflation", help="base scenario for --benchmark-items")
     s.add_argument("--max-items", type=int, default=10)
     s.add_argument("--llm-scenarios", type=int, default=0,
-                   help="also ask an LLM for K scenario pairs per item (paid unless offline; shown only after 'gate')")
+                   help="also ask an LLM for K scenario pairs per item (paid unless offline; shown only after review-pairs)")
     s.add_argument("--llm", default="offline")
     s.add_argument("--model", default="claude-sonnet-5-5")
     s.add_argument("--max-calls", type=int, default=50)
@@ -609,15 +552,8 @@ def main(argv=None):
     rc.add_argument("--id", required=True)
     rc.add_argument("--choice", type=int, required=True, help="option number as shown, from 1")
     rc.add_argument("--reason", default="")
-    g = cmd("gate", "a blind judge votes in both orders on each seed pair; rewrite the ones where more than 80%% "
-                    "go to either option (paid)")
-    g.add_argument("--backend", required=True, help="a real backend (paid, ask first)")
-    g.add_argument("--model", default=agreement.JUDGE_MODEL, help="judge and rewriter")
-    g.add_argument("--votes-per-order", type=int, default=3, help="judge samples in each option order")
-    g.add_argument("--rejudge-position-bias", action="store_true",
-                   help="with a different model, rejudge cached rows that mostly picked one display position")
-    g.add_argument("--rounds", type=int, default=0, help="automatic rewrites per lopsided pair")
-    g.add_argument("--max-calls", type=int, default=200, help="hard limit on attempted model calls, including retries")
+    g = cmd("review-pairs", "record each option's benefit and cost without model calls")
+    g.add_argument("--file", required=True, help="JSONL with pair_id, decision, reviewer, reason and each option's case")
     st = with_decisions(cmd("status", "what to run next, counts, split sizes and noise ceiling"))
     st.add_argument("--label-cutoff", help="labels from runs on or after this date are held out")
     e = cmd("e2", "fit methods on history/val and score them on the held-out choices")
@@ -660,14 +596,11 @@ def main(argv=None):
             pairs += tradeoffs.llm_scenario_pairs(bank, items, _llm(args.llm, args.model, args.max_calls), args.llm_scenarios, args.seed)
         path = write_seed_pairs(args.root, slug, pairs)
         print(f"{len(_read(path))} pairs in {path}")
-    elif args.command == "gate":
-        from .track_eval import JsonReply
-        if args.votes_per_order < 1 or args.rounds < 0 or args.max_calls < 1:
-            p.error("gate requires positive --votes-per-order and --max-calls, and nonnegative --rounds")
-        llm = JsonReply(CallCappedLLM(_llm(args.backend, args.model, args.max_calls), args.max_calls))
-        print(json.dumps(gate(args.root, slug, llm, args.rounds,
-                              votes_per_order=args.votes_per_order,
-                              rejudge_position_bias=args.rejudge_position_bias), indent=2))
+    elif args.command == "review-pairs":
+        pairs = _read(os.path.join(args.root, slug, SEED_PAIRS))
+        with open(args.file) as f:
+            decisions = [json.loads(line) for line in f if line.strip()]
+        print(json.dumps({"recorded": agreement.record_reviews(args.root, pairs, decisions)}))
     elif args.command in ("answer", "label", "recheck"):
         kind = {"answer": "seed", "label": "label", "recheck": "recheck"}[args.command]
         print(f"recorded {ask_items(args.root, slug, pending((kind,)), limit=args.limit)} answers")
