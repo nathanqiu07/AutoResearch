@@ -83,7 +83,7 @@ def audit_artifact(path, source_root):
     from autoresearch.llm import Budget
     from autoresearch.taste.usermodel import load_model
     from autoresearch.taste.profile import FEATURES
-    from autoresearch.research.advisor import TasteAdvisor
+    from autoresearch.research.advisor import TasteAdvisor, load_user_model
     artifact_bytes = Path(path).read_bytes()
     body = parse_json(artifact_bytes)
     for name, module in list(sys.modules.items()):
@@ -128,6 +128,9 @@ def audit_artifact(path, source_root):
     except Exception as exc:
         prediction_error = type(exc).__name__ + ': ' + str(exc)
     guidance = TasteAdvisor(model).principles()
+    direct_calls = list(calls)
+    team_calls = []
+    guard_checks, guard_errors = {}, {}
     with tempfile.TemporaryDirectory(prefix='profile-audit-') as temp:
         saved = Path(temp) / 'roundtrip.json'
         model.save(saved)
@@ -136,8 +139,38 @@ def audit_artifact(path, source_root):
         serialized = read_json(saved)
         roundtrip = {field: body.get(field) == serialized.get(field) for field in stable_fields}
         roundtrip['loaded_artifacts'] = original == asdict(reloaded.artifacts())
+        canonical = Path(temp) / 'usermodel.json'
+        canonical.write_bytes(artifact_bytes)
+        team_model, _ = load_user_model(temp, None, llm=transport)
+        team_adviser = TasteAdvisor(team_model)
+        team_advice = team_adviser.consult('Audit fixture: choose between two research options.',
+                                           ['Audit option A', 'Audit option B'])
+        team_calls = calls[len(direct_calls):]
+        team_loader = {
+            'method': team_model.method_id,
+            'artifacts_preserved': original == asdict(team_model.artifacts()),
+            'conditioning_matches_direct': team_calls == direct_calls,
+            'adviser_errors': list(team_adviser.errors),
+            'fixture_advice': asdict(team_advice),
+            'adviser_principles': team_adviser.principles(),
+            'fixture_only': True,
+        }
+        before_guards = len(calls)
+        for field in ('label', 'endpoint', 'class'):
+            variant_name = identity['class'] + ('_AuditMismatch' if field == 'class' else '')
+            variant = type(variant_name, (Recorder,), {})()
+            if field == 'label': variant.label = str(identity['label']) + '_AuditMismatch'
+            if field == 'endpoint': variant.base_url = str(identity.get('endpoint', '')) + '/audit-mismatch'
+            try:
+                load_user_model(temp, None, llm=variant)
+            except ValueError as exc:
+                guard_checks[field] = True
+                guard_errors[field] = str(exc)
+            else:
+                guard_checks[field] = False
+        guard_transport_calls = len(calls) - before_guards
     requests = []
-    for call in calls:
+    for call in direct_calls:
         payload = json.loads(call['prompt'].split('INPUT_JSON:\n', 1)[1])
         requests.append({**call, 'payload': payload,
                          'request_kind': 'preference' if 'options' in payload else ('option_features' if 'option' in payload else 'unsupported'),
@@ -162,7 +195,10 @@ def audit_artifact(path, source_root):
             'prediction_channels': prediction_channels,
             'adviser_principles': guidance,
             'adviser_guidance_is_saved_principles': guidance == original.get('principles', []),
-            'roundtrip': roundtrip,
+            'roundtrip': roundtrip, 'team_loader': team_loader,
+            'team_prediction_requests': team_calls,
+            'backend_guard_checks': guard_checks, 'backend_guard_errors': guard_errors,
+            'backend_guard_transport_calls': guard_transport_calls,
             'limitations': ['Synthetic reply only allows prompt construction to complete; no accuracy or confidence evidence.',
                             'Proposer guidance and choice prediction are distinct interventions.',
                             'No Petri runner execution or live backend verification.']}
@@ -209,13 +245,20 @@ def main():
     report['all_roundtrips_preserved'] = all('roundtrip' in row and all(row['roundtrip'].values())
                                             for row in report['artifacts'])
     report['all_predictions_completed'] = all('prediction_error' in row and row['prediction_error'] is None for row in report['artifacts'])
+    report['all_team_handoffs_preserved'] = all(row.get('team_loader', {}).get('artifacts_preserved', False)
+        and row.get('team_loader', {}).get('conditioning_matches_direct', False)
+        and not row.get('team_loader', {}).get('adviser_errors', []) for row in report['artifacts'])
+    report['all_backend_guards_enforced'] = all(len(row.get('backend_guard_checks', {})) == 3
+        and all(row['backend_guard_checks'].values()) and row.get('backend_guard_transport_calls') == 0
+        for row in report['artifacts'])
     report['all_inputs_unchanged'] = report['source_unchanged_during_audit'] and all(row.get('artifact_unchanged', False) for row in report['artifacts'])
     write_report(args.out, report)
     print(json.dumps({'report': str(args.out), 'artifacts': len(report['artifacts']),
                       'source_unchanged': report['source_unchanged_during_audit'],
                       'all_roundtrips_preserved': report['all_roundtrips_preserved']}))
     return 0 if (report['all_inputs_unchanged'] and report['all_roundtrips_preserved']
-                 and report['all_predictions_completed']) else 1
+                 and report['all_predictions_completed'] and report['all_team_handoffs_preserved']
+                 and report['all_backend_guards_enforced']) else 1
 
 
 if __name__ == '__main__':

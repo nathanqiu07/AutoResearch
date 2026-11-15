@@ -58,3 +58,35 @@
   the actual loader. It verifies serialization and constructed conditioning,
   not live backend compatibility or model outputs.
 - Task 4: package and push the first verified evidence. Task 5 remains ongoing.
+
+## Directory-loader follow-up and overnight contract
+
+- First package and all 54 checksum-covered files are committed/pushed at
+  `0ebcf7b19bacca64c1bd22a2c4383f39edf889d8`. The recurring 30-minute heartbeat
+  was verified active; it resumes this same chat and respects user pause/stop.
+- Extended the profile audit through the actual canonical directory loader and
+  adviser. Preserved original input bytes, compared exact request sequences, and
+  tested label/endpoint/class mismatch rejection before any transport calls.
+- Package 002 preserves an expected strict-roundtrip failure: manually omitted
+  M1 config default becomes `k: "all"`. Package 003 uses canonical serialization;
+  nine synthetic fixtures in two source versions pass, including 54 identity
+  guard checks. Synthetic M7 calibration tests state handling only.
+- Independent review observed 11 tests pass and confirmed the checker detects
+  altered request conditioning and bypassed backend guards. No blocking finding.
+- Full suite initially hit an existing localhost socket PermissionError in the
+  sandbox (675 tests executed, one setup error, two skips). The same code with
+  local socket access passed all 677 tests with two skips. Both logs retained.
+- Package 004 records committed baseline provenance, not awareness conclusions.
+  Complete hashes pass; intended configuration is reconstructable, but the
+  execution-time dirty tree and full dependency/runtime record are incomplete.
+- Package 005 reproduces the legacy raw-history source-boundary issue using
+  synthetic files only. The coordinator has the conditional finding and should
+  enforce approved-source views before raw assembly or retrieval indexing.
+- New infrastructure CONTRACT_READY received at `d66051c` (implementation
+  `bb3a6f5`), fixture SHA256
+  `995725bb52d51a89a474e8f5cd0e9a3a3a7b1cae3c4bab8ca827164a37f4656a`.
+  An isolated source archive was verified and two independent offline audits
+  started: source/hash/pin enforcement and actual consumer content/status behavior.
+- Ownership remains independent integration auditing. The other chats own Petri
+  execution/review and overnight search coordination. No model/settings changes,
+  real inference, final-test access, or production runtime edits by this audit.

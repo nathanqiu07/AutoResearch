@@ -89,6 +89,11 @@ class ProfileAuditIntegrationTests(unittest.TestCase):
             self.assertEqual(row['live_backend_compatibility'], 'not_tested')
             self.assertFalse(row['prompt_version_matches'])
             self.assertNotEqual(row['runtime_prompt_version'], row['saved_prompt_version'])
+            self.assertTrue(row['team_loader']['artifacts_preserved'])
+            self.assertTrue(row['team_loader']['conditioning_matches_direct'])
+            self.assertEqual(row['team_loader']['method'], 'm3')
+            self.assertTrue(all(row['backend_guard_checks'].values()))
+            self.assertEqual(set(row['backend_guard_checks']), {'label', 'endpoint', 'class'})
 
 class ProfileAuditBoundaryTests(unittest.TestCase):
     def run_fixture(self, directory, source=SOURCE_ROOT, learned=False, weights=None):

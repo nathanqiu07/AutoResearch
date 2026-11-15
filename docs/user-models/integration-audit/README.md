@@ -100,14 +100,75 @@ compatibility. Synthetic uniform probabilities and zero feature values merely
 let the consuming code complete; they are never reported as accuracy evidence.
 M4's learned weights operate locally after two recorded feature requests.
 
+The inspector also copies the original bytes to the team loader's canonical
+`usermodel.json`, calls `load_user_model` and `TasteAdvisor.consult`, and compares
+the resulting request sequence with direct prediction. It tests rejection of
+three backend identity mismatches (label, endpoint, class), retaining rejection
+messages and checking that no transport calls occur during those guards.
+
 The source root must contain the required modules; imported package origins are
 checked. Source files and every input artifact are hashed before/after the batch.
 The report fails if prediction or roundtrip fails or an input changes. Version
 mismatches are reported without treating them as universally incompatible.
+It also fails if the team handoff changes artifacts or requests, the adviser
+records an error, or a backend identity guard fails. These checks cover the
+canonical saved-model path, not every legacy directory fallback.
 
 Packet allowances match exact dot paths. Arrays and added/removed objects are
 compared whole; missing is distinct from null. Every field is considered.
 Exit zero means the report was written, even if unexplained changes remain.
+
+## Second pass: directory handoff and source eligibility
+
+[20261115-003](../../../results/integration-audit/20261115-003/) retains nine
+synthetic fixtures: M0–M7 and an additional M7 with artificial calibration state.
+Both the main-derived source at `0ebcf7b` and draft at `9616fe8` preserve all
+artifacts and exact direct/team request sequences. All 54 backend identity
+mismatch checks reject before a transport call. The synthetic replies do not
+establish live compatibility, prediction quality, or calibrated reliability.
+
+The fixtures deliberately populate personal fields across methods to expose
+which channels consumers use. They are not fitted experimental profiles, and
+the seeded M0 is not a valid no-profile control. Normal M0 fitting clears its
+artifacts; a stale or mislabeled M0 artifact with principles can nevertheless
+export them through the generic adviser. Future no-profile controls should
+validate empty emitted conditioning at every consumer boundary.
+
+[20261115-002](../../../results/integration-audit/20261115-002/) preserves the
+preceding failed check. Its handcrafted M1 omitted the default `k: "all"` config;
+the real constructor/serializer adds it, so exact config roundtrip failed in
+both sources. This is fixture normalization, not evidence that a normally saved
+M1 loses state. The canonical fixtures in 003 retain that default.
+
+[20261115-005](../../../results/integration-audit/20261115-005/) reproduces a
+conditional source-boundary issue using synthetic documents only: given a
+researcher directory containing approved and withheld corpus text, the legacy
+`history_text` helper and actual proposer request include both. The named
+held-out pair file is excluded; the underlying corpus documents are not filtered
+by a cutoff or eligibility manifest. An approved-only directory excludes the
+withheld sentinel. The 12 passing reproduction assertions confirm this behavior,
+including the failed boundary; they are not 12 passing isolation tests.
+
+No actual campaign leakage is established. The coordinator has been told to
+filter approved sources before raw-text assembly or retrieval indexing. The
+audit awaits an immutable contract-ready commit and approved DEV fixture before
+checking the new renderer and controls.
+
+## Baseline provenance follow-up
+
+[20261115-004](../../../results/integration-audit/20261115-004/) audits committed
+baseline evidence at `40f7db0`. All 22 public files match that commit, and the
+artifact, runner and preparation manifests pass 21/21, 6/6 and 6/6 respectively.
+The nine preparation-to-execution differences are explained by the saved runner;
+the older prepared code version is intentionally retained. Six runner files
+absent at the execution commit are preserved as hashed source snapshots.
+
+The records support reconstruction of the intended configuration and a candidate
+source tree. They do not attest the full execution-time working tree, Python
+runtime or complete installed dependencies. The runner snapshots must be restored
+under `scripts/gio_petri/` before use because they derive the repo root from their
+location. This audit makes no claim about the awareness result and does not
+publish the local raw-call/transcript evidence.
 
 ## Verification and next work
 
