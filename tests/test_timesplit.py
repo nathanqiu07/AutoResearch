@@ -26,8 +26,8 @@ class RecordingLLM(LLM):
 
 MARIUS = {"name": "Marius Hobbhahn", "banned": ["hobbhahn", "marius", "apollo"], "exclude_text": ["Hobbhahn"],
           "exclude_domains": ["apolloresearch.ai"]}
-OWAIN = {"name": "Owain Evans", "banned": ["owain", "evans"], "exclude_text": ["Owain Evans"],
-         "exclude_domains": ["owainevans.github.io"]}
+OTHER = {"name": "Rosa Quint", "banned": ["rosa", "quint"], "exclude_text": ["Rosa Quint"],
+         "exclude_domains": ["rosaquint.example.org"]}
 
 
 def write_identity(root, identity):
@@ -132,6 +132,19 @@ class TimeSplitPairsTest(unittest.TestCase):
         self.assertEqual(sorted(self.chosen_text(c) for c in heldout), [f"TAKEN_LATE{k}" for k in range(8)])
         self.assertEqual({c.source for c in history + heldout}, {"timesplit"})
 
+    def test_parallel_workers_write_the_same_pairs_as_one(self):
+        serial = {(p["pair_id"], p["a_text"], p["chosen"]) for p in self.pairs_after(self.build)}
+        parallel = {(p["pair_id"], p["a_text"], p["chosen"])
+                    for p in self.pairs_after(lambda: timesplit.write_pairs(self.researcher, PairLLM(), "2024-01-01",
+                                                                            workers=4))}
+        self.assertEqual(parallel, serial)
+
+    def pairs_after(self, build):
+        build()
+        rows = timesplit._read_jsonl(os.path.join(self.root, timesplit.PAIRS))
+        os.remove(os.path.join(self.root, timesplit.PAIRS))
+        return rows
+
     def test_chosen_option_is_not_always_in_the_same_position(self):
         self.build()
         self.assertEqual({c.chosen for c in self.read_choices(timesplit.HELDOUT)}, {"a", "b"})
@@ -220,10 +233,10 @@ class TimeSplitPairsTest(unittest.TestCase):
                 self.assertIn(rule, problem)
 
     def test_banned_names_come_from_each_researchers_identity_file(self):
-        root = os.path.join(self.base, "owain_test")
-        write_identity(root, OWAIN)
-        banned = timesplit.banned_pattern(Researcher("owain_test", root))
-        pair = {"context": "Owain Evans had to choose.", "a_text": "x" * 10, "b_text": "y" * 10}
+        root = os.path.join(self.base, "other_test")
+        write_identity(root, OTHER)
+        banned = timesplit.banned_pattern(Researcher("other_test", root))
+        pair = {"context": "Rosa Quint had to choose.", "a_text": "x" * 10, "b_text": "y" * 10}
         self.assertTrue(timesplit.check_pair(pair, [], banned))
         self.assertEqual(timesplit.check_pair(dict(pair, context="Marius Hobbhahn had to choose."), [], banned), [])
 
@@ -457,8 +470,8 @@ class DistractorTest(unittest.TestCase):
 
     def setUp(self):
         self.root = tempfile.mkdtemp()
-        write_identity(self.root, OWAIN)
-        self.researcher = Researcher("owain_test", self.root)
+        write_identity(self.root, OTHER)
+        self.researcher = Researcher("other_test", self.root)
 
     def mid_decision(self, alternatives=()):
         return dict(decision("q" * 20, did="MID_WORK"), alternatives_named=list(alternatives),
@@ -486,7 +499,7 @@ class DistractorTest(unittest.TestCase):
         self.assertLess(exa.calls[0]["end_date"], self.CUTOFF)
 
     def test_contemporaneous_search_excludes_his_own_work(self):
-        exa = SearchRecorder([{"url": "https://ex.org/his", "author": "Owain Evans", "title": "his",
+        exa = SearchRecorder([{"url": "https://ex.org/his", "author": "Rosa Quint", "title": "his",
                                "publishedDate": "2024-02-01"},
                               {"url": "https://ex.org/undated", "author": "Jane Doe", "title": "undated"},
                               {"url": "https://ex.org/other", "author": "Jane Doe", "title": "other",
@@ -494,7 +507,7 @@ class DistractorTest(unittest.TestCase):
         llm = DistractorLLM()
         out = timesplit.next_distractor(self.mid_decision(), self.researcher, llm, exa, self.CUTOFF)
         self.assertEqual((exa.calls[0]["exclude_text"], exa.calls[0]["exclude_domains"]),
-                         (["Owain Evans"], ["owainevans.github.io"]))
+                         (["Rosa Quint"], ["rosaquint.example.org"]))
         self.assertEqual((out["source"], out["evidence_url"]), ("contemporaneous", "https://ex.org/other"))
         self.assertNotIn("his:", llm.prompts[-1])
         self.assertNotIn("undated:", llm.prompts[-1])

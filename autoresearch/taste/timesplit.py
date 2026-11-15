@@ -31,6 +31,7 @@ Stages, each reading only earlier stages' files, each resumable:
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import datetime
 import glob
 import json
@@ -280,19 +281,33 @@ def _check_doc(text: str, exa_decisions: List[dict], llm: LLM, chunk_chars: int,
     return kept, rejected
 
 
-def check_decisions(researcher: Researcher, llm: LLM, chunk_chars: int = 150_000, overlap: int = 2_000) -> dict:
+def _pmap(fn, items, workers: int):
+    """(item, fn(item)) as each finishes. Model calls run in `workers` threads; the caller's loop,
+    which writes the files, stays on one thread, so rows never interleave."""
+    if workers <= 1:
+        for x in items:
+            yield x, fn(x)
+        return
+    with concurrent.futures.ThreadPoolExecutor(workers) as pool:
+        futures = {pool.submit(fn, x): x for x in items}
+        for f in concurrent.futures.as_completed(futures):
+            yield futures[f], f.result()
+
+
+def check_decisions(researcher: Researcher, llm: LLM, chunk_chars: int = 150_000, overlap: int = 2_000,
+                    workers: int = 1) -> dict:
     """Claude keeps, corrects or drops each Exa decision and adds the ones Exa missed; code then
     checks every quote against the document. Writes extraction/decisions.jsonl and rejected.jsonl;
     resumable per document."""
     root = researcher.root
     done = {r["doc"] for r in _read_jsonl(os.path.join(root, CHECKED))}
     report = {"docs": 0, "skipped_existing": len(done)}
-    for row in _read_jsonl(os.path.join(root, EXA_EXTRACT)):
-        if row["doc"] in done:
-            continue
+    def check(row):
         date, text = read_doc(os.path.join(root, "corpus", row["doc"]))
-        kept, rejected = _check_doc(text, row["decisions"] if not row.get("exa_error") else [],
-                                    llm, chunk_chars, overlap)
+        return date, _check_doc(text, row["decisions"] if not row.get("exa_error") else [], llm, chunk_chars, overlap)
+
+    todo = [r for r in _read_jsonl(os.path.join(root, EXA_EXTRACT)) if r["doc"] not in done]
+    for row, (date, (kept, rejected)) in _pmap(check, todo, workers):
         with open(os.path.join(root, DECISIONS), "a") as f:
             for d, tag in kept:
                 f.write(json.dumps(dict(d, doc=row["doc"], url=row["url"], date=date.isoformat() if date else None,
@@ -369,16 +384,15 @@ def next_distractor(decision: dict, researcher: Researcher, llm: LLM, client, cu
     return None
 
 
-def find_distractors(researcher: Researcher, llm: LLM, client, cutoff: str) -> dict:
+def find_distractors(researcher: Researcher, llm: LLM, client, cutoff: str, workers: int = 1) -> dict:
     """One distractor per checked decision in extraction/distractors.jsonl; resumable."""
     path = os.path.join(researcher.root, DISTRACTORS)
     done = {r["decision_id"] for r in _read_jsonl(path)}
     report = {s: 0 for s in SOURCES}
     report.update(none=0, skipped_existing=len(done))
-    for d in _read_jsonl(os.path.join(researcher.root, DECISIONS)):
-        if d["decision_id"] in done or not d.get("date"):
-            continue
-        out = next_distractor(d, researcher, llm, client, cutoff)
+    todo = [d for d in _read_jsonl(os.path.join(researcher.root, DECISIONS))
+            if d["decision_id"] not in done and d.get("date")]
+    for d, out in _pmap(lambda d: next_distractor(d, researcher, llm, client, cutoff), todo, workers):
         report[out["source"] if out else "none"] += 1
         if out:
             with open(path, "a") as f:
@@ -484,7 +498,7 @@ def _pair_row(researcher: Researcher, d: dict, alt: dict, pair: dict, cutoff: st
             "seed": seed, "prompt_versions": [CHECK_PROMPT_VERSION, PAIR_PROMPT_VERSION]}
 
 
-def write_pairs(researcher: Researcher, llm: LLM, cutoff: str, seed: int = 0) -> dict:
+def write_pairs(researcher: Researcher, llm: LLM, cutoff: str, seed: int = 0, workers: int = 1) -> dict:
     """Write pairs_timesplit.jsonl from checked decisions and their distractors, then both Choice
     files. Never overwrites: the held-out set and its review must not shift under a rerun."""
     root = researcher.root
@@ -502,11 +516,14 @@ def write_pairs(researcher: Researcher, llm: LLM, cutoff: str, seed: int = 0) ->
     partial = os.path.join(root, PAIRS + ".partial")
     done = {r["decision_id"] for r in _read_jsonl(partial)}
     failed = 0
-    for d in _read_jsonl(os.path.join(root, DECISIONS)):
-        alt = distractors.get(d["decision_id"])
-        if not alt or not d.get("date") or d["decision_id"] in done:
-            continue
-        pair, _ = render_pair(d, alt["text"], llm, _later_titles(docs, d["date"]), banned, seed)
+    todo = [d for d in _read_jsonl(os.path.join(root, DECISIONS))
+            if d["decision_id"] in distractors and d.get("date") and d["decision_id"] not in done]
+
+    def render(d):
+        return render_pair(d, distractors[d["decision_id"]]["text"], llm, _later_titles(docs, d["date"]), banned, seed)[0]
+
+    for d, pair in _pmap(render, todo, workers):
+        alt = distractors[d["decision_id"]]
         if pair is None:
             failed += 1
             continue
@@ -606,6 +623,7 @@ def main(argv=None):
             c.add_argument("--llm", default="claude-cli")
             c.add_argument("--model", default="claude-sonnet-5-5")
             c.add_argument("--max-usd", type=float, required=True, help="spend cap for this stage")
+            c.add_argument("--workers", type=int, default=8, help="model calls run in parallel")
         if name == "pairs":
             c.add_argument("--seed", type=int, default=0)
         if name == "review":
@@ -640,12 +658,12 @@ def main(argv=None):
     budget = Budget(max_cost_usd=args.max_usd, max_seconds=12 * 3600)
     llm = get_llm(args.llm, args.model, budget)
     if args.command == "check":
-        report = check_decisions(researcher, llm)
+        report = check_decisions(researcher, llm, workers=args.workers)
     elif args.command == "distract":
-        report = find_distractors(researcher, llm, client, args.cutoff)
+        report = find_distractors(researcher, llm, client, args.cutoff, workers=args.workers)
         report["exa_cost"] = round(client.cost, 4)
     else:
-        report = write_pairs(researcher, llm, args.cutoff, seed=args.seed)
+        report = write_pairs(researcher, llm, args.cutoff, seed=args.seed, workers=args.workers)
     print(json.dumps(dict(report, llm_cost=round(budget.cost_usd, 4))))
 
 
