@@ -77,3 +77,9 @@ are preserved. The rerun uses API strict JSON schemas for all four methods and a
 new backend identity/cache namespace. Earlier attempt spending and reservations
 are passed with `--prior-attempt-budget PATH/TO/final-budget.json` and included in
 the new run ledger. No prediction was salvaged by choosing a preferred JSON object.
+
+The strict-schema attempt also returned malformed envelopes. The final parser
+recovers complete objects only if all answer-bearing objects agree exactly
+(excluding rationale wording); conflicting answers still fail. The raw envelopes
+are retained in response-envelopes.jsonl. Valid cache entries from the strict-schema
+attempt are reused; its full ledger is charged before the new attempt.

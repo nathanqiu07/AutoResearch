@@ -82,6 +82,7 @@ def run(root,live,prior_attempts=()):
     llm=PaperOpenAILLM('gpt-6-luna',budget=budget,max_usd=cap,timeout=120) if live else FixtureLLM(budget=budget)
     factories={m:(lambda user,m=m:create_method(m,llm,seed=0,max_calls=12000,
                cache_dir=root/('cache-live' if live else 'cache-offline'),**CONFIG)) for m in ('m0','m1','m2','m3')}
+    if live:llm.recovery_path=root/'response-envelopes.jsonl'
     stop=threading.Event()
     def progress():
         while not stop.wait(30):

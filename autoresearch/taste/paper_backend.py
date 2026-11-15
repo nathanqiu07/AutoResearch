@@ -10,6 +10,41 @@ class PaperOpenAILLM(OpenAILLM):
     name='openai-responses-json'
     embedding_model='text-embedding-3-small'
 
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.recoveries=[]
+        self.recovery_path=None
+
+    def complete(self,prompt,**kwargs):
+        raw=super().complete(prompt,**kwargs)
+        try:
+            json.loads(raw)
+            return raw
+        except json.JSONDecodeError:
+            pass
+        # Recover envelopes only when every decoded top-level answer agrees.
+        # We never choose between competing probability distributions/votes.
+        decoder=json.JSONDecoder();objects=[];cursor=0
+        expected=set(self.response_format(prompt)['schema']['properties'])
+        while cursor<len(raw):
+            start=raw.find('{',cursor)
+            if start<0:break
+            try:
+                obj,length=decoder.raw_decode(raw[start:]);cursor=start+length
+                if isinstance(obj,dict) and expected<=set(obj):objects.append(obj)
+            except json.JSONDecodeError:cursor=start+1
+        comparable=lambda obj:{k:v for k,v in obj.items() if k!='rationale'}
+        safe=bool(objects) and all(comparable(obj)==comparable(objects[0]) for obj in objects)
+        record={'status':'recovered_consensus' if safe else 'rejected_conflicting_or_missing',
+                'prompt_sha256':__import__('hashlib').sha256(prompt.encode()).hexdigest(),
+                'raw_response':raw,'objects':objects}
+        with self._cost_lock:
+            self.recoveries.append(record)
+            if self.recovery_path:
+                with open(self.recovery_path,'a') as stream:stream.write(json.dumps(record)+'\n')
+        if not safe:raise ValueError('conflicting or missing JSON answers; raw response retained')
+        return json.dumps(objects[0])
+
     def response_format(self,prompt):
         payload=json.loads(prompt.split('INPUT_JSON:\n',1)[1])
         string={'type':'string'}
