@@ -309,6 +309,8 @@ def cmd_research(args):
                        decisions_dir=args.decisions_dir, market=market, contrarian=contrarian,
                        screen_measurer=screen)
     rep = r.run()
+    rep["setting"] = args.setting
+    rep["tools"] = args.tools if args.setting == "agentic" else None   # E3b: real (sandbox) vs simulated tools
     if slug and not prof:
         rep["taste"]["researcher"] = slug
     path = write_report(rep, args.out)
