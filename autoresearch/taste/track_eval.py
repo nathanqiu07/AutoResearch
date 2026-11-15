@@ -27,7 +27,7 @@ import os
 import random
 from typing import Callable, Dict, List, Optional, Tuple
 
-from ..llm import LLM, extract_json
+from ..llm import LLM
 from ..research.decisions import code_version
 from . import timesplit
 from .methods import create_method
@@ -52,10 +52,25 @@ def paired_correct(model, c: Choice) -> bool:
     return first and second
 
 
+def _last_object(text: str) -> Optional[dict]:
+    decoder, last, i = json.JSONDecoder(), None, text.find("{")
+    while i != -1:
+        try:
+            obj, end = decoder.raw_decode(text, i)
+        except json.JSONDecodeError:
+            i = text.find("{", i + 1)
+            continue
+        if isinstance(obj, dict):
+            last = obj
+        i = text.find("{", end)
+    return last
+
+
 class JsonReply(LLM):
     """Passes calls to `inner`; a reply that wraps its JSON object in a code fence or prose comes
-    back as the bare object, which the user models' parser (usermodel._json) requires. A reply
-    with no JSON object at all (the model argued in prose) is asked for once more."""
+    back as the bare object, which the user models' parser (usermodel._json) requires. When the
+    model corrects itself ("Correction: ..." then a second object), its last object is its answer.
+    A reply with no JSON object at all (the model argued in prose) is asked for once more."""
 
     def __init__(self, inner: LLM):
         self.inner, self.budget, self.name = inner, inner.budget, inner.name
@@ -64,8 +79,8 @@ class JsonReply(LLM):
     def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
         for attempt in range(2):
             text = self.inner.complete(prompt, system=system, max_tokens=max_tokens, temperature=temperature)
-            found = extract_json(text or "")
-            if isinstance(found, dict):
+            found = _last_object(text or "")
+            if found is not None:
                 return json.dumps(found)
             system = (system + "\n\n" if system else "") + "Reply with only the JSON object asked for, no other text."
         return text

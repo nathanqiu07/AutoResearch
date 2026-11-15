@@ -122,6 +122,16 @@ class ArmTest(unittest.TestCase):
         model = track_eval.NamedNoHistory(track_eval.JsonReply(ProseOnceLLM(taken_option)), None)
         self.assertTrue(track_eval.paired_correct(model, choice(1, "g")))
 
+    def test_self_corrected_reply_uses_the_last_json_object(self):
+        class CorrectingLLM(OptionLLM):
+            def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+                final = super().complete(prompt, system, max_tokens, temperature)
+                wrong = json.dumps({"probabilities": list(reversed(json.loads(final)["probabilities"])),
+                                    "rationale": "first try"})
+                return wrong + "\n\nCorrection: final answer:\n\n" + final
+        model = track_eval.NamedNoHistory(track_eval.JsonReply(CorrectingLLM(taken_option)), None)
+        self.assertTrue(track_eval.paired_correct(model, choice(1, "g")))
+
     def test_named_m0_mentions_the_name_and_plain_m0_does_not(self):
         llm = OptionLLM(first_option)
         track_eval.NamedNoHistory(llm, "Marius Hobbhahn").predict("ctx", ["x", "y"])
