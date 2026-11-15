@@ -6,7 +6,7 @@ for realism with no taste). Later the taste system's rewrites are compared again
 One run per seed, 12 dev seeds. Everything uses **your own** Modal and OpenAI accounts and keys.
 
 Models: target `Qwen/Qwen3-30B-A3B` on Modal (1×H100, raw reasoning); Petri auditor
-`Qwen3-235B-A22B-Instruct-2507-FP8` on Modal (4×H100); our judge and Petri's judge `openai:gpt-5`;
+`Qwen3-235B-A22B-Instruct-2507-FP8` on Modal (4×H100); our judge and Petri's judge `openai:gpt-5.1`;
 the control rewriter is the taste system's model, `openai:gpt-6-luna` (configs/models.json).
 
 Rough cost (estimate, not measured): smoke about $2; baseline about $12–17; control step (stock + control,

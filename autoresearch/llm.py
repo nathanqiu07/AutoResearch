@@ -186,9 +186,13 @@ class OpenAICompatLLM(LLM):
                  usd_per_hour: Optional[float] = None):
         super().__init__(budget)
         self.model = model
-        self.base_url = (base_url or os.environ.get("OPENAI_COMPAT_BASE_URL") or "").rstrip("/")
+        ep = openai_compat_endpoint(model) if base_url is None else {}
+        self.base_url = (base_url or ep.get("base_url") or os.environ.get("OPENAI_COMPAT_BASE_URL") or "").rstrip("/")
         if not self.base_url:
-            raise RuntimeError("OPENAI_COMPAT_BASE_URL is not set")
+            raise RuntimeError("OPENAI_COMPAT_BASE_URL is not set (or no OPENAI_COMPAT_ENDPOINTS entry matches "
+                               f"{model!r})")
+        if usd_per_hour is None and ep.get("usd_per_hour") is not None:
+            usd_per_hour = float(ep["usd_per_hour"])
         rate = usd_per_hour if usd_per_hour is not None else os.environ.get("OPENAI_COMPAT_USD_PER_HOUR")
         try:
             self.usd_per_hour = float(rate) if rate not in (None, "") else 0.0
@@ -197,7 +201,7 @@ class OpenAICompatLLM(LLM):
         if self.usd_per_hour < 0:
             raise RuntimeError("OPENAI_COMPAT_USD_PER_HOUR must be >= 0")
         self.meter = GpuMeter.for_endpoint(self.base_url)
-        self.key = os.environ.get("OPENAI_COMPAT_API_KEY", "")
+        self.key = os.environ.get(ep["key_env"], "") if ep.get("key_env") else os.environ.get("OPENAI_COMPAT_API_KEY", "")
         self.plain_thinking = os.environ.get("OPENAI_COMPAT_PLAIN_THINKING", "")
         if self.plain_thinking not in self.PLAIN_THINKING_MODES:
             raise RuntimeError(f"OPENAI_COMPAT_PLAIN_THINKING must be one of 'off', 'headroom' or unset, "
@@ -587,6 +591,31 @@ class OfflineLLM(LLM):
 
 
 BACKENDS = ("offline", "anthropic", "openai", "openai-compat", "claude-cli", "anthropic-batch")
+
+
+def openai_compat_endpoint(model: str) -> dict:
+    """Per-model endpoint for openai-compat specs, so one run can use several
+    OpenAI-compatible servers (e.g. the target and a judge on separate Modal
+    apps). OPENAI_COMPAT_ENDPOINTS is JSON mapping a model-name prefix to
+    {"base_url", optional "key_env" (name of the env var holding the key, never
+    the key itself), optional "usd_per_hour"}; the longest matching prefix wins.
+    Unset or no match: {} (OPENAI_COMPAT_BASE_URL / _API_KEY apply, as before)."""
+    raw = os.environ.get("OPENAI_COMPAT_ENDPOINTS", "").strip()
+    if not raw:
+        return {}
+    try:
+        table = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"OPENAI_COMPAT_ENDPOINTS is not valid JSON: {e}") from None
+    if not isinstance(table, dict):
+        raise RuntimeError("OPENAI_COMPAT_ENDPOINTS must be a JSON object {model_prefix: {base_url, key_env}}")
+    hits = [k for k in table if model.startswith(k)]
+    if not hits:
+        return {}
+    ep = table[max(hits, key=len)]
+    if not isinstance(ep, dict) or not ep.get("base_url"):
+        raise RuntimeError(f"OPENAI_COMPAT_ENDPOINTS[{max(hits, key=len)!r}] needs a base_url")
+    return ep
 
 
 def split_spec(model: str):

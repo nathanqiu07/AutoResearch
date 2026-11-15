@@ -5,7 +5,7 @@
 #   bash scripts/c2_pilot.sh baseline [N]  # deploy target + auditor, N dev seeds (default 12), stop
 #   bash scripts/c2_pilot.sh control [N]   # make plain-agent control rewrites, then stock vs control in one report
 # Pilot-only lineup (configs/models.json is not changed): auditor Qwen3-235B on Modal (4xH100),
-# our judge + Petri's judge openai:gpt-5. Both Modal apps are stopped on exit, even on error.
+# our judge + Petri's judge openai:gpt-5.1. Both Modal apps are stopped on exit, even on error.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 MODAL="${MODAL_BIN:-modal}"
@@ -34,14 +34,14 @@ export MODAL_BASE_URL="$T_URL" MODAL_API_KEY="$VLLM_KEY"
 stamp=$(date +%Y-%m-%d)
 case "$step" in
   smoke)
-    python3 scripts/c2_smoke_target.py --n 5 --judge openai:gpt-5 --max-cost 3 ;;
+    python3 scripts/c2_smoke_target.py --n 5 --judge openai:gpt-5.1 --max-cost 3 ;;
   baseline)
     echo "deploying auditor (Qwen3-235B-A22B-Instruct-2507-FP8, 4xH100)..."
     A_URL=$(deploy autoresearch-auditor Qwen/Qwen3-235B-A22B-Instruct-2507-FP8 H100:4 none 65536)
     export MODALAUD_BASE_URL="$A_URL" MODALAUD_API_KEY="$VLLM_KEY"
     python3 scripts/c2_e3b.py --condition stock=data/petri/seeds_v2.jsonl --split dev --limit "$n" --epochs 1 \
-      --tools simulated --judge openai:gpt-5 \
-      --petri-auditor openai-api/modalaud/Qwen/Qwen3-235B-A22B-Instruct-2507-FP8 --petri-judge openai/gpt-5 \
+      --tools simulated --judge openai:gpt-5.1 \
+      --petri-auditor openai-api/modalaud/Qwen/Qwen3-235B-A22B-Instruct-2507-FP8 --petri-judge openai/gpt-5.1 \
       --max-cost 15 --out "results/e3b/pilot_stock_qwen3-30b_dev_n${n}_${stamp}.json" ;;
   control)
     python3 scripts/c2_make_control.py --split dev --out runs/petri/control_dev.jsonl
@@ -49,8 +49,8 @@ case "$step" in
     A_URL=$(deploy autoresearch-auditor Qwen/Qwen3-235B-A22B-Instruct-2507-FP8 H100:4 none 65536)
     export MODALAUD_BASE_URL="$A_URL" MODALAUD_API_KEY="$VLLM_KEY"
     python3 scripts/c2_e3b.py --condition stock=data/petri/seeds_v2.jsonl --condition control=runs/petri/control_dev.jsonl \
-      --split dev --limit "$n" --epochs 1 --tools simulated --judge openai:gpt-5 \
-      --petri-auditor openai-api/modalaud/Qwen/Qwen3-235B-A22B-Instruct-2507-FP8 --petri-judge openai/gpt-5 \
+      --split dev --limit "$n" --epochs 1 --tools simulated --judge openai:gpt-5.1 \
+      --petri-auditor openai-api/modalaud/Qwen/Qwen3-235B-A22B-Instruct-2507-FP8 --petri-judge openai/gpt-5.1 \
       --max-cost 15 --out "results/e3b/pilot_stock_vs_control_qwen3-30b_dev_n${n}_${stamp}.json" ;;
   *) echo "usage: $0 smoke|baseline|control [N]"; exit 2 ;;
 esac

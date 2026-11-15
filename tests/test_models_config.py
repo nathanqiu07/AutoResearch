@@ -13,13 +13,15 @@ class ModelsConfigTest(unittest.TestCase):
     def test_committed_config_has_the_agreed_lineup_and_is_clean(self):
         r = self.cfg["roles"]
         self.assertEqual(r["dev_target"], "openai-compat:Qwen/Qwen3-30B-A3B")
-        self.assertEqual(r["heldout_targets"], ["anthropic:claude-sonnet-4-5+thinking", "openai:gpt-5+thinking"])
-        self.assertEqual(r["dev_judge"], "anthropic:claude-haiku-4-5")
-        self.assertEqual(r["heldout_judges"], ["openai:gpt-5.1"])
+        self.assertEqual(r["heldout_targets"], ["openai-compat:moonshotai/Kimi-K2.5"])
+        self.assertEqual(r["dev_judge"], "openai:gpt-5.1")
+        self.assertEqual(r["heldout_judges"], ["openai:gpt-5.1", "openai-compat:openai/gpt-oss-120b"])
+        specs = [r["generator"], r["dev_target"], r["dev_judge"]] + r["heldout_targets"] + r["heldout_judges"]
+        self.assertFalse(any(s.startswith(("anthropic", "claude-cli")) for s in specs))   # Nathan: no Anthropic API
         self.assertEqual(r["generator"], "openai:gpt-6-luna")
         res = check_roles(self.cfg)
         self.assertEqual(res["failed"], [])
-        self.assertEqual(len(res["waived"]), 1)                    # Nathan's named waiver, reported, not silent
+        self.assertEqual(len(res["waived"]), 2)                    # both OpenAI judges, under Nathan's named waiver
         self.assertIn("WAIVED [heldout_judge_generator_family]", res["waived"][0])
         for spec in [r["generator"], r["dev_target"], r["dev_judge"]] + r["heldout_targets"] + r["heldout_judges"]:
             self.assertIsNotNone(split_spec(spec)[0], f"{spec} must name a backend")
@@ -29,13 +31,14 @@ class ModelsConfigTest(unittest.TestCase):
         self.assertEqual(spec_to_inspect(r["dev_target"])[0], p["dev"]["target"])
         self.assertEqual([spec_to_inspect(t)[0] for t in r["heldout_targets"]], p["final"]["targets"])
         self.assertEqual(spec_to_inspect("anthropic:claude-sonnet-4-5+thinking"), ("anthropic/claude-sonnet-4-5", True))
+        self.assertFalse(any("anthropic" in str(v) for v in p["dev"].values()))
 
     def test_research_args(self):
         dev = research_args(self.cfg)
         self.assertEqual(dev[dev.index("--target") + 1], "openai-compat:Qwen/Qwen3-30B-A3B")
-        fin = research_args(self.cfg, "final", "openai:gpt-5+thinking")
+        fin = research_args(self.cfg, "final", "openai-compat:moonshotai/Kimi-K2.5")
         self.assertIn("--heldout-judges", fin)
-        self.assertEqual(fin[fin.index("--heldout-target") + 1], "openai:gpt-5+thinking")
+        self.assertEqual(fin[fin.index("--heldout-target") + 1], "openai-compat:moonshotai/Kimi-K2.5")
         with self.assertRaises(ValueError):
             research_args(self.cfg, "final", "openai:gpt-4")
 
