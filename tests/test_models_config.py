@@ -15,13 +15,14 @@ class ModelsConfigTest(unittest.TestCase):
         self.assertEqual(r["dev_target"], "openai-compat:moonshotai/Kimi-K2.5")
         self.assertEqual(r["heldout_targets"], ["openai-compat:Qwen/Qwen3-30B-A3B"])
         self.assertEqual(r["dev_judge"], "openai:gpt-5.1")
-        self.assertEqual(r["heldout_judges"], ["openai:gpt-5.1", "openai-compat:openai/gpt-oss-120b"])
+        self.assertEqual(r["heldout_judges"], ["openai-compat:openai/gpt-oss-120b"])
+        self.assertNotIn(r["dev_judge"], r["heldout_judges"])   # Nathan: held-out scoring must not reuse the dev judge
         specs = [r["generator"], r["dev_target"], r["dev_judge"]] + r["heldout_targets"] + r["heldout_judges"]
         self.assertFalse(any(s.startswith(("anthropic", "claude-cli")) for s in specs))   # Nathan: no Anthropic API
         self.assertEqual(r["generator"], "openai:gpt-6-luna")
         res = check_roles(self.cfg)
         self.assertEqual(res["failed"], [])
-        self.assertEqual(len(res["waived"]), 2)                    # both OpenAI judges, under Nathan's named waiver
+        self.assertEqual(len(res["waived"]), 1)                    # the OpenAI-family held-out judge, under Nathan's named waiver
         self.assertIn("WAIVED [heldout_judge_generator_family]", res["waived"][0])
         for spec in [r["generator"], r["dev_target"], r["dev_judge"]] + r["heldout_targets"] + r["heldout_judges"]:
             self.assertIsNotNone(split_spec(spec)[0], f"{spec} must name a backend")
