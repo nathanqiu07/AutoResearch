@@ -12,70 +12,79 @@ in the table below.
 
 ```mermaid
 flowchart TD
-  classDef planned stroke-dasharray: 6 4
-  classDef store fill:#eef6ff,stroke:#4a7ab5,color:#111
+    classDef planned stroke-dasharray: 6 4
+    classDef store fill:#eef6ff,stroke:#4a7ab5,color:#111
 
-  subgraph L1["Level 1 · Taste data (WS A, WS B). No model"]
-    PRB["PersonalRewardBench<br/>Chatbot Arena: 131 users, loaded<br/>PRISM: 720 users, not prepared yet"]
-    TP["Track P: one team member<br/>~50 seed choices + labels on D1–D6<br/>who: not decided"]:::planned
-    TS["Track S: Marius Hobbhahn<br/>papers, posts, talks found with Exa<br/>time split at a date T"]:::planned
-  end
+    subgraph L1["Level 1 · Taste data (WS A, WS B). No model"]
+        PRB["PersonalRewardBench<br/>Chatbot Arena: 131 users, loaded<br/>PRISM: 720 users, not prepared yet"]
+        TP["Track P: one team member<br/>~50 seed choices + labels on D1–D6<br/>who: not decided"]:::planned
+        TS["Track S: Marius Hobbhahn<br/>papers, posts, talks found with Exa<br/>time split at a date T"]:::planned
+    end
 
-  subgraph L2["Level 2 · User-model methods (WS A)"]
-    M["M0 no history · M1 raw history<br/>M2 SynthesizeMe persona · M3 ICAI principles<br/>M4 Bradley–Terry on 7 LLM-scored features<br/>M5 = M2 + M3 + examples · M6 = M5 pruned · M7 = M6 calibrated<br/><b>model:</b> taste backend, default codex-cli"]
-    SEL(["E1: which method best<br/>predicts held-out users?"])
-  end
+    subgraph L2["Level 2 · User-model methods (WS A)"]
+        M["M0 no history · M1 raw history<br/>M2 SynthesizeMe persona · M3 ICAI principles<br/>M4 Bradley–Terry on 7 LLM-scored features<br/>M5 = M2 + M3 + examples · M6 = M5 pruned · M7 = M6 calibrated<br/><b>model:</b> taste backend, default codex-cli"]
+        SEL(["E1: which method best<br/>predicts held-out users?"])
+    end
 
-  subgraph L3["Level 3 · One user model per track (WS B)"]
-    UMP["user model P<br/>selected method fitted on Track P"]:::planned
-    UMS["user model S<br/>selected method fitted on Track S"]:::planned
-    E2(["E2: does it beat M1 on<br/>the track's held-out choices?"])
-    UJ[/"data/researchers/SLUG/usermodel.json"/]
-    PD[("past.dev shared memory<br/>usermodel_store push / pull")]:::store
-  end
+    subgraph L3["Level 3 · One user model per track (WS B)"]
+        UMP["user model P<br/>selected method fitted on Track P"]:::planned
+        UMS["user model S<br/>selected method fitted on Track S"]:::planned
+        E2(["E2: does it beat M1 on<br/>the track's held-out choices?"])
+        UJ[/"data/researchers/SLUG/usermodel.json"/]
+        PD[("past.dev shared memory<br/>usermodel_store push / pull")]:::store
+    end
 
-  subgraph L4["Level 4 · Research loop (WS D)"]
-    ARMS["Arms: R0 (no taste) · R1-P · R1-S<br/>R1-P-prompt · R1-S-prompt (raw history in the prompt)<br/>R1-bad (contrarian taste)"]
-    EXT["external-agent arm"]:::planned
-    ADV["TasteAdvisor at decision points D1–D6<br/>follows the user model when confidence ≥ 0.6<br/><b>model:</b> the user model, run on the judge"]
-    PROP["Proposer writes and edits environments,<br/>then reads their scores (A1–A3) next iteration<br/><b>model:</b> generator, default sonnet<br/>its setting gate and the Exa scout use the judge"]
-    MEM[("memory: OUTCOME and DECISION facts<br/>local file, or past.dev")]:::store
-  end
+    subgraph L4["Level 4 · Research loop (WS D)"]
+        ARMS["Arms: R0 (no taste) · R1-P · R1-S<br/>R1-P-prompt · R1-S-prompt (raw history in the prompt)<br/>R1-bad (contrarian taste)"]
+        EXT["external-agent arm"]:::planned
+        ADV["TasteAdvisor at decision points D1–D6<br/>follows the user model when confidence ≥ 0.6<br/><b>model:</b> the user model, run on the judge"]
+        PROP["Proposer writes and edits environments,<br/>then reads their scores (A1–A3) next iteration<br/><b>model:</b> generator, default sonnet<br/>its setting gate and the Exa scout use the judge"]
+        MEM[("memory: OUTCOME and DECISION facts<br/>local file, or past.dev")]:::store
+    end
 
-  subgraph L5["Level 5 · Measurement (WS C1, C2)"]
-    BENCH["EvalAwareBench: 200 items, 128 dev / 72 held-out<br/>calibration gate: AUROC ≥ 0.85, κ ≥ 0.6 (not run yet)"]
-    PETRI["Petri audits, simulated or Modal sandbox tools"]:::planned
-    VLLM["open-weight reasoning target on Modal"]:::planned
-    TGT["Target model, the one under study<br/><b>model:</b> default haiku; held-out target in final mode"]
-    J1["A1 awareness in the reasoning + validity, one call<br/>A3 discriminator: synthetic vs real<br/><b>model:</b> judge J1, default sonnet"]
-    A2["A2: probe questions put to the target<br/>(EvalDetectBench probes, chosen per target)<br/>held-out judges also give P(eval) in final mode"]
-    J2["judge J2: first held-out judge, final mode only"]
-  end
+    subgraph L5["Level 5 · Measurement (WS C1, C2)"]
+        BENCH["EvalAwareBench: 200 items, 128 dev / 72 held-out<br/>calibration gate: AUROC ≥ 0.85, κ ≥ 0.6 (not run yet)"]
+        PETRI["Petri audits, simulated or Modal sandbox tools"]:::planned
+        VLLM["open-weight reasoning target on Modal"]:::planned
+        TGT["Target model, the one under study<br/><b>model:</b> default haiku; held-out target in final mode"]
+        J1["A1 awareness in the reasoning + validity, one call<br/>A3 discriminator: synthetic vs real<br/><b>model:</b> judge J1, default sonnet"]
+        A2["A2: probe questions put to the target<br/>(EvalDetectBench probes, chosen per target)<br/>held-out judges also give P(eval) in final mode"]
+        J2["judge J2: first held-out judge, final mode only"]
+    end
 
-  subgraph L6["Level 6 · Taste-Bench (WS B)"]
-    TB["E7: 112 research forks, each asked in both option orders<br/>R0 decider · prompt arms · R1 advisor · user model alone<br/><b>model:</b> decider set by --model; user model as fitted"]
-  end
+    subgraph L6["Level 6 · Taste-Bench (WS B)"]
+        TB["E7: 112 research forks, each asked in both option orders<br/>R0 decider · prompt arms · R1 advisor · user model alone<br/><b>model:</b> decider set by --model; user model as fitted"]
+    end
 
-  PRB --> M --> SEL
-  SEL --> UMP & UMS
-  TP --> UMP
-  TS --> UMS
-  UMP & UMS --> E2
-  UMP & UMS --> UJ
-  UJ <-->|push / pull| PD
-  UJ --> ADV
-  UJ --> TB
-  ARMS --> PROP
-  ADV --> PROP
-  EXT -.-> PROP
-  PROP --> MEM
-  PROP -->|environments| TGT
-  BENCH --> TGT
-  PETRI -.-> TGT
-  VLLM -.-> TGT
-  TGT -->|transcripts| J1
-  TGT -->|answers| A2
-  J2 -.->|replaces in final mode| J1
+    %% Levels 1–2: method selection
+    PRB --> M --> SEL
+
+    %% Level 3: one user model per track
+    SEL --> UMP & UMS
+    TP --> UMP
+    TS --> UMS
+    UMP & UMS --> E2
+    UMP & UMS --> UJ
+    UJ <-->|push / pull| PD
+
+    %% Level 4: the user model steers the loop
+    UJ --> ADV
+    ARMS --> PROP
+    ADV --> PROP
+    EXT -.-> PROP
+    PROP --> MEM
+
+    %% Level 5: environments are scored
+    PROP -->|environments| TGT
+    BENCH --> TGT
+    PETRI -.-> TGT
+    VLLM -.-> TGT
+    TGT -->|transcripts| J1
+    TGT -->|answers| A2
+    J2 -.->|replaces in final mode| J1
+
+    %% Level 6: Taste-Bench
+    UJ --> TB
 ```
 
 ## Models at each level
