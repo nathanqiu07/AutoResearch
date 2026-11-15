@@ -1,0 +1,334 @@
+---
+url: https://arxiv.org/abs/2003.02249
+title: jiant: A Software Toolkit for Research on General-Purpose Text Understanding Models
+publishedDate: 2020-03-04
+date_source: listing
+authors: ["Yada Pruksachatkun", "Phil Yeres", "Haokun Liu", "Jason Phang", "Phu Mon Htut", "Alex Wang", "Ian Tenney", "Samuel R. Bowman"]
+author_position: last
+kind: paper
+exa_request_id: https://arxiv.org/abs/2003.02249
+---
+# jiant: A Software Toolkit for Research on General-Purpose Text Understanding Models
+
+arXiv:2003.02249. cs.CL. Submitted 2020-03-04. Latest version v2, 2020-05-13.
+
+## Authors
+
+Yada Pruksachatkun, Phil Yeres, Haokun Liu, Jason Phang, Phu Mon Htut, Alex Wang, Ian Tenney and Samuel R. Bowman
+
+## Details
+
+- License: http://arxiv.org/licenses/nonexclusive-distrib/1.0/
+
+## Versions
+
+- v1: 2020-03-04
+- v2: 2020-05-13
+
+---
+
+Full text of v2.
+
+## Abstract
+
+We introduce jiant, an open source toolkit for conducting multitask and transfer learning experiments on English NLU tasks. jiant enables modular and configuration-driven experimentation with state-of-the-art models and implements a broad set of tasks for probing, transfer learning, and multitask training experiments. jiant implements over 50 NLU tasks, including all GLUE and SuperGLUE benchmark tasks. We demonstrate that jiant reproduces published performance on a variety of tasks and models, including BERT and RoBERTa. jiant is available at https://jiant.info.
+
+## 1 Introduction
+
+This paper introduces jiant,[^1] an open source toolkit that allows researchers to quickly experiment on a wide array of NLU tasks, using state-of-the-art NLP models, and conduct experiments on probing, transfer learning, and multitask training. jiant supports many state-of-the-art Transformer-based models implemented by Huggingface’s Transformers package, as well as non-Transformer models such as BiLSTMs.
+
+Packages and libraries like HuggingFace’s Transformers (Wolf et al., 2019) and AllenNLP (Gardner et al., 2017) have accelerated the process of experimenting and iterating on NLP models by both abstracting out implementation details, and simplifying the model training pipeline. jiant extends the capabilities of both toolkits by presenting a wrapper that implements a variety of complex experimental pipelines in a scalable and easily controllable setting. jiant contains a task bank of over 50 tasks, including all the tasks presented in GLUE (Wang et al., 2018), SuperGLUE (Wang et al., 2019b), the edge-probing suite Tenney et al. (2019b), and the SentEval probing suite (Conneau and Kiela, 2018), as well as other individual tasks including CCG supertagging (Hockenmaier and Steedman, 2007), SocialIQA (Sap et al., 2019), and CommonsenseQA (Talmor et al., 2019). jiant is also the official baseline codebase for the SuperGLUE benchmark.
+
+jiant’s core design principles are:
+
+- Ease of use: jiant should allow users to run a variety of experiments using state-of-the-art models via an easy to use configuration-driven interface.
+- Reproducibility: jiant should provide features that support correct and reproducible experiments, including logging and saving and restoring model state.
+- Availability of NLU tasks: jiant should maintain and continue to grow a collection of tasks useful for NLU research, especially popular evaluation tasks and tasks commonly used in pretraining and transfer learning.
+- Availability of cutting-edge models: jiant should make implementations of state-of-the-art models available for experimentation.
+- Open source: jiant should be free to use, and easy to contribute to.
+
+Early versions of jiant have already been used in multiple works, including probing analyses (Tenney et al., 2019b, a; Warstadt et al., 2019; Lin et al., 2019; Hewitt and Manning, 2019; Jawahar et al., 2019), transfer learning experiments (Wang et al., 2019a; Phang et al., 2018), and dataset and benchmark construction (Wang et al., 2019b, 2018; Kim et al., 2019).
+
+Figure 1: Multi-phase jiant experiment configuration used by Wang et al. (2019a): a BERT sentence encoder is trained with an intermediate task model during jiant’s intermediate training phase, and fine-tuned with various target task models in jiant’s target training phase.
+
+## 2 Background
+
+Transfer learning is an area of research that uses knowledge from pretrained models to transfer to new tasks. In recent years, Transformer-based models like BERT (Devlin et al., 2019) and T5 (Raffel et al., 2019) have yielded state-of-the-art results on the lion’s share of benchmark tasks for language understanding through pretraining and transfer, often paired with some form of multitask learning.
+
+jiant enables a variety of complex training pipelines through simple configuration changes, including multi-task training (Caruana, 1993; Liu et al., 2019a) and pretraining, as well as the sequential fine-tuning approach from STILTs (Phang et al., 2018). In STILTs, intermediate task training takes a pretrained model like ELMo or BERT, and applies supplementary training on a set of intermediate tasks, before finally performing single-task training on additional downstream tasks.
+
+## 3 jiant System Overview
+
+### 3.1 Requirements and Deployment
+
+jiant can be cloned and installed from GitHub: https://github.com/nyu-mll/jiant. jiant v1.3.0 requires Python 3.5 or later, and jiant’s core dependencies are PyTorch (Paszke et al., 2019), AllenNLP (Gardner et al., 2017), and HuggingFace’s Transformers (Wolf et al., 2019). jiant is released under the MIT License (Open Source Initiative, 2020). jiant runs on consumer-grade hardware or in cluster environments with or without CUDA GPUs. The jiant repository also contains documentation and configuration files demonstrating how to deploy jiant in Kubernetes clusters on Google Kubernetes Engine.
+
+### 3.2 jiant Components
+
+- Tasks: Tasks have references to task data, methods for processing data, references to classifier heads, and methods for calculating performance metrics, and making predictions.
+- Sentence Encoder: Sentence encoders map from the indexed examples to a sentence-level representation. Sentence encoders can include an input module (e.g., Transformer models, ELMo, or word embeddings), followed by an optional second layer of encoding (usually a BiLSTM). Examples of possible sentence encoder configurations include BERT, ELMo followed by a BiLSTM, BERT with a variety of pooling and aggregation methods, or a bag of words model.
+- Task-Specific Output Heads: Task-specific output modules map representations from sentence encoders to outputs specific to a task, e.g. entailment/neutral/contradiction for NLI tasks, or tags for part-of-speech tagging. They also include logic for computing the corresponding loss for training (e.g. cross-entropy).
+- Trainer: Trainers manage the control flow for the training and validation loop for experiments. They sample batches from one or more tasks, perform forward and backward passes, calculate training metrics, evaluate on a validation set, and save checkpoints. Users can specify experiment-specific parameters such as learning rate, batch size, and more.
+- Config: Config files or flags are defined in HOCON[^2] format. Configs specify parameters for jiant experiments including choices of tasks, sentence encoder, and training routine.[^3]
+
+Configs are jiant’s primary user interface. Tasks and modeling components are designed to be modular, while jiant’s pipeline is a monolithic, configuration-driven design intended to facilitate a number of common workflows outlined in 3.3.
+
+Figure 2: jiant pipeline stages using RoBERTa as the sentence encoder, ReCoRD and MNLI tasks as intermediate tasks, and MNLI and BoolQ as tasks for target training and evaluation. The diagram highlights that during target training and evaluation phases, copies are made of the sentence encoder model, and fine tuning and evaluation for each task are conducted on separate copies.
+
+### 3.3 jiant Pipeline Overview
+
+jiant’s core pipeline consists of the five stages described below and illustrated in Figure 2:
+
+1. A config or multiple configs defining an experiment are interpreted. Users can choose and configure models, tasks, and stages of training and evaluation.
+2. The tasks and sentence encoder are prepared:
+ - (a) The task data is loaded, tokenized, and indexed, and the preprocessed task objects are serialized and cached. In this process, AllenNLP is used to create the vocabulary and index the tokenized data.
+ - (b) The sentence encoder is constructed and (optionally) pretrained weights are loaded.[^4]
+ - (c) The task-specific output heads are created for each task, and task heads are attached to a common sentence encoder. Optionally, different tasks can share the same output head, as in Liu et al. (2019a).
+3. Optionally, in the intermediate phase the trainer samples batches randomly from one or more tasks,[^5] and trains the shared model.
+4. Optionally, in the target training phase, a copy of the model is configured and trained or fine-tuned for each target task separately.
+5. Optionally, the model is evaluated on the validation and/or test sets of the target tasks.
+
+### 3.4 Task and Model resources in jiant
+
+jiant supports over 50 tasks. Task types include classification, regression, sequence generation, tagging, masked language modeling, and span prediction. jiant focuses on NLU tasks like MNLI (Williams et al., 2018), CommonsenseQA (Talmor et al., 2019), the Winograd Schema Challenge (Levesque et al., 2012), and SQuAD Rajpurkar et al. (2016). A full inventory of tasks and task variants is available in the jiant/tasks module.
+
+jiant provides support for cutting-edge sentence encoder models, including support for Huggingface’s Transformers. Supported models include: ELMo (Peters et al., 2018), GPT (Radford, 2018), BERT (Devlin et al., 2019), XLM (Conneau and Lample, 2019), GPT-2 (Radford et al., 2019), XLNet (Yang et al., 2019), RoBERTa (Liu et al., 2019b), and ALBERT (Lan et al., 2019). jiant also supports the from-scratch training of (bidirectional) LSTMs (Hochreiter and Schmidhuber, 1997) and deep bag of words models (Iyyer et al., 2015), as well as syntax-aware models such as PRPN Shen et al. (2018) and ON-LSTM Shen et al. (2019). jiant also supports word embeddings such as GloVe (Pennington et al., 2014).
+
+⬇
+
+// Config for BERT experiments.
+
+// Get default configs from a file:
+
+include "defaults.conf"
+
+exp_name = "bert-large-cased"
+
+// Data and preprocessing settings
+
+max_seq_len = 256
+
+// Model settings
+
+input_module = "bert-large-cased"
+
+transformers_output_mode = "top"
+
+s2s = {
+
+attention = none
+
+}
+
+sent_enc = "none"
+
+sep_embs_for_skip = 1
+
+classifier = log_reg
+
+// fine-tune entire BERT model
+
+transfer_paradigm = finetune
+
+// Training settings
+
+dropout = 0.1
+
+optimizer = bert_adam
+
+batch_size = 4
+
+max_epochs = 10
+
+lr = .00001
+
+min_lr = .0000001
+
+lr_patience = 4
+
+patience = 20
+
+max_vals = 10000
+
+// Phase configuration
+
+do_pretrain = 1
+
+do_target_task_training = 1
+
+do_full_eval = 1
+
+write_preds = "val,test"
+
+write_strict_glue_format = 1
+
+// Task specific configuration
+
+commitbank = {
+
+val_interval = 60
+
+max_epochs = 40
+
+}
+
+Figure 3: Example jiant experiment config file.
+
+### 3.5 User Interface
+
+jiant experiments can be run with a simple CLI:
+
+⬇
+
+python -m jiant \
+
+--config_file roberta_with_mnli.conf \
+
+--overrides "target_tasks = swag, \
+
+run_name = swag_01"
+
+jiant provides default config files that allow running many experiments without modifying source code.
+
+jiant also provides baseline config files that can serve as a starting point for model development and evaluation against GLUE (Wang et al., 2018) and SuperGLUE (Wang et al., 2019b) benchmarks.
+
+More advanced configurations can be developed by composing multiple configurations files and overrides. Figure 3 shows a config file that overrides a default config, defining an experiment that uses BERT as the sentence encoder. This config includes an example of a task-specific configuration, which can be overridden in another config file or via a command line override.
+
+Because jiant implements the option to provide command line overrides with a flag, it is easy to write scripts that launch jiant experiments over a range of parameters, for example while performing grid search across hyperparameters. jiant users have successfully run large-scale experiments launching hundreds of runs on both Kubernetes and Slurm.
+
+### 3.6 Example jiant Use Cases and Options
+
+Here we highlight some example use cases and key corresponding jiant config options required in these experiments:
+
+- Fine-tune BERT on SWAG (Zellers et al., 2018) and SQUAD Rajpurkar et al. (2016), then fine-tune on HellaSwag (Zellers et al., 2019):
+ ⬇
+ input_module = bert-base-cased
+ pretrain_tasks = "swag,squad"
+ target_tasks = hellaswag
+- Train a probing classifier over a frozen BERT model, as in Tenney et al. (2019a):
+ ⬇
+ input_module = bert-base-cased
+ target_tasks = edges-dpr
+ transfer_paradigm = frozen
+- Compare performance of GloVe (Pennington et al., 2014) embeddings using a BiLSTM:
+ ⬇
+ input_module = glove
+ sent_enc = rnn
+- Evaluate ALBERT (Lan et al., 2019) on the MNLI (Williams et al., 2018) task:
+ ⬇
+ input_module = albert-large-v2
+ target_task = mnli
+
+### 3.7 Optimizations and Other Features
+
+jiant implements features that improve run stability and efficiency:
+
+- jiant implements checkpointing options designed to offer efficient early stopping and to show consistent behavior when restarting after an interruption.
+- jiant caches preprocessed task data to speed up reuse across experiments which share common data resources and artifacts.
+- jiant implements gradient accumulation and multi-GPU, which enables training on larger batches than can fit in memory for a single GPU.
+- jiant supports outputting predictions in a format ready for GLUE and SuperGLUE benchmark submission.
+- jiant generates custom log files that capture experimental configurations, training and evaluation metrics, and relevant run-time information.
+- jiant generates TensorBoard event files (Abadi et al., 2015) for training and evaluation metric tracking. TensorBoard event files can be visualized using the TensorBoard Scalars Dashboard.
+
+### 3.8 Extensibility
+
+jiant’s design offers conveniences that reduce the need to modify code when making changes:
+
+- jiant’s task registry makes it easy to define a new version of an existing task using different data. Once the new task is defined in the task registry, the task is available as an option in jiant’s config.
+- jiant’s sentence encoder and task output head abstractions allow for easy support of new sentence encoders.
+
+In use cases requiring the introduction of a new task, users can use class inheritance to build on a number of available parent task types including classification, tagging, span prediction, span classification, sequence generation, regression, ranking, and multiple choice task classes. For these task types, corresponding task-specific output heads are already implemented.
+
+More than 30 researchers and developers from more than 5 institutions have contributed code to the jiant project.[^6] jiant’s maintainers welcome pull requests that introduce new tasks or sentence encoder components, and pull request are actively reviewed. The jiant repository’s continuous integration system requires that all pull requests pass unit and integration tests and meet Black[^7] code formatting requirements.
+
+### 3.9 Limitations and Development Roadmap
+
+While jiant is quite flexible in the pipelines that can be specified through configs, and some components are highly modular (e.g., tasks, sentence encoders, and output heads), modification of the pipeline code can be difficult. For example, training in more than two phases would require modifying the trainer code.[^8] Making multi-stage training configurations more flexible is on jiant’s development roadmap.
+
+jiant’s development roadmap prioritizes adding support for new Transformer models, and adding tasks that are commonly used for pretraining and evaluation in NLU. Additionally, there are plans to make jiant’s training phase configuration options more flexible to allow training in more than two phases, and to continue to refactor jiant’s code to keep jiant flexible to track developments in NLU research.
+
+## 4 Benchmark Experiments
+
+To benchmark jiant, we perform a set of experiments that reproduce external results for single fine-tuning and transfer learning experiments. jiant has been benchmarked extensively in both published and ongoing work on a majority of the implemented tasks.
+
+We benchmark single-task fine-tuning configurations using CommonsenseQA Talmor et al. (2019) and SocialIQA Sap et al. (2019). On CommonsenseQA with $\mathrm{RoBERTa}_{\mathrm{LARGE}}$, jiant achieves an accuracy of 72.2, comparable to 72.1 reported by Liu et al. (2019b). On SocialIQA with BERT-large, jiant achieves a dev set accuracy of 65.8, comparable to 66.0 reported in Sap et al. (2019).
+
+Next, we benchmark jiant’s transfer learning regime. We perform transfer experiments from MNLI to BoolQ with BERT-large. In this configuration Clark et al. (2019) demonstrated an accuracy improvement of 78.1 to 82.2 on the dev set, and jiant achieves an improvement of 78.1 to 80.3.
+
+## 5 Conclusion
+
+jiant provides a configuration-driven interface for defining transfer learning and representation learning experiments using a bank of over 50 NLU tasks, cutting-edge sentence encoder models, and multi-task and multi-stage training procedures. Further, jiant is shown to be able to replicate published performance on various NLU tasks.
+
+jiant’s modular design of task and sentence encoder components make it possible for users to quickly and easily experiment with a large number of tasks, models, and parameter configurations, without editing source code. jiant’s design also makes it easy to add new tasks, and jiant’s architecture makes it convenient to extend jiant to support new sentence encoders.
+
+jiant code is open source, and jiant invites contributors to open issues or submit pull request to the jiant project repository: https://github.com/nyu-mll/jiant.
+
+## Acknowledgments
+
+Katherin Yu, Jan Hula, Patrick Xia, Raghu Pappagari, Shuning Jin, R. Thomas McCoy, Roma Patel, Yinghui Huang, Edouard Grave, Najoung Kim, Thibault Févry, Berlin Chen, Nikita Nangia, Anhad Mohananey, Katharina Kann, Shikha Bordia, Nicolas Patry, David Benton, and Ellie Pavlick have contributed substantial engineering assistance to the project.
+
+The early development of jiant took at the 2018 Frederick Jelinek Memorial Summer Workshop on Speech and Language Technologies, and was supported by Johns Hopkins University with unrestricted gifts from Amazon, Facebook, Google, Microsoft and Mitsubishi Electric Research Laboratories.
+
+Subsequent development was possible in part by a donation to NYU from Eric and Wendy Schmidt made by recommendation of the Schmidt Futures program, by support from Intuit Inc., and by support from Samsung Research under the project Improving Deep Learning using Latent Structure. We gratefully acknowledge the support of NVIDIA Corporation with the donation of a Titan V GPU used at NYU in this work. Alex Wang’s work on the project is supported by the National Science Foundation Graduate Research Fellowship Program under Grant No. DGE 1342536. Any opinions, findings, and conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the National Science Foundation. Yada Pruksachatkun’s work on the project is supported in part by the Moore-Sloan Data Science Environment as part of the NYU Data Science Services initiative. Sam Bowman’s work on jiant during Summer 2019 took place in his capacity as a visiting researcher at Google.
+
+## References
+
+- Abadi et al. (2015) Martín Abadi, Ashish Agarwal, Paul Barham, Eugene Brevdo, Zhifeng Chen, Craig Citro, Greg S. Corrado, Andy Davis, Jeffrey Dean, Matthieu Devin, Sanjay Ghemawat, Ian Goodfellow, Andrew Harp, Geoffrey Irving, Michael Isard, Yangqing Jia, Rafal Jozefowicz, Lukasz Kaiser, Manjunath Kudlur, Josh Levenberg, Dandelion Mané, Rajat Monga, Sherry Moore, Derek Murray, Chris Olah, Mike Schuster, Jonathon Shlens, Benoit Steiner, Ilya Sutskever, Kunal Talwar, Paul Tucker, Vincent Vanhoucke, Vijay Vasudevan, Fernanda Viégas, Oriol Vinyals, Pete Warden, Martin Wattenberg, Martin Wicke, Yuan Yu, and Xiaoqiang Zheng. 2015. TensorFlow: Large-scale machine learning on heterogeneous systems. Software available from tensorflow.org.
+- Caruana (1993) Rich Caruana. 1993. Multitask learning: A knowledge-based source of inductive bias. In ICML.
+- Clark et al. (2019) Christopher Clark, Kenton Lee, Ming-Wei Chang, Tom Kwiatkowski, Michael Collins, and Kristina Toutanova. 2019. BoolQ: Exploring the surprising difficulty of natural yes/no questions. In Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers), pages 2924–2936, Minneapolis, Minnesota. Association for Computational Linguistics.
+- Conneau and Kiela (2018) Alexis Conneau and Douwe Kiela. 2018. SentEval: An evaluation toolkit for universal sentence representations. In Proceedings of the Eleventh International Conference on Language Resources and Evaluation (LREC-2018), Miyazaki, Japan. European Languages Resources Association (ELRA).
+- Conneau and Lample (2019) Alexis Conneau and Guillaume Lample. 2019. Cross-lingual language model pretraining. In Advances in Neural Information Processing Systems 32, pages 7057–7067.
+- Devlin et al. (2019) Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. BERT: Pre-training of deep bidirectional transformers for language understanding. In Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers), pages 4171–4186, Minneapolis, Minnesota. Association for Computational Linguistics.
+- Gardner et al. (2017) Matt Gardner, Joel Grus, Mark Neumann, Oyvind Tafjord, Pradeep Dasigi, Nelson F. Liu, Matthew Peters, Michael Schmitz, and Luke S. Zettlemoyer. 2017. AllenNLP: A deep semantic natural language processing platform. Unpublished manuscript available on arXiv.
+- Hewitt and Manning (2019) John Hewitt and Christopher D. Manning. 2019. A structural probe for finding syntax in word representations. In Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers), pages 4129–4138, Minneapolis, Minnesota. Association for Computational Linguistics.
+- Hochreiter and Schmidhuber (1997) Sepp Hochreiter and Jürgen Schmidhuber. 1997. Long short-term memory. Neural computation, 9(8):1735–1780.
+- Hockenmaier and Steedman (2007) Julia Hockenmaier and Mark Steedman. 2007. CCGbank: A corpus of CCG derivations and dependency structures extracted from the Penn treebank. Computational Linguistics, 33(3):355–396.
+- Iyyer et al. (2015) Mohit Iyyer, Varun Manjunatha, Jordan Boyd-Graber, and Hal Daumé III. 2015. Deep unordered composition rivals syntactic methods for text classification. In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 1: Long Papers), pages 1681–1691, Beijing, China. Association for Computational Linguistics.
+- Jawahar et al. (2019) Ganesh Jawahar, Benoît Sagot, and Djamé Seddah. 2019. What does BERT learn about the structure of language? In Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics, pages 3651–3657, Florence, Italy. Association for Computational Linguistics.
+- Kim et al. (2019) Najoung Kim, Roma Patel, Adam Poliak, Patrick Xia, Alex Wang, Tom McCoy, Ian Tenney, Alexis Ross, Tal Linzen, Benjamin Van Durme, Samuel R. Bowman, and Ellie Pavlick. 2019. Probing what different NLP tasks teach machines about function word comprehension. In Proceedings of the Eighth Joint Conference on Lexical and Computational Semantics (*SEM 2019), pages 235–249, Minneapolis, Minnesota. Association for Computational Linguistics.
+- Lan et al. (2019) Zhenzhong Lan, Mingda Chen, Sebastian Goodman, Kevin Gimpel, Piyush Sharma, and Radu Soricut. 2019. ALBERT: A lite BERT for self-supervised learning of language representations.
+- Levesque et al. (2012) Hector J. Levesque, Ernest Davis, and Leora Morgenstern. 2012. The Winograd schema challenge. In Proceedings of the Thirteenth International Conference on Principles of Knowledge Representation and Reasoning, KR’12, pages 552–561. AAAI Press.
+- lightbend (2011) lightbend. 2011. HOCON (human-optimized config object notation). https://github.com/lightbend/config/blob/master/HOCON.md.
+- Lin et al. (2019) Yongjie Lin, Yi Chern Tan, and Robert Frank. 2019. Open sesame: Getting inside BERT’s linguistic knowledge. In Proceedings of the 2019 ACL Workshop BlackboxNLP: Analyzing and Interpreting Neural Networks for NLP, pages 241–253, Florence, Italy. Association for Computational Linguistics.
+- Liu et al. (2019a) Xiaodong Liu, Pengcheng He, Weizhu Chen, and Jianfeng Gao. 2019a. Multi-task deep neural networks for natural language understanding. In Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics, pages 4487–4496, Florence, Italy. Association for Computational Linguistics.
+- Liu et al. (2019b) Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Mandar Joshi, Danqi Chen, Omer Levy, Mike Lewis, Luke Zettlemoyer, and Veselin Stoyanov. 2019b. RoBERTa: A robustly optimized BERT pretraining approach.
+- Open Source Initiative (2020) Open Source Initiative. 2020. The MIT License.
+- Paszke et al. (2019) Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory Chanan, Trevor Killeen, Zeming Lin, Natalia Gimelshein, Luca Antiga, Alban Desmaison, Andreas Kopf, Edward Yang, Zachary DeVito, Martin Raison, Alykhan Tejani, Sasank Chilamkurthy, Benoit Steiner, Lu Fang, Junjie Bai, and Soumith Chintala. 2019. PyTorch: An imperative style, high-performance deep learning library. In H. Wallach, H. Larochelle, A. Beygelzimer, F. d’ Alché-Buc, E. Fox, and R. Garnett, editors, Advances in Neural Information Processing Systems 32, pages 8024–8035. Curran Associates, Inc.
+- Pennington et al. (2014) Jeffrey Pennington, Richard Socher, and Christopher Manning. 2014. Glove: Global vectors for word representation. In Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1532–1543, Doha, Qatar. Association for Computational Linguistics.
+- Peters et al. (2018) Matthew Peters, Mark Neumann, Mohit Iyyer, Matt Gardner, Christopher Clark, Kenton Lee, and Luke Zettlemoyer. 2018. Deep contextualized word representations. In Proceedings of the 2018 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long Papers), pages 2227–2237, New Orleans, Louisiana. Association for Computational Linguistics.
+- Phang et al. (2018) Jason Phang, Thibault Févry, and Samuel R. Bowman. 2018. Sentence Encoders on STILTs: Supplementary Training on Intermediate Labeled-data Tasks. Unpublished manuscript available on arXiv.
+- Radford (2018) Alec Radford. 2018. Improving language understanding by generative pre-training.
+- Radford et al. (2019) Alec Radford, Jeff Wu, Rewon Child, David Luan, Dario Amodei, and Ilya Sutskever. 2019. Language models are unsupervised multitask learners.
+- Raffel et al. (2019) Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J. Liu. 2019. Exploring the limits of transfer learning with a unified text-to-text transformer. Unpublished manuscript available on arXiv.
+- Rajpurkar et al. (2016) Pranav Rajpurkar, Jian Zhang, Konstantin Lopyrev, and Percy Liang. 2016. SQuAD: 100,000+ questions for machine comprehension of text. In Proceedings of the 2016 Conference on Empirical Methods in Natural Language Processing, pages 2383–2392, Austin, Texas. Association for Computational Linguistics.
+- Sap et al. (2019) Maarten Sap, Hannah Rashkin, Derek Chen, Ronan Le Bras, and Yejin Choi. 2019. Social IQa: Commonsense reasoning about social interactions. In Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP), pages 4463–4473, Hong Kong, China. Association for Computational Linguistics.
+- Shen et al. (2018) Yikang Shen, Zhouhan Lin, Chin-Wei Huang, and Aaron C. Courville. 2018. Neural language modeling by jointly learning syntax and lexicon. In 6th International Conference on Learning Representations, ICLR 2018, Vancouver, BC, Canada, April 30 - May 3, 2018, Conference Track Proceedings.
+- Shen et al. (2019) Yikang Shen, Shawn Tan, Alessandro Sordoni, and Aaron C. Courville. 2019. Ordered neurons: Integrating tree structures into recurrent neural networks. In 7th International Conference on Learning Representations, ICLR 2019, New Orleans, LA, USA, May 6-9, 2019.
+- Talmor et al. (2019) Alon Talmor, Jonathan Herzig, Nicholas Lourie, and Jonathan Berant. 2019. CommonsenseQA: A question answering challenge targeting commonsense knowledge. In Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers), pages 4149–4158, Minneapolis, Minnesota. Association for Computational Linguistics.
+- Tenney et al. (2019a) Ian Tenney, Dipanjan Das, and Ellie Pavlick. 2019a. BERT rediscovers the classical NLP pipeline. In Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics, pages 4593–4601, Florence, Italy. Association for Computational Linguistics.
+- Tenney et al. (2019b) Ian Tenney, Patrick Xia, Berlin Chen, Alex Wang, Adam Poliak, R. Thomas McCoy, Najoung Kim, Benjamin Van Durme, Samuel R. Bowman, Dipanjan Das, and Ellie Pavlick. 2019b. What do you learn from context? probing for sentence structure in contextualized word representations. In 7th International Conference on Learning Representations, ICLR 2019, New Orleans, LA, USA, May 6-9, 2019.
+- Wang et al. (2019a) Alex Wang, Jan Hula, Patrick Xia, Raghavendra Pappagari, R. Thomas McCoy, Roma Patel, Najoung Kim, Ian Tenney, Yinghui Huang, Katherin Yu, Shuning Jin, Berlin Chen, Benjamin Van Durme, Edouard Grave, Ellie Pavlick, and Samuel R. Bowman. 2019a. Can you tell me how to get past sesame street? sentence-level pretraining beyond language modeling. In Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics, pages 4465–4476, Florence, Italy. Association for Computational Linguistics.
+- Wang et al. (2019b) Alex Wang, Yada Pruksachatkun, Nikita Nangia, Amanpreet Singh, Julian Michael, Felix Hill, Omer Levy, and Samuel Bowman. 2019b. SuperGLUE: A stickier benchmark for general-purpose language understanding systems. In Advances in Neural Information Processing Systems 32, pages 3261–3275.
+- Wang et al. (2018) Alex Wang, Amanpreet Singh, Julian Michael, Felix Hill, Omer Levy, and Samuel Bowman. 2018. GLUE: A multi-task benchmark and analysis platform for natural language understanding. In Proceedings of the 2018 EMNLP Workshop BlackboxNLP: Analyzing and Interpreting Neural Networks for NLP, pages 353–355, Brussels, Belgium. Association for Computational Linguistics.
+- Warstadt et al. (2019) Alex Warstadt, Yu Cao, Ioana Grosu, Wei Peng, Hagen Blix, Yining Nie, Anna Alsop, Shikha Bordia, Haokun Liu, Alicia Parrish, Sheng-Fu Wang, Jason Phang, Anhad Mohananey, Phu Mon Htut, Paloma Jeretic, and Samuel R. Bowman. 2019. Investigating BERT’s knowledge of language: Five analysis methods with NPIs. In Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP), pages 2870–2880, Hong Kong, China. Association for Computational Linguistics.
+- Williams et al. (2018) Adina Williams, Nikita Nangia, and Samuel Bowman. 2018. A broad-coverage challenge corpus for sentence understanding through inference. In Proceedings of the 2018 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long Papers), pages 1112–1122. Association for Computational Linguistics.
+- Wolf et al. (2019) Thomas Wolf, Lysandre Debut, Victor Sanh, Julien Chaumond, Clement Delangue, Anthony Moi, Pierric Cistac, Tim Rault, R’emi Louf, Morgan Funtowicz, and Jamie Brew. 2019. Huggingface’s transformers: State-of-the-art natural language processing. Unpublished manuscript available on arXiv.
+- Yang et al. (2019) Zhilin Yang, Zihang Dai, Yiming Yang, Jaime Carbonell, Russ R Salakhutdinov, and Quoc V Le. 2019. XLNet: Generalized autoregressive pretraining for language understanding. In Advances in Neural Information Processing Systems 32, pages 5754–5764.
+- Zellers et al. (2018) Rowan Zellers, Yonatan Bisk, Roy Schwartz, and Yejin Choi. 2018. SWAG: A large-scale adversarial dataset for grounded commonsense inference. In Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing, pages 93–104, Brussels, Belgium. Association for Computational Linguistics.
+- Zellers et al. (2019) Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali Farhadi, and Yejin Choi. 2019. HellaSwag: Can a machine really finish your sentence? In Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics, pages 4791–4800, Florence, Italy. Association for Computational Linguistics.
+
+[^1]: The name jiant stands for “jiant is an NLP toolkit”.
+
+[^2]: Human-Optimized Config Object Notation (lightbend, 2011). jiant uses HOCON’s logic to consolidate multiple config files and command-line overrides into a single run config.
+
+[^3]: jiant configs support multi-phase training routines as described in section 3.3 and illustrated in Figure 2.
+
+[^4]: The sentence encoder’s weights can optionally be left frozen, or be included in the training procedure.
+
+[^5]: Tasks can be sampled using a variety of sample weighting methods, e.g., uniform or proportional to the tasks’ number of training batches or examples.
+
+[^6]: https://github.com/nyu-mll/jiant/graphs/contributors
+
+[^7]: https://github.com/psf/black
+
+[^8]: While not supported by config options, training in more than two phases is possible by using jiant’s checkpointing features to reload models for additional rounds of training.

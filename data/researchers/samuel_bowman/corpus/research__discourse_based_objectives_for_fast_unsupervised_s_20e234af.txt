@@ -1,0 +1,291 @@
+---
+url: https://arxiv.org/abs/1705.00557
+title: Discourse-Based Objectives for Fast Unsupervised Sentence Representation Learning
+publishedDate: 2017-04-23
+date_source: listing
+authors: ["Yacine Jernite", "Samuel R. Bowman", "David Sontag"]
+author_position: middle
+kind: paper
+exa_request_id: https://arxiv.org/abs/1705.00557
+---
+# Discourse-Based Objectives for Fast Unsupervised Sentence Representation Learning
+
+arXiv:1705.00557. cs.CL, cs.LG, cs.NE, stat.ML. Submitted 2017-04-23.
+
+## Authors
+
+Yacine Jernite, Samuel R. Bowman and David Sontag
+
+## Details
+
+- License: http://arxiv.org/licenses/nonexclusive-distrib/1.0/
+
+## Versions
+
+- v1: 2017-04-23
+
+---
+
+Full text of v1.
+
+## Abstract
+
+This work presents a novel objective function for the unsupervised training of neural network sentence encoders. It exploits signals from paragraph-level discourse coherence to train these models to understand text. Our objective is purely discriminative, allowing us to train models many times faster than was possible under prior methods, and it yields models which perform well in extrinsic evaluations.
+
+## 1 Introduction
+
+Modern artificial neural network approaches to natural language understanding tasks like translation (Sutskever et al., 2014; Cho et al., 2014), summarization (Rush et al., 2015), and classification (Yang et al., 2016) depend crucially on subsystems called sentence encoders that construct distributed representations for sentences. These encoders are typically implemented as convolutional (Kim, 2014), recursive (Socher et al., 2013), or recurrent neural networks (Mikolov et al., 2010) operating over a sentence’s words or characters (Zhang et al., 2015; Kim et al., 2016).
+
+Most of the early successes with sentence encoder-based models have been on tasks with ample training data, where it has been possible to train the encoders in a fully-supervised end-to-end setting. However, recent work has shown some success in using unsupervised pretraining with unlabeled data to both improve the performance of these methods and extend them to lower-resource settings (Dai and Le, 2015; Kiros et al., 2015; Bajgar et al., 2016).
+
+Figure 1: We train a sentence encoder (shown as two copies with shared parameters) on three discourse-based objectives over unlabeled text.
+
+This paper presents a set of methods for unsupervised pretraining that train sentence encoders to recognize discourse coherence. When reading text, human readers have an expectation of coherence from one sentence to the next. In most cases, for example, each sentence in a text should be both interpretable in context and relevant to the topic under discussion. Both of these properties depend on an understanding of the local context, which includes both relatively knowledge about the state of the world and the specific meanings of previous sentences in the text. Thus, a model that is successfully trained to recognize discourse coherence must be able to understand the meanings of sentences as well as relate them to key pieces of knowledge about the world.
+
+Hobbs (1979) presents a formal treatment of this phenomenon. He argues that for a discourse (here, a text) to be interpreted as coherent, any two adjacent sentences must be related by one of a few set kinds of coherence relations. For example, a sentence might be followed by another that elaborates on it, parallels it, or contrasts with it. While this treatment may not be adequate to cover the full complexity of language understanding, it allows Hobbs to show how identifying such relations depends upon sentence understanding, coreference resolution, and commonsense reasoning.
+
+Recently proposed techniques (Kiros et al., 2015; Ramachandran et al., 2016) succeed in exploiting discourse coherence information of this kind to train sentence encoders, but rely on generative objectives which require models to compute the likelihood of each word in a sentence at training time. In this setting, a single epoch of training on a typical (76M sentence) text corpus can take weeks, making further research difficult, and making it nearly impossible to scale these methods to the full volume of available unlabeled English text. In this work, we propose alternative objectives which exploit much of the same coherence information at greatly reduced cost.
+
+In particular, we propose three fast coherence-based pretraining tasks, show that they can be used together effectively in multitask training (Figure 1), and evaluate models trained in this setting on the training tasks themselves and on standard text classification tasks.[^1] We find that our approach makes it possible to learn to extract broadly useful sentence representations in hours.
+
+## 2 Related Work
+
+This work is inspired most directly by the Skip Thought approach of Kiros et al. (2015), which introduces the use of paragraph-level discourse information for the unsupervised pretraining of sentence encoders. Since that work, three other papers have presented improvements to this method (the SDAE of Hill et al. 2016, also Gan et al. 2016; Ramachandran et al. 2016). These improved methods are based on techniques and goals that are similar to ours, but all three involve models that explicitly generate full sentences during training time at considerable computational cost.
+
+In closely related work, Logeswaran et al. (2016) present a model that learns to order the sentences of a paragraph. While they focus on learning to assess coherence, they show positive results on measuring sentence similarity using their trained encoder. Alternately, the FastSent model of Hill et al. (2016) is designed to work dramatically more quickly than systems like Skip Thought, but in service of this goal the standard sentence encoder RNN is replaced with a low-capacity CBOW model. Their method does well on existing semantic textual similarity benchmarks, but its insensitivity to order places an upper bound on its performance in more intensive extrinsic language understanding tasks.
+
+Looking beyond work on unsupervised pretraining: Li and Hovy (2014) and Li and Jurafsky (2016) use representation learning systems to directly model the problem of sentence order recovery, but focus primarily on intrinsic evaluation rather than transfer. Wang and Cho (2016) train sentence representations for use as context in language modeling. In addition, Ji et al. (2016) treat discourse relations between sentences as latent variables and show that this yields improvements in language modeling in an extension of the document-context model of Ji et al. (2015).
+
+Outside the context of representation learning, there has been a good deal of work in NLP on discourse coherence, and on the particular tasks of sentence ordering and coherence scoring. Barzilay and Lapata (2008) provide thorough coverage of this work.
+
+## 3 Discourse Inspired Objectives
+
+| Sentence Pair | Label | Relation |
+| --- | --- | --- |
+| A strong one at that. | Y | elaboration |
+| Then I became a woman. | | |
+| I saw flowers on the ground. | N | list |
+| I heard birds in the trees. | | |
+| It limped closer at a slow pace. | N | spatial |
+| Soon it stopped in front of us. | | |
+| I kill Ben, you leave by yourself. | Y | time |
+| I kill your uncle, you join Ben. | | |
+
+Table 1: The binary order objective. Discourse relation labels are provided for the reader, but are not available to the model.
+
+In this work, we propose three objective functions for use over paragraphs extracted from unlabeled text. Each captures a different aspect of discourse coherence and together the three can be used to train a single encoder to extract broadly useful sentence representations.
+
+### Binary Ordering of Sentences
+
+Many coherence relations have an inherent direction. For example, if $S_{1}$ is an elaboration of $S_{0}$, $S_{0}$ is not generally an elaboration of $S_{1}$. Thus, being able to identify these coherence relations implies an ability to recover the original order of the sentences. Our first task, which we call order, consists in taking pairs of adjacent sentences from text data, switching their order with probability 0.5, and training a model to decide whether they have been switched. Table 1 provides some examples of this task, along with the kind of coherence relation that we assume to be involved. It should be noted that since some of these relations are unordered, it is not always possible to recover the original order based on discourse coherence alone (see e.g. the flowers / birds example).
+
+| Context |
+| --- |
+| No, not really. |
+| I had some ideas, some plans. |
+| But I never even caught sight of them. |
+| Candidate Successors |
+| 1. There’s nothing I can do that compares that. |
+| 2. Then one day Mister Edwards saw me. |
+| 3. I drank and that was about all I did. |
+| 4. And anyway, God’s getting his revenge now. |
+| 5. He offered me a job and somewhere to sleep. |
+
+Table 2: The next objective.
+
+### Next Sentence
+
+Many coherence relations are transitive by nature, so that any two sentences from the same paragraph will exhibit some coherence. However, two adjacent sentences will generally be more coherent than two more distant ones. This leads us to formulate the next task: given the first three sentences of a paragraph and a set of five candidate sentences from later in the paragraph, the model must decide which candidate immediately follows the initial three in the source text. Table 2 presents an example of such a task: candidates 2 and 3 are coherent with the third sentence of the paragraph, but the elaboration (3) takes precedence over the progression (2).
+
+| Sentence Pair | Label |
+| --- | --- |
+| He had a point. | return |
+| For good measure, I pouted. | (Still) |
+| It doesn’t hurt at all. | strengthen |
+| It’s exhilarating. | (In fact) |
+| The waterwheel hammered on. | contrast |
+| There was silence. | (Otherwise) |
+
+Table 3: The conjunction objective. Discourse relation labels are shown with the text from which they were derived.
+
+### Conjunction Prediction
+
+Finally, information about the coherence relation between two sentences is sometimes apparent in the text (Miltsakaki et al., 2004): this is the case whenever the second sentence starts with a conjunction phrase. To form the conjunction objective, we create a list of conjunction phrases and group them into nine categories (see supplementary material). We then extract from our source text all pairs of sentences where the second starts with one of the listed conjunctions, give the system the pair without the phrase, and train it to recover the conjunction category. Table 3 provides examples.
+
+## 4 Experiments
+
+In this section, we introduce our training data and methods, present qualitative results and comparisons among our three objectives, and close with quantitative comparisons with related work.
+
+### Experimental Setup
+
+We train our models on a combination of data from BookCorpus (Zhu et al., 2015), the Gutenberg project (Stroube, 2003), and Wikipedia. After sentence and word tokenization (with NLTK; Bird, 2006) and lower-casing, we identify all paragraphs longer than 8 sentences and extract a next example from each, as well as pairs of sentences for the order and conjunction tasks. This gives us 40M examples for order, 1.4M for conjunction, and 4.1M for next.
+
+Despite having recently become a standard dataset for unsupervised learning, BookCorpus does not exhibit sufficiently rich discourse structure to allow our model to fully succeed—in particular, some of the conjunction categories are severely under-represented. Because of this, we choose to train our models on text from all three sources. While this precludes a strict apples-to-apples comparison with other published results, our goal in extrinsic evaluation is simply to show that our method makes it possible to learn useful representations quickly, rather than to demonstrate the superiority of our learning technique given fixed data and unlimited time.
+
+We consider three sentence encoding models: a simple 1024D sum-of-Words (CBOW) encoding, a 1024D GRU recurrent neural network (Cho et al., 2014), and a 512D bidirectional GRU RNN (BiGRU). All three use FastText (Joulin et al., 2016) pre-trained word embeddings[^2] to which we apply a Highway transformation (Srivastava et al., 2015). The encoders are trained jointly with three bilinear classifiers for the three objectives (for the next examples, the three context sentences are encoded separately and their representations are concatenated). We perform stochastic gradient descent with AdaGrad (Duchi et al., 2011), subsampling conjunction and next by a factor of 4 and 6 respectively (chosen using held-out accuracy averaged over all three tasks on held out data after training on 1M examples). In this setting, the BiGRU model takes 8 hours to see all of the examples from the BookCorpus dataset at least once. For ease of comparison, we train all three models for exactly 8 hours.
+
+### Intrinsic and Qualitative Evaluation
+
+Table 4 compares the performance of different training regimes along two axes: encoder architecture and whether we train one model per task or one joint model. As expected, the more complex bidirectional GRU architecture is required to capture the appropriate sentence properties, although CBOW still manages to beat the simple GRU (the slowest model), likely by virtue of its substantially faster speed, and correspondingly greater number of training epochs. Joint training does appear to be effective, as both the order and next tasks benefit from the information provided by conjunction. Early experiments on the external evaluation also show that the joint BiGRU model substantially outperforms each single model.
+
+| | conjunction | order | next |
+| --- | --- | --- | --- |
+| CBOW joint | 42.8 | 56.6 | 27.7 |
+| GRU joint | 39.5 | 54.3 | 25.9 |
+| BiGRU joint | 45.1 | 58.3 | 30.2 |
+| BiGRU single | 45.5 | 57.1 | 29.3 |
+
+Table 4: Intrinsic evaluation results.
+
+Table 5 and the supplementary material show nearest neighbors in the trained BiGRU’s representation space for a random set of seed sentences. We select neighbors from among 400k held-out sentences. The encoder appears to be especially sensitive to high-level syntactic structure.
+
+| Grant laughed and complied with the suggestion. |
+| --- |
+| Pauline stood for a moment in complete bewilderment. |
+| Her eyes narrowed on him, considering. |
+| Helena felt her face turn red hot. |
+| Her face remained expressionless as dough. |
+
+Table 5: The nearest neighbors for a sentence.
+
+### Extrinsic Evaluation
+
+We evaluate the quality of the encoder learned by our system, which we call DiscSent, by using the sentence representations it produces in a variety of sentence classification tasks. We follow the settings of Kiros et al. (2015) on paraphrase detection (MSRP; Dolan et al., 2004), subjectivity evaluation (SUBJ; Pang and Lee, 2004) and question classification (TREC; Voorhees, 2001).
+
+| Model | Time | MSRP | TREC | SUBJ |
+| --- | --- | --- | --- | --- |
+| FastSent1 | $\approx$13h | 72.2 | 76.8 | 88.7 |
+| FastSent+AE1 | | 71.2 | 80.4 | 88.8 |
+| SDAE1 | 192h | 76.4 | 77.6 | 89.3 |
+| SDAE+embed1 | | 73.7 | 78.4 | 90.8 |
+| SkipT biGRU2 | 336h | 71.2 | 89.4 | 92.5 |
+| SkipT GRU2 | | 73.0 | 91.4 | 92.1 |
+| SkipT+feats2 | | 75.8 | 92.2 | 93.6 |
+| Ordering model3 | 48h | 72.3 | – | – |
+| Ordering+embed3 | | 74.0 | – | – |
+| +embed+SkipT3 | | 74.9 | – | – |
+| DiscSent biGRU | 8h | 71.6 | 81.0 | 88.6 |
+| DiscSent+unigram | | 72.5 | 87.9 | 92.7 |
+| DiscSent+embed | | 75.0 | 87.2 | 93.0 |
+
+Table 6: Text classification results, including training time. +embed lines combine the sentence encoder output with the sum of the pretrained word embeddings for the sentence. +unigram lines do so using embeddings learned for each target task without pretraining. +feats varies by task. References: 1Hill et al. (2016) 2Kiros et al. (2015) 3Logeswaran et al. (2016)
+
+Overall, our system performs comparably with the SDAE and Skip Thought approaches with a drastically shorter training time. Our system also compares favorably to the similar discourse-inspired method of Logeswaran et al. (2016), achieving similar results on MSRP in a sixth of their training time.
+
+## 5 Conclusion
+
+In this work, we introduce three new training objectives for unsupervised sentence representation learning inspired by the notion of discourse coherence, and use them to train a sentence representation system in competitive time, from 6 to over 40 times shorter than comparable methods, while obtaining comparable results on external evaluations tasks. We hope that the tasks that we introduce in this paper will prompt further research into discourse understanding with neural networks, as well as into strategies for unsupervised learning that will make it possible to use unlabeled data to train and refine a broader range of models for language understanding tasks.
+
+## References
+
+- Bajgar et al. (2016) Ondrej Bajgar, Rudolf Kadlec, and Jan Kleindienst. 2016. Embracing data abundance: BookTest dataset for reading comprehension. CoRR abs/1610.00956.
+- Barzilay and Lapata (2008) Regina Barzilay and Mirella Lapata. 2008. Modeling local coherence: An entity-based approach. Computational Linguistics 34.
+- Bird (2006) Steven Bird. 2006. NLTK: the natural language toolkit. In ACL 2006, Sydney, Australia.
+- Cho et al. (2014) Kyunghyun Cho, Bart van Merrienboer, Dzmitry Bahdanau, and Yoshua Bengio. 2014. On the properties of neural machine translation: Encoder-decoder approaches. In EMNLP 2014, Doha, Qatar.
+- Dai and Le (2015) Andrew M. Dai and Quoc V. Le. 2015. Semi-supervised sequence learning. In NIPS 2015, Montreal, Quebec, Canada.
+- Dolan et al. (2004) Bill Dolan, Chris Quirk, and Chris Brockett. 2004. Unsupervised construction of large paraphrase corpora: Exploiting massively parallel news sources. In COLING 2004, Geneva, Switzerland.
+- Duchi et al. (2011) John C. Duchi, Elad Hazan, and Yoram Singer. 2011. Adaptive subgradient methods for online learning and stochastic optimization. Journal of Machine Learning Research 12.
+- Gan et al. (2016) Zhe Gan, Yunchen Pu, Ricardo Henao, Chunyuan Li, Xiaodong He, and Lawrence Carin. 2016. Unsupervised learning of sentence representations using convolutional neural networks. CoRR abs/1611.07897.
+- Hill et al. (2016) Felix Hill, Kyunghyun Cho, and Anna Korhonen. 2016. Learning distributed representations of sentences from unlabelled data. In NAACL 2016, San Diego, California, USA.
+- Hobbs (1979) Jerry R. Hobbs. 1979. Coherence and coreference. Cognitive Science 3.
+- Ji et al. (2015) Yangfeng Ji, Trevor Cohn, Lingpeng Kong, Chris Dyer, and Jacob Eisenstein. 2015. Document context language models. CoRR abs/1511.03962.
+- Ji et al. (2016) Yangfeng Ji, Gholamreza Haffari, and Jacob Eisenstein. 2016. A latent variable recurrent neural network for discourse relation language models. CoRR abs/1603.01913.
+- Joulin et al. (2016) Armand Joulin, Edouard Grave, Piotr Bojanowski, and Tomas Mikolov. 2016. Bag of tricks for efficient text classification. CoRR abs/1607.01759.
+- Kim (2014) Yoon Kim. 2014. Convolutional neural networks for sentence classification. In EMNLP 2014, Doha, Qatar.
+- Kim et al. (2016) Yoon Kim, Yacine Jernite, David Sontag, and Alexander M. Rush. 2016. Character-aware neural language models. In AAAI 2016, Phoenix, Arizona, USA.
+- Kiros et al. (2015) Ryan Kiros, Yukun Zhu, Ruslan Salakhutdinov, Richard S. Zemel, Raquel Urtasun, Antonio Torralba, and Sanja Fidler. 2015. Skip-thought vectors. In NIPS 2015, Montreal, Quebec, Canada.
+- Li and Hovy (2014) Jiwei Li and Eduard H. Hovy. 2014. A model of coherence based on distributed sentence representation. In EMNLP 2014, Doha, Qatar.
+- Li and Jurafsky (2016) Jiwei Li and Dan Jurafsky. 2016. Neural net models for open-domain discourse coherence. CoRR abs/1606.01545.
+- Logeswaran et al. (2016) Lajanugen Logeswaran, Honglak Lee, and Dragomir R. Radev. 2016. Sentence ordering using recurrent neural networks. CoRR abs/1611.02654.
+- Mikolov et al. (2010) Tomas Mikolov, Martin Karafiát, Lukás Burget, Jan Cernocký, and Sanjeev Khudanpur. 2010. Recurrent neural network based language model. In INTERSPEECH 2010, Makuhari, Chiba, Japan.
+- Miltsakaki et al. (2004) Eleni Miltsakaki, Rashmi Prasad, Aravind K. Joshi, and Bonnie L. Webber. 2004. The penn discourse treebank. In LREC 2004, Lisbon, Portugal.
+- Pang and Lee (2004) Bo Pang and Lillian Lee. 2004. A sentimental education: Sentiment analysis using subjectivity summarization based on minimum cuts. In ACL 2004, Barcelona, Spain.. pages 271–278.
+- Ramachandran et al. (2016) Prajit Ramachandran, Peter J. Liu, and Quoc V. Le. 2016. Unsupervised pretraining for sequence to sequence learning. CoRR abs/1611.02683.
+- Rush et al. (2015) Alexander M. Rush, Sumit Chopra, and Jason Weston. 2015. A neural attention model for abstractive sentence summarization. In EMNLP 2015, Lisbon, Portugal.
+- Socher et al. (2013) Richard Socher, Alex Perelygin, Jean Y Wu, Jason Chuang, Christopher D Manning, Andrew Y Ng, Christopher Potts, et al. 2013. Recursive deep models for semantic compositionality over a sentiment treebank. In EMNLP 2013, Seattle, Washington, USA.
+- Srivastava et al. (2015) Rupesh Kumar Srivastava, Klaus Greff, and Jürgen Schmidhuber. 2015. Highway networks. CoRR abs/1505.00387.
+- Stroube (2003) Bryan Stroube. 2003. Literary freedom: project gutenberg. ACM Crossroads 10.
+- Sutskever et al. (2014) Ilya Sutskever, Oriol Vinyals, and Quoc V Le. 2014. Sequence to sequence learning with neural networks. In NIPS 2014, Montreal, Quebec, Canada.
+- Voorhees (2001) Ellen M. Voorhees. 2001. Overview of the TREC 2001 question answering track. In TREC 2001, Gaithersburg, Maryland, USA.
+- Wang and Cho (2016) Tian Wang and Kyunghyun Cho. 2016. Larger-context language modelling with recurrent neural network. In ACL 2016, Berlin, Germany.
+- Yang et al. (2016) Zichao Yang, Diyi Yang, Chris Dyer, Xiaodong He, Alexander J. Smola, and Eduard H. Hovy. 2016. Hierarchical attention networks for document classification. In NAACL 2016, San Diego, California, USA.
+- Zhang et al. (2015) Xiang Zhang, Junbo Jake Zhao, and Yann LeCun. 2015. Character-level convolutional networks for text classification. In NIPS 2015, Montreal, Quebec, Canada.
+- Zhu et al. (2015) Yukun Zhu, Ryan Kiros, Richard S. Zemel, Ruslan Salakhutdinov, Raquel Urtasun, Antonio Torralba, and Sanja Fidler. 2015. Aligning books and movies: Towards story-like visual explanations by watching movies and reading books. In ICCV 2015, Santiago, Chile.
+
+## Supplement to: Discourse-Based Objectives for Fast Unsupervised Sentence Representation Learning
+
+Table 7 lists the conjunction phrases and groupings used. Table 8 (next page) shows the Euclidean nearest neighbors of a sample of sentences in our representation space.
+
+| addition | | contrast | | time |
+| --- | --- | --- | --- | --- |
+| again | furthermore | anyway | contrarily | meanwhile |
+| also | moreover | however | conversely | next |
+| besides | in addition | instead | nonetheless | then |
+| finally | | nevertheless | in contrast | now |
+| further | | otherwise | rather | thereafter |
+| result | specific | compare | strengthen | return |
+| accordingly | namely | likewise | indeed | still |
+| consequently | specifically | similarly | in fact | |
+| hence | notably | | | recognize |
+| thus | that is | | | undoubtedly |
+| therefore | for example | | | certainly |
+
+Table 7: Grouping of conjunctions.
+
+| His main influences are Al Di, Jimi Hendrix, Tony, JJ Cale, Malmsteen and Paul Gilbert. |
+| --- |
+| The album features guest appearances from Kendrick Lamar, Schoolboy Q, 2 Chainz, Drake, Big. |
+| The production had original live rock, blues, jazz, punk, and music composed and arranged by Steve and Diane Gioia. |
+| There are 6 real drivers in the game: Gilles, Richard Burns, Carlos Sainz, Philippe, Piero, and Tommi. |
+| Other rappers that did include Young Jeezy, Lil Wayne, Freddie Gibbs, Emilio Rojas, German rapper and Romeo Miller. |
+| Grant laughed and complied with the suggestion. |
+| Pauline stood for a moment in complete bewilderment. |
+| Her eyes narrowed on him, considering. |
+| Helena felt her face turn red hot. |
+| Her face remained expressionless as dough. |
+| Items can be selected specifically to represent characteristics that are not as well represented in natural language. |
+| Cache manifests can also use relative paths or even absolute urls as shown below. |
+| Locales can be used to translate into different languages, or variations of text, which are replaced by reference. |
+| Nouns can only be inflected for the possessive, in which case a prefix is added. |
+| Ratios are commonly used to compare banks, because most assets and liabilities of banks are constantly valued at market values. |
+| A group of generals thus created a secret organization, the united officers’ group, in order to oust Castillo from power. |
+| The home in Massachusetts is controlled by a private society organized for the purpose, with a board of fifteen trustees in charge. |
+| A group of ten trusted servants men from the family were assigned to search the eastern area of the island in the area. |
+| The city is divided into 144 administrative wards that are grouped into 15 boroughs. each of these wards elects a councillor. |
+| From 1993 to 1994 she served as US ambassador to the United Nations commission on the status of women. |
+| As a result of this performance, Morelli’s play had become a polarizing issue amongst Nittany Lion fans. |
+| In the end, Molly was deemed to have more potential, eliminating Jaclyn despite having a stellar portfolio. |
+| As a result of the Elway connection, Erickson spent time that year learning about the offense with Jack. |
+| As a result of the severe response of the czarist authorities to this insurrection, had to leave Poland. |
+| Another unwelcome note is struck by the needlessly aggressive board on the museum which has already been mentioned. |
+| Zayd Ibn reported , “we used to record the Quran from parchments in the presence of the messenger of god.” |
+| Daniel Pipes says that “primarily through “the protocols of the Elders of Zion”, the whites spread these charges to […]” |
+| Sam wrote in “” (1971) that Howard’s fiction was “a kind of wild West in the lands of unbridled fantasy.” |
+| said , the chancellor “elaborately fought for an European solution” in the refugee crisis, but this was “out of sight”. |
+| Robert , writing for “The New York Post”, states that, “in Mellie , the show has its most character […]” |
+| Many “Crimean Goths” were Greek speakers and many Byzantine citizens were settled in the region called […] |
+| The personal name of “Andes”, popular among the Illyrians of southern Pannonia and much of Northern Dalmatia […] |
+| is identified by the Chicano as the first settlement of the people in North America before their Southern migration […] |
+| The range of “H.” stretches across the Northern and Western North America as well as across Europe […] |
+| The name “Dauphin river” actually refers to two closely tied communities; bay and some members of Dauphin river first nation. |
+| She smiled and he smiled in return. |
+| He shook his head and smiled broadly. |
+| He laughed and shook his head. |
+| He gazed at her in amazement. |
+| She sighed and shook her head at her foolishness. |
+| The jury returned a verdict of “not in the Floyd cox case, in which he was released immediately. |
+| The match lasted only 1 minute and 5 seconds, and was the second quickest bout of the division. |
+| His results qualified him for the Grand Prix final, in which he placed 6th overall. |
+| The judge stated that the prosecution had until march 1, 2012, to file charges. |
+| In November, he reached the final of the Ruhr Open, but lost 42̆0130 against Murphy. |
+| Here was at least a slight reprieve. |
+| The monsters seemed to be frozen in time. |
+| This had an impact on him. |
+| That was all the sign he needed. |
+| So this was disturbing as hell. |
+
+Table 8: Nearest neighbor examples
+
+[^1]: All code, resources, and models involved in these experiments will be made available upon publication.
+
+[^2]: https://github.com/facebookresearch/fastText/ blob/master/pretrained-vectors.md
