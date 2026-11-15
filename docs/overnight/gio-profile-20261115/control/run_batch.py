@@ -54,7 +54,7 @@ from autoresearch.taste.overnight.registry import get_builder
 from autoresearch.taste.overnight.runner import (ITEM_FIELDS, _validate, job_id, run_job, timestamp, write_new)
 
 HARD_DEADLINE = '2026-11-15T17:00:00Z'
-MAX_CAMPAIGN_USD = Decimal('9.999994875')
+MAX_CAMPAIGN_USD = Decimal('500')  # Direct user approval; each batch still requires its shared suballocation.
 RELEASE_SCHEMA = 'released-development-v2'
 RELEASE_SCOPE = 'Tier A primary descriptive; Tier B separately reported secondary; no confirmation panel'
 SECRET_NAMES = ('OPENAI_API_KEY', 'OPENAI_ORG_ID', 'OPENAI_PROJECT_ID')

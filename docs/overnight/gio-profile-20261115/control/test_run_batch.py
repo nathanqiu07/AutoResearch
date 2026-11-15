@@ -150,11 +150,16 @@ class DriverTests(unittest.TestCase):
         self.batch['max_total_attempts'] = 1
         with self.assertRaises(ValueError): self.prepared(2)
         self.batch['max_total_attempts'] = 100
-        self.batch['ledger']['max_usd'] = 10
+        self.batch['ledger']['max_usd'] = 500.000000001
         with self.assertRaises(ValueError): self.prepared()
         self.batch['ledger']['max_usd'] = 9.999994875
         self.packet['backend']['max_calls'] = 2
         with self.assertRaises(ValueError): self.prepared()
+
+    def test_approved_profile_suballocation_stays_below_aggregate_cap(self):
+        self.batch['ledger']['max_usd'] = 199.982398375
+        result = self.prepared()
+        self.assertEqual(result['ledger'].summary()['max_usd'], 199.982398375)
 
     def test_env_parser_is_data_only_and_errors_hide_values(self):
         sentinel = self.base / 'must-not-exist'
