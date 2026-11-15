@@ -944,3 +944,32 @@
   The exact guide was relayed to planning and coordinator for existing09/10;
   no private input or archive was opened. The current required suite passes as
   retained in053, separately from this static handoff.
+
+## Published source-copy closure and next private boundary
+
+- Audits 053 and 055 are remote-verified at
+  `abe0f7459735aeb79fbfea8abe04209cb20b055d`. Their findings appendix and exact
+  retention workflow reference were delivered to planning/coordinator.
+- Audit 054 verifies the coordinator's immutable snapshot at `32714e96`:
+  20 payloads/156,748 bytes plus five metadata files/40,727 bytes. All 103
+  destination and Git checks pass; nine synthetic controls enforce failure for
+  wrong/missing Git objects as well as local drift and scope errors. Root
+  independently binds all 25 actual Git blobs and the remote branch observation.
+  This closes exact source-copy publication, not execution or dependency recovery.
+  Frozen049 is unchanged; no original temporary source or private reference is read.
+- The audit-branch suite separately exits zero with 675 passed and two skipped
+  at `abe0f745`; its log is retained in054.
+- Planning names existing audit as future private copier/verifier, contingent
+  on04's exact-list review and the coordinator's precise authority. Only the
+  released inventory-boundary metadata was inspected, SHA-256
+  `fc7ba63c73b67813749ffca9828d7aeb88f0fde23c99fd2baa9c518ae84bdfbc`.
+  It explicitly authorizes no copy yet. Actual databases/WAL/SHM, credentials,
+  provider-cache traversal, human ground truth and unrelated paths stay excluded.
+  No anchors or embedded paths were followed. Existing09/10 own finite inventories;
+  the paired-history study is reported live and remains separately controlled.
+- Automated approval review rejected a subsequent attempt to send existing
+  private-archive locations and integrity hashes to the coordinator chat, citing
+  missing explicit user authorization for that metadata and destination. The
+  exact metadata-sharing question is pending with the user. The rejected message
+  was not resent or routed indirectly; no private contents were shared. Public
+  copy verification and other already authorized work continue independently.

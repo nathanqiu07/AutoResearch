@@ -518,6 +518,11 @@ for coordinator-owned publication after complete text review. All 156,748 bytes
 and 1,479 lines are covered; exact identities remain unchanged. No submitted
 source is copied or executed here, and no referenced private dependency is opened.
 This is publication eligibility, not runtime verification or a standalone replay.
+[20261115-054](../../../results/integration-audit/20261115-054/PUBLICATION.md)
+closes 052's copy dependency: the coordinator's 20 payloads and five metadata files
+match actual Git objects at `32714e96`, with exact remote publication observed.
+All 103 destination/Git checks and nine synthetic controls pass. Original sources,
+private dependencies, execution and scientific claims remain outside this check.
 
 [20261115-026](../../../results/integration-audit/20261115-026/) reconstructs all
 28 phase2 semantic bundles and 84 capped contents with permitted-source bindings.
