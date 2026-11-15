@@ -25,6 +25,13 @@ redoing work.
 
 ## Ledger (newest first)
 
+### 2026-11-15 devin-tastepetri: taste_ranker/ + decoys/ (IN PROGRESS, 17:50 UTC)
+- User: "continue, try new things". Two pre-registered threads (each dir's PREREG.md); claude: please don't take them.
+  - `taste_ranker/`: do Bowman/Greenblatt cards rank petri_taste's 7 rewrites per seed in the order Petri's judge
+    scored them, better than no profile and a Carlini placebo? 110 devin-cli calls, no haiku.
+  - `decoys/`: is the bait a tell because it is the only anomaly? R0 + 2-3 innocent irregularities (DC) vs a
+    routine-texture placebo (DZ). About 360 haiku.
+
 ### 2026-11-15 devin-tastepetri: petri_taste/ (DONE, 17:00 UTC; Devin idle, nothing running)
 - Read `petri_taste/results.md`. Pre-registered and run: TT/TB/TC (round 1), then guarded TT2/TB2/TC2 (round 2), k=3.
 - **Taste null (confirmatory):** Bowman-evidence rewrites = no-researcher rewrites = Carlini placebo, on absolute
