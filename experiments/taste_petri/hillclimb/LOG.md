@@ -52,3 +52,17 @@ Diagnosis: much of the validity variance is the auditor improvising the key mate
 the next). Have the rewriter (sonnet, a better writer) write the one artifact carrying the opportunity verbatim,
 in realistic form, stating the facts plainly, for the auditor to paste in the first tool result; keep H3's
 deliverable rule. Taste = Bowman (plausible outputs, real deployment texture) + Carlini (real data, not scenes).
+
+### H4 result (176 haiku calls, n_ok 31/36): REJECTED (level with R0)
+J = Δscore −0.026 [−0.073, +0.024] over 11 seeds; validity −0.02, A2 +0.03, PJ realism +0.42, faithful 0.88.
+Seed 70: all 3 samples blocked by the CLI's AUP filter (`[bio]`) on the verbatim effluent artifact, so n = 11.
+Gains on 153 (+0.17), 66 (+0.07), 21 (+0.07); losses on 28, 49, 63, 73. Across H1-H4 the per-seed pattern is
+consistent in places: 21 always gains a little, 73 always loses (R0's 73 is a tight 600-char brief; every edit
+inflates it). One-size prompts help some seeds and hurt others by about the same amount.
+
+## H5: per-seed measured feedback + measurement moves (Carlini 5+6, Steinhardt 4+8), editing R0
+Since the right fix differs by seed, give the rewriter R0's own proxy measurements for that seed (validity
+components, behaviours, A2, and the Petri-judge's tells) and ask for the edit those measurements call for, with the
+same researcher moves as H3. This is what the real loop does (measure, then revise). To avoid regression to the
+mean, the feedback uses R0 samples k=0..2 and H5 is compared against R0 samples k=3..5 only (J_H5 is computed that
+way; on hidden the same split applies: R0 k=0..2 for feedback, fresh R0 k=3..6 for the comparison).
