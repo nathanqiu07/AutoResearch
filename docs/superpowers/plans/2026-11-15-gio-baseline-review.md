@@ -24,24 +24,24 @@
 ### Task 1: Packet and primary review
 
 Files: scripts/gio_petri/review.py, prepare_review.py, test_review.py, review-instructions.txt.
-- [ ] Add tests for gate aggregation, evidence quote rejection, unknown outcomes, no-interference outcome, and blind/full prompt input.
-- [ ] Run the new tests and observe failure before implementation.
-- [ ] Implement build_review_prompt(seed,row,tools,structure,instructions), validate_review(payload,sources), and prepare_review packet derived from frozen baseline01.
-- [ ] Verify exact seed/prompt/role generation equality with baseline01; only max turns and review metadata change.
+- [x] Add tests for gate aggregation, evidence quote rejection, unknown outcomes, no-interference outcome, and blind/full prompt input.
+- [x] Run the new tests and observe failure before implementation.
+- [x] Implement build_review_prompt(seed,row,tools,structure,instructions), validate_review(payload,sources), and prepare_review packet derived from frozen baseline01.
+- [x] Verify exact seed/prompt/role generation equality with baseline01; only max turns and review metadata change.
 
 ### Task 2: Runner, verification, live run
 
 Files: scripts/gio_petri/run_baseline.py and test_review.py.
-- [ ] Runner consumes packet turn count; captures native transcript/tool/stop metadata; saves primary request/reply/validated result before existing diagnostics. Failed review preserved without inventing scores.
-- [ ] Run scripts/gio_petri tests and the repository suite; fresh reviewer inspects code/settings, especially five focus items.
-- [ ] Commit source, freeze packet and hashes, run exactly one approved audit.
-- [ ] Inspect terminal status, transcript, output limits, exact role IDs, cost ledger, validity evidence and failures. Do not treat successful code execution as scientific validity.
+- [x] Runner consumes packet turn count; captures native transcript/tool/stop metadata; saves primary request/reply/validated result before existing diagnostics. Failed review preserved without inventing scores.
+- [x] Run scripts/gio_petri tests and the repository suite; fresh reviewer inspects code/settings, especially five focus items.
+- [x] Commit source, freeze packet and hashes, run exactly one approved audit.
+- [x] Inspect terminal status, transcript, output limits, exact role IDs, cost ledger, validity evidence and failures. Do not treat successful code execution as scientific validity.
 
 ### Task 3: Reviewable handoff
 
 Files: docs/user-models/overnight/*, docs/user-models/baseline-review-02/*, results/gio-baseline-review-02/*.
-- [ ] Deliver complete copy-paste overnight prompts before paid run.
-- [ ] Produce full transcript/reasoning and primary/legacy results with provenance; immutable raw log references.
+- [x] Deliver complete copy-paste overnight prompts before paid run.
+- [x] Produce full transcript/reasoning and primary/legacy results with provenance; immutable raw log references.
 - [ ] Verify hashes, credential-pattern scan and relevant tests; push scoped commits and verify remote.
 - [ ] Report complete result even if invalid. Goal ends only when prompt pack and full run handoff are both delivered.
 
@@ -53,3 +53,11 @@ Task 1: complete; 11 review tests RED->GREEN; wrapper tests4 RED->GREEN; combine
 Review: independent fresh reviewer checked native .eval metadata and API return shape. Important finding fixed: failed/partial legacy judge does not block primary review of a usable audit. API failure record also added because full-result delivery requires an explicit review-failure artifact. Both regression tests failed before fixes and pass after.
 Task 2: packet generated; byte identity of seed and baseline template tested; role/config/turn metadata validated without calls. No shared teammate modules modified.
 Ruling: existing profile-search coordinator owns corpus intake; overnight context prompt amended to consume evaluator-released fit data, not independently scrape or split a second corpus.
+
+Task 2 terminal result: exactly one audit at source 80171d4a621c2148b3b8319a4e456faf54d673cf, 27/30 auditor turns, 8 target calls, 18m42s. Last target response reported finish_reason=length and 16,384 output tokens but returned only a short sentence. The ledger halted further calls; native cleanup then failed. No secondary scoring ran. Models, routing, seed, prompt bytes and generation settings were unchanged.
+
+Recovery: original failed/empty audit export and logs preserved. Offline extraction recovered native AuditStore messages into separate postmortem artifacts. A single GPT-5.1 review at source e693c2afc3310218682a813c2b1d543787474670 used the same frozen instructions and unspent portion of the original $5 allocation. Its reply failed two exact-quote checks and one target-visibility check. The reply is rejected, not repaired or rescored. Combined conservative cost $0.13732107. No rerun or personalized arm.
+
+Task 3: full redacted publication bundle and readable findings prepared. Original logs stay unchanged. The target conversation contains no shutdown mention; no valid baseline decision was observed. Other agents' intake and integration lanes remain separate. Targeted tests: 28 passing; repository suite: 663 tests, two skipped. Final artifact integrity, documentation links and remote publication are checked at closeout.
+
+Closeout verification: 81 publication files match their SHA-256 manifest. Published evidence and review documents pass credential-pattern scanning; every relative review-document link resolves. Full recovered transcript/reasoning are included verbatim in the readable handoff. Seed/template byte equality and model/routing/generation equality against baseline01 pass. Fresh targeted suite: 28 passing; fresh repository suite: 663 tests, two skipped. Independent read-only audit found no material contradictions; its minor missing-score.json wording was corrected. Shared autoresearch/ and harness/petri/ sources are unchanged from the audit runtime commit.
