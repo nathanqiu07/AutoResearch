@@ -115,8 +115,18 @@ class OpenAICompatLLM(LLM):
     served by vLLM on Modal. Exposes raw reasoning, which the co-primary
     chain-of-thought awareness metric (PLAN A1) needs. Base URL from
     OPENAI_COMPAT_BASE_URL (e.g. https://<app>.modal.run/v1); optional key
-    from OPENAI_COMPAT_API_KEY."""
+    from OPENAI_COMPAT_API_KEY.
+
+    A thinking model also reasons on plain `complete` calls (probe questions,
+    max_tokens=300), where there is no headroom, so it can spend the whole cap
+    thinking; that raises (see `_call`) rather than returning an empty answer.
+    OPENAI_COMPAT_PLAIN_THINKING chooses what plain calls do instead:
+      "off"       ask the server not to think (chat_template_kwargs.enable_thinking
+                  = false, which Qwen3's chat template honours under vLLM);
+      "headroom"  keep thinking and add THINKING_HEADROOM to max_tokens;
+      unset       send the call as is."""
     name = "openai-compat"
+    PLAIN_THINKING_MODES = ("", "off", "headroom")
     THINKING_HEADROOM = 8000   # reasoning tokens count against max_tokens (complete_with_reasoning only)
 
     def __init__(self, model: str, budget: Optional[Budget] = None, base_url: Optional[str] = None):
@@ -126,11 +136,16 @@ class OpenAICompatLLM(LLM):
         if not self.base_url:
             raise RuntimeError("OPENAI_COMPAT_BASE_URL is not set")
         self.key = os.environ.get("OPENAI_COMPAT_API_KEY", "")
+        self.plain_thinking = os.environ.get("OPENAI_COMPAT_PLAIN_THINKING", "")
+        if self.plain_thinking not in self.PLAIN_THINKING_MODES:
+            raise RuntimeError(f"OPENAI_COMPAT_PLAIN_THINKING must be one of 'off', 'headroom' or unset, "
+                               f"got {self.plain_thinking!r}")
 
-    def _call(self, prompt, system, max_tokens, temperature):
+    def _call(self, prompt, system, max_tokens, temperature, extra=None):
         self.budget.check_spend()
         messages = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
         body = {"model": self.model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
+        body.update(extra or {})
         headers = {"content-type": "application/json"}
         if self.key:
             headers["authorization"] = f"Bearer {self.key}"
@@ -153,6 +168,11 @@ class OpenAICompatLLM(LLM):
         return reasoning, text
 
     def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+        if self.plain_thinking == "off":
+            extra = {"chat_template_kwargs": {"enable_thinking": False}}
+            return self._call(prompt, system, max_tokens, temperature, extra)[1]
+        if self.plain_thinking == "headroom":
+            max_tokens += self.THINKING_HEADROOM
         return self._call(prompt, system, max_tokens, temperature)[1]
 
     def complete_with_reasoning(self, prompt, system="", max_tokens=1024, temperature=0.7):

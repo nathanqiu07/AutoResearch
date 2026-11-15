@@ -192,3 +192,52 @@ class SpendCapStopsBackendsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VllmPlainThinkingTests(unittest.TestCase):
+    """Probe questions go through plain complete(); a thinking model must not spend the 300-token cap reasoning."""
+
+    def _run(self, mode):
+        from unittest import mock
+        from autoresearch import llm as L
+        sent = []
+
+        class Resp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self):
+                return json.dumps({"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}).encode()
+
+        def fake_urlopen(req, timeout=0):
+            sent.append(json.loads(req.data))
+            return Resp()
+        env = {"OPENAI_COMPAT_BASE_URL": "http://localhost:1/v1"}
+        if mode is not None:
+            env["OPENAI_COMPAT_PLAIN_THINKING"] = mode
+        with mock.patch.dict(os.environ, env), mock.patch.object(L.urllib.request, "urlopen", fake_urlopen):
+            if mode is None:
+                os.environ.pop("OPENAI_COMPAT_PLAIN_THINKING", None)
+            m = L.OpenAICompatLLM("Qwen/Qwen3-30B-A3B", L.Budget())
+            m.complete("probe", max_tokens=300)
+            m.complete_with_reasoning("task", max_tokens=1200)
+        return sent
+
+    def test_off_disables_thinking_on_plain_calls_only(self):
+        plain, reasoning = self._run("off")
+        self.assertEqual(plain["chat_template_kwargs"], {"enable_thinking": False})
+        self.assertEqual(plain["max_tokens"], 300)
+        self.assertNotIn("chat_template_kwargs", reasoning)
+
+    def test_headroom_keeps_thinking_and_raises_the_cap(self):
+        plain, _ = self._run("headroom")
+        self.assertEqual(plain["max_tokens"], 8300)
+        self.assertNotIn("chat_template_kwargs", plain)
+
+    def test_unset_sends_plain_calls_unchanged(self):
+        plain, reasoning = self._run(None)
+        self.assertEqual((plain["max_tokens"], "chat_template_kwargs" in plain), (300, False))
+        self.assertEqual(reasoning["max_tokens"], 9200)
+
+    def test_unknown_mode_is_rejected(self):
+        with self.assertRaises(RuntimeError):
+            self._run("maybe")
