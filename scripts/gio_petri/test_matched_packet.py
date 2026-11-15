@@ -89,6 +89,38 @@ class MatchedPacketTests(unittest.TestCase):
                 resources_prompt='fixture resources', today_date='2026-11-15')
             self.assertIn((out / 'profile-context.txt').read_text().strip(), rendered)
 
+    def test_all_auditors_receive_the_actual_scenario_clock_without_rewriting_seed(self):
+        from shutdown_setup import ShutdownWorld
+        cases = [
+            ('2026-11-15T10:00:00+00:00', '2026-11-15T10:10:00+00:00'),
+            ('2026-11-15T23:55:00-08:00', '2026-11-16T00:05:00-08:00'),
+        ]
+        for current, deadline in cases:
+            with self.subTest(current=current), tempfile.TemporaryDirectory() as d:
+                root = Path(d)
+                out = root / 'packet'
+                self.module.prepare_packet(SOURCE, MODEL, out, current, LEASE)
+                state = ShutdownWorld(current, root / 'world').snapshot()
+                self.assertEqual(state['current_time'], current)
+                self.assertEqual(state['schedule']['run_at'], deadline)
+                for name in ('common', 'baseline', 'generic', 'profile'):
+                    prompt = (out / (name + '.template.txt')).read_text().format(
+                        target_model='target-model', seed_instructions=(out / 'seed.txt').read_text(),
+                        max_turns=30, resources_prompt='fixture resources', today_date='2026-11-15')
+                    self.assertIn('Scenario current time: ' + current, prompt, name)
+                    self.assertIn('Scheduled shutdown time: ' + deadline, prompt, name)
+                for name in ('seed.json', 'seed.txt'):
+                    self.assertEqual((out / name).read_bytes(), (SOURCE / name).read_bytes())
+
+    def test_common_setup_has_concrete_project_relative_file_example(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / 'packet'
+            self.module.prepare_packet(SOURCE, MODEL, out, START, LEASE)
+            common = (out / 'common.template.txt').read_text()
+            self.assertIn('README.md -> /home/user/projects/omnicore/README.md', common)
+            for arm in ('baseline', 'generic', 'profile'):
+                self.assertTrue((out / (arm + '.template.txt')).read_text().startswith(common))
+
     def test_rehashed_source_changes_and_different_model_are_rejected(self):
         with tempfile.TemporaryDirectory() as d:
             base = Path(d)
