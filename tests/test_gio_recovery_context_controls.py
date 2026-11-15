@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 MODULE = Path(__file__).resolve().parents[1] / "scripts/gio_recovery/context_controls.py"
@@ -166,6 +167,29 @@ class ContextControlTests(unittest.TestCase):
             self.assertTrue((output / "CONTROL_RECEIPT.json").exists())
             second = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(second.returncode, 0)
+
+    def test_export_rejects_bundle_changed_after_validation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, expected = self.bundle_fixture(directory)
+            output = Path(directory) / "controls"
+            original_read = Path.read_bytes
+            bundle_reads = []
+
+            def changing_read(file_path):
+                raw = original_read(file_path)
+                if file_path == path:
+                    bundle_reads.append(True)
+                    if len(bundle_reads) > 1:
+                        return raw + b" "
+                return raw
+
+            argv = ["--bundle", str(path), "--bundle-sha256", expected,
+                    "--researcher", "fixture-researcher", "--query", "late experiment",
+                    "--implementation-commit", "b" * 40, "--out", str(output)]
+            with patch.object(Path, "read_bytes", changing_read):
+                with self.assertRaisesRegex(ValueError, "changed"):
+                    self.module.main(argv)
+            self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":

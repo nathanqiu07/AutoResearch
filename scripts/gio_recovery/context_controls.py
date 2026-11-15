@@ -324,8 +324,11 @@ def main(argv=None):
                                              "outside permitted spans is whitespace only"])
         handoffs.append(handoff)
     # Finish validation first; never overwrite an earlier exported condition.
+    bundle_bytes = args.bundle.read_bytes()
+    if hashlib.sha256(bundle_bytes).hexdigest() != bundle_digest:
+        raise ValueError("source bundle changed after validation")
     args.out.mkdir(parents=True, exist_ok=False)
-    (args.out / "source-bundle.json").write_bytes(args.bundle.read_bytes())
+    (args.out / "source-bundle.json").write_bytes(bundle_bytes)
     receipts = []
     for handoff in handoffs:
         name = handoff["condition_id"] + ".context.json"
