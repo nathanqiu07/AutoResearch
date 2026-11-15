@@ -45,6 +45,14 @@ class DevinCLITest(unittest.TestCase):
         self.assertIn("exec", seen["config"]["permissions"]["deny"])
         self.assertFalse(os.path.exists(seen["cwd"]))   # ran in a temporary directory, now removed
 
+    def test_retries_a_retryable_service_error(self):
+        run, _ = fake_devin()
+        flaky = mock.Mock(returncode=1, stdout="", stderr='{"cognition.ai/retryable": true}')
+        calls = iter([lambda cmd, **kw: flaky, run])
+        with mock.patch("subprocess.run", side_effect=lambda cmd, **kw: next(calls)(cmd, **kw)), \
+                mock.patch("time.sleep"):
+            self.assertEqual(DevinCLILLM("claude-sonnet-5-5-medium").complete("ping"), "pong")
+
     def test_refuses_calls_once_cost_cap_is_reached(self):
         run, _ = fake_devin(prompt_tokens=60000, cached=0, written=0)
         with mock.patch("subprocess.run", side_effect=run) as call:

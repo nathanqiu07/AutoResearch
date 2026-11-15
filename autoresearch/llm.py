@@ -598,22 +598,14 @@ class DevinCLILLM(LLM):
         self.price_model, self.price_mult = (m.group(1), 2.0 if m.group(2) else 1.0) if m else (model, 1.0)
 
     def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
-        import tempfile
         self.budget.check_spend()
         text = (f"{system}\n\n" if system else "") + "Answer in plain text with no tool calls.\n\n" + prompt
-        with tempfile.TemporaryDirectory(prefix="ar_devin_") as cwd:
-            for name, body in (("prompt.txt", text), ("config.json", json.dumps(self.CONFIG))):
-                with open(os.path.join(cwd, name), "w") as f:
-                    f.write(body)
-            cmd = [self.binary, "-p", "--prompt-file", os.path.join(cwd, "prompt.txt"), "--model", self.model,
-                   "--config", os.path.join(cwd, "config.json"), "--respect-workspace-trust", "false",
-                   "--permission-mode", "auto", "--export", os.path.join(cwd, "out.json")]
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=self.timeout, cwd=cwd)
-            try:
-                with open(os.path.join(cwd, "out.json")) as f:
-                    steps = [s for s in json.load(f).get("steps", []) if s.get("source") == "agent"]
-            except (OSError, json.JSONDecodeError):
-                steps = []
+        for attempt in range(4):
+            proc, steps = self._run(text)
+            # Devin marks transient service errors ("unavailable") as retryable.
+            if steps or '"cognition.ai/retryable": true' not in (proc.stderr + proc.stdout) or attempt == 3:
+                break
+            time.sleep(5 * 2 ** attempt)
         if proc.returncode != 0 or not steps:
             raise RuntimeError(f"devin CLI failed: {(proc.stderr or proc.stdout).strip()[-300:]}")
         for st in steps:
@@ -627,6 +619,23 @@ class DevinCLILLM(LLM):
             self.budget.charge(m.get("prompt_tokens", 0) or 0, usage["output_tokens"], cost * self.price_mult,
                                cache_write=written, cache_read=read)
         return steps[-1].get("message", "")
+
+    def _run(self, text):
+        """(process, the agent's steps from the exported conversation) for one isolated call."""
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="ar_devin_") as cwd:
+            for name, body in (("prompt.txt", text), ("config.json", json.dumps(self.CONFIG))):
+                with open(os.path.join(cwd, name), "w") as f:
+                    f.write(body)
+            cmd = [self.binary, "-p", "--prompt-file", os.path.join(cwd, "prompt.txt"), "--model", self.model,
+                   "--config", os.path.join(cwd, "config.json"), "--respect-workspace-trust", "false",
+                   "--permission-mode", "auto", "--export", os.path.join(cwd, "out.json")]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=self.timeout, cwd=cwd)
+            try:
+                with open(os.path.join(cwd, "out.json")) as f:
+                    return proc, [s for s in json.load(f).get("steps", []) if s.get("source") == "agent"]
+            except (OSError, json.JSONDecodeError):
+                return proc, []
 
 
 class OfflineLLM(LLM):
