@@ -52,8 +52,10 @@ Each output packet has the current `overnight-packet-v1` shape. `lease` and
 `manifest.allocation.authorization_source` are null, and `job_id` is absent.
 Only the coordinator fills real authority fields and asks the driver to derive
 and prepare the final job. Requested ceilings are estimates, not spending or
-permission. Existing profile dependencies and A/B/C cell aliases are reused;
-there are no new extraction requests. CLI needs a separate supported driver.
+permission. Existing profile dependencies and all exact execution duplicates are reused,
+including A/D when profile, inputs and settings match. Packets expose every
+`scaling_cell_ids` alias; costs and calls count once. There are no new extraction
+requests. CLI needs a separate supported driver.
 Utility cells are returned as explicit downstream-owner handoff records, with
 frozen hashes/settings and no substitute loop or scorer.
 
@@ -73,7 +75,8 @@ expected_analysis_hash=...)` consumes evaluator-issued rows, never labels.
 The synthetic `scaling-evaluator-map-v1` maps exact scheduled item IDs to opaque
 semantic-item/source-group IDs, researcher, tier and schedule hash. Jobs pin their
 own subset target-bundle hash, common parent bundle hash, job/manifest identity
-and exact item subset. Thus genuine subset `score_predictions` reports can be
+and exact item subset. A unique job can bind `cell_ids` aliases instead of one
+`cell_id`; its scored rows fan out without another execution. Thus genuine subset `score_predictions` reports can be
 joined without rewriting hashes. Each score packet supplies that report plus
 raw prediction statuses so empty/missing/invalid outcomes remain visible.
 

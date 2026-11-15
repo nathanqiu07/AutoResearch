@@ -610,9 +610,11 @@ def grouped_paired_report(mapping, jobs, score_packets, comparisons, *, expected
         semantic.append(item)
     job_index, cell_items = {}, {}
     for job in jobs:
-        _fields(job, {'cell_id', 'job_id', 'manifest_sha256', 'item_ids',
-                      'target_bundle_sha256', 'parent_target_bundle_sha256'}, 'scored job binding')
-        _text(job['cell_id'], 'cell ID')
+        _fields(job, {'job_id', 'manifest_sha256', 'item_ids', 'target_bundle_sha256',
+                      'parent_target_bundle_sha256'} | ({'cell_ids'} if 'cell_ids' in job else {'cell_id'}), 'scored job binding')
+        aliases = job['cell_ids'] if 'cell_ids' in job else [job['cell_id']]
+        if not isinstance(aliases, list) or not aliases or any(not isinstance(c, str) or not c for c in aliases) or len(set(aliases)) != len(aliases):
+            raise ValueError('explicit unique execution cell aliases required')
         _hash(job['job_id'], 'job ID')
         _hash(job['manifest_sha256'], 'job manifest')
         _hash(job['target_bundle_sha256'], 'job target bundle')
@@ -622,11 +624,12 @@ def grouped_paired_report(mapping, jobs, score_packets, comparisons, *, expected
         if (job['job_id'] in job_index or not isinstance(ids, list) or not ids
                 or len(set(ids)) != len(ids) or any(i not in indexed for i in ids)):
             raise ValueError('duplicate job or invalid scored job subset')
-        job_index[job['job_id']] = job
-        seen = cell_items.setdefault(job['cell_id'], set())
-        if seen & set(ids):
-            raise ValueError('cell repeats a scheduled item across jobs')
-        seen.update(ids)
+        job_index[job['job_id']] = dict(job, cell_ids=aliases)
+        for cell_id in aliases:
+            seen = cell_items.setdefault(cell_id, set())
+            if seen & set(ids):
+                raise ValueError('cell repeats a scheduled item across jobs')
+            seen.update(ids)
     if not cell_items or any(ids != set(indexed) for ids in cell_items.values()):
         raise ValueError('every cell must bind the identical full mapped item set')
     scored = {cell: {} for cell in cell_items}
@@ -667,7 +670,8 @@ def grouped_paired_report(mapping, jobs, score_packets, comparisons, *, expected
             brier = row['brier']
             if brier is not None and (type(brier) not in (int, float) or not math.isfinite(brier) or not 0 <= brier <= 1):
                 raise ValueError('invalid evaluator Brier score')
-            scored[job['cell_id']][row['item_id']] = dict(row, prediction_status=status)
+            for cell_id in job['cell_ids']:
+                scored[cell_id][row['item_id']] = dict(row, prediction_status=status)
         if seen_items != set(job['item_ids']):
             raise ValueError('evaluator report omitted a bound item; missing predictions require explicit failure rows')
 
@@ -748,6 +752,7 @@ def grouped_paired_report(mapping, jobs, score_packets, comparisons, *, expected
     return {'schema_version': 'scaling-grouped-fidelity-report-v1', 'outcome_panel': 'fidelity',
             'mapping_sha256': expected_mapping_hash, 'jobs_sha256': expected_jobs_hash,
             'scores_sha256': expected_scores_hash, 'analysis_sha256': expected_analysis_hash, 'rule': _copy(rule), 'cells': cells, 'comparisons': paired,
+            'unique_scored_jobs': len(seen_jobs), 'logical_cell_count': len(cells),
             'interpretation': 'Case-specific descriptive evidence; source groups are resampled within researcher and tier. '
                               'Two researchers do not define a researcher population; no population interval is reported.'}
 
@@ -797,7 +802,7 @@ def compile_driver_packets(manifest, bindings, *, runtime, expected_manifest_has
         provided[binding['cell_id']] = binding
     if set(provided) != set(cell_index):
         raise ValueError('every unique cell requires an explicit ready or unavailable binding')
-    packets, cells, dependencies, raw_hashes = [], [], {}, {}
+    packets, cells, dependencies, raw_hashes, executions = [], [], {}, {}, {}
     registrations = {
         'P1': ('profiles_summary', 'register_summary_builders'),
         'P2': ('profiles_summary', 'register_summary_builders'),
@@ -974,18 +979,40 @@ def compile_driver_packets(manifest, bindings, *, runtime, expected_manifest_has
                 'item_ids': ids, 'profile': _copy(job['profile_ref']), 'config': config, 'manifest': plan,
                 'lease': None, 'backend': dict(limits, model=identity['model'], reasoning=identity['enforced_settings']['reasoning_effort']),
                 'registration': job['registration']}
-            packet_id = digest(packet)
-            packets.append({'packet_id': packet_id, 'cell_id': cell_id, 'status': 'awaiting-coordinator-authority', 'packet': packet})
+            execution = _copy(packet)
+            execution['manifest'].pop('scaling_cell_id')
+            # Identical bytes at another path are the same input; preserve the first
+            # concrete reference for the driver and all cell aliases for analysis.
+            for field in ('release', 'profile'):
+                execution[field] = {'sha256': execution[field]['sha256']}
+            packet_id = digest(execution)
+            if packet_id in executions:
+                executions[packet_id]['cell_ids'].append(cell_id)
+            else:
+                entry = {'packet_id': packet_id, 'cell_id': cell_id, 'cell_ids': [cell_id],
+                         'status': 'awaiting-coordinator-authority', 'packet': packet}
+                executions[packet_id] = entry
+                packets.append(entry)
             cell_packets.append(packet_id)
             dependency = dependencies.setdefault(profile.profile_id, {'profile_id': profile.profile_id,
                 'method_id': method, 'content_sha256': profile.content_sha256, 'profile_ref': job['profile_ref'],
                 'origin_job_id': job['origin_job_id'], 'mode': 'reuse-existing-frozen-profile', 'packet_ids': []})
             if dependency['origin_job_id'] != job['origin_job_id'] or dependency['profile_ref'] != job['profile_ref']:
                 raise ValueError('same frozen profile has contradictory origin or file reference')
-            dependency['packet_ids'].append(packet_id)
+            if packet_id not in dependency['packet_ids']:
+                dependency['packet_ids'].append(packet_id)
         if flattened != wanted_ids:
             raise ValueError('job partitions must preserve every frozen item exactly once and in order')
         cells.append({'cell_id': cell_id, 'status': 'compiled', 'reason': None, 'packet_ids': cell_packets})
+    final_ids = {}
+    for entry in packets:
+        entry['packet']['manifest']['scaling_cell_ids'] = sorted(entry['cell_ids'])
+        final_ids[entry['packet_id']] = digest(entry['packet'])
+        entry['packet_id'] = final_ids[entry['packet_id']]
+    for cell in cells:
+        cell['packet_ids'] = [final_ids[i] for i in cell['packet_ids']]
+    for dependency in dependencies.values():
+        dependency['packet_ids'] = [final_ids[i] for i in dependency['packet_ids']]
     output = {'schema_version': 'scaling-driver-drafts-v1', 'manifest_sha256': expected_manifest_hash,
         'bindings_sha256': expected_bindings_hash, 'runtime_sha256': expected_runtime_hash,
         'runtime': _copy(runtime), 'arms': _copy(manifest['arms']), 'cells': cells, 'packets': packets,
@@ -1008,7 +1035,9 @@ def control_policy_hash(config):
 def validate_raw_passage_scope(content, documents):
     """Reject frozen raw passages outside approved spans; never construct a fallback."""
     by_id = {d['document_id']: d for d in documents}
-    passages = content.get('passages') if isinstance(content, dict) else None
+    if not isinstance(content, dict) or set(content) != {'passages'}:
+        raise ValueError('raw/retrieval controls require only permitted passages, no profile annotations')
+    passages = content['passages']
     if not isinstance(passages, list) or not passages:
         raise ValueError('raw evidence requires approved permitted passages')
     for passage in passages:

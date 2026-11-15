@@ -444,6 +444,18 @@ class GroupedScalingReportTests(unittest.TestCase):
             if change == 'utility': case.mapping['outcome_panel'] = 'utility'
             with self.subTest(change=change), self.assertRaises(ValueError): case.report()
 
+    def test_one_deduplicated_execution_populates_all_declared_cell_aliases(self):
+        job = self.jobs[0]
+        job.pop('cell_id')
+        job['cell_ids'] = ['candidate', 'candidate-alias']
+        self.comparisons.append({'comparison_id': 'alias-paired', 'candidate_cell_id': 'candidate-alias',
+                                 'baseline_cell_id': 'baseline'})
+        report = self.report()
+        self.assertEqual(report['unique_scored_jobs'], 2)
+        self.assertEqual(report['logical_cell_count'], 3)
+        self.assertEqual(report['cells']['candidate'], report['cells']['candidate-alias'])
+        self.assertEqual(report['comparisons'][0]['strata'], report['comparisons'][1]['strata'])
+
     def test_real_evaluator_subset_reports_bind_distinct_target_bundles(self):
         from autoresearch.taste.overnight.evaluation import score_predictions, prediction_input
         targets = []
@@ -673,6 +685,30 @@ class ScalingDriverPacketTests(unittest.TestCase):
                     expected_manifest_hash=self.manifest['manifest_sha256'], expected_bindings_hash=digest(bindings),
                     expected_runtime_hash=digest(runtime))
 
+    def test_identical_archival_and_raw_control_execution_is_reused(self):
+        spec = copy.deepcopy(self.manifest['design'])
+        spec['diagnostic'].update(items=spec['common']['items'], items_hash=spec['common']['items_hash'],
+                                  task_context_hash=spec['common']['task_context_hash'])
+        available = {j['profile']['profile_id']: j['profile'] for b in self.bindings for j in b['jobs']}
+        profiles = [{'method_id': pin['method_id'], 'extractor_level': pin['extractor_level'],
+                     'profile': available[pin['profile_id']]} for pin in self.manifest['profile_pins']]
+        old_cells = {c['cell_id']: c for c in self.manifest['cells']}
+        old_bindings = {b['cell_id']: b for b in self.bindings}
+        self.manifest = self.scaling.build_manifest(spec, profiles)
+        bindings = []
+        for cell in self.manifest['cells']:
+            if cell['cell_id'] in old_bindings:
+                bindings.append(old_bindings[cell['cell_id']])
+            else:
+                source = next(b for b in self.bindings if old_cells[b['cell_id']]['conditioning']['kind'] == 'raw_evidence'
+                              and old_cells[b['cell_id']]['consumer'] == cell['consumer'])
+                bindings.append(dict(copy.deepcopy(source), cell_id=cell['cell_id']))
+        self.bindings = bindings
+        compiled = self.compile()
+        self.assertEqual(len(compiled['packets']), 15)
+        self.assertEqual(compiled['estimates']['max_attempts'], 30)
+        self.assertEqual(sum(len(p['cell_ids']) == 2 for p in compiled['packets']), 3)
+
     def test_unavailable_release_and_utility_leave_explicit_cells(self):
         missing = self.bindings[0]['cell_id']
         self.bindings[0] = {'cell_id': missing, 'status': 'unavailable', 'reason': 'approved profile not supplied'}
@@ -778,6 +814,16 @@ class ScalingBaselineBindingTests(unittest.TestCase):
         self.assertEqual(len(compiled['packets']), 21)
         retrieval = next(b for b in self.bindings if b['jobs'][0]['profile']['method_id'] == 'lexical_retrieval')
         original = copy.deepcopy(retrieval['jobs'][0]['profile'])
+        annotated = copy.deepcopy(original)
+        annotated['content']['summary'] = 'undeclared candidate-derived profile'
+        annotated['content_sha256'] = digest(annotated['content'])
+        from autoresearch.taste.overnight.contracts import render_content
+        annotated['token_count'] = len(render_content(annotated['content']).encode())
+        annotated.pop('profile_id')
+        annotated['profile_id'] = digest(annotated)
+        retrieval['jobs'][0]['profile'] = annotated
+        with self.assertRaisesRegex(ValueError, 'raw|passage'):
+            self.compile()
         for field, value in [('consumer_identity', {'model': 'wrong'}), ('decision', {'context': 'wrong', 'options': ['a', 'b']}), ('top_k', 2)]:
             profile = copy.deepcopy(original)
             profile['config'][field] = value
