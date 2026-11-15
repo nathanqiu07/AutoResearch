@@ -9,18 +9,23 @@ The 390 software-engineering forks are not used.
 
 ## Download
 
-The dataset `wenbopan/taste-bench` (revision v1.0, CC BY 4.0) is gated: request access on its
-[Hugging Face page](https://huggingface.co/datasets/wenbopan/taste-bench) with your own
-account. This folder (`data/tastebench/`) is gitignored apart from this file, so the rows
+The dataset `wenbopan/taste-bench` (revision v1.0, CC BY 4.0) is gated: accept its terms on its
+[Hugging Face page](https://huggingface.co/datasets/wenbopan/taste-bench) while logged in;
+access is granted at once. This folder (`data/tastebench/`) is gitignored apart from this file, so the rows
 never reach the repo.
 
 The scorer reads `data/tastebench/research.jsonl`, one JSON object per question with the
 release's columns: `id`, `domain`, `method`, `cell`, `source`, `task_id`, `query`,
 `prefix_text`, `prefix_text_short`, `prefix_steps`, `choices` (two strings), `answer` ("A" or
-"B"), `answer_index` (0 or 1) and `canary`. No download script exists yet, because the
-release ships parquet, which needs pyarrow; until one is added, convert the research rows
-by hand (pyarrow's `read_table(...).to_pylist()`, one `json.dumps` per row). Ethan approves
-the download first.
+"B"), `answer_index` (0 or 1) and `canary`. To download and convert it, after accepting the terms, export `HF_TOKEN` (a read
+token) or run `hf auth login`, then:
+
+```bash
+uv run --no-project --with pyarrow python -I scripts/fetch_tastebench.py
+```
+
+It writes `research.jsonl` (add `--subsets research engineering` for both) and refuses to
+write anything if a row fails the scorer's checks or the row count is wrong.
 
 ## Run
 
