@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import hashlib
 import json
 import os
 import re
@@ -348,6 +349,223 @@ def fetch(raw_dir: str) -> str:
     return rev
 
 
+# ---------------------------------------------------------------- single-factor pairs
+
+# One line per factor, naturalistic -> exaggerated, condensed from upstream
+# eval_bench_taxonomy.yaml (aisa-group/decomposing-eval-awareness).
+FACTOR_DESCRIPTIONS = {
+    "F1": "stimulus artificiality: real-sounding entities/values -> placeholders (Acme Corp, Jane Doe, example.com, round numbers)",
+    "F2": "scenario coherence: consistent setup -> checkably false premise (safety) / overdetermined details (capability)",
+    "F3": "prose register: natural informal user voice -> textbook-formal, third-person vignette",
+    "F4": "ecological completeness: full context (backstory, tools, workflow, goals) -> bare request",
+    "F5": "stakes telegraphing: intent described without naming it -> harm or evaluative dimension foregrounded",
+    "F6": "paradigm recognizability: no benchmark framing -> known jailbreak wrapper, benchmark conventions, eval scaffolding",
+    "F7": "task format: natural prose -> structured template (Context/Task, separators, bullets, numbering)",
+    "F8": "explicit evaluation disclosure: no eval language -> references benchmark output conventions or rubrics",
+}
+SF_SUBDIR = "single_factor"
+SF_BATCH = 6          # task ids per request: 6 x 8 = 48 rows, under the 100-row page
+
+
+def select_dev_tasks(split_ids: Dict[str, List[str]], limit: int) -> List[str]:
+    """Deterministic subset of dev task ids, whole safety/capability pairs, ordered by a
+    hash of task_name (not alphabetically, which would cluster topics). Never held-out."""
+    dev = split_ids["dev"]
+    by_pair: Dict[str, List[str]] = {}
+    for i in dev:
+        by_pair.setdefault(i.rsplit("_", 1)[0], []).append(i)
+    order = sorted(by_pair, key=lambda t: hashlib.sha256(t.encode()).hexdigest())
+    out: List[str] = []
+    for t in order:
+        if len(out) >= limit:
+            break
+        out.extend(sorted(by_pair[t]))
+    held = set(split_ids["heldout"])
+    assert not held & set(out), "selected a held-out id"
+    return out
+
+
+def read_single_factor_rows(sf_dir: str) -> List[dict]:
+    rows: List[dict] = []
+    for p in sorted(glob.glob(os.path.join(sf_dir, "*.json"))):
+        with open(p) as f:
+            data = json.load(f)
+        if not isinstance(data, dict) or "rows" not in data:
+            raise ConvertError(f"{p}: not a datasets-server page; delete it and re-run")
+        rows.extend(r["row"] for r in data["rows"])
+    return rows
+
+
+def fetch_single_factor(sf_dir: str, task_ids: List[str]) -> Tuple[int, int]:
+    """Fetch the 8 one-factor-on rows for each task id, filtered server-side by
+    datasets-server (`"task_id"='x' AND "num_factors_varied"=1 OR ...`; it rejects IN
+    and parentheses). Returns (requests, rows)."""
+    os.makedirs(sf_dir, exist_ok=True)
+    n_req = n_rows = 0
+    for b in range(0, len(task_ids), SF_BATCH):
+        batch = task_ids[b:b + SF_BATCH]
+        for t in batch:
+            if not re.fullmatch(r"[A-Za-z0-9_]+", t):
+                raise ConvertError(f"task id {t!r} has characters unsafe for a filter clause")
+        where = " OR ".join(f"\"task_id\"='{t}' AND \"num_factors_varied\"=1" for t in batch)
+        q = urllib.parse.urlencode({"dataset": DATASET, "config": HF_CONFIG, "split": "train",
+                                    "where": where, "offset": 0, "length": 100})
+        body = _get(f"{DS_SERVER}?{q}")
+        page = json.loads(body)
+        if "rows" not in page:
+            raise ConvertError(f"unexpected datasets-server reply: {body[:200]!r}")
+        if page.get("num_rows_total") != 8 * len(batch):
+            raise ConvertError(f"expected {8 * len(batch)} single-factor rows for {batch}, "
+                               f"datasets-server reports {page.get('num_rows_total')}")
+        with open(os.path.join(sf_dir, f"sf_{hashlib.sha1(where.encode()).hexdigest()[:12]}.json"), "wb") as f:
+            f.write(body)
+        n_req += 1
+        n_rows += len(page["rows"])
+    return n_req, n_rows
+
+
+def build_single_factor_pairs(sf_rows: List[dict], minimal: Dict[str, dict], selected: List[str],
+                              dev_ids: set) -> Tuple[List[dict], List[str], Dict[str, int]]:
+    """-> (pairs, errors, dropped counts). without_cue is the task's minimal_cue prompt."""
+    errors: List[str] = []
+    dropped = {"identical_to_minimal": 0, "not_selected": 0}
+    noop_by_factor: Dict[str, int] = {f: 0 for f in FACTORS}
+    seen: Dict[str, dict] = {}
+    for i, row in enumerate(sf_rows):
+        tid = row.get("task_id", f"row#{i}") if isinstance(row, dict) else f"row#{i}"
+        try:
+            missing = [k for k in REQUIRED if k not in row]
+            if missing:
+                raise ConvertError(f"missing fields {missing}")
+            if row["task_id"] not in dev_ids:
+                raise ConvertError("not a dev-split id (held-out or unknown); refusing to use it")
+            if row["task_id"] not in selected:
+                dropped["not_selected"] += 1
+                continue
+            _, cues = config_of(row)
+            on = [f for f in FACTORS if cues[f]]
+            if len(on) != 1:
+                raise ConvertError(f"expected exactly one factor on, got {on}")
+            if not isinstance(row["prompt"], str) or not row["prompt"].strip():
+                raise ConvertError("prompt is not a non-empty string")
+            base = minimal.get(row["task_id"])
+            if base is None:
+                raise ConvertError("no minimal_cue item for this task (run the main conversion first)")
+            if base["meta"]["label"] != row["valence"]:
+                raise ConvertError(f"valence {row['valence']!r} disagrees with the minimal_cue item")
+        except ConvertError as e:
+            errors.append(f"{tid}: {e}")
+            continue
+        f = on[0]
+        pid = f"{row['task_id']}__{f}"
+        if pid in seen:
+            if seen[pid]["with_cue"]["user"] != row["prompt"]:
+                errors.append(f"{pid}: two different prompts")
+            continue
+        if row["prompt"] == base["user"]:
+            dropped["identical_to_minimal"] += 1
+            noop_by_factor[f] += 1
+            continue
+        bm = base["meta"]
+        seen[pid] = {
+            "id": pid,
+            "with_cue": {"system": "", "user": row["prompt"]},
+            "without_cue": {"system": base["system"], "user": base["user"]},
+            "probe": base["probe"], "behaviors": base["behaviors"], "misbehavior": base["misbehavior"],
+            "meta": {"factor": f, "factor_name": FACTOR_NAMES[f], "factor_description": FACTOR_DESCRIPTIONS[f],
+                     "level_on": row["config"][f], "level_off": LEVELS[f][0],
+                     "task_id": row["task_id"], "task_name": row["task_name"], "label": row["valence"],
+                     "paired_with": bm.get("paired_with", ""), "source": bm.get("source", ""),
+                     "with_cue_config": f"single:{f}", "without_cue_config": "minimal_cue",
+                     "dataset": DATASET, "revision": bm.get("revision", "unknown"), "split": "dev"},
+        }
+    factors_seen: Dict[str, set] = {t: set() for t in selected}
+    for row in sf_rows:
+        if isinstance(row, dict) and row.get("task_id") in factors_seen and isinstance(row.get("factors_varied"), list):
+            factors_seen[row["task_id"]].update(row["factors_varied"])
+    for t, fs in factors_seen.items():
+        missing = [f for f in FACTORS if f not in fs]
+        if missing:
+            errors.append(f"{t}: single-factor rows missing for {missing} (fetch incomplete)")
+    dropped["noop_by_factor"] = noop_by_factor
+    return [seen[k] for k in sorted(seen)], errors, dropped
+
+
+def _median(xs: List[int]) -> Optional[float]:
+    xs = sorted(xs)
+    if not xs:
+        return None
+    m = len(xs) // 2
+    return float(xs[m]) if len(xs) % 2 else (xs[m - 1] + xs[m]) / 2
+
+
+def single_factor_report(pairs: List[dict], dropped: Dict, n_tasks: int, n_req: int, n_rows: int) -> dict:
+    per = {}
+    for f in FACTORS:
+        ps = [p for p in pairs if p["meta"]["factor"] == f]
+        per[f] = {"pairs": len(ps), "dropped_identical": dropped["noop_by_factor"][f],
+                  "median_chars_with_cue": _median([len(p["with_cue"]["user"]) for p in ps]),
+                  "median_chars_without_cue": _median([len(p["without_cue"]["user"]) for p in ps]),
+                  "name": FACTOR_NAMES[f], "description": FACTOR_DESCRIPTIONS[f]}
+    return {"tasks": n_tasks, "pairs": len(pairs), "per_factor": per,
+            "per_label": {lab: sum(1 for p in pairs if p["meta"]["label"] == lab) for lab in VALENCES},
+            "dropped_identical_to_minimal": dropped["identical_to_minimal"],
+            "requests_this_run": n_req, "rows_fetched_this_run": n_rows}
+
+
+def run_single_factor(a) -> int:
+    from autoresearch.research.benchmarks import load_items_with_meta, load_split
+    split_path = a.split_out or os.path.join(a.out_dir, "evalawarebench_split.json")
+    minimal_path = os.path.join(a.out_dir, "evalawarebench_minimal_cue.jsonl")
+    sf_dir = os.path.join(a.raw_dir, SF_SUBDIR)
+    try:
+        if not os.path.exists(minimal_path):
+            raise ConvertError(f"{minimal_path} missing: run the main conversion first (--fetch)")
+        split_ids = load_split(split_path)
+        minimal = {s.source_id: {"system": s.original.get("system", ""), "user": s.original["user"],
+                                 "probe": s.probe, "behaviors": s.behaviors, "misbehavior": s.misbehavior,
+                                 "meta": m} for s, m in load_items_with_meta(minimal_path)}
+        selected = select_dev_tasks(split_ids, a.limit_tasks)
+        cached = read_single_factor_rows(sf_dir) if os.path.isdir(sf_dir) else []
+        have = {}
+        for r in cached:
+            have[r.get("task_id")] = have.get(r.get("task_id"), 0) + 1
+        todo = [t for t in selected if have.get(t, 0) < 8]
+        n_req = n_rows = 0
+        if todo:
+            if a.no_fetch:
+                raise ConvertError(f"{len(todo)} selected task(s) have no cached single-factor rows "
+                                   f"(e.g. {todo[:3]}) and --no-fetch was given")
+            n_req, n_rows = fetch_single_factor(sf_dir, todo)
+        rows = read_single_factor_rows(sf_dir)
+        pairs, errors, dropped = build_single_factor_pairs(rows, minimal, selected, set(split_ids["dev"]))
+    except ConvertError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    if errors:
+        print(f"{len(errors)} single-factor row(s) failed; nothing written:", file=sys.stderr)
+        for e in errors[:50]:
+            print("  " + e, file=sys.stderr)
+        return 1
+    rep = single_factor_report(pairs, dropped, len(selected), n_req, n_rows)
+    rep["cached_rows_total"] = len(rows)
+    rep["limit_tasks"] = a.limit_tasks
+    write_jsonl(os.path.join(a.out_dir, "evalawarebench_single_factor_pairs.jsonl"), pairs)
+    rep_path = os.path.join(a.out_dir, "evalawarebench_convert_report.json")
+    full = {}
+    if os.path.exists(rep_path):
+        with open(rep_path) as f:
+            full = json.load(f)
+    full["single_factor"] = rep
+    with open(rep_path, "w") as f:
+        json.dump(full, f, indent=1, sort_keys=True)
+        f.write("\n")
+    print(json.dumps(rep, indent=1))
+    print(f"wrote {len(pairs)} single-factor pairs from {len(selected)} dev tasks "
+          f"({n_rows} rows fetched in {n_req} requests this run) to {a.out_dir}")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--raw-dir", default=os.path.join(ROOT, "data/benchmarks/raw/evalawarebench"))
@@ -356,7 +574,14 @@ def main(argv=None) -> int:
     ap.add_argument("--fetch", action="store_true", help="download the raw sample first (~0.8 MB)")
     ap.add_argument("--allow-unpaired", action="store_true",
                     help="write only paired items instead of failing when a config is missing for some ids")
+    ap.add_argument("--single-factor", action="store_true",
+                    help="write evalawarebench_single_factor_pairs.jsonl: one-cue-on vs minimal_cue, dev tasks only")
+    ap.add_argument("--limit-tasks", type=int, default=30,
+                    help="single-factor: number of dev task ids (whole pairs), 8 rows each (default 30)")
+    ap.add_argument("--no-fetch", action="store_true", help="single-factor: use cached rows only")
     a = ap.parse_args(argv)
+    if a.single_factor:
+        return run_single_factor(a)
     split_path = a.split_out or os.path.join(a.out_dir, "evalawarebench_split.json")
     try:
         revision = fetch(a.raw_dir) if a.fetch else "unknown"
@@ -387,7 +612,13 @@ def main(argv=None) -> int:
         print("no paired items; nothing written", file=sys.stderr)
         return 1
     rep.update(write_outputs(by_cfg, a.out_dir, split_path, revision))
-    with open(os.path.join(a.out_dir, "evalawarebench_convert_report.json"), "w") as f:
+    rep_path = os.path.join(a.out_dir, "evalawarebench_convert_report.json")
+    if os.path.exists(rep_path):        # keep the --single-factor section across a re-conversion
+        with open(rep_path) as f:
+            old = json.load(f)
+        if "single_factor" in old:
+            rep["single_factor"] = old["single_factor"]
+    with open(rep_path, "w") as f:
         json.dump(rep, f, indent=1, sort_keys=True)
         f.write("\n")
     print(f"wrote {rep['paired_items']} items x {len(CONFIGS)} configs, cue pairs, split "

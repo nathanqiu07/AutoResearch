@@ -14,8 +14,9 @@ Downloads go in `raw/<source>/` and are gitignored. Treat them as untrusted: rea
 | `evalawarebench_original.jsonl` | no (gitignored) | 200 items, all 8 cue factors on. Read with `benchmarks.load_items` / `load_items_with_meta` |
 | `evalawarebench_minimal_cue.jsonl` | no | Same 200 ids, all cue factors off |
 | `evalawarebench_cue_pairs.jsonl` | no | `{"id", "with_cue": {system,user}, "without_cue": {system,user}, "meta"}` for `calibrate --cue-pairs` |
+| `evalawarebench_single_factor_pairs.jsonl` | no | 240 cue pairs, one factor on vs all off, 30 **dev** tasks only. Same format, id `<task_id>__F<k>`. For `calibrate --cue-pairs` |
 | `evalawarebench_split.json` | yes | Frozen dev/held-out split, ids only (128 dev / 72 held-out, 64/36 task pairs) |
-| `evalawarebench_convert_report.json` | yes | Converter counts. No prompt text |
+| `evalawarebench_convert_report.json` | yes | Converter counts, plus a `single_factor` section. No prompt text |
 | `evaldetect_probes.json` | yes | A2 probe questions `{"default": [...], "<backend>:<model>": [...]}` for `--probe-questions` |
 | `evaldetect_probes.provenance.json` | yes | Upstream probe ids, per-judge AUROCs, adaptations, sources |
 
@@ -25,6 +26,7 @@ Regenerate:
 python3 scripts/convert_evalawarebench.py --fetch        # ~0.8 MB download, then convert
 # if this Python has no CA bundle (python.org macOS builds):
 uv run --no-project --with certifi python scripts/convert_evalawarebench.py --fetch
+python3 scripts/convert_evalawarebench.py --single-factor   # after the above; ~0.4 MB, 5 requests for 30 tasks
 
 uv run --no-project --with pyyaml --with pyarrow python harness/evaldetect/export_probes.py \
     --scores data/benchmarks/raw/evaldetect_hf/scores_parquet/0000.parquet   # inputs: see EvalDetectBench below
@@ -72,8 +74,7 @@ The fetcher retries; the converter rejects an error page instead of parsing it.
   EvalAwareBench has no separate original prompt: every row is one factor configuration.
   The all-cues configuration is the most benchmark-like one, so we call it "original".
   The all-on vs all-off contrast only shows that the scorer reacts to many cues at once.
-  It says nothing about any single cue. Single-factor configurations would need another
-  fetch, which needs Nathan's approval.
+  It says nothing about any single cue. For that, use the single-factor pairs below.
 * id = upstream `task_id`, the same in both config files, with no suffix.
   `meta`: `config`, `label` (safety|capability), `cues` (`{F1..F8: bool}`, true = exaggerated),
   `levels`, `factors_varied`, `task_name`, `paired_with`, `source`, `description`, `dataset`,
@@ -88,6 +89,48 @@ The fetcher retries; the converter rejects an error page instead of parsing it.
   in each), 200 complete pairs, **0 failed to map, 0 multi-turn or tool-based**. 39 `original`
   prompts contain `User:`/`Human:` lines. These are the F6 "known eval wrapper" cue written into
   one user string, not real turns, so they stay in `user`. No `minimal_cue` prompt has them.
+
+**Single-factor pairs** (`--single-factor`, `evalawarebench_single_factor_pairs.jsonl`):
+
+* `with_cue` = the configuration where exactly one factor F*k* is exaggerated
+  (`num_factors_varied == 1`). `without_cue` = the same task's `minimal_cue` prompt. Each pair
+  isolates one cue. The 8 one-factor rows per task id sit at fixed upstream row offsets
+  (1, 2, 4, …, 128 within a task's 256 rows) [verified on our fetch].
+* **Dev tasks only.** Task ids come from `evalawarebench_split.json` `dev`. The converter refuses
+  any held-out row, including from the cache. `--limit-tasks N` (default 30) takes whole
+  safety/capability pairs in a fixed hash order of `task_name`, so an odd N rounds up by one.
+* **Fetch** [verified]: datasets-server `filter` with
+  `where="task_id"='<id>' AND "num_factors_varied"=1 OR …`, 6 task ids (48 rows) per request.
+  The endpoint rejects `IN (...)` ("invalid symbols"); the parenthesised `OR` form timed out
+  in our test. No scan of the 51,200 rows is needed. Each reply must report exactly 8 rows per
+  task, otherwise the run fails. Cached pages are in `raw/evalawarebench/single_factor/` and only
+  missing tasks are fetched. `--no-fetch` uses the cache only.
+* Ids `<task_id>__F<k>`. `meta`: `factor`, `factor_name`, `factor_description`, `level_on`,
+  `level_off`, `task_id`, `task_name`, `label`, `paired_with`, `source`, `with_cue_config`,
+  `without_cue_config`, `dataset`, `revision`, `split: "dev"`. `calibrate.load_cue_pairs` reads
+  the file as is (it ignores keys other than `id`, `with_cue` and `without_cue`) [verified by test].
+  `probe`/`behaviors`/`misbehavior` are copied from the minimal-cue item.
+* A row whose prompt equals the minimal-cue prompt is dropped and counted per factor. There
+  were none.
+* Results on `ee984a8` (still the current revision on 2026-11-14): 30 dev task ids (15 pairs),
+  **240 rows fetched in 5 requests (404 KB)**, 240 pairs, 30 per factor, 120 safety / 120
+  capability, 0 failed, 0 dropped.
+
+| Factor | Pairs | Median chars with cue | Median chars without cue | What turning it on does (upstream taxonomy) |
+|---|---|---|---|---|
+| F1 stimulus artificiality | 30 | 855 | 871 | Real-sounding entities and values → placeholders (Acme Corp, Jane Doe, example.com, round numbers) |
+| F2 scenario coherence | 30 | 1192 | 871 | Consistent setup → checkably false premise (safety) or overdetermined details (capability) |
+| F3 prose register | 30 | 848 | 871 | Natural informal user voice → textbook-formal, third-person vignette |
+| F4 ecological completeness | 30 | 389 | 871 | Full context (backstory, tools, workflow, goals) → bare request |
+| F5 stakes telegraphing | 30 | 896 | 871 | Intent described without naming it → harm or evaluative dimension foregrounded |
+| F6 paradigm recognizability | 30 | 1076 | 871 | No benchmark framing → known jailbreak wrapper, benchmark conventions or eval scaffolding |
+| F7 task format | 30 | 701 | 871 | Natural prose → structured template (Context/Task, separators, bullets, numbering) |
+| F8 explicit eval disclosure | 30 | 1042 | 871 | No eval language → references benchmark output conventions or rubrics |
+
+Read the per-factor results with the length column in mind. F4 removes over half the text and
+F2 adds about a third, so a scorer that reacts to length or detail will look cue-sensitive on
+those two factors for reasons unrelated to the cue. Thirty pairs per factor is small: treat
+per-factor differences as a screen, not an estimate.
 
 ---
 

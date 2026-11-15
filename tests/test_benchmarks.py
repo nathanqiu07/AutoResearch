@@ -303,6 +303,139 @@ class CommittedSplitTests(unittest.TestCase):
             self.assertEqual(i in held, other in held, i)
 
 
+def fixture_single(task, valence, factor, prompt=None, **over):
+    """A hand-written row with exactly one factor exaggerated."""
+    cfg = {f: (EXAGGERATED[f] if f == factor else NATURAL[f]) for f in FACTORS}
+    row = {"task_id": f"{task}_{valence}", "task_name": task, "valence": valence,
+           "description": f"User asks for help with {task} ({valence}).",
+           "factors_varied": [factor], "num_factors_varied": 1, "config": cfg,
+           "prompt": prompt if prompt is not None else f"[{factor} on] help me with my {task} thing ({valence})"}
+    row.update(over)
+    return row
+
+
+class SingleFactorTests(unittest.TestCase):
+    """--single-factor: one-cue-on vs minimal_cue pairs for dev tasks, from cached pages."""
+    conv = None
+    TASKS = [f"task{i}" for i in range(30)]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.conv = _load_script("scripts/convert_evalawarebench.py", "convert_evalawarebench_sf")
+
+    def setUp(self):
+        self.raw, self.out = tempfile.mkdtemp(), tempfile.mkdtemp()
+        rows = [fixture_row(t, v, n) for t in self.TASKS for v in ("safety", "capability") for n in (0, 8)]
+        with open(os.path.join(self.raw, "filter_fixture.json"), "w") as f:
+            json.dump({"rows": [{"row_idx": i, "row": r} for i, r in enumerate(rows)], "num_rows_total": len(rows)}, f)
+        code, _, se = self._main()
+        self.assertEqual(code, 0, se)
+        self.split = load_split(os.path.join(self.out, "evalawarebench_split.json"))
+        self.dev_tasks = sorted({i.rsplit("_", 1)[0] for i in self.split["dev"]})
+        self.held_tasks = sorted({i.rsplit("_", 1)[0] for i in self.split["heldout"]})
+        self.assertTrue(self.dev_tasks and self.held_tasks)
+
+    def _main(self, *extra):
+        so, se = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(so), contextlib.redirect_stderr(se):
+            code = self.conv.main(["--raw-dir", self.raw, "--out-dir", self.out, *extra])
+        return code, so.getvalue(), se.getvalue()
+
+    def _cache(self, rows, name="sf_fixture.json"):
+        d = os.path.join(self.raw, "single_factor")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, name), "w") as f:
+            json.dump({"rows": [{"row_idx": i, "row": r} for i, r in enumerate(rows)], "num_rows_total": len(rows)}, f)
+
+    def _rows_for(self, tasks):
+        return [fixture_single(t, v, f) for t in tasks for v in ("safety", "capability") for f in FACTORS]
+
+    def _sf(self, *extra):
+        return self._main("--single-factor", "--no-fetch", *extra)
+
+    def _picked(self, limit):
+        """Task names the converter selects for --limit-tasks <limit> (hash order, not alphabetical)."""
+        return list(dict.fromkeys(i.rsplit("_", 1)[0] for i in self.conv.select_dev_tasks(self.split, limit)))
+
+    def test_writes_one_pair_per_factor_against_the_minimal_prompt(self):
+        tasks = self._picked(4)
+        self._cache(self._rows_for(tasks))
+        code, _, se = self._sf("--limit-tasks", "4")
+        self.assertEqual(code, 0, se)
+        path = os.path.join(self.out, "evalawarebench_single_factor_pairs.jsonl")
+        pairs = read_jsonl(path)
+        self.assertEqual(len(pairs), 2 * 2 * 8)
+        p = next(x for x in pairs if x["id"] == f"{tasks[0]}_safety__F6")
+        self.assertEqual(p["with_cue"]["user"], f"[F6 on] help me with my {tasks[0]} thing (safety)")
+        self.assertEqual(p["without_cue"]["user"], f"hey, could you help me with my {tasks[0]} thing? (safety)")
+        m = p["meta"]
+        self.assertEqual((m["factor"], m["factor_name"], m["task_id"], m["label"], m["split"]),
+                         ("F6", "paradigm_recognizability", f"{tasks[0]}_safety", "safety", "dev"))
+        self.assertEqual((m["level_off"], m["level_on"]), ("realistic", "varied"))
+        from autoresearch.research.calibrate import load_cue_pairs
+        self.assertEqual(len(load_cue_pairs(path)), 32)      # calibrate tolerates the extra keys
+        rep = read_json(os.path.join(self.out, "evalawarebench_convert_report.json"))
+        sf = rep["single_factor"]
+        self.assertEqual(sf["per_factor"]["F3"]["pairs"], 4)
+        self.assertEqual(sf["per_label"], {"safety": 16, "capability": 16})
+        self.assertIsNotNone(sf["per_factor"]["F1"]["median_chars_with_cue"])
+        self.assertIn("raw_rows", rep)                         # main report kept beside it
+        self.assertNotIn("help me with", json.dumps(rep))
+
+    def test_held_out_rows_are_refused_and_nothing_is_written(self):
+        self._cache(self._rows_for(self._picked(2)) + self._rows_for(self.held_tasks[:1]))
+        code, _, se = self._sf("--limit-tasks", "2")
+        self.assertEqual(code, 1)
+        self.assertIn("not a dev-split id", se)
+        self.assertFalse(os.path.exists(os.path.join(self.out, "evalawarebench_single_factor_pairs.jsonl")))
+
+    def test_selection_is_whole_dev_pairs_and_deterministic(self):
+        sel = self.conv.select_dev_tasks(self.split, 5)
+        self.assertEqual(sel, self.conv.select_dev_tasks(self.split, 5))
+        self.assertEqual(len(sel), 6)                          # rounds up to whole pairs
+        self.assertFalse(set(sel) & set(self.split["heldout"]))
+        for i in sel:
+            task, valence = i.rsplit("_", 1)
+            self.assertIn(f"{task}_{'capability' if valence == 'safety' else 'safety'}", sel)
+
+    def test_missing_factor_and_two_factor_rows_fail(self):
+        t = self._picked(2)[0]
+        rows = [r for r in self._rows_for([t]) if not (r["valence"] == "safety" and r["factors_varied"] == ["F4"])]
+        rows.append(fixture_single(t, "safety", "F3"))         # 8 rows, but F3 twice and no F4
+        self._cache(rows)
+        code, _, se = self._sf("--limit-tasks", "2")
+        self.assertEqual(code, 1)
+        self.assertIn("missing for ['F4']", se)
+        two = fixture_single(t, "safety", "F4", factors_varied=["F4", "F5"])
+        two["config"]["F5"] = EXAGGERATED["F5"]
+        self._cache([two], name="sf_two.json")
+        code, _, se = self._sf("--limit-tasks", "2")
+        self.assertEqual(code, 1)
+        self.assertIn("num_factors_varied", se)
+
+    def test_prompt_identical_to_minimal_is_dropped_and_counted(self):
+        t = self._picked(2)[0]
+        rows = self._rows_for([t])
+        same = next(r for r in rows if r["valence"] == "capability" and r["factors_varied"] == ["F2"])
+        same["prompt"] = f"hey, could you help me with my {t} thing? (capability)"
+        self._cache(rows)
+        code, _, se = self._sf("--limit-tasks", "2")
+        self.assertEqual(code, 0, se)
+        sf = read_json(os.path.join(self.out, "evalawarebench_convert_report.json"))["single_factor"]
+        self.assertEqual(sf["pairs"], 15)
+        self.assertEqual(sf["per_factor"]["F2"]["dropped_identical"], 1)
+
+    def test_no_fetch_without_cache_fails_and_reconversion_keeps_section(self):
+        code, _, se = self._sf("--limit-tasks", "2")
+        self.assertEqual(code, 1)
+        self.assertIn("--no-fetch", se)
+        self._cache(self._rows_for(self._picked(2)))
+        self.assertEqual(self._sf("--limit-tasks", "2")[0], 0)
+        self.assertEqual(self._main()[0], 0)                   # re-run the main conversion
+        rep = read_json(os.path.join(self.out, "evalawarebench_convert_report.json"))
+        self.assertEqual(rep["single_factor"]["pairs"], 16)
+
+
 # ---------------------------------------------------------------- EvalDetectBench probes
 
 PREAMBLE = ("Above is a transcript of an interaction with or a prompt given to a language model that has been "
