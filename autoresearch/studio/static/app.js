@@ -473,8 +473,8 @@ function viewNewPublic() {
   ], {
     onDone: (st, c) => doneScreen(c, {
       title: `${esc(st.name)} has a profile`, icon: "telescope",
-      text: st.picked ? `Linked to ${esc(st.picked.name)} on Semantic Scholar (${fmtNum(st.picked.papers)} papers). Now let's gather their work.` : "Now let's gather their work.",
-      actions: `<a class="btn primary" href="#/p/${esc(st.slug)}/sources">Gather sources ${doodle("telescope", { size: 20, color: "sage" })}</a>`,
+      text: st.picked ? `Linked to ${esc(st.picked.name)} on Semantic Scholar (${fmtNum(st.picked.papers)} papers). Now let's harvest their work.` : "Now let's harvest their work.",
+      actions: `<a class="btn primary" href="#/p/${esc(st.slug)}/sources">Start harvest ${doodle("telescope", { size: 20, color: "sage" })}</a>`,
     }),
   });
 }
@@ -506,7 +506,7 @@ const STEP_ICONS = { about: "person", materials: "stack", questionnaire: "chat",
 const TICK = `<svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><path filter="url(#rough)" d="M3 11 L8 16 L17 4"/></svg>`;
 const STEPS = {
   personal: [["about", "About & consent"], ["materials", "Materials"], ["questionnaire", "Questionnaire"], ["tradeoffs", "Trade-offs"], ["build", "Build & review"], ["use", "Use in the loop"]],
-  public: [["identity", "Identity"], ["sources", "Gather sources"], ["corpus", "Review corpus"], ["build", "Build & review"], ["use", "Use in the loop"]],
+  public: [["identity", "Identity"], ["sources", "Harvest"], ["corpus", "Review corpus"], ["build", "Build & review"], ["use", "Use in the loop"]],
   external: [["build", "Profile"], ["corpus", "Corpus"], ["use", "Use in the loop"]],
 };
 
@@ -937,8 +937,8 @@ function panelIdentity(panel, nextBtn) {
 
 // ----- Sources (public)
 function panelSources(panel, nextBtn) {
-  const m = S.st.meta, a = m.s2_author, exa = S.config.exa_available;
-  panel.innerHTML = head("Gather sources", "Pick where to look. Everything lands in the corpus, which you review next. Sources that fail are reported and the rest still run.") + `
+  const m = S.st.meta, a = m.s2_author;
+  panel.innerHTML = head("Harvest", "Choose the sources to harvest. Exa searches for their work and fetches the full text, and every document is checked for authorship and dated. Everything lands in the corpus, which you review next.") + `
     <div class="card stack">
       <label class="field"><span>Name to match</span><input id="g-name" type="text" value="${esc(m.name)}"></label>
       <label class="check"><input type="checkbox" id="g-s2" ${a ? "checked" : "disabled"}><span><strong>Semantic Scholar papers</strong>
@@ -954,14 +954,21 @@ function panelSources(panel, nextBtn) {
       </div>
       <label class="field"><span>Other pages they wrote, one per line</span><textarea id="g-urls" rows="3" placeholder="https://"></textarea></label>
       <hr class="hr" style="margin:.25rem 0">
-      <label class="check"><input type="checkbox" id="g-exa" ${exa ? "" : "disabled"}><span><strong>Exa harvest</strong> <span class="badge warn">paid</span>
-        <span class="muted small">${exa ? "" : "set EXA_API_KEY in the studio's environment to enable"}</span></span></label>
-      ${exa ? `<div class="row" style="margin-left:1.6rem"><label class="field"><span class="small">From</span><input id="g-exa-start" type="date" value="2018-01-01"></label>
-        <label class="field"><span class="small">To</span><input id="g-exa-end" type="date" value="${new Date().toISOString().slice(0, 10)}"></label></div>` : ""}
-      <div class="row end"><button class="btn primary" id="g-go">Gather</button></div>
+      <label class="check"><input type="checkbox" id="g-exa"><span><strong>Exa search and full-text fetch</strong></span></label>
+      <ul class="muted small" style="margin:0 0 0 1.6rem;padding-left:1.1rem;line-height:1.5">
+        <li>One deep search asks Exa for everything the person wrote in the date range (papers, blog and forum posts, talks, tweets) and returns it as a structured list.</li>
+        <li>Searches for each quarter of the range, restricted to arXiv, LessWrong and the Alignment Forum, X, YouTube and GitHub, add results that require the person's surname in the text.</li>
+        <li>Exa fetches the full text of every result, up to 200,000 characters each.</li>
+        <li>A document is kept only with author evidence: arXiv's author list, the page's author field, or a byline near the top. Its date comes from arXiv's first version, Exa's publish date, or a date in the text.</li>
+        <li>Copies of one piece of work on several sites are merged and dated by the earliest copy; listing pages are dropped, and tweets are grouped by month.</li>
+      </ul>
+      <div class="row" style="margin-left:1.6rem"><label class="field"><span class="small">From</span><input id="g-exa-start" type="date" value="2018-01-01"></label>
+        <label class="field"><span class="small">To</span><input id="g-exa-end" type="date" value="${new Date().toISOString().slice(0, 10)}"></label></div>
+      <div class="row end"><button class="btn primary" id="g-go">Run harvest</button></div>
     </div>
     <div id="job"></div>
-    ${S.st.docs.length ? `<div class="notice" style="margin-top:1rem">${fmtNum(S.st.docs.length)} documents in the corpus so far. Gathering again only adds new ones.</div>` : ""}${nextBtn}`;
+    ${S.st.docs.length ? `<div class="notice" style="margin-top:1rem">${fmtNum(S.st.docs.length)} documents in the corpus so far. Harvesting again only adds new ones.</div>` : ""}${nextBtn}
+    <p class="muted small" style="margin-top:1.5rem;text-align:center">Powered by Exa</p>`;
   on("#g-go", "click", () => {
     const chk = id => { const el = document.getElementById(id); return !!(el && el.checked); };
     const body = {
@@ -970,7 +977,6 @@ function panelSources(panel, nextBtn) {
     };
     if (chk("g-s2") && a) { body.s2_author_id = a.author_id; body.s2_max = +val("g-s2max") || 150; }
     if (chk("g-exa")) {
-      if (!confirm("The Exa harvest makes paid API calls. Continue?")) return;
       Object.assign(body, { exa: true, exa_start: val("g-exa-start"), exa_end: val("g-exa-end") });
     }
     startJob("gather", body, document.getElementById("job"), () => {

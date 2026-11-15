@@ -280,12 +280,12 @@ def gather(root: str, slug: str, opts: dict, log: Callable = print) -> dict:
     if opts.get("exa"):
         def exa():
             if not exa_available():
-                raise store.StudioError("EXA_API_KEY is not set in the studio's environment")
+                raise store.StudioError("harvest unavailable on this server: no Exa key configured")
             from ..integrations.exa import ExaClient
             start = opts.get("exa_start") or "2015-01-01"
             end = opts.get("exa_end") or datetime.date.today().isoformat()
             client = ExaClient(cache_dir=os.path.join("runs", "exa_cache"))
-            log(f"exa: harvesting {name!r} {start}..{end} (paid)")
+            log(f"exa: harvesting {name!r} {start}..{end}")
             rep = scrape.scrape_exa(name, os.path.join(root, slug), client, start, end)
             log(f"exa: done, cost ${client.cost:.2f}")
             return {k: v for k, v in rep.items() if isinstance(v, (int, float, str))}

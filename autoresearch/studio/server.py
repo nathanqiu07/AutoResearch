@@ -80,7 +80,7 @@ def make_app(root: str):
 
     def config(_q, _b):
         return {"root": root, "features": FEATURES, "questions": QUESTIONS, "backends": BACKENDS,
-                "methods": METHODS, "exa_available": sources.exa_available(),
+                "methods": METHODS,
                 "anthropic_key_set": bool(os.environ.get("ANTHROPIC_API_KEY"))}
 
     def build_job(slug, body):
