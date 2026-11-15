@@ -31,7 +31,7 @@ from autoresearch.taste.methods.common import text_field as _text_field  # noqa:
 SLUG, NAME, T = "marius_hobbhahn", "Marius Hobbhahn", "2026-01-01"
 MODEL = "swe-2-medium"  # free on the Devin plan (user, 2026-11-15): every role, "sonnet" and "haiku" alike
 WORKERS = 2
-SLOTS = 2  # devin calls in flight across ALL processes: the account's request rate limit is shared with the session
+SLOTS = int(os.environ.get("HOB_SLOTS", 2))  # devin calls in flight across ALL processes: the account's request rate limit is shared with the session
 UNCAPPED = 10 ** 9  # user: no call cap
 TEST_DIR = os.path.join(HERE, "pairs_v4")
 LOCK = threading.Lock()
@@ -221,6 +221,11 @@ def synthme_fit():
     def baseline_or(arm):
         if arm in ("M0s", "NAME"):
             persona = "" if arm == "M0s" else f"The researcher is {NAME}."
+            return F.Fixed(F.llm("test:" + arm), persona, cache_dir=os.path.join(HERE, "cache", "test_" + arm),
+                           max_calls=400)
+        if arm.endswith("_lite"):  # deadline shortcut, lite.py
+            with open(os.path.join(HERE, arm + ".json")) as f:
+                persona = json.load(f)["persona"]
             return F.Fixed(F.llm("test:" + arm), persona, cache_dir=os.path.join(HERE, "cache", "test_" + arm),
                            max_calls=400)
         return test_model(arm)

@@ -31,7 +31,7 @@ redoing work.
   confirmation each on e2_v4's 96 pairs. Sonnet, starts after the 14:20 PT usage reset. Other sessions: don't
   take e2_climb/. synthme/ (Owain) resumes after the reset too.
 
-### 2026-11-15 devin-tastepetri: synthme_hobbhahn/ (IN PROGRESS, 19:30 UTC, user-directed)
+### 2026-11-15 devin-tastepetri: synthme_hobbhahn/ (DONE with deadline shortcut, 21:25 UTC, user-directed)
 - User: "do the same SynthesizeMe run for the other researchers", pilot on **Marius Hobbhahn** first. The user
   explicitly lifted BRIEF.md's "never use Hobbhahn's writing as profile/test data" rule for this run.
 - Same methodology as synthme/ (Owain): pairs_v4 test pairs with realness/taste gating on his 45 post-T decisions
@@ -40,6 +40,11 @@ redoing work.
 - Every call is on **free swe-2-medium via devin-cli** (user: maximise calls, no cap), so numbers are comparable
   within Hobbhahn only, not with Owain's sonnet results. Informal harvest runs as a Devin subagent.
 - Doesn't touch synthme/ or the paused Claude session's Owain run.
+- **Result (`synthme_hobbhahn/results.md`)**, 58 test pairs / 6 works: no profile beats no profile. M0s 0.155, NAME 0.224,
+  S_paper_lite 0.207 (vs M0s +0.05 [-0.08, 0.11]), S_inf_lite 0.121; both lite personas LOWER mean p(his).
+- Shortcut (user deadline 13:30 PT): full fits were stopped mid forward-selection; `lite.py` = same history and
+  hypothesis prompt, no validation selection, one persona call. S_paper/S_inf/S_all/ANTI0 full fits NOT run.
+  NEXT: `python3 run.py fit paper|informal|all` then `arms S_paper S_inf S_all ANTI0` and `report`.
 
 ### 2026-11-15 claude-hillclimb: hillclimb/ (DONE: null; nothing running)
 - Result (`hillclimb/results.md`): 5 taste-steered candidates on dev, none beats R0 on the task score (H1 −0.08,
