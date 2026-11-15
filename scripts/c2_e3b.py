@@ -91,6 +91,10 @@ def main(argv=None):
     ap.add_argument("--mode", choices=["dev", "final"], default="dev")
     ap.add_argument("--heldout-target", help="final mode: which held-out target from configs/models.json")
     ap.add_argument("--max-turns", type=int)
+    ap.add_argument("--target", help="override the dev target spec from configs/models.json (pilots)")
+    ap.add_argument("--judge", help="override the dev judge spec")
+    ap.add_argument("--petri-auditor", help="override the Petri auditor (Inspect model id)")
+    ap.add_argument("--petri-judge", help="override Petri's own judge (Inspect model id)")
     ap.add_argument("--max-cost", type=float, default=50.0)
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--offline", action="store_true")
@@ -101,7 +105,8 @@ def main(argv=None):
     budget = Budget(max_cost_usd=a.max_cost)
     mk = (lambda s: OfflineLLM(budget)) if a.offline else (lambda s: get_llm("auto", s, budget))
     ht = a.heldout_target or (cfg["heldout_targets"][0] if a.mode == "final" else None)
-    models = Models(generator=mk(cfg["generator"]), target=mk(cfg["dev_target"]), judge=mk(cfg["dev_judge"]),
+    models = Models(generator=mk(cfg["generator"]), target=mk(a.target or cfg["dev_target"]),
+                    judge=mk(a.judge or cfg["dev_judge"]),
                     heldout_target=mk(ht) if ht else None,
                     heldout_judges=[mk(j) for j in cfg["heldout_judges"]] if a.mode == "final" else [])
     from autoresearch.research.petri_measure import HarnessRunner
@@ -121,10 +126,14 @@ def main(argv=None):
         prompt = Path(prompts[name]).read_text() if name in prompts else None
         pm = PetriMeasurer(models, seeds, tools=a.tools, mode=a.mode, workers=a.workers, auditor_prompt=prompt)
         if not a.offline:
-            pm.runner = HarnessRunner(mode=a.mode, max_turns=a.max_turns, target=pm.target.label)
+            extra = (["--auditor", a.petri_auditor] if a.petri_auditor else []) + \
+                    (["--judge", a.petri_judge] if a.petri_judge else [])
+            pm.runner = HarnessRunner(mode=a.mode, max_turns=a.max_turns, target=pm.target.label, extra_args=extra)
         sample_seeds = [i + len(seeds) * e for e in range(a.epochs) for i in range(len(seeds))]
         results[name] = pm.measure([], sample_seeds)
-        lineup = {"target": pm.target.label, "judges": [j.label for j in pm.judges], "warnings": pm.warnings}
+        lineup = {"target": pm.target.label, "judges": [j.label for j in pm.judges], "warnings": pm.warnings,
+                  "petri_auditor": a.petri_auditor or "configs/models.json", "petri_judge": a.petri_judge or "configs/models.json",
+                  "compute": budget.summary() if hasattr(budget, "summary") else {}}
         print(f"{name}: {len(results[name])} audits", file=sys.stderr)
     base_name = conds[0][0]
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()

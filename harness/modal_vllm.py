@@ -19,7 +19,10 @@ Default: Qwen/Qwen3-30B-A3B (Nathan's dev target: MoE, 3B active, thinking on by
 Other models: MODEL=... GPU=H100:4 PARSER=deepseek_r1 modal deploy harness/modal_vllm.py
 (PARSER picks vLLM's --reasoning-parser: qwen3 for Qwen3, deepseek_r1 for R1 distills,
 kimi_k2 for Kimi K2 thinking models where your vLLM version has it).
-Stop: modal app stop autoresearch-vllm
+Petri auditor (non-thinking, tool calls, long context), as a second app:
+    APP=autoresearch-auditor MODEL=Qwen/Qwen3-235B-A22B-Instruct-2507-FP8 GPU=H100:4 PARSER=none \
+      MAX_MODEL_LEN=65536 modal deploy harness/modal_vllm.py
+Stop: modal app stop autoresearch-vllm   (and autoresearch-auditor)
 """
 import os
 import subprocess
@@ -32,22 +35,23 @@ PARSER = os.environ.get("PARSER", "qwen3")
 TOOL_PARSER = os.environ.get("TOOL_PARSER", "hermes")
 MAX_LEN = os.environ.get("MAX_MODEL_LEN", "32768")
 N_GPU = int(GPU.split(":")[1]) if ":" in GPU else 1
+APP = os.environ.get("APP", "autoresearch-vllm")   # a second server (e.g. the Petri auditor) needs its own app name
 
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install("vllm==0.10.1.1", "huggingface_hub[hf_transfer]")
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "MODEL": MODEL, "GPU": GPU, "PARSER": PARSER,
-          "TOOL_PARSER": TOOL_PARSER, "MAX_MODEL_LEN": MAX_LEN})
+          "TOOL_PARSER": TOOL_PARSER, "MAX_MODEL_LEN": MAX_LEN, "APP": APP})
 )
 hf_cache = modal.Volume.from_name("hf-cache", create_if_missing=True)
 vllm_cache = modal.Volume.from_name("vllm-cache", create_if_missing=True)
-app = modal.App("autoresearch-vllm")
+app = modal.App(APP)
 
 
 def serve_command(model=MODEL, n_gpu=N_GPU, parser=PARSER, tool_parser=TOOL_PARSER, max_len=MAX_LEN, key="$KEY"):
     return ["vllm", "serve", model, "--served-model-name", model, "--host", "0.0.0.0", "--port", "8000",
             "--tensor-parallel-size", str(n_gpu), "--max-model-len", str(max_len),
-            "--reasoning-parser", parser,                                     # raw CoT -> reasoning_content
+            *(["--reasoning-parser", parser] if parser and parser != "none" else []),   # raw CoT -> reasoning_content
             "--enable-auto-tool-choice", "--tool-call-parser", tool_parser,   # Petri targets call tools
             "--api-key", key]
 
