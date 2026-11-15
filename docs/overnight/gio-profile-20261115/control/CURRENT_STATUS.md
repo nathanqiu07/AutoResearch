@@ -1,3 +1,15 @@
+# Active checkpoint — 2026-11-15T14:47:10.477848+00:00
+
+The98-call P7/P3 prediction batch completed with known accounting:56 P7 calls/$0.598605 and42 P3 calls/$0.451645, totaling$1.050250. The scaling ledger closed at404calls/$4.934060 withzero newholds. All112planned descendant slots remain, including14unavailable from the invalid Neel/AstraP3 profile. Existing09 compiles provenance and04 scores; completion is not a result claim.
+
+The remaining56 reference queue stopped and drained after19 packets:18known andone user400unknown HTTP400. Its cause and charge remain unresolved.35packets are untouched. All56.11gross reservations and8referenceunknowns remain; a separately reviewed35suffix continuation is being prepared with additive unknown/known-consumed exclusions. No retries or partialtails.
+
+The adopted next study compares own versus wrong M1 history prospectively on64original users:1032planned cells/1031eligible calls, one historicalunknown withheld. Its$3.507proposed caps fit the68reference allocation (59.617potentialgross). Existing10implements under canonical da07401ownership;04freezesmetrics and05bindsinputs. No paidlaunch authority yet. Sol-only followup remainsheld/unissued. Aggregate500OpenAI/500OpenRouter limits unchanged; finaltest unauthorized.
+
+Ownswap published:own27/28,generic26/28,swapped24/28. These are14underlyingjudgments from2researchers; a mismatchedprofile canhurt thispanel, whileownovergeneric isonlyonerow. No reliable personalbenefit or researchutility established.
+
+Earlier dated checkpoints remain below.
+
 # Active checkpoint — 2026-11-15T14:25:57.490159+00:00
 
 Remaining56 is LIVE:54fixed jobs,3043call/$7.01ceilings,56.11grossreserved within58referenceallocation.1836planned cells include40prioraliases and254unavailable; firsttwo serial thenmax2, firstnewunknownstop/drain,16:29UTCadmissioncutoff and17:00UTCdeadline. Oldsevenreferenceunknowns stayreserved.
