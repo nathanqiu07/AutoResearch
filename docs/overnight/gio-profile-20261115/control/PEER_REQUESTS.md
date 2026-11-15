@@ -133,3 +133,36 @@ Parent08/09: integrating shared quote helper5c19ceee, pricing20f58f4 and P1–P6
 Continuation80/80 calls complete, no failures/unknowns. Combined112 predictions acrossfour controls on28ordereditems; evaluator is scoring exact original item schedule with preserved per-job provenance. Combined completion index SHA256513f75d2cebed5dadd59032b01bbcad7101989d99e2411e2708f650ed087c9b4 at coordinator/control-v2-completion-index-v1.json. Phase1ledger116calls complete, reported0.01655068USD, pending0 (includes2embeddingcalls). Pricing upper-bound reconciliation follows finalsemantic28calls; oldcostlabels remainhistorical.
 
 Next broadsearch selection /private/tmp/gio-profile-20261115-coordinator/broad-profile-search-selection-v1.json SHA2561440d3a9a43316ae9baa77ba1e77ebaba386b3986cbd4f6a647a13d692179830 freezes all48plannedconfigurations, bothresearchers, replicate0:96buildcalls andup to1344predictions.15USD tranchewithinprofile200,2concurrent, Luna medium, extractiontimeout180 andconsumer60, same16384/8192output allowances. Selection precedes fullv2scores. P7 needs explicitapprovedpeer-fit derivative; evaluator prepares it, no fabrication. Source-group limitationprecludesstrongfidelitywinner. Newruntimeintegrationpassed852tests(850pass,2skip), quote-onlyall8families+conservativecachewritepricing. Waitingfor05restrictedspanfix and09translatorbeforefinalfreeze, nevereditingphase1runtime.
+
+
+## 02:03 Pacific — reference lease issued and matched scores
+
+Role10 lease ISSUED at /private/tmp/gio-profile-20261115-coordinator/reference-leases/gio-reference-panel-01-tranche-01.json SHA2560d3980668d6a74a1b02367c4efa54a44d55d41fd4d80419df26a5c2b5bbad5b9. Exactplan5510e48370605b56967523187fe7cf738a1ffc6fa51be500142b5e290b6a2c39, source63a2c21d1096700f816f4edf71048bcfd4891927,5USD/1500attempt/3600sec. ROOT launcher owns initialexecution now; do NOT launchagain. Credentials parsed asdata using established read_credentials then passed only to childenvironment. Whole5USD remainsreserved until authoritativecomplete receipt; absentfine-grained durablelegacyjournal, a crash/unknown retainsentiretranche ratherthanriskreusingmoney. Claimuniqueat reference-claims/gio-reference-panel-01-tranche-01.json. Oversightmaymonitor privatepanel/launcher.log andmetadata, no codeedits whileactive.
+
+Fullv2fourcontrolscore report e1f8d56d20cce71bda9d7c10277f34a88f04434d89b6dde7533bca0da8882502: Neelcorrect/14 no_profile12,name13,raw12,lexical13; Chris14,13,10,13. Rawcontext isnotuniformlyhelpful andislessorderstable, especiallyChris3/7consistentpairs vsno_profile7/7. Only2Neelsourcegroups/1Chris; no winner. Broad48configuration selection1440d3a9wasfrozenbeforetheseexpandedresults.
+
+Semantic28predictionsactive, preparedSHA8e59ee97b87dc253c140378bfb20300a92cc8a0cac22882e9656eb00c80e67c3 in receipts/c203c72ad2885dc8fd587f1a5ddf6b8df904f3415fa35d691594cfee90627db9/preparation/prepared.json. Phase1 closesafterthisbatchandconservativeprice reconciliation. Parent scalingpreflightrequest accepted: nextphase2 lease willinclude2neutral APIcalls Sol/Astra mediumbeforelargescaling. No researchertext needed.
+
+Downstream03 stoppedbeforetargetexposure,10completedauditorcalls+1unknownhold; preserveoldclaim and0.03971494ORtotalheld (.01386918known+.02584576unknown),0OpenAI. Newleaseonlyagainstnewreviewedcommonsetuprepair, all3arms/settingsunchanged. No reuseofconsumedlease.
+
+P7 derivative admission requiresnarrow driverchange.04evaluator+driverworkercoordinating exactapproved-peer schema; nopeertextadmission toothermethods. Thisisnewruntimeonly.
+
+
+## 02:10 Pacific — phase accounting closed and downstream repair leased
+
+Phase1 is closed to new calls. All144 ledger rows independently reconciled, zero pending or uncertain. Corrected conservative total0.021691730USD (old reported0.020125280 plus25% input cache-write upper adjustment0.001566450; embeddings unchanged). Final receipt coordinator/accounting/phase1-final-receipt.json SHA4ca50af58323a420285f9e5e97168951df4daec549a75a9963e772f9c5cb4e9b. New phase2 policy coordinator/accounting/phase2-ledger-policy.json SHA636bc1e540c7c987773ef29934b008b86be85af18c5cb827bec4f4ac2c7044e2 initializes fresh ledger cap199.960706645, two concurrent, deadline17UTC; no reset of old ledger.
+
+Downstream04 lease ISSUED and copied to owner's runs/gio-matched-shutdown-04-prep/execution-lease.json. Canonical /private/tmp/gio-profile-20261115-coordinator/downstream-leases/gio-petri-matched-04-tranche-01.json SHA0cda8a9fc96754671b3fe780f3ac723d8c4dc39822b14f55e04530bf48f6c04e. Exact source f0ac0eabd525cd6d0b52c345a6357b5454f8b2d3 and14-file packet-reviewed checksums7f1e55f281025f04ee02b34ce4a448d38b3c8ff4b8c7020fa1b262d536f9763a independently verified. New15OpenAI/5OR tranche; conservatively retain entire prior15/5 plus historical20each, aggregate downstream50/30 reserved within200/450. Old03claim cannot be reused; its unknown reservation persists. Owner may launch once now, no further approval needed.
+
+Canonical ownership renewed/pushed and remote verified at e8ea84521c85f53a9da7501afa454b5a5a8ff9c5.51 fresh locks, zero cross-owner conflicts; unrelated stale nested same-owner locks were left unchanged. Main suite809tests passed,2skipped.
+
+
+## 02:12 Pacific — integration and audit handoffs
+
+05 span fix6d7787c and evidence6d42a7b are integrated, preserving phase1 runtime. New embedding proposal should use exact changed approved chunks; fresh2-call production needs a new phase2 lease, not old receipt relabeling. Neutral Sol/Astra Responses access probes are being prepared by01, total under1USD, centrally accounted, no researcher inputs.
+
+09 scaling worker: root sees local55ce769 +073195b +96a59c2 and will integrate only owned changes once publication status/review is confirmed. If the push failure is an approval rejection, send its exact reason so root can resolve existing authorization; no force push or alternate destination. All8 profile families, evaluator aggregate-order fixf609fb7 and driverP7-only guarde468096 are already integrated. Driver conflict was additive tests only; both budget-cap and peer-guard tests retained and20tests passed.
+
+Audit: exact final phase1 index /private/tmp/gio-profile-20261115-coordinator/phase1-completion-index-v1.json SHAd0acaae53d84e6ee5540279b5dbe2a1d4dda423e5403bed525054aa6e3535bad and accounting finalreceipt4ca50af5 bind132jobs/144paidcalls. Please extend your existing private relocatable archive to the closed full phase1 inputs/results using the same workflow, without raw content in Git. Accounting verified2unique embedding rows separately, no repeated bundle charges. Semantic auxiliary decision_item_sha256 is assembler's digest([item_id,option_order_id]), not whole item hash; evaluator is verifying exact declared semantics before score publication.
+
+Concurrency is per lane: profile max2, reference max1, downstream max1, so current project maximum4. Provider allocations remain aggregate. One Chris gap collector is active; no duplicate source collection or general-advice pooling.
