@@ -136,6 +136,10 @@ class DecisionLog:
                 chosen=rec.options[chosen][:80], taste=("none" if user_model_choice is None
                                                        else rec.options[user_model_choice][:80]),
                 overrode=rec.overrode_taste))
+            if rec.overrode_taste:   # the living user model's label queue (integrations/living.py)
+                from ..integrations.living import write_disagree
+                write_disagree(self.shared, self.run_id, self.arm, iter, point, context, rec.options, chosen,
+                               user_model_choice, rec.user_model_confidence)
         return rec
 
     def summary(self) -> dict:
