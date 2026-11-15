@@ -1,0 +1,110 @@
+---
+url: https://bounded-regret.ghost.io/oversight-assiturning-compute-into-understanding
+title: Oversight Assistants: Turning Compute into Understanding
+publishedDate: 2026-01-06
+date_source: exa
+authors: ["Jacob Steinhardt"]
+author_position: solo
+kind: post
+exa_request_id: https://bounded-regret.ghost.io/oversight-assiturning-compute-into-understanding/
+fetched_url: https://bounded-regret.ghost.io/oversight-assiturning-compute-into-understanding/
+---
+Oversight Assistants: Turning Compute into Understanding
+
+# Oversight Assistants: Turning Compute into Understanding
+
+ Jan 5, 2026 10 min read 
+
+Currently, we primarily oversee AI with human supervision and human-run experiments, possibly augmented by off-the-shelf AI assistants like ChatGPT or Claude. At training time, we run RLHF, where humans (and/or chat assistants) label behaviors with whether they are good or not. Afterwards, human researchers do additional testing to surface and evaluate unwanted behaviors, possibly assisted by a scaffolded chat agent.
+
+The problem with primarily human-driven oversight is that it is not scalable: as AI systems keep getting smarter, errors become harder to detect:
+
+- The behaviors we care about become more complex, moving from simple classification tasks to open-ended reasoning tasks to long-horizon agentic tasks.
+- Human labels become less reliable due to reward hacking: AI systems become expert at producing answers that look good, regardless of whether they are good.
+- Simple benchmarks become less reliable due to evaluation awareness: AI systems can often tell that they are being evaluated as part of a benchmark and explicitly reason about this.
+
+For all these reasons, we need oversight mechanisms that scale beyond human overseers and that can grapple with the increasing sophistication of AI agents. Augmenting humans with current-generation chatbots does not resolve these issues: such off-the-shelf oversight won’t be superhuman until general AI systems are superhuman, which is too late. Moreover, capabilities are spiky—models can excel at some tasks while doing poorly at others—so there will be tasks where current AI systems are better at doing the task than helping a human oversee it.
+
+Instead, we need superhuman oversight of AI systems, today. To do this, we need to at least partially decouple oversight from capabilities, so that we can get powerful oversight assistants without relying on general-purpose advances in AI. The main way to do so is through data: the places where AI capabilities have grown the fastest are where data is most plentiful (e.g. massive online repos for code, and unlimited self-supervised data for math).
+
+Fortunately, AI oversight is particularly amenable to generating large amounts of data, because most oversight tasks are self-verifiable—the crux of the task is an expensive discovery process, but once the discovery has been made, verifying it is comparatively easy. For example, constructing cases where a coding assistant inserts malware into a user's code is difficult, but once constructed, such cases are easy to verify. Similarly, identifying the causal structure underlying a behavior is difficult, but once identified, it can be verified through intervention experiments. This kind of self-verifiable structure is currently driving the rapid advances in mathematical problem-solving, reasoning, and coding, and we can leverage it for oversight as well.
+
+If we could decouple oversight abilities from general capabilities, then work on safety and oversight would be significantly democratized: it would not be necessary to race to the capability frontier to do good safety work, and many actors could participate at the oversight frontier without the conflict of interest inherent in building the systems being evaluated. This democratization of AI oversight is a significant motivation for my own work (and why I co-founded Transluce), and structurally important for achieving good AI outcomes.
+
+Below I will lay out this vision in more detail, first demonstrating self-verifiability through several examples, then providing a taxonomy of oversight questions to show that this structure is fairly general. I’ll also close with a forward-looking vision and open problems.
+
+# Superhuman Oversight from Specialized Assistants
+
+We can achieve superhuman oversight of AI systems by building specialized, superhuman AI assistants. They do not need to be broadly superhuman, only superhuman at the specific task of helping humans to oversee other AI systems. To build these assistants, we can train models on lots of data specialized to the oversight tasks we care about, similar to how AI developers achieved recent leaps in reasoning, math, and coding. This aligns with the bitter lesson—the performance of AI systems at a task is primarily determined by the amount of data and compute they leverage.
+
+AI oversight is particularly amenable to this type of specialized-but-scalable training. This is because AI systems inherently generate vast amounts of data, such as agent transcripts, diverse behaviors across prompts, neuron activations, and pre-training and fine-tuning data. Given one of these data sources, and a well-operationalized question, we can usually construct a scalable reward signal.
+
+As a concrete example, consider behavior elicitation: the problem of determining whether and when an AI system exhibits a given behavior pattern (such as “ providing advice with predictably harmful consequences to the user”). This asks the question “what could happen” and applies it to the data source of “input-output behaviors of an AI system.” Answering it is important for anticipating failures before they surface in the wild.
+
+Behavior elicitation has exactly the problem structure we want: finding an unwanted AI behavior is a hard search problem, but verifying that it is unwanted is much easier [1], and it can often be done with an LM-based judge. This gives us an automated reward signal to optimize with RL, and we used this in Li et al. (2025) and Chowdhury et al. (2025) to train specialized elicitation assistants. By exploiting the scalability of LM-based rewards, we searched across a huge number of inputs (40M+ tokens) to surface behaviors including self-harm, hallucinations, anger towards the user, and reinforcing delusions.
+
+Training elicitation assistants using an LM-based judge of AI behavior. The judge answers whether a given response constitutes realistic, authentic, and unexpected harmful advice. This score is used to update the policy $\pi_{\theta}$ using reinforcement learning. Adapted from Chowdhury et al. (2025)
+
+As a second example, consider feature description: describing which inputs cause a given neuron or other unit of a neural network to fire. This asks the question “what happened” and applies it to the data source of “neuron activations.” This task is a key building block for many downstream applications of interpretability.
+
+This again has the problem structure we want: given a purported description of a feature, we can use this to predict the firing patterns of the feature (by having a LM make predictions given the description), and see if the predictions match reality. In Choi et al. (2024), we used this reward signal to train a specialized model to cheaply produce high-quality explanations, outperforming previous more expensive approaches that relied on general-purpose chatbots. We used these explanations to debug strange behaviors, such as why so many models believe that 9.11 is larger than 9.8.
+
+Training an explanation assistant by automatically scoring descriptions. Given a set of descriptions, an LM-based scorer determines how well each one matches reality. We use this to re-rank and then train a specialized explainer model on high-scoring descriptions. Adapted from Choi et al. (2024).
+
+This second example illustrates a key point: specialized models can outperform larger general-purpose models. In our case, a specialized explainer fine-tuned from Llama-8B outperformed the general-purpose GPT-4 model, which is likely an order of magnitude larger. This is direct evidence that we can decouple oversight capabilities from general capabilities.
+
+# A Taxonomy of Oversight Questions
+
+To generalize the two examples above, we’ll consider a broader taxonomy of oversight tasks. Both examples above took a data source and asked a particular question about it. For AI oversight, we are often interested in three types of questions: what happened, what could have happened, and why it happened:
+
+- What happened? Because AI agents act autonomously, take many consecutive actions, and sometimes intentionally hide their mistakes, even answering what happened in a given user interaction or agentic workflow is not straightforward. We need scalable oversight tools to process the actions that an agent took and explain them to us.
+- What could happen? Because AI acts in open-ended environments, it is difficult to anticipate the full set of behaviors an AI system might exhibit, leading to strange behaviors at deployment time (such as o3 claiming it ran code on its personal MacBook Pro). We need adaptive testing tools that will surface these behaviors early on before they create problems in the wild.
+- Why did it happen? Once problems are discovered, we need to trace them back to their root cause—this helps us to fix them and anticipate related problems. For AI behaviors, the root cause lies in the training data and the learned representations. We need attribution methods to trace behaviors to these sources and to make it practical for humans to interpret and intervene on the massive data sets involved.
+
+We can apply these questions to each of the key data sources related to a given model: its outputs, its internal representations, and its training data. This provides a taxonomy, based on the type of question we are asking (what happened, what could happen, why did it happen) and the data sources we are using to answer it (behaviors, representations, data).
+
+| | What happened | What could have happened | Why did it happen |
+| --- | --- | --- | --- |
+| Behaviors | Analysing agent transcripts | Behavior elicitation (PRBO, Petri) | Counterfactual simulability, counterfactual explanations |
+| Representations | Feature descriptions, activation monitoring, LatentQA | Eliciting interpretability states (fluent dreaming) | Feature attribution, Predictive Concept Decoders, automated circuit discovery |
+| Data | Data observability | Fine-tuning sets that elicit a particular behavior (e.g. emergent misalignment) | Data attribution (influence functions, datamodels), counterfactual data explanations (persona features, alignment pretraining) |
+
+Example questions and relevant work for each cell in our 3x3 taxonomy.
+
+While the details vary, for each of these oversight questions, there is a natural strategy for operationalizing it as a scalable objective. Let’s walk through each question type in turn.
+
+To start with, for what happened, we typically want to produce a faithful and informative summary [2] of a large data source (e.g. “what behaviors related to sycophancy appeared in these agent transcripts”, or “what examples related to biosecurity appeared in this pretraining corpus”).
+
+- Faithfulness is relatively straightforward: we can have an LM judge check the source material in detail against the summary to ensure accuracy.
+- For informativeness, we can test how well a human (or LM-based proxy) can make downstream decisions given the summary. Or alternatively, we could provide two possible summaries and ask the human/LM to rank which one they’d find more useful. [3] 
+
+For what could have happened, we have already seen the search-and-verify structure with behavior elicitation. This same structure also applies for representations: searching for inputs that elicit a given interpretability state (such as a specific feature being active). It also applies for data: we could imagine generalizing investigations into emergent misalignment by automatically searching for fine-tuning sets that elicit specified behaviors at test time.
+
+Finally, why did it happen seeks to reduce observed behaviors to underlying causes, which is the purview of empirical science. Given a claim that “X causes Y”, we could empirically test it by counterfactually varying X and checking that Y moves as predicted; and by enumerating alternative hypotheses and generating experiments to distinguish between them (Platt, 1964). The self-verifiability of why is most apparent for interpreting latent representations, where causal abstractions provide a formal algebra for checking claims; but it can also be applied to behaviors and data, for instance by varying parts of an input to test what matters for a behavior, or varying training data to test causal effects.
+
+These individual oversight questions tie into each other, creating a compounding dynamic: data begets data. For example, feature descriptions—a “what happened” question—are a useful precursor to feature attribution—a “ why it happened” question. In the other direction, describing internal representations also helps us to elicit them, and eliciting more behaviors gives us more examples to analyze or attribute to. This is why at Transluce we tackle all these questions at once, and it’s reason for optimism that progress on oversight will accelerate over time.
+
+Fortunately, the data to train these systems is abundant. For agent behaviors, a single transcript collection in Docent can contain 400M tokens. For representations, we can track millions of neuron activations [4] across trillions of tokens in FineWeb or other large corpora. By generating data for each cell in the taxonomy above and training specialized assistants on it, we create a conduit for applying massive compute to oversight, in line with the bitter lesson.
+
+# Vision: End-to-End Oversight Assistants
+
+The taxonomy above reveals a common structure across oversight tasks: each involves a large data source, a natural question, and a scalable way to verify answers. This shared structure suggests we can move beyond building local solutions for individual tasks toward unified, end-to-end oversight assistants.
+
+What should such an assistant be able to do? It should:
+
+- Understand the system it is overseeing
+- Understand what the human overseer cares about, and what decisions they need to make
+- Provide explanations that help the human do this
+
+Docent is a good illustration of this full experience: an AI assistant reads a large collection of agent transcripts, then interacts with a human who arrives with a high-level concern (e.g., “Is my agent reward hacking?”). It helps them refine exactly what they mean based on the data (by showing examples or asking follow-up questions) until they arrive at a precise question along with a clear, evidence-backed answer.
+
+How do we measure whether such a system is working? The key insight is that oversight assistants ultimately provide information to humans, so we can ground their quality in how well that information supports human understanding. Concretely, after interacting with the assistant, we check if the human can accurately answer probing questions about the system being overseen. Better assistants will lead to more accurate answers and fewer surprises.
+
+This vision raises a number of open questions. How do we evaluate oversight assistants when human judgment is itself unreliable? How do we create scalable data to train these systems without being bottlenecked on human labels? How do we build good architectures and pretraining objectives for these assistants? These are the technical questions that I spend most of my time thinking about, and we’ll go into them in detail in the next post.
+
+Acknowledgments. Thanks to Sarah Schwettmann, Conrad Stosz, Daniel Johnson, Rob Friel, Emma Pierson, Yaowen Ye, Prasann Singhal, Alex Allain, and James Anthony for helpful feedback and discussion, and Rachael Somerville for help with copyediting and typesetting.
+
+1. Easier does not mean that it’s trivial! Specifying the exact behaviors you care about often requires careful thought; for instance, this is a large motivation behind Docent’s rubric refinement workflow. ↩︎
+2. While summarization capabilities are already trained into general-purpose LM assistants (Stiennon et al., 2020), oversight tasks often have specific needs, such as precisely identifying rare events in large corpora from potentially underspecified descriptions. We might also have data sources, such as inner activations, that LMs were never trained on. These both motivate the need for specialized explainer systems. ↩︎
+3. The idea here is that if a summary is incomplete (missing important information), there is another summary that would help a human realize this fact. This latter summary would then win in pairwise comparisons. ↩︎
+4. E.g. Llama-3.1 70B has 2.3 million neurons across all layers (80 layers x 28,672 neurons/layer). ↩︎

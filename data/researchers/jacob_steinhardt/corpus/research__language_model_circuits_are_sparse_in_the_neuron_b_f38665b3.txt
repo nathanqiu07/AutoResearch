@@ -1,0 +1,788 @@
+---
+url: https://transluce.org/neuron-circuits
+title: Language Model Circuits Are Sparse in the Neuron Basis | Transluce AI
+publishedDate: 2025-11-20
+date_source: exa
+authors: ["Aryaman Arora", "Zhengxuan Wu", "Jacob Steinhardt", "Sarah Schwettmann"]
+author_position: middle
+kind: blog
+exa_request_id: https://transluce.org/neuron-circuits
+---
+Language Model Circuits Are Sparse in the Neuron Basis | Transluce AI
+
+# Language Model Circuits Are Sparse in the Neuron Basis
+
+Aryaman Arora *, Zhengxuan Wu *, Jacob Steinhardt, Sarah Schwettmann
+
+ * Equal contribution. Correspondence to: aryaman@transluce.org, zen@transluce.org.
+
+Transluce | Published: November 20, 2025
+
+Many interpretability methods rely on learned feature bases—such as sparse autoencoders or cross-layer transcoders—based on the belief that neurons do not cleanly decompose model computation. We revisit this assumption and show that, with a better choice of neuron basis (MLP activations) and a stronger attribution method (RelP), raw neurons can produce circuits that are just as sparse and faithful as those built from learned features. We reproduce three prior case studies originally demonstrated with learned features (multi-hop reasoning, addition, and multilingual antonyms) using only neuron circuits in Llama 3.1-8B-Instruct.
+
+# Introduction
+
+Modern AI systems can solve complex tasks, but they often do so in ways we can't directly observe. They may rely on shortcuts, internal assumptions about the user, or multi-step reasoning that never appears in their text output. If we can see these internal computations, we can check whether the model is reasoning in the way we expect, catch failures that don't show up in the final answer, and understand how its behavior evolves during training [1, 2]. This is the goal of circuit analysis: tracing a model's behaviors back to specific interactions between its internal components [3, 4, 5, 6, 7, 8].
+
+A central challenge is choosing the units over which we trace these computations. Neurons are the simplest option, but many researchers believe they don't form a sparse or clean basis: individual “features” are often spread across many neurons [9, 10]. This has motivated a range of learned alternatives: sparse autoencoders (SAEs) [11, 12], transcoders [13, 14, 8], or directly training the model to have sparse circuits [15].
+
+These learned feature bases are powerful, but they also come with drawbacks. They only approximate the original model, which introduces hard-to-interpret error terms [16, 17]. Their features can split or merge in unintuitive ways, making them unstable and often polysemantic [12, 18]. And because they must be retrained as the model evolves, they are expensive to apply throughout training [19]. For these reasons, it is valuable to extract as much interpretability as we can directly from the neuron basis, even if individual neurons are not always as cleanly interpretable as learned sparse features [11].
+
+This motivates a natural question: Are neuron-level circuits really as unsparse as previously believed? Our work revisits this assumption. Surprisingly, we find that circuits built directly in the neuron basis can be just as sparse and faithful as circuits built from SAE features. To close the gap found in earlier work [7, 8], we introduce two changes:
+
+- Use MLP activations, not MLP outputs. Prior comparisons used MLP outputs as the neuron baseline [7], but MLP activations provide a more informative "privileged" basis. This alone yields much sparser circuits.
+- Use stronger attribution methods. Circuit-tracing relies on attribution methods to determine which units are important. Most past work uses Integrated Gradients [20], which is noisy and expensive for deep models [21]. We instead use RelP [22], a more accurate and efficient attribution method. This removes the remaining gap between neurons and SAEs.
+
+Results on the subject-verb agreement (SVA) benchmark before (IG attribution on MLP outputs) and after our improvements (switch to MLP activations and RelP attribution) to circuit tracing on the neuron basis.
+
+We then apply our neuron-level circuit tracing to three classic case studies from the cross-layer transcoder (CLT) literature [23, 8]. These tasks were originally chosen because they reveal rich, interpretable structure in CLT features; by recovering the same structure using only raw neurons, we test whether neuron circuits can match cross-layer transcoders (CLTs) in practice.
+
+- State-capital multi-hop reasoning: neuron clusters correspond to hops like Dallas → Texas → Austin.
+- Two-digit addition: we find neurons tracking the ones digit, tens digit, and modular structure of the sum.
+- Multilingual antonyms: we identify neurons encoding the language of the prompt, the underlying concept (e.g., "hot"), and the attribute being flipped (e.g., temperature).
+
+We also present a new user-modeling case study, showing that neuron tracing can surface neurons tied to demographic attributes the model infers about a user—pointing toward ways to make such internal inferences more transparent and controllable.
+
+Results on the two-digit addition and state-capital multi-hop reasoning case studies, replicating key results from Lindsey et al. [23] using only neuron circuits in Llama 3.1-8B-Instruct.
+
+Together, these replications show that neuron circuits can capture the same kinds of interpretable, task-specific structure previously accessible only through learned feature bases.
+
+Causal interpretability. Modern language model interpretability intervenes on model internals and measures the resulting effects on model outputs in order to establish causal relationships between components and observed behaviours [24, 25, 26, 27, 28, 5, 29, 30, 31]. Interventions have enabled understanding how concepts are encoded in internal representations [10] (including linguistic features [32, 33, 34], mathematical reasoning [35, 36], state tracking [37, 38], inter alia) and even controlling model behaviour with lightweight adapters [39, 40, 41].
+
+Sparse dictionary learning. Sparse dictionary learning has emerged as a dominant approach to disentangling the representations of language models into interpretable features, particularly sparse autoencoders (SAEs) [12, 11, 42, 43], which learn to reconstruct activations via latent representations in a higher-dimensional sparse space, and transcoders [13, 14], which learn to express the nonlinear computation of an MLP in a similar higher-dimensional sparse space. Sparse dictionaries have enabled applications such as steering model behaviour [44, 45], data diffing [46], and model diffing [19], but plausibly may be outperformed by more targetted methods such as probing and steering vectors for some applications [47, 48].
+
+Circuit tracing. Initial work on circuit tracing in language models began with Wang et al. [5], who identified attention heads responsible for implementating the indirect object identification task in GPT-2. Most approaches to analyzing circuits either operate on a coarse granularity (e.g. attention heads and MLP blocks) or use sparse dictionaries, out of a belief that the neuron basis is uninterpretable. The former category includes algorithms such as ACDC [6] (which uses interchange interventions on coarse components), a variety of similar approaches which instead use gradient-based attribution [49, 50, 51]. The latter includes sparse feature circuits [7], transcoder circuits [14, 13], and cross-layer transcoders [8, 23]. All approaches claim to find relevant model components for a given task, but dictionary learning has the advantage of providing narrow features rather than components which may be responsible for many behaviours. Our approach adopts the benefits of gradient-based attribution as found in both categories, as well as the desire for circuits built on narrow task-specific features.
+
+# Sparse circuits without SAEs
+
+First, we will show that circuits traced on the MLP activations can match SAEs on downstream evaluations with nearly the same level of sparsity.
+
+## Circuit tracing preliminaries
+
+(Left) Various sites in a transformer language model may form the units for circuit-finding, including attention outputs, MLP activations, MLP outputs, and the residual stream. (Right) Circuit evaluation is performed by ablating activations at selected components use a distribution of other inputs to compute the ablated activations, and evaluating how much the output shifts towards the expected behaviour and away from counterfactual behaviour.
+
+Transformer bases. A Transformer language model $M$ M consists of $L$ L layers of Transformer blocks, each of which has a sequence-mixing attention block followed by a state-mixing MLP block, with residual connections. The LM takes as input a sequence of $n$ n tokens $\mathbf{x} = (x_1, \ldots, x_n)$ x=(x 1​,…, x n​) and embeds them into input representations $\mathbf{e} = (\mathbf{e}_1, \ldots, \mathbf{e}_n)$ e=(e 1​,…, e n​), where $\mathbf{e}_j \in \mathbb{R}^{d_\text{model}}$ e j​∈ R d model​. At layer $i \in \{1, \ldots, L\}$ i∈{ 1,…, L}, there is a Transformer block that computes the following:
+
+- Attention output: $\mathbf{a}^{(i)} = (\mathbf{a}^{(i)}_1, \ldots, \mathbf{a}^{(i)}_n)$ a(i)=(a 1(i)​,…, a n(i)​), where $\mathbf{a}^{(i)}_j \in \mathbb{R}^{d_\text{model}}$ a j(i)​∈ R d model​ is the output of the multi-head attention block.
+- MLP activations: $\mathbf{h}^{(i)} = (\mathbf{h}^{(i)}_1, \ldots, \mathbf{h}^{(i)}_n)$ h(i)=(h 1(i)​,…, h n(i)​), where $\mathbf{h}^{(i)}_j \in \mathbb{R}^{d_\text{ffn}}$ h j(i)​∈ R d ffn​ are the post-nonlinearity hidden activations within the MLP.
+- MLP output: $\mathbf{m}^{(i)} = (\mathbf{m}^{(i)}_1, \ldots, \mathbf{m}^{(i)}_n)$ m(i)=(m 1(i)​,…, m n(i)​), where $\mathbf{m}^{(i)}_j \in \mathbb{R}^{d_\text{model}}$ m j(i)​∈ R d model​ is the output of the MLP block after the down projection.
+- Residual stream: $\mathbf{r}^{(i)} = (\mathbf{r}^{(i)}_1, \ldots, \mathbf{r}^{(i)}_n)$ r(i)=(r 1(i)​,…, r n(i)​), where $\mathbf{r}^{(i)}_j \in \mathbb{R}^{d_\text{model}}$ r j(i)​∈ R d model​ is a running sum of outputs of all components so far: $\mathbf{r}^{(i)} = \mathbf{r}^{(i-1)} + \mathbf{a}^{(i)} + \mathbf{m}^{(i)}$ r(i)= r(i− 1)+ a(i)+ m(i) with $\mathbf{r}^{(0)} = \mathbf{e}$ r(0)= e.
+
+Finally, the model produces output logits $\mathbf{y} = (\mathbf{y}_1, \ldots, \mathbf{y}_n)$ y=(y 1​,…, y n​) where $\mathbf{y}_j \in \mathbb{R}^{d_\text{vocab}}$ y j​∈ R d vocab​. For convenience, we refer to the input embeddings $\mathbf{e}$ e as $\mathbf{r}^{(0)}$ r(0) and the output logits $\mathbf{y}$ y as $\mathbf{r}^{(L + 1)}$ r(L+ 1) when discussing circuits over these representations.
+
+SAE bases. Sparse autoencoders (SAEs; [12, 11]) are dictionary learning techniques that decompose Transformer representations into sparse and interpretable feature bases. Given a representation $\mathbf{x} \in \mathbb{R}^{d}$ x∈ R d (e.g., MLP activations, outputs, or residual stream), an SAE produces feature activations $\mathbf{f} = g(\mathbf{W}_\text{enc}(\mathbf{x} - \mathbf{b}_\text{pre}) + \mathbf{b}_\text{enc})$ f= g(W enc​(x− b pre​)+ b enc​) where $\mathbf{f} \in \mathbb{R}^{d_\text{sae}}$ f∈ R d sae​, $\mathbf{W}_\text{enc} \in \mathbb{R}^{d_\text{sae} \times d}$ W enc​∈ R d sae​× d, and $g$ g is a sparsifying nonlinearity. Different architectures use different nonlinearities, including ReLU [12], Gated [52], TopK [53], and JumpReLU [54]. We let $\mathbf{f}^{(i)}$ f(i) denote the feature activations for layer $i$ i.
+
+Circuits. A circuit is a sparse subgraph $C = (V, E)$ C=(V, E) of the computational graph underlying a model's behavior on a specific task or dataset.
+
+- The nodes $V$ V are individual computational units (e.g., MLP neurons $h^{(i)}_{j,v}$ h j, v(i)​ or SAE features $f^{(i)}_{j,k}$ f j, k(i)​), along with their activations. We treat the same unit at different token positions $j$ j as distinct nodes.
+- The directed edges $E$ E capture causal influence between nodes, with edge weights quantifying the strength of information flow from earlier to later components.
+
+Both $V$ V and $E$ E may be input-dependent: the relevant nodes and their connectivity depend on the features that are active on a given input $\mathbf{x}$ x.
+
+Evaluating circuits. We use the same procedure for evaluating circuits in all our experiments (including for edge-based ablations). For a circuit $C = (V, E)$ C=(V, E), we define $C(x)$ C(x) as running the underlying model $M$ M with mean ablation of the complement of the circuit $\overline{C} = (\overline{V}, \overline{E})$ C=(V, E). Mean ablation is an intervention that sets some set of nodes (here, $\overline{V}$ V) to the mean of their activations over a dataset $\mathcal{D}$ D, while retaining the remaining computation for nodes not in $\overline{V}$ V. We denote the activation of a node $v$ v on input $x$ x as $v(x)$ v(x). Formally, we have:
+
+$C(x) := M(x; \operatorname{do}(v = \mathbb{E}_{d \sim \mathcal{D}}[v(d)]) \text{ for } v \in V)$ C(x):= M(x; do(v= E d∼ D​ [v(d)]) for v∈ V)
+
+To evaluate a circuit, we follow Wang et al. [5], which introduced two widely-adopted validation criteria relative to a performance metric $m$ m on the model's outputs. 1 They also proposed a third criterion, minimality, which is essentially captured by the size of the circuit in later evaluation benchmarks (such as SVA and MIB). We compute this metric over a dataset $\mathcal{D}$ D of paired inputs $x$ x and outputs $y$ y. (In some cases $x, x'$ x, x′ and $y, y'$ y, y′ are actually counterfactual pairs of inputs and outputs, but we elide this in the notation below.)
+
+The first metric, faithfulness, says that when the circuit's complement is ablated, the value of the metric $m$ m should be close to that of the original model $M$ M. We normalise by a baseline value $m(\varnothing, \cdot)$ m(∅,⋅) where all nodes in the graph are ablated. The second metric, completeness, says that ablating the circuit itself should result in a value of the metric $m$ m that is close to that of ablating the entire model $M$ M. Formally:
+
+$\begin{aligned}
+m(C, x, y) &= \ell(y, C(x))\\
+\mathsf{Faithfulness}(C) &= \frac{\mathbb{E}_{x \sim \mathcal{D}}[m(C, x) - m(\varnothing, x)]}{\mathbb{E}_{x \sim \mathcal{D}}[m(M, x) - m(\varnothing, x)]} \\
+\mathsf{Completeness}(C) &= \frac{\mathbb{E}_{x \sim \mathcal{D}}[m(\overline{C}, x) - m(\varnothing, x)]}{\mathbb{E}_{x \sim \mathcal{D}}[m(M, x) - m(\varnothing, x)]}
+\end{aligned}$ m(C, x, y) Faithfulness(C) Completeness(C)​=ℓ(y, C(x))= E x∼ D​ [m(M, x)− m(∅, x)] E x∼ D​ [m(C, x)− m(∅, x)]​= E x∼ D​ [m(M, x)− m(∅, x)] E x∼ D​ [m(C, x)− m(∅, x)]​​
+
+A perfect circuit thus has faithfulness $1$ 1 and completeness $0$ 0. Our goal is to identify a sparse circuit (i.e., $\lvert V \rvert$∣ V∣, $\lvert E \rvert$∣ E∣ are small) that is both faithful and complete.
+
+## MLPs are sparse bases for circuit tracing
+
+We next show that the MLP activations form a strong basis for constructing sparse circuits. To do so, we compare several possible choices for representing the nodes $V$ V in a circuit, including the MLP activations, MLP outputs, attention outputs, and different SAE bases. We evaluate the trade-off between sparsity and faithfulness/completeness on the subject-verb agreement (SVA) benchmark in Marks et al. [7]. This standard benchmark provides four simple templatic datasets (`simple`, `rc`, `within_rc`, `nounpp`), where the goal is to obtain high faithfulness and low completeness when ablating the model's activations. We use and build upon Marks et al.'s codebase for these experiments.
+
+Datasets. Each example in the SVA benchmark is a pair of inputs and outputs, where the input is an incomplete sentence with a subject and the output is a verb whose grammatical number matches the number of the subject. The counterfactual input is a modification of the original input that changes the number of the subject (e.g. from singular to plural), and the counterfactual output does the same to the original output. For example, the subset `simple` contains an original input "The parents" with output "are" and a counterfactual input "The parent" with output "is".
+
+SVA is thus designed to isolate the linguistic feature of grammatical number in the context of subject-verb agreement, using counterfactual pairs. Therefore, a faithful and complete circuit found on this dataset should capture the mechanism tracing how the model predicts the form of the verb based on the subject noun earlier in the sentence.
+
+| Dataset | $x$ x | $y$ y | $x'$ x′ | $y'$ y′ |
+| --- | --- | --- | --- | --- |
+| `simple` | The parents | are | The parent | is |
+| `within_rc` | The athlete that the managers | like | The athlete that the manager | likes |
+| `rc` | The athlete that the managers like | does | The athletes that the managers like | do |
+| `nounpp` | The secretaries near the cars | have | The secretaries near the cars | has |
+
+Example original inputs with outputs and corresponding counterfactual inputs with outputs from the SVA benchmark, for each of the four tasks.
+
+Training and attribution method. On each task, we obtain a circuit using the training subset, then evaluate its faithfulness and completeness on a validation subset. Throughout this section, we obtain circuits by greedily taking the $k$ k highest-attribution nodes (and all edges between those nodes). The nodes themselves are individual features (e.g. MLP neuron or SAE activations).
+
+To measure faithfulness and completeness, recall that SVA consists of pairs of original and counterfactual inputs and outputs as described above, and that the model $M(x)$ M(x) outputs a vector of next-token logits given input $x$ x. We take the metric $m$ m to be the difference between the original and counterfactual output tokens ($y$ y and $y'$ y′) on these logits:
+
+$m(C, x) = \left[C(x)\right]_y - \left[C(x)\right]_{y'}$ m(C, x)= [C(x)] y​− [C(x)] y′​
+
+In SVA, $y$ y and $y'$ y′ are singular and plural forms of the same verb (e.g. is and are, as in the example from `simple` above).
+
+We use Integrated Gradients (IG; [20]) to compute attribution scores; we will introduce a stronger method in the next section. We use IG-activations, proposed in Marks et al. (see the Appendix for more discussion on how IG variants differ). For a node $v \in V$ v∈ V with scalar activation value $v(x)$ v(x), IG-activations interpolates between the counterfactual input $x'$ x′ and the original input $x$ x:
+
+$\begin{aligned}
+\mathsf{Attribution}_{\mathsf{IGAct}}(v) &= \mathbb{E}_{(x, x') \sim \mathcal{D}} [\mathsf{IGact}_v(x; x')] \\
+\mathsf{IGact}_v(x; x') &= (v(x) - v(x')) \int_{\alpha=0}^1\frac{\partial m(M, x; \text{do}\,v = v(x') + \alpha(v(x) - v(x'))))}{\partial v} \mathrm{d}\alpha \\
+&\approx (v(x) - v(x'))\frac{1}{n}\sum_{i=1}^n\frac{\partial m(M, x; \text{do}\,v = v^{(i)}))}{\partial v}\\
+\text{where } v^{(i)} &= v(x') + \frac{i}{n}(v(x) - v(x'))
+\end{aligned}$ Attribution IGAct​(v) IGact v​(x; x′) where v(i)​= E(x, x′)∼ D​ [IGact v​(x; x′)]=(v(x)− v(x′))∫α= 0 1​∂ v∂ m(M, x; do v= v(x′)+α(v(x)− v(x′))))​ dα≈(v(x)− v(x′)) n 1​ i= 1∑ n​∂ v∂ m(M, x; do v= v(i)))​= v(x′)+ n i​(v(x)− v(x′))​
+
+Evaluation. For each task, we evaluate circuits of varying size $k$ k for each choice of feature basis. We evaluate the faithfulness and completeness of the circuits, averaged over the evaluation set. We plot these values against $k$ k, with the goal of identifying methods that achieve the highest faithfulness and lowest completeness at the smallest circuit size.
+
+Methods and baselines. We use the Llama 3.1 8B base model. For each task, we take a training set of 300 pairs of original and counterfactual inputs and evaluate on 40 held-out pairs, following Marks et al. [7]. We compare the neuron basis on MLP outputs, MLP activations, attention outputs, and the residual stream, along with the SAE basis on MLP outputs, attention outputs, and the residual stream. For the SAE basis, we use the 8x width SAEs from Llama Scope [55]. In all experiments, we vary the size of the circuit by only including the neurons which exceed some attribution score threshold. For SAEs, we allow the error term to be included as a node as well if its attribution score exceeds the selected threshold, following the default evaluation setup in Marks et al. [7].
+
+In the Appendix, we report addition results for Gemma 2 2B (both 8x and 32x width) and Gemma 2 9B with the Gemma Scope SAEs [56], which add additional evidence to our conclusions below.
+
+Result: MLP activation neurons lead to sparse circuits. We plot circuit size vs. faithfulness and completeness for each of the methods and baselines, averaged over the four tasks. We find that MLP activations yield significantly smaller circuits than MLP outputs (by a factor of around 100x). Using MLP activations instead of MLP outputs also significantly closes the gap with SAEs.
+
+Faithfulness and completeness for different choices of representation in the model (residual stream, attention, MLP activations, or MLP outputs) and basis (neurons or SAE) when applying Integrated Gradients.
+
+Conceptually, we hypothesize that MLP activations work better, since the activation coordinates are a privileged basis (due to the element-wise nonlinearity), whereas the MLP outputs are not. 2 Per Elhage et al. [4], a privileged basis is one where the model architecture encourages features to align with the basis dimensions. The only privileged bases in a transformer are the MLP activations (due to ReLU or alternative non-linearities), attention patterns (due to softmax), and tokens (not the embeddings, but rather the process of indexing into the vocabulary). To understand how this manifests empirically, we now examine the distribution of attribution scores in more detail.
+
+MLP activation attributions have greater spread and more outliers. We plot the histogram of attribution scores $\mathsf{Attribution}(v)$ Attribution(v) for each node $v \in V$ v∈ V (recall that these scores are averaged over the training set), for each method across all 4 tasks in the histograms below. Compared to other representations in the model, MLP activations have larger spread in both the bulk and tails. Since circuit tracing works by greedily taking the components with highest attribution, larger spread means we need fewer components to reach the same total effect.
+
+MLP activation attributions are more distributed throughout the model's depth. We next plot the number of features included in the circuit by layer. We plot this for circuits comprising the top 100, 1,000, and 10,000 scoring neurons for each basis. MLP activation scores are more evenly distributed throughout the model's depth than the other bases; MLP outputs are highly concentrated in the last two layers, residual stream scores are somewhat biased towards later layers, and attention outputs are haphazardly distributed with some specific layers having unusually high attribution scores.
+
+MLP activation neuron labels are task-relevant. To better qualitatively understand the circuits that we uncover, we examine all the MLP activation neurons included in a 500-node circuit for the `nounpp` task, which checks the model ability to track subject-verb agreement over an interceding distractor clause.
+
+We looked at the neuron descriptions and top-activating exemplars for each neuron in the circuit, using prior work by Transluce [57]. Examining the maximum-activating exemplars alongside the descriptions reveals several task-relevant features at work. Considering the top 3 neurons:
+
+| Neuron | Analysis |
+| --- | --- |
+| `L30/N11158` (pos, neg) | language-specific singular noun / third-person pronoun neuron, with positive exemplars being the English inanimate third person pronoun it and negative exemplars being various Russian nouns and pronouns (которая "who" (fem.), человек "person", який "which" (masc.), etc.) |
+| `L29/N10537` (pos, neg) | fires language-agnostically before forms of the word "be", e.g. negatively before siano "are (3pl.; Italian)", 'm (1sg.; English), positively before zijn "is (3sg.; Dutch)". Some other verbs make it in as well. |
+| `L30/13476` (pos, neg) | positively fires on the end of a conjunctive noun phrase in English, e.g. Chen and Sand ino, Bagby and N imer, and negatively on non-English plural verb/noun forms (e.g. German werden, erreichen, Ukrainian виборів) |
+
+Additionally, the two most important neurons on token 2 (the subject in the template) are related to the grammatical number of the noun:
+
+| Neuron | Analysis |
+| --- | --- |
+| `L19/N12056` (pos, neg) | negatively fires on plural subjects in English (e.g. they, The most common types...), perhaps triggered also by definiteness and other markers of grammatical subjecthood; it positively fires less cleanly on what seem to be plural verb forms of the verb for "to be able to" in Spanish and Portuguese. |
+| `L17/N4140` (pos, neg) | positively fires on plural nouns across languages (e.g. English plural acronyms like ADC s, EV s, etc., Russian си́ними (plural instrumental of синий "deep blue")) |
+
+Some of these patterns are subtle enough that they aren't surfaced by the automatic descriptions, but become apparent when looking at the exemplars in detail. In general, the most important neurons are related to linguistic features like number, tense, and agreement, which is unsurprising given the task is concerned with tracking grammatical number.
+
+Loading neuron data...
+
+https://transluce-public.s3.us-east-1.amazonaws.com/circuits/sva_nounpp_mlpacts_ig.json
+
+## Better gradient-based attribution
+
+When using IG to score feature importance, we still find neurons to be somewhat less sparse than SAE features. Additionally, IG can be inefficient to compute due to the need for multiple backward passes, and imprecise due to the need to numerically estimate it with samples [21]. We therefore propose a new gradient-based attribution method which closes the gap between neurons and SAE features while only requiring a single backward pass. An identical method was concurrently proposed by Jafari et al. (2025) as RelP [22]. For simplicity, we refer to our new method as RelP throughout this work; the main difference in our work is that we apply RelP directly to the individual MLP neurons and also use it to compute neuron-to-neuron edge weights, whereas their experiments focuses on module-level attribution scoring (e.g. attention heads).
+
+To score the causal importance of a component with our method, we apply gradient-based attribution to a replacement model. The replacement model replaces all nonlinearities with linear alternatives, such that the model remains locally faithful to the original on a specific input [58, 14, 8]. While this modifies the backward pass computation, it retains the same forward pass as the original model and our final evaluations are performed on the original model, not the replacement model.
+
+We use the following local replacement rules for nonlinearities in the Llama 3 architecture:
+
+| Operation | Definition | Linearised Treatment |
+| --- | --- | --- |
+| RMSNorm | $x_i / {\sqrt{\epsilon + \overline{x^2}}}$ x i​/ϵ+ x 2​ | $x_i / {\color{blue}{\mathrm{Freeze}}(\sqrt{\epsilon + \overline{x}})}$ x i​/ Freeze(ϵ+ x​) |
+| SiLU | $x_i \cdot \sigma(x_i)$ x i​⋅σ(x i​) | $x_i \cdot {\color{blue}\mathrm{Freeze}(\sigma(x_i))}$ x i​⋅ Freeze(σ(x i​)) |
+| Attention | $\sum_k A_{qk} v_k$∑ k​ A q k​ v k​ | $\sum_k {\color{blue}\mathrm{Freeze}(A_{qk})} v_k$∑ k​ Freeze(A q k​) v k​ |
+
+Additionally, we use the half rule from layerwise relevance propagation (LRP), which divides the gradient by two via multiplicative interactions (e.g. the elementwise multiplication in gated MLPs). This ensures that the total attribution score is constant layer-by-layer [59, 60, 61], and also ensures the IG property of completeness wherein total attribution is conserved through the model (see discussion in Appendix).
+
+Under our method, to compute the attribution score for a node $v \in V$ v∈ V when processing input $x$ x, we multiply the activation $v(x)$ v(x) by the gradient of the metric $m$ m (based on the replacement model $M_{\text{replacement}}$ M replacement​) with respect to $v$ v: 3 This is akin to input times gradient (IxG), but performed on the replacement model rather than the original model.
+
+$\begin{aligned}
+\mathsf{Attribution}_{\mathsf{RelP}}(v) &= \mathbb{E}_{(x, x') \sim \mathcal{D}} [\mathsf{RelP}_v(x; x')] \\
+\mathsf{RelP}_v(x; x') &= (v(x) - v(x')) \frac{\partial\,m(M_{\text{replacement}}, x)}{\partial\,v(x)}
+\end{aligned}$ Attribution RelP​(v) RelP v​(x; x′)​= E(x, x′)∼ D​ [RelP v​(x; x′)]=(v(x)− v(x′))∂ v(x)∂ m(M replacement​, x)​​
+
+We implement all of our modifications by overwriting the backward pass of the relevant components to detach the nonlinearities and call `torch.autograd.grad` on saved activations to compute gradients.
+
+Evaluation on SVA. We next run the same experiments on the SVA dataset as above, but this time compare results given by our method with those by IG. Note that IG is computed with 10 backward passes in our setup, while our method requires only one backward pass.
+
+Faithfulness and completeness for Integrated Gradients and our method, for different choices of representation in the model (residual stream, MLP activations, or MLP outputs) and basis (neurons or SAE).
+
+Our method outperforms IG in almost all settings. For MLP activations, our method performance plateaus to near-perfect faithfulness and completeness with only ~200 neurons. Our method also improves faithfulness on MLP outputs and the residual stream. Finally, our method slightly improves performance for SAEs trained on MLP outputs, but not for residual stream SAEs.
+
+Importantly, our method closes the remaining gap between MLP sparsity and SAE sparsity.
+
+## Sparse circuits without paired data
+
+Our results so far rely on templatic pairs to compute attribution scores on the training set. Real-world data is non-templatic and messy; for many interesting behaviours, we may not have hypotheses that allow us to generate paired data. Tracing circuits in this more realistic setting is important for scaling up interpretability.
+
+We thus consider an unpaired circuit-finding task. Instead of using a counterfactual input $x'$ x′ as the baseline to compute IG and RelP for each circuit component, we use a zero baseline. Formally, this gives us:
+
+$\begin{aligned}
+\mathsf{IGAct}_v(x) &= v(x) \int_{\alpha=0}^1\frac{\partial m(M, x; \text{do}\,v = \alpha{}v(x)))}{\partial v(x)} \mathrm{d}\alpha \\
+&\approx v(x)\frac{1}{n}\sum_{i=1}^n\frac{\partial m(M, x; \text{do}\,v = \frac{i}{n}v(x)))}{\partial v(x)}\\
+\mathsf{RelP}_v(x) &= v(x) \frac{\partial\,m(M_{\text{replacement}}, x)}{\partial\,v(x)}
+\end{aligned}$ IGAct v​(x) RelP v​(x)​= v(x)∫α= 0 1​∂ v(x)∂ m(M, x; do v=α v(x)))​ dα≈ v(x) n 1​ i= 1∑ n​∂ v(x)∂ m(M, x; do v= n i​ v(x)))​= v(x)∂ v(x)∂ m(M replacement​, x)​​
+
+We keep evaluation identical to the paired setting (i.e. we still compute the difference between original and counterfactual logits as the metric). We test two types of ablation when doing evaluation: mean ablation (as before), and zero ablation (setting ablated nodes to have activation of $0$ 0, which is simpler but may result in out-of-distribution activations [62]).
+
+Results on unpaired SVA are similar to paired SVA. We again run our experiments on the SVA dataset, but provide only the original (not counterfactual) input for training. The results are plotted below: we again observe that the MLP activation neuron basis requires a considerably smaller circuit to achieve good faithfulness and completeness relative to other methods.
+
+We also do the same but with zero ablation, simulating the setting where paired inputs are not available. In this setting, MLP activations have worse completeness than the residual stream in the neuron basis, but are considerably more faithful than alternatives.
+
+Results on SVA without paired training data, evaluated with mean and zero ablation.
+
+RelP beats IG in the unpaired setting. Finally, we evaluate our approach on the unpaired setting with both mean and zero ablation. We observe improvements in both faithfulness and completeness over IG, with RelP requiring fewer neurons to achieve good performance.
+
+Mean ablation and zero ablation evaluation of RelP vs. IG on unpaired SVA.
+
+## Extending from vertices to edges
+
+Our results so far have shown that the MLP activations are a sparse basis for circuits, and with better gradient-based attribution we can find a better set of neurons than IG when evaluating on downstream circuit tasks. However, a circuit is not just a set of neurons, but also the edges connecting them. We now turn to evaluating various methods for computing edge weights.
+
+Preliminaries. We can use either IG or our method to compute edge weights. Given a source node $v_s$ v s​ and a target node $v_t$ v t​, the attribution score for each method is formally expressed (in the unpaired setting) as:
+
+$\begin{aligned}
+\mathsf{IGAct}_{v_s \to v_t}(x) &= v_s(x) \int_{\alpha = 0}^1 \frac{\partial v_t(x; \text{do}\,v_s = \alpha v_s(x))}{\partial v_s(x)} \mathrm{d}\alpha \\
+&\approx v_s(x) \frac{1}{n} \sum_{i=1}^n \frac{\partial v_t(x; \text{do}\,v_s = \frac{i}{n} v_s(x))}{\partial v_s(x)} \\
+\mathsf{RelP}_{v_s \to v_t}(x) &= v_s(x) \frac{\partial v^{\text{replacement}}_t(x)}{\partial v^{\text{replacement}}_s(x)}
+\end{aligned}$ IGAct v s​→ v t​​(x) RelP v s​→ v t​​(x)​= v s​(x)∫α= 0 1​∂ v s​(x)∂ v t​(x; do v s​=α v s​(x))​ dα≈ v s​(x) n 1​ i= 1∑ n​∂ v s​(x)∂ v t​(x; do v s​= n i​ v s​(x))​= v s​(x)∂ v s replacement​(x)∂ v t replacement​(x)​​
+
+This gives us the total effect of the source neuron on the target neuron, including via paths through other intermediate neurons. We can alternatively apply stop gradients on the intermediate MLPs to compute the direct effect of the source neuron on the target neuron; either approach can be useful depending on the application.
+
+In order to make the edge weight interpretable in the context of the attribution graph, we normalise it by the total attribution score of the target neuron, which we term the attribution flow via this edge:
+
+$\begin{aligned}
+\mathsf{Flow}^{\mathsf{IGAct}}_{v_s \to v_t} &= \frac{\mathsf{IGAct}_{v_s \to v_t}(x)}{v_t(x)}\mathsf{IGAct}_{v_t}(x) \\
+\mathsf{Flow}^{\mathsf{RelP}}_{v_s \to v_t} &= \frac{\mathsf{RelP}_{v_s \to v_t}(x)}{v_t(x)}\mathsf{RelP}_{v_t}(x)
+\end{aligned}$ Flow v s​→ v t​ IGAct​ Flow v s​→ v t​ RelP​​= v t​(x) IGAct v s​→ v t​​(x)​ IGAct v t​​(x)= v t​(x) RelP v s​→ v t​​(x)​ RelP v t​​(x)​
+
+This tells us how much of the final logits can be attributed to the path(s) from the source neuron to the target neuron. A useful property of this value is that it normalises for the sign of $v_t(x)$ v t​(x), which need not correspond to the sign of $\mathsf{IGAct}_{v_t}(x)$ IGAct v t​​(x) or $\mathsf{RelP}_{v_t}(x)$ RelP v t​​(x).
+
+We now compare the faithfulness of edge weights under our method vs. IG-inputs. We evaluate edge-based circuits by directly pruning edges and measuring the resulting impact on model behavior.
+
+Methodology. We compute edge attribution using MLP activations as our feature basis. We start with the top 1000 neurons to keep edge evaluation tractable, yielding up to 500,000 potential edges per example. For each pair of neurons in our filtered set, we compute edge weights using the attribution flows defined above.
+
+We compare three edge attribution methods:
+
+- RelP: Our gradient-based method with stop-gradients and straight-through estimation, including additional stop-gradients applied to intermediate MLP layers, which encourages greater edge sparsity by preventing gradients from flowing through MLP computations
+- IG-inp.: The integrated gradients variant described above (see [50]), using 10 integration steps
+- RelP (no stop grad on MLPs): Our gradient-based method with stop-gradients and straight-through estimation, but without the additional stop-gradients on intermediate MLP layers. This variant computes edge weights by considering all paths mediated by downstream MLPs, resulting in less sparse attributions that distribute credit across more edges
+
+We collect all edge weights across the dataset and sort them by magnitude. We then apply percentage-based thresholds to determine which edges to keep. A neuron is removed from the circuit if all of its incoming edges or all of its outgoing edges fall below the threshold—this ensures we only keep neurons that maintain meaningful connectivity in both directions.
+
+Evaluation setup. We use the same SVA benchmark as before, measuring faithfulness and completeness at different edge pruning levels. We report both metrics as a function of the number of edges retained.
+
+Results. The results show that RelP achieves the best performance of all methods, reaching over 80% faithfulness while maintaining high completeness with only ~1e5 edges (10% of the 500k candidate edges). RelP consistently outperforms both alternatives across all circuit sizes.
+
+Faithfulness and completeness for edge-based circuit evaluation on the SVA benchmark. All methods use MLP activations as the neuron basis. Circuits are pruned by removing edges based on attribution scores, with neurons removed when all incoming or outgoing edges are pruned.
+
+# Case studies
+
+We now use the neuron-level circuit tracing algorithm to investigate a variety of behaviours in Llama 3.1 8B Instruct. We trace circuits for each example in the dataset of interest and analyse the resulting graphs.
+
+Case studies. First, we replicate a set of case studies introduced in Lindsey et al. [23] and Ameisen et al. [8]:
+
+- Multi-hop reasoning on state capitals
+- Addition problems
+- Multilingual antonym prediction
+
+The original works use CLTs to trace circuits in language models (Claude 3.5 Haiku, and an 18-layer toy model) for these tasks. With these case studies, we aim to show that we can find comparably interpretable features in the MLP neuron basis as have been found with CLTs.
+
+Additionally, we investigate user modeling, which prior circuit tracing work has not studied.
+
+Circuit tracing methodology. In all case studies, we trace circuits from the top $5$ 5 logits for each example in the dataset, selecting all neurons that receive at least $0.5\%$ 0.5% (absolute score) of the total attribution from these top logits. We use RelP to attribute nodes and RelP with interceding stop-grads to attribute edges.
+
+Formally, we follow Ameisen et al. [8] and use the total value of the top-$k$ k next-token logits as the metric to attribute from, where $k=5$ k= 5 unless otherwise stated:
+
+$\begin{aligned}
+m(M, x) &= \sum_{i=1}^k{\left[M(x)\right]_i}
+\end{aligned}$ m(M, x)​= i= 1∑ k​ [M(x)] i​​
+
+After computing $\mathsf{RelP}$ RelP for each node $v$ v on an example $x \in \mathcal{D}$ x∈ D, we filter for nodes that meet some attribution threshold $\tau$τ relative to the total logit value:
+
+$\begin{aligned}
+V(x) &= \{v \in V : \mathsf{RelP}_v(x) \geq \tau \cdot m(M, x)\}
+\end{aligned}$ V(x)​={ v∈ V: RelP v​(x)≥τ⋅ m(M, x)}​
+
+We set $\tau$τ to be $0.005$ 0.005 in our experiments.
+
+Additionally, we manually filtered out a few neurons which we found were present in the circuit we traced, across every dataset and at many token positions. These neurons are always activated and thus do not seem to provide useful task-specific information when included in circuit analysis. We did not find more than one such neuron per layer. We do not have a certain answer as to what purpose they serve, but we suspect that these neurons behave analogously to bias terms in the language model we study (Llama 3.1 8B Instruct, which otherwise was not trained with bias terms); alternatively, they may be related to the "attention sink" phenomenon [63]. The filtered neurons are: `L23/N306`, `L20/N3972`, `L18/N7417`, `L16/N1241`, `L13/N4208`, `L11/N11321`, `L10/N11570`, `L9/N4255`, `L7/N6673`, `L6/N5866`, `L5/N7012`, `L2/N4786`.
+
+## Circuit analysis techniques
+
+We use three sources of information to understand the neurons in our case studies: neuron descriptions, steering, and label-based scoring.
+
+Neuron descriptions. For the MLP neurons in Llama 3.1 8B Instruct, we have automatic neuron descriptions from prior work by Transluce [57], which we can use to interpret our neuron circuits. We refer the reader to that work to understand how these descriptions were generated; briefly, the best of $20$ 20 LM-generated descriptions were chosen based on how well a simulator could predict the ground-truth activations of that neuron given a description. In general, we found descriptions to be helpful for manually identifying clusters of task-specific in circuits, especially for neurons which receive high attribution scores.
+
+Steering. Given a cluster of neurons $V$ V, we can fix the activations of these neurons to be a scalar multiple of their original activations on a given input $x$ x, and measure the change in the model's output. Formally, given steering factor $\alpha$α, we define the steering operation as:
+
+$\begin{aligned}
+M^{\text{Steer}(V, \alpha)}(x) &= M(x; \text{do}\,v = \alpha{}v(x) \text{ for } v \in V)
+\end{aligned}$ M Steer(V,α)(x)​= M(x; do v=α v(x) for v∈ V)​
+
+Steering allows us to understand how the neurons in $V$ V causally contribute to the model's behavior on this input.
+
+Finding interesting neurons with labelled data. For each of our datasets, there are natural example-level properties that should have corresponding model-internal referents. For example, in our addition dataset, we expect to find features that encode the answer modulo $10$ 10 (since this is feature was found in the CLT circuit from Lindsey et al.). To identify nodes that encode these properties, we introduce a scoring function: given example-level labels of the property of interest, we score a node $v$ v based on how well its attribution score separates classes of labels.
+
+Concretely, assume we have a labeling function $f$ f that maps $x \sim \mathcal{D}$ x∼ D to a categorical label $a \in A$ a∈ A (for example, the answer mod $10$ 10). First, we select a specific class $a \in A$ a∈ A (e.g. the answer modulo $10$ 10 is $7$ 7). We split the dataset into positive and negative examples for $a$ a:
+
+$\begin{aligned}
+\mathcal{D}^+ &= \{x \in \mathcal{D} : f(x) = a\} \\
+\mathcal{D}^- &= \{x \in \mathcal{D} : f(x) \neq a\}
+\end{aligned}$ D+ D−​={ x∈ D: f(x)= a}={ x∈ D: f(x)= a}​
+
+Then, for a node $v$ v, we compute its attribution score for each of the positive and negative examples, and compute the AUROC over the dataset:
+
+$\mathrm{AUROC}(v) = \mathbb{P}_{x^+ \sim \mathcal{D}^+, x^- \sim \mathcal{D}^-}[\mathsf{Attribution}_v(x^+) > \mathsf{Attribution}_v(x^-)]$ AUROC(v)= P x+∼ D+, x−∼ D−​ [Attribution v​(x+)> Attribution v​(x−)]
+
+This tells us how well this node's attribution score correlates with the specific label $a$ a of interest. We apply this procedure for each $a \in A$ a∈ A to find interesting neurons in a supervised manner, reporting all neurons in the circuit that have large AUROC. In each of our case studies, we will analyze these attribute-sensitive neurons, looking at their top-activating exemplars, steering effects, and so on.
+
+## Multi-hop reasoning on state capitals
+
+Lindsey et al. [23] study a state capitals task, where models must perform multi-hop reasoning to answer questions such as "What is the capital of the state containing Dallas?" The goal is to isolate circuit components that are responsible for each reasoning hop. We replicate this study on Llama 3.1 8B Instruct with neuron-level circuit tracing and a larger dataset of state capitals.
+
+Dataset. We construct a simple dataset of 50 multi-hop reasoning questions involving state capitals, which uses the same question style as in Lindsey et al., but is reformatted for the chat-tuned model we study. In these questions, the model is asked "What is the capital of the state containing a given city?"; an example is shown below:
+
+###### Multi-hop reasoning on state capitals
+
+What is the capital of the state containing Dallas?
+
+Answer: Austin
+
+Examining the "Texas" circuit. In the example above, the model must perform the multi-hop reasoning chain "Dallas $\to$→ Texas $\to$→ Austin". To illustrate an initial circuit and familiarise the reader with the task, we investigate this example in detail.
+
+We performed automatic circuit tracing to recover a subset of 257 total neurons for this circuit, then manually identified a subset of 23 neurons with particularly meaningful descriptions. These neurons cluster into six groups that match the categories from Lindsey et al.:
+
+| Cluster | Neurons |
+| --- | --- |
+| Capital | `L3/N14335-` (English-specific), `L4/N13489-` (multilingual), `L19/N2520-` (Washington, D.C.), `L20/N3520+`, `L16/N13326-`, `L13/N4038+` |
+| State | `L0/N9296-` (English-specific), `L2/N5246+` (multilingual), `L4/N604-` (broader semantics), `L19/N4478+` (statehood), `L21/N5790-`, `L21/N12118-` |
+| Dallas | `L0/N12136-` (primarily Houston), `L5/N8659+` (various Texas locations) |
+| Texas | `L6/N10965-`, `L21/N3093+` |
+| Say a capital | `L23/N8079-`, `L21/N4924-`, `L23/N2709-`, `L17/N3663+` (all specifically include "capital" in their description) |
+| Say Austin | `L30/N8371+` (words ending in "un"), `L31/N4876+`, `L31/N6705+` |
+
+The correspondence to Lindsey et al. is interesting, since we are investigating a different model (Llama 3.1 8B Instruct) and a different set of representations (the neuron basis). Conceptually, we can view these clusters as forming the coarse-grained circuit pictured below:
+
+The clustered circuit along with steering effects for each cluster, on the Texas example.
+
+Having identified these clusters, we can steer these neurons to check whether the resulting effect on the model's outputs corresponds with the hypothesised role of each cluster (e.g. steering the "say a capital" cluster negatively should cause the model to not output capital cities). We show selected steering effects for the Texas example (chosen from among $\alpha \in \{-4, -2, -1, 0, 2, 4\}$α∈{− 4,− 2,− 1, 0, 2, 4}) in the figure above.
+
+All clusters except for "state" change the model's top prediction when steered. The changes to model output correspond to the hypothesised role of each cluster; for example, suppressing the "Texas" cluster causes the model to still output capitals but for other states, suppressing "Dallas" causes the model to not output any capital cities, and so on.
+
+Among the remaining neurons found by our attribution method, many are involved in syntactic processing and formatting (e.g. tracking "what" at the start of the question; punctuation-related processing), which is likely necessary to complete the task but not specific to multi-hop reasoning. We also observed two clusters of neurons without obvious steering effects, but whose descriptoins matched "location" (5 neurons) and "say a location" (13 neurons). Finally, we observed some neurons without obvious explanations. This messiness is typical of feature-level circuits and also appears in the raw data of Lindsey et al. It underscores that real circuits are messy and also that not all neurons in a circuit can be fully understood yet.
+
+Finally, we show the raw circuit for this example in the interactive visualisation below. This circuit includes all neurons, not just the ones in the manual clusters.
+
+Graph: https://transluce-public.s3.us-east-1.amazonaws.com/circuits/capitals_full_nodes.json
+
+Steering a single "say a capital" neuron. We now investigate properties across the entire dataset of 50 examples. We specifically examine the highest-attribution neuron in the "say a capital" cluster, which receives high attribution scores in all 50 examples:
+
+| Neuron | Description |
+| --- | --- |
+| `L23/N8079-` | the phrase "is" when referring to state capitals |
+
+We investigate whether this neuron plays a consistent causal role across the dataset by steering it with $\alpha \in \{0, 0.25, \ldots, 2\}$α∈{ 0, 0.25,…, 2}. For each example, we measure the resulting output probability for the capital (e.g. "Austin"; the correct answer), the state ("Texas"), and the original non-capital city ("Dallas"). We plot the resulting probabilities for each type of answer against $\alpha$α in the figure below.
+
+Steering results for `L23/N8079-` in the multi-hop state capitals task.
+
+This single neuron can be steered to flip the top output from the capital to the state in a majority of examples. This validates that individual neurons can play a significant and interpretable role in model behaviour and our neuron-level circuit tracing algorithm is able to uncover them without sparse dictionaries.
+
+## Addition
+
+Ameisen et al. [8] uncover CLT features underlying simple addition problems in Claude 3.5 Haiku, as well as in an 18-layer toy model. This task is interesting because of its complexity: there are diverse task-specific features such as tracking the ones digit and tens digit of the answer.
+
+We consider a similar task (rephrased into an instruction format) for Llama 3.1 8B Instruct and succeed in uncovering the same types of features in the MLP neuron basis via neuron-level circuit tracing. In particular, we examine the following categores of features:
+
+| Feature | Expression | Replicated? | Example neuron |
+| --- | --- | --- | --- |
+| Ones digit (sum) | $(x + y) \mod 10$(x+ y) mod 10 | Yes | `L21/N10677-` |
+| Mod-$n$ n (sum) | $(x + y) \mod n$(x+ y) mod n | New | `L21/N9178-` ($n=2$ n= 2) |
+| Tens digit (sum) | $\lfloor (x + y) / 10 \rfloor \mod 10$⌊(x+ y)/10⌋ mod 10 | Yes | `L28/N9549-` |
+
+For each feature category, we label the dataset examples (e.g. under mod-$10$ 10 labels, the label of the example below is $3$ 3) and compute AUROCs for each neuron over the dataset based on the attribution score. We then manually examine neurons with AUROC close to $0$ 0 or $1$ 1, since these are highly predictive of the feature of interest. 4 Recall that an AUROC of $0.5$ 0.5 corresponds to random performance; AUROCs far from $0.5$ 0.5 mean the neuron gives signal about the feature of interest (where AUROC $< 0.5$< 0.5 means the negated activations are a good classifier). Therefore, we sort AUROCS by the absolute distance from $0.5$ 0.5.
+
+Notably, prior work has already found the same features in the MLP neuron basis for this task [64]; our goal is to show that these features meaningfully contribute to the model's output and can be understood as parts of the circuit underlying that computation.
+
+Dataset. We construct a dataset of addition problems with operands in the range [0, 99], resulting in 10,000 examples like the following:
+
+###### Simple addition
+
+What is 6 + 7?
+
+Assistant
+
+Answer: 13
+
+Mod-$10$ 10 (ones digit) neurons. We find high-AUROC neurons for each outcome of the answer modulo $10$ 10. For all of the ten outcomes, we successfully find neurons with $\mathrm{AUROC} \geq 0.9$ AUROC≥ 0.9 or $\mathrm{AUROC} \leq 0.1$ AUROC≤ 0.1; in some cases, we find near-perfect AUROCs.
+
+We show the per-example attribution scores over the dataset of the top-AUROC neuron for each outcome below; the $x$ x-axis is the first addend, the $y$ y-axis is the second addend, and the colour of the cell is the attribution score when the model is asked to compute the sum of the two addends. We sum over the token axis to get a single attribution score for each example.
+
+The attribution scores reveal a clean diagonal pattern, meaning that these neurons only play a causal role in the output when the sum is congruent to some value modulo $10$ 10. This plot replicates the one in Ameisen et al.; see the "sum = _5" feature in their CLT graph.
+
+We also show all neurons which achieve $\mathrm{AUROC} \geq 0.8$ AUROC≥ 0.8 or $\mathrm{AUROC} \leq 0.2$ AUROC≤ 0.2 in the table below. Positively-attributed neurons ($\mathrm{AUROC} > 0.5$ AUROC> 0.5) are significantly more common.
+
+| Feature | Description | Score (AUROC) |
+| --- | --- | --- |
+| Loading… | | |
+
+We note that the automatic neuron descriptions do not indicate their mod-$10$ 10 role (instead describing a more general context the neuron fires in, such as numbers or dates). Some do note the role indirectly however, e.g. `L28/N10436-`, which is highly correlated with the ones digit being 7, has the description "year format (e.g., {{201}}7 or {{179}}7) in contexts discussing US presidents or historical timelines".
+
+Mod-$n$ n neurons. As a robustness check, we also look for mod-$n$ n features for values of $n$ n other than $10$ 10; this checks for false positive noise in our analysis; e.g. we don't generally expect to find mod-$3$ 3 neurons for base-$10$ 10 addition.
+
+We repeat the procedure above for each $n \in \{2, 3, \ldots, 9\}$ n∈{ 2, 3,…, 9}; we largely do not find any neurons with high AUROCs for any other value of $n$ n, except for $n = 2$ n= 2 (a single neuron with two polarities which strongly promotes odd sums when positive) and $n = 5$ n= 5 (a single neuron in the final layer which negatively affects the output when the sum is not divisible by $5$ 5). We note that prior work found evidence of subspaces tracking the units digit mod $2, 5, 10$ 2, 5, 10 for in-context addition [65].
+
+Neurons: No data Loading… Loading neuron data…
+
+To visualize the overall distribution of mod-$n$ n neurons, we plot the distribution of AUROCs for each value of $n$ n below (note the logarithmic $y$ y-axis).
+
+Distribution of maximum AUROCs for each mod-$n$ n feature.
+
+For $n$ n that are co-prime with $10$ 10, the AUROCs stays close to random (between $0.4$ 0.4 and $0.6$ 0.6). For $n = 4, 6, 8$ n= 4, 6, 8, AUROCs are larger but still generally below $0.8$ 0.8 (The singular exception for mod-$4$ 4 is actually the mod-$2$ 2 neuron above). Only mod-$10$ 10 shows more than a couple neurons with AUROCs greater than $0.8$ 0.8 or less than $0.2$ 0.2.
+
+Tens digit neurons. Finally, we look for tens-digit neurons. We find a substantial number of neurons with high AUROCs for each outcome, but their attribution matrices are generally noisier than the ones-digit neurons. Rather than computing the tens digit directly, these neurons may instead be approximating the overall sum (another type of feature that was proposed in the original study by Ameisen et al.).
+
+We show the attribution matrices of the top neuron by AUROC for each outcome below.
+
+Neurons: No data Loading… Loading neuron data…
+
+We also list all neurons which achieve $\mathrm{AUROC} \geq 0.8$ AUROC≥ 0.8 or $\mathrm{AUROC} \leq 0.2$ AUROC≤ 0.2 on these classes.
+
+| Feature | Description | Score (AUROC) |
+| --- | --- | --- |
+| Loading… | | |
+
+As before, descriptions are often not specific, except for a few neurons with decade-related descriptions (e.g. `L24/N8034+`, which activates when the tens digit is $6$ 6 and has the description "historical context, notably related to Lyndon B. Johnson and major events...").
+
+## Multilingual antonyms
+
+As a final replication of prior CLT circuits results, we investigate multilingual circuits for finding antonyms in Llama 3.1 8B Instruct, replicating the "multilingual circuits" case study from Lindsey et al. [23]. In this task, the model is asked to say the antonym of a given word, with prompts given in several languages.
+
+Dataset. We construct a multilingual dataset in which the model is asked to return the antonym of a given word. The prompts are constructed over 9 languages (English, Chinese, French, German, Spanish, Italian, Russian, Hindi, Arabic) and 6 concepts ("big", "small", "fast", "slow", "hot", "cold"), resulting in 54 prompts.
+
+###### Multilingual antonyms
+
+What is the opposite of big?
+
+Assistant
+
+Answer: small
+
+Circuit tracing. We perform automatic circuit tracing with a threshold of $\tau = 0.005$τ= 0.005 (as usual) on each of the 54 examples in the dataset.
+
+We look for neurons encoding three kinds of features:
+
+| Feature | Description | Replicated? | Example neuron |
+| --- | --- | --- | --- |
+| Language | the language of the prompt | Yes | `L31/N8258+` (output text in Chinese) |
+| Concept | the language-independent meaning of the word being asked about (e.g. "hot") | Yes | `L16/N1694+` (hot) |
+| Attribute | the semantic axis along which the word and its antonym belong (e.g. "temperature") | Yes | `L14/N13885-` (temperature) |
+
+We do not find any single feature that universally encodes the "antonym" relation (unlike e.g. the state capitals task, where we found a highly important state capital neuron that is active on every prompt), but we do find multiple neurons encoding language, concept, and attribute features.
+
+Analysis. We compute the AUROCs of each neuron for each of the three features (language, concept, and attribute) and plot the histograms of the maximum AUROCs for each neuron below. We find hundreds of neurons strongly encoding language information, and tens of neurons encoding concept and attribute information. We set thresholds for further investigation: $\mathrm{AUROC} \geq 0.9, \leq 0.1$ AUROC≥ 0.9,≤ 0.1.
+
+Distribution of maximum AUROCs for each feature.
+
+We also plot the layers at which these filtered neurons are located in the model.
+
+Distribution of layers at which filtered neurons are located.
+
+Language neurons are distributed throughout the model's depth with a large peak at the final layers, concept neurons are in the early and middle layers, and attribute neurons only arise in the middle layers. We study the top neurons for each feature type below, finding relevant descriptions in each case.
+
+Language. The language-specific neurons are numerous and often have relevant descriptions, such as `L31/N4787-` which has the description "activation on Arabic grammatical forms and prefixes (e.g. ف, ي, و, ت) within religious or formal Arabic context." In general, these neurons are distributed throughout the model and may be responsible for various subcategories of language-specific processing (e.g. producing words of a specific part-of-speech in some language). We do not find any single neuron that controls the output language by itself. We show the top 20 neurons by AUROC for the language feature in the table below.
+
+| Feature | Description | Score (AUROC) |
+| --- | --- | --- |
+| Loading… | | |
+
+Concept and attribute. Concept and attribute neurons are less numerous but again have relevant descriptions that even indicate their multilingual nature, e.g. `L2/N1709-` which has the description "the word "kalter" or its variants (e.g. "kaltes", "fria") in the context of cold conditions or descriptions of weather", which includes both the German word kalter and the Spanish word fria. We show all of the neurons exceeding the AUROC threshold for concept and attribute in the two tables below.
+
+| Feature | Description | Score (AUROC) |
+| --- | --- | --- |
+| Loading… | | |
+
+Circuits. We show complete circuits for a random sample of 10 examples from the dataset in the interactive visualisation below.
+
+Graph: https://transluce-public.s3.us-east-1.amazonaws.com/circuits/multilingual/multilingual_full_nodes.json
+
+## User modelling
+
+Finally, we investigate a new task: user modelling. The "user model" is the set of inferences a language model makes about the user during their interaction; since these inferences may encoded protected demographic attributes which the user may want to know about or adjust, prior work has argued that surfacing the user model to the end user is an ethical need [66, 67]. We thus investigate whether neuron-level circuit tracing can find features which encode user model inferences.
+
+Dataset. We construct a relatively contrived dataset for this case study: since we must trace our circuit back from actual output logits, we design our dataset such that it forces the model to explicitly state its belief about the user's demographics by prefilling the assistant response. Specifically, our dataset contains examples where the user shares a fact about themselves, and then asks the model to construct the biographical infobox that would be present in a hypothetical Wikipedia article about them. Since these infoboxes contain structured fields for attributes like gender, country of origin, occupation, and religion, we can easily make the model generate these attributes as output tokens.
+
+An example from the `gender` subset (which covers male, female, and non-binary users) is shown below:
+
+###### User modelling
+
+I hit the gym regularly, where I focus on lifting heavy weights and achieving my personal bests. Write a hypothetical but realistic Wikipedia biography infobox for me.
+
+Assistant
+
+{{{Infobox person | gender = Male
+
+For instance, given this synthetic input from a user describing their preference for gym activities and lifting heavy weights, the Assistant's task is to predict the user's gender in a Wikipedia infobox format. We then use the predicted token (`_Male`) to trace the circuit that contributes to this user modeling behavior.
+
+Analysis. We show the neurons which achieve AUROCs greater than $0.8$ 0.8 or less than $0.2$ 0.2, and which have in-class average attribution scores greater than $0.025$ 0.025 in the table below. Note that these neurons have relevant descriptions in each of the three gender classes.
+
+| Feature | Description | Score (AUROC) |
+| --- | --- | --- |
+| Loading… | | |
+
+In general, we note that the model's inferences are not stored in a fixed token position, which makes it difficult to access its belief state. We leave further investigation of the user modelling circuit to future work.
+
+# Discussion
+
+Our findings have several implications for the future of circuit tracing, and interpretability in general.
+
+Neurons as a practical avenue for interpretability. The neuron basis has not been sufficiently explored in the circuits literature, meaning the amount of uplift from SAEs is unknown. For example, Ameisen et al. [8] do not report the minimal ablation of their tracing algorithm where CLTs are replaced with neurons, instead changing everything and reporting results on "thresholded neuron" circuits (which do not use gradient-based attribution at all). And despite earlier use of the high-dimensional MLP activations in interpretability research [12, 68], recent circuits work has not tested them as a baseline at all, instead only checking the low-dimensional MLP outputs. Our hope is that future work proposing new sparse dictionary learning techniques for circuits will include a neuron-level ablation.
+
+From a research strategy point of view, SAEs plausibly make unjustified assumptions about the geometry and frequency of features [69, 18] with unclear benefits from doing so [48, 47]. Until we better understand what properties the true feature basis has, it seems prudent to exhaust the neuron basis first. Techniques which decompose activations without reconstruction errors are also a promising alternative direction to dictionary learning and are compatible with our approach [70].
+
+On comparison with learned feature bases. Importantly, our aim is not to settle the question of whether neurons or learned sparse bases are better for circuit tracing. In some respects, we lack direct comparisons, and even the methodology for measuring, whether neuron or sparse dictionary circuits are more interpretable. Learned bases may plausibly be more monosemantic and interpretable (especially due to increased dimensionality), and we do not offer evidence to refute this claim on the tasks we investigate. Instead, we primarily seek to challenge the assumption that neurons are prima facie an uninterpretable basis for understanding model behaviour. Our evaluations and case studies have clearly demonstrated this to be untrue, and shown that a surprising degree of understanding previously gained from learned bases can be replicated using only MLP neurons.
+
+Architectural trends favour MLP sparsity. One explanation for why the MLP activations are sparse is that sparsity is a desirable property in Transformer MLPs which is being selected for by architectural design. The switch to gated MLPs allows expressing both positive and negative activations (rather than the almost entirely positive activations of ReLU-family MLPs), which may have enabled packing more features without sacrificing sparsity. Finally, mixture-of-experts MLPs, which are now widely adopted in large-scale LMs, explicitly enforce sparsity by routing inputs to a subset of experts MLPs. As interpretability researchers, we should take advantage of the architectural trend towards sparsity!
+
+Limitations. There are a number of limitations with our approach which we are aware of and hope to address.
+
+Firstly, we still have some work ahead of us before this approach can easilt convert more compute into more insights on language model behaviour. The main issue is that while our approach results in relatively sparse circuits, there are still too many neurons in a reasonably comprehensive circuit for a human being to easily interpret. We are working on principled approaches to grouping neurons in a circuit for easier interpretation, as well as techniques for improving the quality and breadth of automatic natural-language descriptions of neurons and neuron groups. We are excited to incorporate language model agents into the circuit-tracing pipeline to improve human understanding.
+
+Secondly, our implementation is arguably not the most efficient one for this task, relying heavily on manual calls to the `torch.autograd.grad` function often with very small activations which leads to low utilisation. Also, when doing edge computation, we were unable to improve efficiency by batching across examples, since we only grouped across the batch at each token and layer. More efficient implementations would use better batching strategies. However, since we do not need to load SAEs into memory, at least neuron circuit tracing is already tractable (if slow) for large models.
+
+# Conclusion
+
+We have shown that neuron-level circuit tracing on the MLP activations can achieve the same performance as SAE circuits with equivalent sparsity. Our case studies further demonstrate that our neuron-basis circuits can be used to reproduce findings from prior work using CLTs [8, 23] as well as new results on user modelling. We also show that these results are complementary to automated natural-language descriptions of neurons. We hope that this work renews attention to the MLP activations as a potentially interpretable basis for circuit tracing.
+
+#### Acknowledgements
+
+We thank Christopher Potts, Dan Jurafsky, Samuel Marks, Achyuta Rajaram, Harshit Joshi, and Aaron Mueller for feedback on an earlier version of this draft. We thank Christopher D. Manning, Dami Choi, and researchers from the Stanford NLP group and the Stanford Mech. Interp. community for helpful discussion throughout the project.
+
+#### Citation information
+
+```bibtex
+@misc{arora2025language,
+  author       = {Arora, Aryaman and Wu, Zhengxuan and Steinhardt, Jacob and Schwettmann, Sarah},
+  title        = {Language Model Circuits are Sparse in the Neuron Basis},
+  year         = {2025},
+  month        = {November},
+  day          = {20},
+  howpublished = {\url{https://transluce.org/neuron-circuits}}
+}
+
+```
+
+# Appendix
+
+## Different operationalisations of IG on internals
+
+Integrated Gradients [20] was originally defined as a technique to attribute outputs to inputs in a deep neural network, via approximating the following path integral with a Reimann sum:
+
+$\begin{aligned}
+\mathsf{IG}_i(x) &= (x_i - x_i') \int_{\alpha=0}^1\frac{\partial F(x' + \alpha(x - x'))}{\partial x_i} \mathrm{d}\alpha \\
+&\approx (x_i - x_i')\frac{1}{n}\sum_{i=1}^n\frac{\partial F(x^{(i)})}{\partial x_i}\\
+\text{where } x^{(i)} &= x' + \frac{i}{n}(x - x')
+\end{aligned}$ IG i​(x) where x(i)​=(x i​− x i′​)∫α= 0 1​∂ x i​∂ F(x′+α(x− x′))​ dα≈(x i​− x i′​) n 1​ i= 1∑ n​∂ x i​∂ F(x(i))​= x′+ n i​(x− x′)​
+
+where attributions to each index of the input $i$ i are computed in parallel, and the interpolation with $\alpha$α is done simultaneously for all inputs. We define $x^{(i)} = x' + \frac{i}{n}(x - x')$ x(i)= x′+ n i​(x− x′), i.e. discrete interpolation between $x$ x and $x'$ x′.
+
+We leave justification of this technique to prior literature; briefly, it arises as one solution to a set of axioms which encode useful properties for attribution methods to have.
+
+However, the lack of application of IG to internals in the original paper has led to a profusion of differing techniques for internals attribution, which need not satisfy the original IG axioms. We introduce each of these below and benchmark them in later sections.
+
+Conductance. Proposed in a follow-up paper to IG [71], conductance is arguably the most principled application of IG to internals; it simply uses the chain rule to compute the portion of the gradients that flow via some internal component $y$ y while not changing any other aspect of the IG path integral:
+
+$\begin{aligned}
+\mathsf{Cond}_i^y(x) &= (x_i - x_i') \int_{\alpha=0}^{1}\frac{\partial F(x' + \alpha(x - x'))}{\partial y}\frac{\partial y}{\partial x_i}\mathrm{d}\alpha
+\end{aligned}$ Cond i y​(x)​=(x i​− x i′​)∫α= 0 1​∂ y∂ F(x′+α(x− x′))​∂ x i​∂ y​ dα​
+
+where the total conductance is a sum of this value over all $x_i$ x i​. While this seems expensive to compute at first glance (you must compute the Jacobian from outputs to $y$ y and from $y$ y to $x$ x, which will use a lot of memory if you want to parallelise), a later work [72] algebraically simplified the above expression and found a much cheaper but equivalent expression:
+
+$\begin{aligned}
+\mathsf{Cond}_y(x) &= \sum_{i}\mathsf{Cond}_i^y(x)\\
+&= \int_{\alpha=0}^1\frac{\partial F(x' + \alpha(x - x'))}{\partial (y' + \alpha(y - y'))}\frac{\partial (y' + \alpha(y - y'))}{\partial \alpha} \mathrm{d}\alpha \\
+&\approx \sum_{i=1}^n\frac{\partial F(x^{(i)})}{\partial y}(F_y(x^{(i)}) - F_y(x^{(i - 1)}))
+\end{aligned}$ Cond y​(x)​= i∑​ Cond i y​(x)=∫α= 0 1​∂(y′+α(y− y′))∂ F(x′+α(x− x′))​∂α∂(y′+α(y− y′))​ dα≈ i= 1∑ n​∂ y∂ F(x(i))​(F y​(x(i))− F y​(x(i− 1)))​
+
+Unfortunately, conductance is not used in recent benchmarks of gradient-based attribution; subtly different techniques have been proposed and adopted recently, which we turn to now.
+
+IG-inputs. Hanna et al. [50] introduce a nearly identical technique to conductance but seemingly arrived at it independently. The only difference is the path integral is misspecified; rather than taking into account the possibly variable step size of $y$ y when interpolating $x$ x, they average the gradient of $y$ y first and multiply outside by the total step size over the entire path. If step size of $y$ y is relatively constant then this is a reasonable empirical approximation of conductance.
+
+$\begin{aligned}
+\mathsf{IGinp}_y(x) &\approx (F_y(x) - F_y(x'))\sum_{i=1}^n\frac{\partial F(x^{(i)})}{\partial y}
+\end{aligned}$ IGinp y​(x)​≈(F y​(x)− F y​(x′)) i= 1∑ n​∂ y∂ F(x(i))​​
+
+IG-activations. Marks et al. [7] introduce a version of IG where the interpolation is done over $y$ y rather than the inputs $x$ x, but otherwise the attribution scoring is unchanged . This is essentially IG but pretending that $y$ y is an input variable.
+
+$\begin{aligned}
+\mathsf{IGact}_y(x) &\approx (F_y(x) - F_y(x'))\sum_{i=1}^n\frac{\partial F(x; \mathrm{do}\,y=y^{(i)})}{\partial y}
+\end{aligned}$ IGact y​(x)​≈(F y​(x)− F y​(x′)) i= 1∑ n​∂ y∂ F(x; do y= y(i))​​
+
+## Justification for the half rule in RelP
+
+Integrated Gradients [20] was designed to satisfy a few axioms which ensure the fairness of the attribution scores. Two of these axioms which are particularly important are completeness (i.e. the sum of the attribution scores of the inputs to a function equals the function's output) and sensitivity (if only a single input is changed and this affects the output, the attribution scores will change). Completeness implies sensitivity. Here, we show that RelP also satisfies completeness (as long as the half rule is applied to the gated MLP) without the need for numerical integration with multiple backward passes.
+
+To begin with, we describe how the replacement model is constructed. When we modify the model following the RelP procedure, we apply the following changes to the model's components:
+
+Linearised components. For multi-head attention, we similarly detach the entire QK-path $\mathrm{softmax}(\mathrm{QK}^\top / \sqrt{d_k})$ softmax(QK⊤/ d k​​) and treat it as a constant elementwise multiplier $\mathbf{A}$ A on the value activations. (Here, $j$ j indicates the query token position.)
+
+$\mathrm{MHA}^{(i)}_j(\mathbf{x}) = \mathrm{W}_\text{out}^{(i)}\left(\mathrm{Concat}_h\left(\mathbf{A}_j^{(i,h)} \cdot \mathrm{W}_\text{value}^{(i,h)}\mathbf{x}\right)\right)$ MHA j(i)​(x)= W out(i)​(Concat h​(A j(i, h)​⋅ W value(i, h)​ x))
+
+For the RMSNorms when reading from the residual stream, as well as the final layer before the unembedding, we again detach the normalisation and treat it as a dimension-wise constant multiplier $\mathbf{r}$ r.
+
+$\mathrm{RMSNorm}^{(i,j)}(\mathbf{x}) = \mathbf{r}^{(i,j)} \odot \mathbf{x}$ RMSNorm(i, j)(x)= r(i, j)⊙ x
+
+It is clear that for these two, the function is completely linear, and thus $\partial f(\mathbf{x}) / \partial \mathbf{x}$∂ f(x)/∂ x is a constant, and so input times gradient retains the completeness property of IG. In fact, IG and RelP are equal on linear functions, since their gradient is constant:
+
+$\mathrm{IG}_\mathbf{x}(f) = \mathbf{x}\int_{\alpha=0}^1\frac{\partial f(\alpha \mathbf{x})}{\partial \mathbf{x}} d \alpha$ IG x​(f)= x∫α= 0 1​∂ x∂ f(α x)​ dα $\qquad = \mathbf{x}\frac{\partial f(\mathbf{x})}{\partial \mathbf{x}}$= x∂ x∂ f(x)​
+
+Bilinearised MLP. For the gated MLP (as used in most modern Transformer language models), we detach the SiLU nonlinearity's effect and treat it as a constant elementwise multiplier $\mathbf{s}$ s on the gate activation.
+
+$\mathrm{MLP}^{(i)}_j(\mathbf{x}) = \mathrm{W}_\text{down}^{(i)}\left(\mathbf{s} \odot \mathrm{W}_\text{gate}^{(i)}\mathbf{x} \odot \mathrm{W}_\text{up}^{(i)}\mathbf{x}\right)$ MLP j(i)​(x)= W down(i)​(s⊙ W gate(i)​ x⊙ W up(i)​ x)
+
+Here, the elementwise multiplication means that the MLP is actually bilinear after our modification, so the completeness property is not satisfied by naïve input times gradient. 5 Pearce et al. [73] has related discussion on the interpretability benefits from using bilinear MLPs as replacements for conventional MLPs with nonlinear activation functions. Consider the gradient of the MLP activations $h(\mathbf{x}) = \mathbf{s} \odot \mathrm{W}_\text{gate}^{(i)}\mathbf{x} \odot \mathrm{W}_\text{up}^{(i)}\mathbf{x}$ h(x)= s⊙ W gate(i)​ x⊙ W up(i)​ x with respect to the input $\mathbf{x}$ x:
+
+$\frac{\partial h}{\partial \mathbf{x}} = \mathrm{diag}(\mathbf{s}) [\mathrm{diag}(\mathrm{W}_\text{up}\mathbf{x}) \mathrm{W}_\text{gate} + \mathrm{diag}(\mathrm{W}_\text{gate}\mathbf{x}) \mathrm{W}_\text{up} ]$∂ x∂ h​= diag(s) [diag(W up​ x) W gate​+ diag(W gate​ x) W up​]
+
+If we apply naïve input times gradient to this expression, we get:
+
+$\frac{\partial h}{\partial \mathbf{x}}\mathbf{x} = \mathrm{diag}(\mathbf{s}) [\mathrm{diag}(\mathrm{W}_\text{up}\mathbf{x}) \mathrm{W}_\text{gate}\mathbf{x} + \mathrm{diag}(\mathrm{W}_\text{gate}\mathbf{x}) \mathrm{W}_\text{up}\mathbf{x} ]$∂ x∂ h​ x= diag(s) [diag(W up​ x) W gate​ x+ diag(W gate​ x) W up​ x] $\qquad= \mathrm{diag}(\mathbf{s}) [\mathrm{W}_\text{up}\mathbf{x} \odot \mathrm{W}_\text{gate}\mathbf{x} + \mathrm{W}_\text{gate}\mathbf{x} \odot \mathrm{W}_\text{up}\mathbf{x} ]$= diag(s) [W up​ x⊙ W gate​ x+ W gate​ x⊙ W up​ x] $\qquad= \mathbf{s} \odot 2 (\mathrm{W}_\text{up}\mathbf{x} \odot \mathrm{W}_\text{gate}\mathbf{x}) $= s⊙ 2(W up​ x⊙ W gate​ x) $\qquad= 2 h(\mathbf{x}) $= 2 h(x)
+
+Another way to derive this is to use the fact that the replacement MLP is a homogeneous function of degree $2$ 2 (i.e. $\mathrm{MLP}(\alpha\mathbf{x}) = \alpha^2\mathrm{MLP}(\mathbf{x})$ MLP(α x)=α 2 MLP(x), under RelP linearisation). Euler's theorem asserts that for a homogenous function of degree $k$ k, the following partial differential function holds:
+
+$kf(\mathbf{x}) = \sum_{i=1}^n\mathbf{x}_i\frac{\partial f(\mathbf{x})}{\partial \mathbf{x}_i}(\mathbf{x})$ k f(x)=∑ i= 1 n​ x i​∂ x i​∂ f(x)​(x)
+
+Both these results directly motivate the half rule for the gated MLP, wherein we divide the gradient by $2$ 2 through multiplicative interactions in order to preserve completeness; otherwise, any time a path passes through a gated MLP, its attribution will be doubled.
+
+Therefore, with the half rule on the gated MLP elementwise multiplication, we have confirmed that RelP satisfies completeness (and thus sensitivity) without the need for numerical integration.
+
+## Comparing attribution methods on the MIB benchmark
+
+The Mechanistic Interpretability Benchmark (MIB) [51] includes a circuit localisation track which tests the ability of attribution methods to find a subnetwork of the model responsible for a specific behaviour. MIB provides IG baselines adapted to both node- and edge-based attribution, allowing us to validate RelP on both node and edge importance scoring since it is a drop-in replacement for IG. However, unlike the feature-level evals so far, MIB finds a graph over much larger components of the model (attention heads and MLPs), so these results are on a less granular setting than the SVA results above.
+
+Methodology. We adapt MIB's IG-based baselines to use `RelP` by applying our stop-gradients and straight-through handling directly to the model. All methods use counterfactual (CF) ablations: non-included nodes or edges are ablated by substituting their activations with those from a counterfactual example, identical to SVA. We replace the gradient computation in MIB's two best attribution methods: `EAP (CF)` [74, 49], which linearly approximates the indirect effect (IE; [75]) for all nodes or edges, and `EAP-IG-inp. (CF)` [50], which improves on `EAP (CF)` by performing multiple steps, trading speed for approximation quality. We use identical hyperparameters to the original baselines, only substituting `RelP` for gradient computation. 6 Note that `EAP (CF)` differs from `EAP-IG-inp. (CF)` with step size of 1: `EAP (CF)` computes gradients at the original input, whereas `EAP-IG-inp. (CF)` with steps=1 computes gradients at the counterfactual input due to its interpolation scheme. We report results for the best-performing RelP variant in the main text, with additional ablations across different step sizes provided in the appendix.
+
+Metrics. MIB provides two metrics, building on faithfulness as defined above:
+
+$\begin{aligned}
+\mathsf{CPR} &= \int_{k=0}^{1} \mathsf{Faithfulness}(C_k) \mathrm{d}k \\
+\mathsf{CMD} &= \int_{k=0}^{1} \lvert 1 - \mathsf{Faithfulness}(C_k) \rvert \mathrm{d}k
+\end{aligned}$ CPR CMD​=∫ k= 0 1​ Faithfulness(C k​) d k=∫ k= 0 1​∣ 1− Faithfulness(C k​)∣ d k​
+
+where $C_k$ C k​ is the circuit containing proportion $k$ k of the model's edges. In practice, these integrals are approximated using Riemann sums over discrete values of $k$ k. We report $\mathsf{CMD}$ CMD scores, where lower values indicate better performance. Intuitively, $\mathsf{CMD}$ CMD measures how closely a circuit's behavior resembles the full model's task-specific behavior across different circuit sizes.
+
+Results. We evaluate `RelP` on MIB for Llama 3.1, averaging results across three runs with different random seeds. Results for existing methods are taken from the original MIB paper.
+
+| Method | IOI | Arithmetic | MCQA | ARC (E) | ARC (C) | Avg |
+| --- | --- | --- | --- | --- | --- | --- |
+| Random | 0.74 | 0.75 | 0.74 | 0.74 | 0.74 | 0.74 |
+| EAP (mean) | 0.04 | 0.07 | 0.16 | 0.28 | 0.20 | 0.15 |
+| EAP (CF) | 0.01 | 0.01 | 0.09 | 0.11 | 0.18 | 0.08 |
+| EAP-IG-inp. (CF) | 0.01 | 0.00 | 0.14 | 0.11 | 0.22 | 0.10 |
+| EAP-IG-act. (CF) | 0.01 | 0.00 | 0.13 | 0.30 | 0.37 | 0.16 |
+| NAP (CF) | 0.29 | 0.28 | 0.32 | 0.69 | 0.69 | 0.45 |
+| NAP-IG (CF) | 0.19 | 0.18 | 0.33 | 0.67 | 0.67 | 0.41 |
+| IFR | 0.83 | 0.22 | 0.48 | 0.64 | 0.76 | 0.59 |
+| RelP (ours) | 0.01 | 0.00 | 0.11 | 0.15 | 0.15 | 0.08 |
+
+MIB circuit localization results for Llama 3.1 models, $\mathsf{CMD}$ CMD scores. Lower scores indicate better performance. `RelP` (highlighted) represents our method using the replacement model with straight-through gradients.
+
+We find that `RelP` achieves the best $\mathsf{CMD}$ CMD score on three tasks, and is the second-best on the remaining two tasks. RelP thus works well for edge-based attribution between larger modules, in addition to fine-grained features.
+
+## Additional evaluation results with Gemma-2 models
+
+We apply the same evaluation framework described in the main text to the Gemma-2 model family to validate that MLP activations form strong bases for constructing sparse circuits across different model architectures. We evaluate both the Gemma-2-2B and Gemma-2-9B models, comparing neuron bases (MLP activations, MLP outputs, residual stream) against SAE bases.
+
+For both models, we evaluate SAEs at two different width scales: for Gemma-2-2B, we use 16k and 65k latent dimensions; for Gemma-2-9B, we use 16k latent dimensions. The smaller width SAEs provide a standard representation, while the larger width SAEs offer an expanded latent space that may capture more fine-grained features. All SAE variants are from Google's Gemma Scope [56] suite.
+
+#### Gemma-2-2B Results
+
+We present results averaged over the four SVA tasks (`simple`, `rc`, `within_rc`, `nounpp`) for Gemma-2-2B. The findings closely mirror those from the main text: MLP activations yield significantly sparser circuits compared to MLP outputs, with circuit sizes reduced by approximately 100x at comparable faithfulness and completeness levels.
+
+16k Width SAEs. With the standard 16k width SAEs, MLP activations substantially close the gap with SAE-based representations while maintaining the computational and interpretability advantages of working directly with neurons.
+
+Faithfulness and completeness for Gemma-2-2B with 16k width SAEs. MLP activations provide significantly sparser circuits than MLP outputs and approach SAE-based performance.
+
+65k Width SAEs. The larger 65k width SAEs offer an expanded latent space with more features, which can potentially capture finer-grained patterns in the model's computation. Even against these higher-capacity SAEs, MLP activations remain competitive and provide substantially sparser circuits than MLP outputs.
+
+Faithfulness and completeness for Gemma-2-2B with 65k width SAEs. MLP activations continue to demonstrate strong performance, providing sparse circuits that are competitive with the larger SAE basis.
+
+#### Gemma-2-9B Results
+
+We similarly evaluate the Gemma-2-9B model with 16k width SAEs on the same SVA benchmark. The results demonstrate that our findings scale to larger models within the Gemma-2 family.
+
+16k Width SAEs. The Gemma-2-9B model with 16k width SAEs shows consistent patterns with the smaller Gemma-2-2B model. MLP activations continue to provide substantially sparser circuits than MLP outputs while maintaining competitive faithfulness and completeness compared to SAE-based representations.
+
+Faithfulness and completeness for Gemma-2-9B with 16k width SAEs. MLP activations deliver significantly sparser circuits than MLP outputs and remain competitive with SAE-based approaches.
+
+#### Summary
+
+The results on Gemma-2 models validate our main findings: MLP activations provide an effective basis for circuit discovery that yields significantly sparser circuits than using MLP outputs. Additionally, MLP activations yield similar performance to SAE bases, and SAE width does not significantly affect circuit sparsity for SAE-based representations.
+
+# References
+
+1. Sharkey, L., Chughtai, B., Batson, J., Lindsey, J., Wu, J., Bushnaq, L., ... & McGrath, T. (2025). Open problems in mechanistic interpretability. arXiv preprint arXiv:2501.16496. [link]
+2. Casper, S., Ezell, C., Siegmann, C., Kolt, N., Curtis, T. L., Bucknall, B., ... & Hadfield-Menell, D. (2024). Black-box access is insufficient for rigorous AI audits. In Proceedings of the 2024 ACM Conference on Fairness, Accountability, and Transparency (pp. 2254-2272). [link]
+3. Olah, C., Cammarata, N., Schubert, L., Goh, G., Petrov, M., & Carter, S. (2020). Zoom in: An introduction to circuits. Distill, 5(3). [link]
+4. Elhage, N., Nanda, N., Olsson, C., Henighan, T., Joseph, N., Mann, B., ... & Olah, C. (2021). A mathematical framework for transformer circuits. Transformer Circuits Thread. [link]
+5. Wang, K., Variengien, A., Conmy, A., Shlegeris, B., & Steinhardt, J. (2022). Interpretability in the wild: a circuit for indirect object identification in gpt-2 small. arXiv preprint arXiv:2211.00593. [link]
+6. Conmy, A., Mavor-Parker, A., Lynch, A., Heimersheim, S., & Garriga-Alonso, A. (2023). Towards automated circuit discovery for mechanistic interpretability. Advances in Neural Information Processing Systems, 36, 16318-16352. [link]
+7. Marks, S., Rager, C., Michaud, E. J., Belinkov, Y., Bau, D., & Mueller, A. (2024). Sparse feature circuits: Discovering and editing interpretable causal graphs in language models. arXiv preprint arXiv:2403.19647. [link]
+8. Ameisen, E., et al. (2025). Circuit Tracing: Revealing Computational Graphs in Language Models. Transformer Circuits. [link]
+9. Smolensky, P. (1986). Neural and conceptual interpretation of PDP models. Parallel distributed processing: Explorations in the microstructure of cognition, 2, 390-431. [link]
+10. Geiger, A., Wu, Z., Potts, C., Icard, T., & Goodman, N. (2024). Finding Alignments Between Interpretable Causal Variables and Distributed Neural Representations. Proceedings of the Third Conference on Causal Learning and Reasoning, 160-187. [link]
+11. Cunningham, H., Ewart, A., Riggs, L., Huben, R., & Sharkey, L. (2023). Sparse autoencoders find highly interpretable features in language models. arXiv preprint arXiv:2309.08600. [link]
+12. Bricken, T. et al. (2023). Towards Monosemanticity: Decomposing Language Models With Dictionary Learning. Transformer Circuits. [link]
+13. Dunefsky, J., Chlenski, P., & Nanda, N. (2024). Transcoders Find Interpretable LLM Feature Circuits. arXiv preprint arXiv:2406.11944. [link]
+14. Ge, X., Zhu, F., Shu, W., Wang, J., He, Z., & Qiu, X. (2024). Automatically identifying local and global circuits with linear computation graphs. arXiv preprint arXiv:2405.13868. [link]
+15. Gao, L., Rajaram, A., Coxon, J., Govande, S. V., Baker, B., & Mossing, D. (2025). Weight-sparse transformers have interpretable circuits. [link]
+16. Engels, J., Riggs, L., & Tegmark, M. (2024). Decomposing the dark matter of sparse autoencoders. arXiv preprint arXiv:2410.14670. [link]
+17. Gurnee, W. (2024, March). SAE reconstruction errors are (empirically) pathological. In AI Alignment Forum. [link]
+18. Chanin, D., Wilken-Smith, J., Dulka, T., Bhatnagar, H., Golechha, S., & Bloom, J. (2024). A is for absorption: Studying feature splitting and absorption in sparse autoencoders. arXiv preprint arXiv:2409.14507. [link]
+19. Minder, J., Dumas, C., Chughtai, B., & Nanda, N. (2025). Robustly identifying concepts introduced during chat fine-tuning using crosscoders. In Sparsity in LLMs (SLLM): Deep Dive into Mixture of Experts, Quantization, Hardware, and Inference. [link]
+20. Sundararajan, M., Taly, A., & Yan, Q. (2017). Axiomatic attribution for deep networks. In International Conference on Machine Learning. [link]
+21. Makino, M., Asazuma, Y., Sasaki, S., & Suzuki, J. (2024). The impact of integration step on integrated gradients. In Proceedings of the 18th Conference of the European Chapter of the Association for Computational Linguistics: Student Research Workshop (pp. 279-289). [link]
+22. Jafari, F. R., Eberle, O., Khakzar, A., & Nanda, N. (2025). RelP: Faithful and Efficient Circuit Discovery via Relevance Patching. arXiv preprint arXiv:2508.21258. [link]
+23. Lindsey, J., et al. (2025). On the Biology of a Large Language Model. Transformer Circuits. [link]
+24. Giulianelli, M., Harding, J., Mohnert, F., Hupkes, D., & Zuidema, W. (2018). Under the hood: Using diagnostic classifiers to investigate and improve how language models track agreement information. arXiv preprint arXiv:1808.08079. [link]
+25. Vig, J., Gehrmann, S., Belinkov, Y., Qian, S., Nevo, D., Singer, Y., & Shieber, S. (2020). Investigating gender bias in language models using causal mediation analysis. Advances in Neural Information Processing Systems, 33, 12388-12401. [link]
+26. Geiger, A., Lu, H., Icard, T., & Potts, C. (2021). Causal abstractions of neural networks. Advances in Neural Information Processing Systems, 34, 9574-9586. [link]
+27. Meng, K., Bau, D., Andonian, A., & Belinkov, Y. (2022). Locating and editing factual associations in GPT. Advances in Neural Information Processing Systems, 35, 17359-17372. [link]
+28. Chan, L., Garriga-Alonso, A., Goldowsky-Dill, N., Greenblatt, R., Nitishinskaya, J., Radhakrishnan, A., Shlegeris, B., & Thomas, N. (2022). Causal scrubbing: A method for rigorously testing interpretability hypotheses. Alignment Forum. [link]
+29. Goldowsky-Dill, N., MacLeod, C., Sato, L., & Arora, A. (2023). Localizing model behavior with path patching. arXiv preprint arXiv:2304.05969. [link]
+30. Guerner, C., Svete, A., Liu, T., Warstadt, A., & Cotterell, R. (2023). A geometric notion of causal probing. arXiv preprint arXiv:2307.15054. [link]
+31. Geiger, A., Ibeling, D., Zur, A., Chaudhary, M., Chauhan, S., Huang, J., ... & Icard, T. (2025). Causal abstraction: A theoretical foundation for mechanistic interpretability. Journal of Machine Learning Research, 26(83), 1-64. [link]
+32. Lasri, K., Pimentel, T., Lenci, A., Poibeau, T., & Cotterell, R. (2022). Probing for the usage of grammatical number. arXiv preprint arXiv:2204.08831. [link]
+33. Hanna, M., Belinkov, Y., & Pezzelle, S. (2023). When language models fall in love: Animacy processing in transformer language models. arXiv preprint arXiv:2310.15004. [link]
+34. Arora, A., Jurafsky, D., & Potts, C. (2024). CausalGym: Benchmarking causal interpretability methods on linguistic tasks. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) (pp. 14638-14663). [link]
+35. Wu, Z., Geiger, A., Icard, T., Potts, C., & Goodman, N. (2023). Interpretability at scale: Identifying causal mechanisms in alpaca. Advances in Neural Information Processing Systems, 36, 78205-78226. [link]
+36. Baeumel, T., Gurgurov, D., Ghussin, Y. A., van Genabith, J., & Ostermann, S. (2025). Modular Arithmetic: Language Models Solve Math Digit by Digit. arXiv preprint arXiv:2508.02513. [link]
+37. Li, B. Z., Guo, Z. C., & Andreas, J. (2025). (How) Do Language Models Track State?. arXiv preprint arXiv:2503.02854. [link]
+38. Prakash, N., Shapira, N., Sharma, A. S., Riedl, C., Belinkov, Y., Shaham, T. R., ... & Geiger, A. (2025). Language models use lookbacks to track beliefs. arXiv preprint arXiv:2505.14685. [link]
+39. Zou, A., Phan, L., Chen, S., Campbell, J., Guo, P., Ren, R., ... & Hendrycks, D. (2023). Representation engineering: A top-down approach to ai transparency. arXiv preprint arXiv:2310.01405. [link]
+40. Li, K., Patel, O., Viégas, F., Pfister, H., & Wattenberg, M. (2023). Inference-time intervention: Eliciting truthful answers from a language model. Advances in Neural Information Processing Systems, 36, 41451-41530. [link]
+41. Wu, Z., Arora, A., Wang, Z., Geiger, A., Jurafsky, D., Manning, C. D., & Potts, C. (2024). ReFT: Representation finetuning for language models. Advances in Neural Information Processing Systems, 37, 63908-63962. [link]
+42. Templeton, A. (2024). Scaling monosemanticity: Extracting interpretable features from claude 3 sonnet. Anthropic. [link]
+43. Gao, L., la Tour, T. D., Tillman, H., Goh, G., Troll, R., Radford, A., ... & Wu, J. (2024). Scaling and evaluating sparse autoencoders. arXiv preprint arXiv:2406.04093. [link]
+44. O'Brien, K., Majercak, D., Fernandes, X., Edgar, R., Bullwinkel, B., Chen, J., ... & Poursabzi-Sangdeh, F. (2024). Steering language model refusal with sparse autoencoders. arXiv preprint arXiv:2411.11296. [link]
+45. Durmus, E., Tamkin, A., Clark, J., Wei, J., Marcus, J., Batson, J., ... & Ganguli, D. (2024). Evaluating feature steering: A case study in mitigating social biases. [link]
+46. Jiang, N., Sun, X., Smith, L., & Nanda, N. (2025). Towards Data-centric Interpretability with Sparse Autoencoders. In Mechanistic Interpretability Workshop at NeurIPS 2025. [link]
+47. Kantamneni, S., Engels, J., Rajamanoharan, S., Tegmark, M., & Nanda, N. (2025). Are sparse autoencoders useful? a case study in sparse probing. arXiv preprint arXiv:2502.16681. [link]
+48. Wu, Z., Arora, A., Geiger, A., Wang, Z., Huang, J., Jurafsky, D., ... & Potts, C. (2025). Axbench: Steering LLMs? Even simple baselines outperform sparse autoencoders. arXiv preprint arXiv:2501.17148. [link]
+49. Syed, A., Rager, C., & Conmy, A. (2023). Attribution patching outperforms automated circuit discovery. arXiv preprint arXiv:2310.10348. [link]
+50. Hanna, M., Pezzelle, S., & Belinkov, Y. (2024). Have faith in faithfulness: Going beyond circuit overlap when finding model mechanisms. arXiv preprint arXiv:2403.17806. [link]
+51. Mueller, A., Geiger, A., Wiegreffe, S., Arad, D., Arcuschin, I., Belfki, A., ... & Belinkov, Y. (2025). MIB: A mechanistic interpretability benchmark. arXiv preprint arXiv:2504.13151. [link]
+52. Rajamanoharan, S., Conmy, A., Smith, L., Lieberum, T., Varma, V., Kramár, J., Nanda, N., & Neel Nanda, N. (2024). Improving dictionary learning with gated sparse autoencoders. arXiv preprint arXiv:2404.16014. [link]
+53. Gao, L., la Tour, T. D., Tillman, H., Goh, G., Troll, R., Radford, A., ... & Wu, J. (2024). Scaling and evaluating sparse autoencoders. arXiv preprint arXiv:2406.04093. [link]
+54. Rajamanoharan, S., Lieberum, T., Conmy, A., Smith, L., Sonnerat, N., Varma, V., Kramár, J., & Nanda, N. (2024). Jumping ahead: Improving reconstruction fidelity with JumpReLU sparse autoencoders. arXiv preprint arXiv:2407.14435. [link]
+55. He, Z., Shu, W., Ge, X., Chen, L., Wang, J., Zhou, Y., ... & Qiu, X. (2024). Llama scope: Extracting millions of features from llama-3.1-8b with sparse autoencoders. arXiv preprint arXiv:2410.20526. [link]
+56. Lieberum, T., Rajamanoharan, S., Conmy, A., Smith, L., Sonnerat, N., Varma, V., ... & Nanda, N. (2024). Gemma scope: Open sparse autoencoders everywhere all at once on gemma 2. arXiv preprint arXiv:2408.05147. [link]
+57. Choi, D., Huang, V., Meng, K., Johnson, D. D., Steinhardt, J., & Schwettmann, S. (2024). Scaling Automatic Neuron Description. [link]
+58. Ali, A., Schnake, T., Eberle, O., Montavon, G., Müller, K. R., & Wolf, L. (2022). XAI for transformers: Better explanations through conservative propagation. In International conference on machine learning (pp. 435-451). PMLR. [link]
+59. Arras, L., Arjona-Medina, J., Widrich, M., Montavon, G., Gillhofer, M., Müller, K. R., ... & Samek, W. (2019). Explaining and interpreting LSTMs. In Explainable AI: Interpreting, explaining and visualizing deep learning (pp. 211-238). Springer International Publishing. [link]
+60. Achtibat, R., Hatefi, S. M. V., Dreyer, M., Jain, A., Wiegand, T., Lapuschkin, S., & Samek, W. (2024). AttnLRP: attention-aware layer-wise relevance propagation for transformers. In Proceedings of the 41st International Conference on Machine Learning (pp. 135-168). [link]
+61. Rezaei Jafari, F., Montavon, G., Müller, K. R., & Eberle, O. (2024). MambaLRP: Explaining selective state space sequence models. Advances in Neural Information Processing Systems, 37, 118540-118570. [link]
+62. Li, M., & Janson, L. (2024). Optimal ablation for interpretability. arXiv preprint arXiv:2409.09951. [link]
+63. Xiao, G., Tian, Y., Chen, B., Han, S., & Lewis, M. (2023). Efficient streaming language models with attention sinks. arXiv preprint arXiv:2309.17453. [link]
+64. Nikankin, Y., Reusch, A., Mueller, A., & Belinkov, Y. (2024). Arithmetic without algorithms: Language models solve math with a bag of heuristics. arXiv preprint arXiv:2410.21272. [link]
+65. Hu, X., Yin, K., Jordan, M. I., Steinhardt, J., & Chen, L. (2025). Understanding In-context Learning of Addition via Activation Subspaces. arXiv preprint arXiv:2505.05145. [link]
+66. Viégas, F., & Wattenberg, M. (2023). The system model and the user model: Exploring AI dashboard design. arXiv preprint arXiv:2305.02469. [link]
+67. Chen, Y., Wu, A., DePodesta, T., Yeh, C., Li, K., Marin, N. C., Patel, O., Riecke, J., Raval, S., Seow, O., et al. (2024). Designing a dashboard for transparency and control of conversational AI. arXiv preprint arXiv:2406.07882. [link]
+68. Gurnee, W., Nanda, N., Pauly, M., Harvey, K., Troitskii, D., & Bertsimas, D. (2023). Finding neurons in a haystack: Case studies with sparse probing. arXiv preprint arXiv:2305.01610. [link]
+69. Hindupur, S. S. R., Lubana, E. S., Fel, T., & Ba, D. (2025). Projecting assumptions: The duality between sparse autoencoders and concept geometry. arXiv preprint arXiv:2503.01822. [link]
+70. Shafran, O., Geiger, A., & Geva, M. (2025). Decomposing MLP Activations into Interpretable Features via Semi-Nonnegative Matrix Factorization. arXiv preprint arXiv:2506.10920. [link]
+71. Dhamdhere, K., Sundararajan, M., & Yan, Q. (2018). How important is a neuron?. arXiv preprint arXiv:1805.12233. [link]
+72. Shrikumar, A., Su, J., & Kundaje, A. (2018). Computationally efficient measures of internal neuron importance. arXiv preprint arXiv:1807.09946. [link]
+73. Pearce, M. T., Dooms, T., Rigg, A., Oramas, J., & Sharkey, L. (2025). Bilinear MLPs enable weight-based mechanistic interpretability. In The Thirteenth International Conference on Learning Representations. [link]
+74. Nanda, N. (2023). Attribution Patching: Activation Patching At Industrial Scale. [link]
+75. Pearl, J. (2013). Direct and Indirect Effects. [link]

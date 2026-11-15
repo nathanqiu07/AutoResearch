@@ -1,0 +1,431 @@
+---
+url: https://arxiv.org/abs/2108.01661
+title: Grounding Representation Similarity with Statistical Testing
+publishedDate: 2021-08-03
+date_source: listing
+authors: ["Frances Ding", "Jean-Stanislas Denain", "Jacob Steinhardt"]
+author_position: last
+kind: paper
+exa_request_id: https://arxiv.org/abs/2108.01661
+---
+# Grounding Representation Similarity with Statistical Testing
+
+arXiv:2108.01661. cs.LG, stat.ML. Submitted 2021-08-03. Latest version v2, 2021-11-03.
+
+## Authors
+
+Frances Ding, Jean-Stanislas Denain, Jacob Steinhardt
+
+## Details
+
+- License: http://creativecommons.org/licenses/by/4.0/
+
+## Versions
+
+- v1: 2021-08-03
+- v2: 2021-11-03
+
+---
+
+Full text of v2.
+
+## Abstract
+
+To understand neural network behavior, recent works quantitatively compare different networks’ learned representations using canonical correlation analysis (CCA), centered kernel alignment (CKA), and other dissimilarity measures. Unfortunately, these widely used measures often disagree on fundamental observations, such as whether deep networks differing only in random initialization learn similar representations. These disagreements raise the question: which, if any, of these dissimilarity measures should we believe? We provide a framework to ground this question through a concrete test: measures should have sensitivity to changes that affect functional behavior, and specificity against changes that do not. We quantify this through a variety of functional behaviors including probing accuracy and robustness to distribution shift, and examine changes such as varying random initialization and deleting principal components. We find that current metrics exhibit different weaknesses, note that a classical baseline performs surprisingly well, and highlight settings where all metrics appear to fail, thus providing a challenge set for further improvement.
+
+## 1 Introduction
+
+Understanding neural networks is not only scientifically interesting, but critical for applying deep networks in high-stakes situations. Recent work has highlighted the value of analyzing not just the final outputs of a network, but also its intermediate representations [20, 29]. This has motivated the development of representation similarity measures, which can provide insight into how different training schemes, architectures, and datasets affect networks’ learned representations.
+
+A number of similarity measures have been proposed, including centered kernel alignment (CKA) [13], ones based on canonical correlation analysis (CCA) [30, 24], single neuron alignment [20], vector space alignment [3, 32, 6], and others [16, 39, 21, 18, 2, 9]. Unfortunately, these different measures tell different stories. For instance, CKA and projection weighted CCA disagree on which layers of different networks are most similar [13]. This lack of consensus is worrying, as measures are often designed according to different and incompatible intuitive desiderata, such as whether finding a one-to-one assignment, or finding few-to-one mappings, between neurons is more appropriate [20]. As a community, we need well-chosen formal criteria for evaluating metrics to avoid over-reliance on intuition and the pitfalls of too many researcher degrees of freedom [17].
+
+In this paper we view representation dissimilarity measures as implicitly answering a classification question–whether two representations are essentially similar or importantly different. Thus, in analogy to statistical testing, we can evaluate them based on their sensitivity to important change and specificity (non-responsiveness) against unimportant changes or noise.
+
+As a warm-up, we first initially consider two intuitive criteria: first, that metrics should have specificity against random initialization; and second, that they should be sensitive to deleting important principal components (those that affect probing accuracy). Unfortunately, popular metrics fail at least one of these two tests. CCA is not specific – random initialization noise overwhelms differences between even far-apart layers in a network (Section 3.1). CKA on the other hand is not sensitive, failing to detect changes in all but the top $10$ principal components of a representation (Section 3.2).
+
+We next construct quantitative benchmarks to evaluate a dissimilarity measure’s quality. To move beyond our intuitive criteria, we need a ground truth. For this we turn to the functional behavior of the representations we are comparing, measured through probing accuracy (an indicator of syntactic information) [4, 27, 35] and out-of-distribution performance of the model they belong to [25, 23, 7]. We then score dissimilarity measures based on their rank correlation with these measured functional differences. Overall our benchmarks contain 30,480 examples and vary representations across several axes including random seed, layer depth, and low-rank approximation (Section 4)[^1].
+
+Our benchmarks confirm our two intuitive observations: on subtasks that consider layer depth and principal component deletion, we measure the rank correlation with probing accuracy and find CCA and CKA lacking as the previous warm-up experiments suggested. Meanwhile, the Orthogonal Procrustes distance, a classical but often overlooked[^2] dissimilarity measure, balances gracefully between CKA and CCA and consistently performs well. This underscores the need for systematic evaluation, otherwise we may fall to recency bias that undervalues classical baselines.
+
+Other subtasks measure correlation with OOD accuracy, motivated by the observation that random initialization sometimes has large effects on OOD performance [23]. We find that dissimilarity measures can sometimes predict OOD performance using only the in-distribution representations, but we also identify a challenge set on which none of the measures do statistically better than chance. We hope this challenge set will help measure and spur progress in the future.
+
+## 2 Problem Setup: Metrics and Models
+
+Our goal is to quantify the similarity between two different groups of neurons (usually layers). We do this by comparing how their activations behave on the same dataset. Thus for a layer with $p_{1}$ neurons, we define $A\in\mathbb{R}^{p_{1}\times n}$, the matrix of activations of the $p_{1}$ neurons on $n$ data points, to be that layer’s raw representation of the data. Similarly, let $B\in\mathbb{R}^{p_{2}\times n}$ be a matrix of the activations of $p_{2}$ neurons on the same $n$ data points. We center and normalize these representations before computing dissimilarity, per standard practice. Specifically, for a raw representation $A$ we first subtract the mean value from each column, then divide by the Frobenius norm, to produce the normalized representation $A^{*}$, used in all our dissimilarity computations. In this work we study dissimilarity measures $d(A^{*},B^{*})$ that allow for quantitative comparisons of representations both within and across different networks. We colloquially refer to values of $d(A^{*},B^{*})$ as distances, although they do not necessarily satisfy the triangle inequality required of a proper metric.
+
+We study five dissimilarity measures: centered kernel alignment (CKA), three measures derived from canonical correlation analysis (CCA), and a measure derived from the orthogonal Procrustes problem.
+
+Centered kernel alignment (CKA) uses an inner product to quantify similarity between two representations. It is based on the idea that one can first choose a kernel, compute the $n\times n$ kernel matrix for each representation, and then measure similarity as the alignment between these two kernel matrices. The measure of similarity thus depends on one’s choice of kernel; in this work we consider Linear CKA:
+
+$$d_{\text{Linear CKA}}(A,B)=1-\frac{\|AB^{\top}\|_{F}^{2}}{\|AA^{\top}\|_{F}\|BB^{\top}\|_{F}} \tag{1}$$
+
+as proposed in Kornblith et al. [13]. Other choices of kernel are also valid; we focus on Linear CKA here since Kornblith et al. [13] report similar results from using either a linear or RBF kernel.
+
+Canonical correlation analysis (CCA) finds orthogonal bases ($w_{A}^{i},w_{B}^{i}$) for two matrices such that after projection onto $w_{A}^{i},w_{B}^{i}$, the projected matrices have maximally correlated rows. For $1\leq i\leq p_{1}$, the $i^{\text{th}}$ canonical correlation coefficient $\rho_{i}$ is computed as follows:
+
+$$\displaystyle\rho_{i} \displaystyle=\max_{w_{A}^{i},w_{B}^{i}}\frac{\langle{w_{A}^{i}}^{\top}A,{w_{B}^{i}}^{\top}B\rangle}{\|{w_{A}^{i}}^{\top}A\|\cdot\|{w_{B}^{i}}^{\top}B\|} \tag{2}$$
+
+$$\displaystyle s.t.~\hskip 5.69046pt\langle{w_{A}^{i}}^{\top}A,{w_{A}^{j}}^{\top}A\rangle \displaystyle=0,~\forall j<i,\hskip 14.22636pt\langle{w_{B}^{i}}^{\top}B,{w_{B}^{j}}^{\top}B\rangle=0,~\forall j  Orthogonal Procrustes > CKA (the full results are in Appendix E). We do not apply this procedure for the previous two benchmarks, because the different models have correlated randomness and so any $p$-value based on independence assumptions would be invalid.
+
+#### Benchmark 4: Challenge sets: Changing pretraining and fine-tuning seeds.
+
+We also construct benchmarks using models trained from scratch with different random seeds (for language, this is pretraining and fine-tuning, and for vision, this is standard training). For language, we construct benchmarks from a collection of 100 BERT medium models, trained with all combinations of 10 pretraining and 10 fine-tuning seeds. The models are fine-tuned on MNLI, and we consider two different functionalities of interest $f$: accuracy on the OOD Antonymy stress test and on the OOD Numerical stress test [25], which both show significant variation in accuracy across models (see Figure 3(d)). We obtain $8$ different sets $S$ (one for each of the 8 layer depths in BERT medium), again taking $A$ to be the representation of the highest-accuracy model according to $f$. Rank correlations for each dissimilarity measure are averaged over the 8 runs and reported in Table 1.
+
+For vision, we construct benchmarks from a collection of 100 ResNet-14 models, trained with different random seeds on CIFAR-10. We consider 19 different functionalities of interest—the 19 types of corruptions in the CIFAR-10C dataset [12], which show significant variation in accuracy across models (see Figure 3(c)). We obtain $14$ different sets $S$ (one for each of the 14 layers), taking $A$ to be the representation of the highest-accuracy model according to $f$. Rank correlations for each dissimilarity measure are averaged over the 14 runs and over the 19 corruption types and reported in Table 1. Results for each of the 19 corruptions individually can be found in Appendix D..
+
+None of the dissimilarity measures show a large rank correlation for either the language or vision tasks, and for the Numerical stress test, at most layers, the associated $p$-values (assuming independence) are non-significant at the 0.05 level (see Appendix C). [^11] Thus we conclude that all measures fail to be sensitive to OOD accuracy in these settings. One reason for this could be that there is less variation in the OOD accuracies compared to the previous experiment with the HANS dataset (there accuracies varied from 0 to nearly 60%). Another reason could be that it is harder to correctly account for both pretraining and fine-tuning variation at the same time. Either way, we hope that future dissimilarity measures can improve upon these results, and we present this benchmark as a challenge task to motivate progress.
+
+## 5 Discussion
+
+In this work we proposed a quantitative measure for evaluating similarity metrics, based on the rank correlation with functional behavior. Using this, we generated tasks motivated by sensitivity to deleting important directions, specificity to random initialization, and sensitivity to out-of-distribution performance. Popular existing metrics such as CKA and CCA often performed poorly on these tasks, sometimes in striking ways. Meanwhile, the classical Orthogonal Procrustes transform attained consistently good performance.
+
+Given the success of Orthogonal Procrustes, it is worth reflecting on how it differs from the other metrics and why it might perform well. To do so, we consider a simplified case where $A$ and $B$ have the same singular vectors but different singular values. Thus without loss of generality $A=\Lambda_{1}$ and $B=\Lambda_{2}$, where the $\Lambda_{i}$ are both diagonal. In this case, the Orthogonal Procrustes distance reduces to $\|\Lambda_{1}-\Lambda_{2}\|_{F}^{2}$, or the sum of the squared distances between the singular values. We will see that both CCA and CKA reduce to less reasonable formulae in this case.
+
+Orthogonal Procrustes vs. CCA. All three metrics derived from CCA assign zero distance even when the (non-zero) singular values are arbitrarily different. This is because CCA correlation coefficients are invariant to all invertible linear transformations. This invariance property may help explain why CCA metrics generally find layers within the same network to be much more similar than networks trained with different randomness. Random initialization introduces noise, particularly in unimportant principal components, while representations within the same network more easily preserve these components, and CCA may place too much weight on their associated correlation coefficients.
+
+Orthogonal Procrustes vs. CKA. In contrast to the squared distance of Orthogonal Procrustes, CKA actually reduces to a quartic function based on the dot products between the squared entries of $\Lambda_{1}$ and $\Lambda_{2}$. As a consequence, CKA is dominated by representations’ largest singular values, leaving it insensitive to meaningful differences in smaller singular values as illustrated in Figure 2. This lack of sensitivity to moderate-sized differences may help explain why CKA fails to track out-of-distribution error effectively.
+
+In addition to helping understand similarity measures, our benchmarks pinpoint directions for improvement. No method was sensitive to accuracy on the Numerical stress test in our challenge set, possibly due to a lower signal-to-noise ratio. Since Orthogonal Procrustes performed well on most of our tasks, it could be a promising foundation for a new measure, and recent work shows how to regularize Orthogonal Procrustes to handle high noise [28]. Perhaps similar techniques could be adapted here.
+
+An alternative to our benchmarking approach is to directly define two representations’ dissimilarity as their difference in a functional behavior of interest. Feng et al. [9] take this approach, defining dissimilarity as difference in accuracy on a handful of probing tasks. One drawback of this approach is that a small set of probes may not capture all the differences in representations, so it is useful to base dissimilarity measures on representations’ intrinsic properties. Intrinsically defined dissimilarities also have the potential to highlight new functional behaviors, as we found that representations with similar in-distribution probing accuracy often have highly variable OOD accuracy.
+
+A limitation of our work is that we only consider a handful of model variations and functional behaviors, and restricting our attention to these settings could overlook other important considerations. To address this, we envision a paradigm in which a rich tapestry of benchmarks are used to ground and validate neural network interpretations. Other axes of variation in models could include training on more or fewer examples, training on shuffled labels vs. real labels, training from specifically chosen initializations [10], and using different architectures. Other functional behaviors to examine could include modularity and meta-learning capabilities. Benchmarks could also be applied to other interpretability tools beyond dissimilarity. For example, sensitivity to deleting principal components could provide an additional sanity check for saliency maps and other visualization tools [1].
+
+More broadly, many interpretability tools are designed as audits of models, although it is often unclear what characteristics of the models are consistently audited. We position this work as a counter-audit, where by collecting models that differ in functional behavior, we can assess whether the interpretability tools CKA, PWCCA, etc., accurately reflect the behavioral differences. Many other types of counter-audits may be designed to assess other interpretability tools. For example, models that have backdoors built into them to misclassify certain inputs provide counter-audits for interpretability tools that explain model predictions–these explanations should reflect any backdoors present [19, 5, 38, 15]. We are hopeful that more comprehensive checks on interpretability tools will provide deeper understanding of neural networks, and more reliable models.
+
+## Acknowledgments and Disclosure of Funding
+
+Thanks to Ruiqi Zhong for helpful comments and assistance in finetuning models, and thanks to Daniel Rothchild and our anonymous reviewers for helpful discussion. FD is supported by the National Science Foundation Graduate Research Fellowship Program under Grant No. DGE 1752814 and the Open Philanthropy Project AI Fellows Program. JSD is supported by the NSF Division of Mathematical Sciences Grant No. 2031985.
+
+## References
+
+- Adebayo et al. [2018] J. Adebayo, J. Gilmer, M. Muelly, I. Goodfellow, M. Hardt, and B. Kim. Sanity checks for saliency maps. Advances in Neural Information Processing Systems, 31:9505–9515, 2018.
+- Alain and Bengio [2018] G. Alain and Y. Bengio. Understanding intermediate layers using linear classifier probes, 2018.
+- Arora et al. [2017] S. Arora, Y. Liang, and T. Ma. A simple but tough-to-beat baseline for sentence embeddings. 2017.
+- Belinkov et al. [2017] Y. Belinkov, N. Durrani, F. Dalvi, H. Sajjad, and J. Glass. What do neural machine translation models learn about morphology? In Proceedings of the 55th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 861–872, 2017.
+- Chen et al. [2017] X. Chen, C. Liu, B. Li, K. Lu, and D. Song. Targeted backdoor attacks on deep learning systems using data poisoning. arXiv preprint arXiv:1712.05526, 2017.
+- Conneau et al. [2018] A. Conneau, G. Lample, M. Ranzato, L. Denoyer, and H. Jégou. Word translation without parallel data, 2018.
+- D’Amour et al. [2020] A. D’Amour, K. Heller, D. Moldovan, B. Adlam, B. Alipanahi, A. Beutel, C. Chen, J. Deaton, J. Eisenstein, M. D. Hoffman, et al. Underspecification presents challenges for credibility in modern machine learning. arXiv preprint arXiv:2011.03395, 2020.
+- Devlin et al. [2018] J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova. Bert: Pre-training of deep bidirectional transformers for language understanding. arXiv preprint arXiv:1810.04805, 2018.
+- Feng et al. [2020] Y. Feng, R. Zhai, D. He, L. Wang, and B. Dong. Transferred discrepancy: Quantifying the difference between representations. arXiv preprint arXiv:2007.12446, 2020.
+- Frankle and Carbin [2018] J. Frankle and M. Carbin. The lottery ticket hypothesis: Finding sparse, trainable neural networks. In International Conference on Learning Representations, 2018.
+- He et al. [2016] K. He, X. Zhang, S. Ren, and J. Sun. Deep residual learning for image recognition. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 770–778, 2016.
+- Hendrycks and Dietterich [2019] D. Hendrycks and T. Dietterich. Benchmarking neural network robustness to common corruptions and perturbations. Proceedings of the International Conference on Learning Representations, 2019.
+- Kornblith et al. [2019] S. Kornblith, M. Norouzi, H. Lee, and G. Hinton. Similarity of neural network representations revisited. In International Conference on Machine Learning, pages 3519–3529, 2019.
+- Krizhevsky et al. [2009] A. Krizhevsky, G. Hinton, et al. Learning multiple layers of features from tiny images. 2009.
+- Kurita et al. [2020] K. Kurita, P. Michel, and G. Neubig. Weight poisoning attacks on pre-trained models. arXiv preprint arXiv:2004.06660, 2020.
+- Laakso and Cottrell [2000] A. Laakso and G. Cottrell. Content and cluster analysis: assessing representational similarity in neural systems. Philosophical psychology, 13(1):47–76, 2000.
+- Leavitt and Morcos [2020] M. L. Leavitt and A. Morcos. Towards falsifiable interpretability research. arXiv preprint arXiv:2010.12016, 2020.
+- Lenc and Vedaldi [2015] K. Lenc and A. Vedaldi. Understanding image representations by measuring their equivariance and equivalence, 2015.
+- Li et al. [2020] S. Li, S. Ma, M. Xue, and B. Z. H. Zhao. Deep learning backdoors. arXiv preprint arXiv:2007.08273, 2020.
+- Li et al. [2015] Y. Li, J. Yosinski, J. Clune, H. Lipson, and J. Hopcroft. Convergent learning: Do different neural networks learn the same representations? In Feature Extraction: Modern Questions and Challenges, pages 196–212. PMLR, 2015.
+- Liang et al. [2019] R. Liang, T. Li, L. Li, J. Wang, and Q. Zhang. Knowledge consistency between neural networks and beyond. In International Conference on Learning Representations, 2019.
+- McCoy et al. [2019] R. T. McCoy, E. Pavlick, and T. Linzen. Right for the wrong reasons: Diagnosing syntactic heuristics in natural language inference. arXiv preprint arXiv:1902.01007, 2019.
+- McCoy et al. [2020] R. T. McCoy, J. Min, and T. Linzen. Berts of a feather do not generalize together: Large variability in generalization across models with similar test set performance. In Proceedings of the Third BlackboxNLP Workshop on Analyzing and Interpreting Neural Networks for NLP, pages 217–227, 2020.
+- Morcos et al. [2018] A. Morcos, M. Raghu, and S. Bengio. Insights on representational similarity in neural networks with canonical correlation. In Advances in Neural Information Processing Systems, pages 5727–5736, 2018.
+- Naik et al. [2018] A. Naik, A. Ravichander, N. Sadeh, C. Rose, and G. Neubig. Stress test evaluation for natural language inference. In Proceedings of the 27th International Conference on Computational Linguistics, pages 2340–2353, 2018.
+- Netzer et al. [2011] Y. Netzer, T. Wang, A. Coates, A. Bissacco, B. Wu, and A. Y. Ng. Reading digits in natural images with unsupervised feature learning. 2011.
+- Peters et al. [2018] M. E. Peters, M. Neumann, L. Zettlemoyer, and W.-t. Yih. Dissecting contextual word embeddings: Architecture and representation. arXiv preprint arXiv:1808.08949, 2018.
+- Pumir et al. [2021] T. Pumir, A. Singer, and N. Boumal. The generalized orthogonal procrustes problem in the high noise regime. Information and Inference: A Journal of the IMA, Jan 2021. ISSN 2049-8772. doi: 10.1093/imaiai/iaaa035. URL http://dx.doi.org/10.1093/imaiai/iaaa035.
+- Raghu et al. [2019] A. Raghu, M. Raghu, S. Bengio, and O. Vinyals. Rapid learning or feature reuse? towards understanding the effectiveness of maml. In International Conference on Learning Representations, 2019.
+- Raghu et al. [2017] M. Raghu, J. Gilmer, J. Yosinski, and J. Sohl-Dickstein. Svcca: Singular vector canonical correlation analysis for deep learning dynamics and interpretability. In Advances in Neural Information Processing Systems, pages 6076–6085, 2017.
+- Schönemann [1966] P. H. Schönemann. A generalized solution of the orthogonal procrustes problem. Psychometrika, 31(1):1–10, 1966.
+- Smith et al. [2017] S. L. Smith, D. H. P. Turban, S. Hamblin, and N. Y. Hammerla. Offline bilingual word vectors, orthogonal transformations and the inverted softmax, 2017.
+- Socher et al. [2013] R. Socher, A. Perelygin, J. Wu, J. Chuang, C. D. Manning, A. Y. Ng, and C. Potts. Recursive deep models for semantic compositionality over a sentiment treebank. In Proceedings of the 2013 conference on empirical methods in natural language processing, pages 1631–1642, 2013.
+- Tamkin et al. [2020] A. Tamkin, T. Singh, D. Giovanardi, and N. Goodman. Investigating transferability in pretrained language models. In Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing: Findings, pages 1393–1401, 2020.
+- Tenney et al. [2019] I. Tenney, P. Xia, B. Chen, A. Wang, A. Poliak, R. T. McCoy, N. Kim, B. V. Durme, S. Bowman, D. Das, and E. Pavlick. What do you learn from context? probing for sentence structure in contextualized word representations. In International Conference on Learning Representations, 2019. URL https://openreview.net/forum?id=SJzSgnRcKX.
+- Turc et al. [2019] I. Turc, M.-W. Chang, K. Lee, and K. Toutanova. Well-read students learn better: On the importance of pre-training compact models. arXiv preprint arXiv:1908.08962, 2019.
+- Wang et al. [2018a] A. Wang, A. Singh, J. Michael, F. Hill, O. Levy, and S. Bowman. Glue: A multi-task benchmark and analysis platform for natural language understanding. In Proceedings of the 2018 EMNLP Workshop BlackboxNLP: Analyzing and Interpreting Neural Networks for NLP, pages 353–355, 2018a.
+- Wang et al. [2019] B. Wang, Y. Yao, S. Shan, H. Li, B. Viswanath, H. Zheng, and B. Y. Zhao. Neural cleanse: Identifying and mitigating backdoor attacks in neural networks. In 2019 IEEE Symposium on Security and Privacy (SP), pages 707–723. IEEE, 2019.
+- Wang et al. [2018b] L. Wang, L. Hu, J. Gu, Z. Hu, Y. Wu, K. He, and J. Hopcroft. Towards understanding learning representations: To what extent do different neural networks learn the same representation. In S. Bengio, H. Wallach, H. Larochelle, K. Grauman, N. Cesa-Bianchi, and R. Garnett, editors, Advances in Neural Information Processing Systems, volume 31, pages 9584–9593. Curran Associates, Inc., 2018b. URL https://proceedings.neurips.cc/paper/2018/file/5fc34ed307aac159a30d81181c99847e-Paper.pdf.
+- Williams et al. [2018] A. Williams, N. Nangia, and S. Bowman. A broad-coverage challenge corpus for sentence understanding through inference. In Proceedings of the 2018 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long Papers), pages 1112–1122. Association for Computational Linguistics, 2018. URL http://aclweb.org/anthology/N18-1101.
+- Zhong et al. [2021] R. Zhong, D. Ghosh, D. Klein, and J. Steinhardt. Are larger pretrained language models uniformly better? comparing performance at the instance level. arXiv preprint arXiv:2105.06020, 2021.
+
+## Appendix
+
+## Appendix A Training details
+
+### A.1 BERT finetuning details
+
+We fine-tuned models from Zhong et al. [41] and the original BERT models from Devlin et al. [8] on three tasks – Quora Question Pairs (QQP)[^12], Multi-Genre Natural Language Inference (MNLI; Williams et al. [40]), and the Stanford Sentiment Treebank (SST-2; Socher et al. [33]), and show each model’s accuracy on these tasks in Table 2. Our models generally have comparable accuracy.
+
+As in Turc et al. [36], we finetune for 4 epochs for each dataset. For each task and model size, we tune hyperparameters in the following way: we first randomly split our new training set into 80% and 20%; then we finetune on the 80% split with all 9 combination of batch size [16, 32, 64] and learning rate [1e-4, 5e-5, 3e-5], and choose the combination that leads to the best average accuracy on the remaining 20%. Finetuning these models for all three tasks requires around 500 hours.
+
+Table 2: Comparing accuracy of our pretrained model (superscript ours) to the original release by Devlin et al. [8] and Turc et al. [36] (superscript orig) on a variety of fine-tuned tasks.
+
+| | QQP | MNLI | SST-2 |
+| --- | --- | --- | --- |
+| $\text{BERT medium}^{\text{ orig}}$ | 89.8% | 79.6% | 94.2% |
+| $\text{BERT medium}^{\text{ ours}}$ | 89.5% | 78.9% | 94.2% |
+| $\text{BERT base}^{\text{ orig}}$ | 90.8% | 83.8% | 95.0% |
+| $\text{BERT base}^{\text{ ours}}$ | 90.6% | 81.2% | 94.6% |
+
+### A.2 ResNet training details
+
+We trained ResNet-14 models on CIFAR-10 training data with the following hyperparameters:
+
+- learning rate: 0.1
+- epochs: 100
+- learning rate decay: 0.1 at epoch 50 and epoch 75
+- batch size: 128
+
+The 100 models we trained have an average accuracy on the CIFAR-10 test set of 90.2%, with standard deviation 0.2%. Training these models requires around 20 hours.
+
+## Appendix B Licenses
+
+The source code for BERT models available at https://github.com/google-research/bert is licensed under the Apache License 2.0.
+
+The model weights for the 100 BERT base models provided by McCoy et al. [23] are licensed under the Creative Commons Attribution 4.0 International license, and their source code is licensed under the MIT license (https://github.com/tommccoy1/hans/blob/master/LICENSE.md).
+
+## Appendix C Layer-wise results
+
+Some of the results presented in Table 1 were averaged over multiple layers, since rankings between dissimilarity measures were consistent across different layers. Rank correlation scores are higher across all measures for certain layers, however, so we include layer-by-layer results here for completeness. We also include scores for $\bar{\rho}_{\text{CCA}}$ and $R^{2}_{\text{CCA}}$ here, and note that they are often similar to PWCCA, and generally dominated by other measures. We expand each row of Table 1 into a subsection of its own. We also include p-values as reported by sci-kit learn, although we note that because random seeds are shared among some representations, these p-values are all inflated, with the exception of those for the experiment perturbing only fine-tuning seed, and assessing functionality through HANS (C.3). The invalid p-values may all be thought of as upper-bounds for the significance of the rank correlation results.
+
+### C.1 Perturbation: pretraining seed and layer depth
+
+Tables 3 and 4 show the full results (including p-values and all 5 dissimilarity measures) using the QNLI probe as the functionality of interest, for Spearman $\rho$ and Kendall’s $\tau$, respectively. Table 5 and 6 present results for the probing task SST-2 as the functionality of interest.
+
+Table 3: Spearman $\rho$ results for perturbing pretraining seed and layer depth, and assessing functionality through the QNLI probe
+
+| Layer | Procrustes | CKA | PWCCA | $\bar{\rho}_{\text{CCA}}$ | $R^{2}_{\text{CCA}}$ |
+| --- | --- | --- | --- | --- | --- |
+| 12 | 0.862 (6.5E-37) | 0.876 (1.6E-39) | 0.763 (2.2E-24) | 0.849 (1.0E+00) | 0.846 (1.0E+00) |
+
+Table 4: Kendall’s $\tau$ results for perturbing pretraining seed and layer depth, and assessing functionality through the QNLI probe
+
+| Layer | Procrustes | CKA | PWCCA | $\bar{\rho}_{\text{CCA}}$ | $R^{2}_{\text{CCA}}$ |
+| --- | --- | --- | --- | --- | --- |
+| 12 | 0.670 (1.1E-27) | 0.685 (7.4E-29) | 0.564 (3.2E-20) | 0.652 (1.0E+00) | 0.647 (1.0E+00) |
+
+Table 5: Spearman $\rho$ results for perturbing pretraining seed and layer depth, and assessing functionality through the SST-2 probe
+
+| Layer | Procrustes | CKA | PWCCA | $\bar{\rho}_{\text{CCA}}$ | $R^{2}_{\text{CCA}}$ |
+| --- | --- | --- | --- | --- | --- |
+| 12 | 0.890 (2.7E-42) | 0.905 (5.3E-46) | 0.829 (7.7E-32) | 0.857 (1.0E+00) | 0.854 (1.0E+00) |
+
+Table 6: Kendall’s $\tau$ results for perturbing pretraining seed and layer depth, and assessing functionality through the SST-2 probe
+
+| Layer | Procrustes | CKA | PWCCA | $\bar{\rho}_{\text{CCA}}$ | $R^{2}_{\text{CCA}}$ |
+| --- | --- | --- | --- | --- | --- |
+| 12 | 0.707 (1.2E-30) | 0.732 (1.0E-32) | 0.637 (3.1E-25) | 0.662 (1.0E+00) | 0.658 (1.0E+00) |
+
+### C.2 Perturbation: pretraining seed and principal component deletion
+
+We find that for these experiments, results are consistent across the layers we analyze (the last 6 layers of BERT base). Tables 7 and 8 show results for Spearman $\rho$ and Kendall’s $\tau$, respectively.
+
+Table 7: Layer-wise Spearman $\rho$ results for perturbing pretraining seed and principal component deletion, and assessing functionality through the SST-2 probe
+
+| Layer | Procrustes | CKA | PWCCA | $\bar{\rho}_{\text{CCA}}$ | $R^{2}_{\text{CCA}}$ |
+| --- | --- | --- | --- | --- | --- |
+| 8 | 0.764 (2.4E-36) | 0.668 (3.2E-25) | 0.776 (3.4E-38) | 0.700 (1.9E-28) | 0.700 (1.8E-28) |
+| 9 | 0.813 (2.1E-44) | 0.706 (4.0E-29) | 0.825 (9.2E-47) | 0.728 (1.3E-31) | 0.728 (1.2E-31) |
+| 10 | 0.873 (2.1E-58) | 0.818 (2.7E-45) | 0.874 (1.1E-58) | 0.748 (3.2E-34) | 0.749 (2.7E-34) |
+| 11 | 0.918 (1.2E-74) | 0.797 (1.4E-41) | 0.922 (1.7E-76) | 0.781 (6.6E-39) | 0.781 (7.0E-39) |
+| 12 | 0.932 (1.1E-81) | 0.766 (1.1E-36) | 0.955 (4.2E-97) | 0.810 (6.1E-44) | 0.810 (6.1E-44) |
+
+Table 8: Layer-wise Kendall’s $\tau$ results for perturbing pretraining seed and principal component deletion, and assessing functionality through the SST-2 probe
+
+| Layer | Procrustes | CKA | PWCCA | $\bar{\rho}_{\text{CCA}}$ | $R^{2}_{\text{CCA}}$ |
+| --- | --- | --- | --- | --- | --- |
+| 8 | 0.560 (1.8E-29) | 0.479 (4.4E-22) | 0.573 (1.1E-30) | 0.512 (6.8E-25) | 0.512 (6.6E-25) |
+| 9 | 0.602 (1.2E-33) | 0.509 (1.2E-24) | 0.618 (2.5E-35) | 0.542 (1.1E-27) | 0.543 (9.7E-28) |
+| 10 | 0.684 (5.6E-43) | 0.627 (2.1E-36) | 0.685 (5.3E-43) | 0.588 (2.9E-32) | 0.589 (2.5E-32) |
+| 11 | 0.751 (2.8E-51) | 0.616 (3.3E-35) | 0.756 (6.4E-52) | 0.648 (9.2E-39) | 0.648 (9.2E-39) |
+| 12 | 0.787 (3.4E-56) | 0.588 (2.9E-32) | 0.819 (1.2E-60) | 0.701 (4.7E-45) | 0.701 (4.9E-45) |
+
+### C.3 Perturbation: fine-tuning seed, Functionality: HANS
+
+Results for this experiment are similar across layers for Procrustes and all three CCA-based measures, with middle layers of BERT base having a slightly higher rank correlation score in general. For CKA, this effect is even more pronounced. Tables 9 and 10 show the results for Spearman $\rho$ and Kendall’s $\tau$, respectively.
+
+Table 9: Layer-wise Spearman $\rho$ results for perturbing finetuning seed, and assessing functionality through the HANS: Lexical (non-entailment) OOD dataset
+
+| Layer | Procrustes ($p$) | CKA ($p$) | PWCCA ($p$) | $\bar{\rho}_{\text{CCA}}$ ($p$) | $R^{2}_{\text{CCA}}$ ($p$) |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0.425 (5.1E-06) | 0.361 (1.1E-04) | 0.405 (1.4E-05) | 0.388 (3.4E-05) | 0.389 (3.2E-05) |
+| 2 | 0.510 (3.1E-08) | 0.410 (1.2E-05) | 0.486 (1.5E-07) | 0.488 (1.3E-07) | 0.483 (1.8E-07) |
+| 3 | 0.531 (6.6E-09) | 0.427 (4.6E-06) | 0.538 (3.8E-09) | 0.533 (5.6E-09) | 0.532 (6.2E-09) |
+| 4 | 0.543 (2.6E-09) | 0.506 (3.9E-08) | 0.552 (1.4E-09) | 0.555 (1.0E-09) | 0.550 (1.5E-09) |
+| 5 | 0.563 (5.3E-10) | 0.512 (2.6E-08) | 0.570 (2.9E-10) | 0.582 (1.1E-10) | 0.580 (1.3E-10) |
+| 6 | 0.629 (1.2E-12) | 0.641 (3.6E-13) | 0.621 (2.8E-12) | 0.621 (2.7E-12) | 0.622 (2.5E-12) |
+| 7 | 0.647 (1.7E-13) | 0.658 (5.0E-14) | 0.647 (1.7E-13) | 0.653 (9.0E-14) | 0.650 (1.2E-13) |
+| 8 | 0.643 (2.7E-13) | 0.552 (1.3E-09) | 0.653 (9.5E-14) | 0.651 (1.1E-13) | 0.651 (1.2E-13) |
+| 9 | 0.589 (5.9E-11) | 0.419 (7.1E-06) | 0.641 (3.5E-13) | 0.662 (3.3E-14) | 0.660 (4.2E-14) |
+| 10 | 0.536 (4.6E-09) | 0.437 (2.7E-06) | 0.559 (7.3E-10) | 0.612 (6.6E-12) | 0.614 (5.4E-12) |
+| 11 | 0.532 (6.2E-09) | 0.426 (4.9E-06) | 0.565 (4.7E-10) | 0.619 (3.4E-12) | 0.614 (5.5E-12) |
+| 12 | 0.465 (5.3E-07) | 0.192 (2.8E-02) | 0.574 (2.1E-10) | 0.609 (9.2E-12) | 0.610 (7.9E-12) |
+
+Table 10: Layer-wise Kendall’s $\tau$ results for perturbing finetuning seed, and assessing functionality through the HANS: Lexical (non-entailment) OOD dataset
+
+| Layer | Procrustes ($p$) | CKA ($p$) | PWCCA ($p$) | $\bar{\rho}_{\text{CCA}}$ ($p$) | $R^{2}_{\text{CCA}}$ ($p$) |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0.295 (6.7E-06) | 0.269 (3.6E-05) | 0.277 (2.2E-05) | 0.265 (4.7E-05) | 0.268 (4.0E-05) |
+| 2 | 0.363 (4.6E-08) | 0.288 (1.1E-05) | 0.343 (2.1E-07) | 0.342 (2.3E-07) | 0.342 (2.4E-07) |
+| 3 | 0.372 (2.1E-08) | 0.290 (9.5E-06) | 0.378 (1.3E-08) | 0.375 (1.6E-08) | 0.375 (1.6E-08) |
+| 4 | 0.393 (3.4E-09) | 0.358 (6.6E-08) | 0.401 (1.7E-09) | 0.405 (1.2E-09) | 0.403 (1.4E-09) |
+| 5 | 0.410 (7.7E-10) | 0.367 (3.3E-08) | 0.417 (4.1E-10) | 0.428 (1.4E-10) | 0.424 (2.0E-10) |
+| 6 | 0.464 (4.2E-12) | 0.474 (1.5E-12) | 0.460 (6.3E-12) | 0.460 (5.8E-12) | 0.461 (5.6E-12) |
+| 7 | 0.483 (5.5E-13) | 0.488 (3.3E-13) | 0.481 (7.1E-13) | 0.486 (3.9E-13) | 0.483 (5.5E-13) |
+| 8 | 0.478 (9.2E-13) | 0.392 (3.7E-09) | 0.483 (5.7E-13) | 0.481 (6.5E-13) | 0.480 (7.7E-13) |
+| 9 | 0.432 (1.0E-10) | 0.293 (7.7E-06) | 0.475 (1.2E-12) | 0.496 (1.3E-13) | 0.494 (1.6E-13) |
+| 10 | 0.380 (1.0E-08) | 0.306 (3.4E-06) | 0.401 (1.7E-09) | 0.447 (2.3E-11) | 0.448 (2.1E-11) |
+| 11 | 0.376 (1.5E-08) | 0.292 (8.3E-06) | 0.411 (6.9E-10) | 0.448 (2.1E-11) | 0.445 (2.7E-11) |
+| 12 | 0.330 (5.7E-07) | 0.127 (3.1E-02) | 0.416 (4.4E-10) | 0.446 (2.5E-11) | 0.447 (2.2E-11) |
+
+### C.4 Perturbation: pretraining seeds and finetuning seeds of BERT medium
+
+Rank correlation scores are low across the board for this task, suggesting that it is difficult for all existing dissimilarity measures, regardless of the layer within a network. Results on the Antonymy stress test for Spearman $\rho$ and Kendall’s $\tau$ are in Tables 11 and 12, respectively. Results on the Numerical stress test for Spearman $\rho$ and Kendall’s $\tau$ are in Tables 13 and 14, respectively.
+
+Table 11: Layer-wise Spearman $\rho$ results for perturbing pretraining seed and finetuning seed, and assessing functionality through the Antonymy stress test
+
+| Layer | Procrustes | CKA | PWCCA | $\bar{\rho}_{\text{CCA}}$ | $R^{2}_{\text{CCA}}$ |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0.252 (5.7E-03) | 0.241 (7.8E-03) | 0.168 (4.7E-02) | 0.305 (1.0E+00) | 0.327 (1.0E+00) |
+| 2 | 0.213 (1.7E-02) | 0.145 (7.5E-02) | 0.131 (9.7E-02) | 0.047 (6.8E-01) | 0.031 (6.2E-01) |
+| 3 | 0.260 (4.5E-03) | 0.262 (4.2E-03) | 0.208 (1.9E-02) | 0.137 (9.1E-01) | 0.111 (8.6E-01) |
+| 4 | 0.260 (4.5E-03) | 0.265 (3.8E-03) | 0.265 (3.8E-03) | 0.276 (1.0E+00) | 0.254 (9.9E-01) |
+| 5 | 0.273 (3.0E-03) | 0.302 (1.1E-03) | 0.278 (2.5E-03) | 0.339 (1.0E+00) | 0.310 (1.0E+00) |
+| 6 | 0.330 (3.9E-04) | 0.280 (2.4E-03) | 0.346 (2.1E-04) | 0.313 (1.0E+00) | 0.304 (1.0E+00) |
+| 7 | 0.271 (3.2E-03) | 0.315 (7.1E-04) | 0.111 (1.4E-01) | 0.091 (8.2E-01) | 0.090 (8.1E-01) |
+| 8 | 0.084 (2.0E-01) | 0.004 (4.8E-01) | 0.123 (1.1E-01) | 0.204 (9.8E-01) | 0.198 (9.8E-01) |
+
+Table 12: Layer-wise Kendall’s $\tau$ results for perturbing pretraining seed and finetuning seed, and assessing functionality through the Antonymy stress test
+
+| Layer | Procrustes | CKA | PWCCA | $\bar{\rho}_{\text{CCA}}$ | $R^{2}_{\text{CCA}}$ |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0.199 (1.7E-03) | 0.171 (5.9E-03) | 0.126 (3.3E-02) | 0.244 (1.0E+00) | 0.243 (1.0E+00) |
+| 2 | 0.179 (4.3E-03) | 0.123 (3.5E-02) | 0.118 (4.2E-02) | 0.061 (8.1E-01) | 0.042 (7.3E-01) |
+| 3 | 0.185 (3.3E-03) | 0.186 (3.2E-03) | 0.139 (2.0E-02) | 0.110 (9.5E-01) | 0.096 (9.2E-01) |
+| 4 | 0.187 (3.0E-03) | 0.191 (2.6E-03) | 0.188 (2.9E-03) | 0.206 (1.0E+00) | 0.193 (1.0E+00) |
+| 5 | 0.192 (2.4E-03) | 0.194 (2.2E-03) | 0.202 (1.5E-03) | 0.267 (1.0E+00) | 0.242 (1.0E+00) |
+| 6 | 0.236 (2.7E-04) | 0.197 (1.9E-03) | 0.252 (1.1E-04) | 0.229 (1.0E+00) | 0.221 (1.0E+00) |
+| 7 | 0.189 (2.8E-03) | 0.217 (7.3E-04) | 0.091 (9.1E-02) | 0.081 (8.8E-01) | 0.082 (8.9E-01) |
+| 8 | 0.061 (1.9E-01) | -0.000 (5.0E-01) | 0.101 (6.9E-02) | 0.155 (9.9E-01) | 0.150 (9.9E-01) |
+
+Table 13: Layer-wise Spearman $\rho$ results for perturbing pretraining seed and finetuning seed, and assessing functionality through the Numerical stress test
+
+| Layer | Procrustes | CKA | PWCCA | $\bar{\rho}_{\text{CCA}}$ | $R^{2}_{\text{CCA}}$ |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0.137 (8.7E-02) | 0.108 (1.4E-01) | 0.107 (1.4E-01) | 0.072 (7.6E-01) | 0.072 (7.6E-01) |
+| 2 | -0.012 (5.5E-01) | 0.060 (2.8E-01) | 0.062 (2.7E-01) | 0.004 (5.1E-01) | 0.001 (5.0E-01) |
+| 3 | -0.059 (7.2E-01) | 0.011 (4.6E-01) | -0.031 (6.2E-01) | -0.060 (2.8E-01) | -0.056 (2.9E-01) |
+| 4 | 0.041 (3.4E-01) | 0.052 (3.0E-01) | -0.026 (6.0E-01) | -0.101 (1.6E-01) | -0.084 (2.0E-01) |
+| 5 | 0.003 (4.9E-01) | 0.131 (9.7E-02) | -0.047 (6.8E-01) | -0.061 (2.7E-01) | -0.061 (2.7E-01) |
+| 6 | 0.092 (1.8E-01) | 0.260 (4.5E-03) | -0.029 (6.1E-01) | -0.064 (2.6E-01) | -0.056 (2.9E-01) |
+| 7 | 0.164 (5.2E-02) | 0.250 (6.1E-03) | 0.037 (3.6E-01) | 0.040 (6.5E-01) | 0.040 (6.5E-01) |
+| 8 | 0.202 (2.2E-02) | 0.105 (1.5E-01) | 0.175 (4.1E-02) | 0.134 (9.1E-01) | 0.143 (9.2E-01) |
+
+Table 14: Layer-wise Kendall’s $\tau$ results for perturbing pretraining seed and finetuning seed, and assessing functionality through the Numerical stress test
+
+| Layer | Procrustes | CKA | PWCCA | $\bar{\rho}_{\text{CCA}}$ | $R^{2}_{\text{CCA}}$ |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0.103 (6.5E-02) | 0.083 (1.1E-01) | 0.074 (1.4E-01) | 0.050 (7.7E-01) | 0.048 (7.6E-01) |
+| 2 | -0.010 (5.6E-01) | 0.046 (2.5E-01) | 0.046 (2.5E-01) | 0.006 (5.3E-01) | 0.001 (5.0E-01) |
+| 3 | -0.041 (7.3E-01) | 0.014 (4.2E-01) | -0.018 (6.0E-01) | -0.047 (2.5E-01) | -0.047 (2.4E-01) |
+| 4 | 0.031 (3.2E-01) | 0.038 (2.9E-01) | -0.020 (6.2E-01) | -0.076 (1.3E-01) | -0.065 (1.7E-01) |
+| 5 | 0.005 (4.7E-01) | 0.086 (1.0E-01) | -0.031 (6.8E-01) | -0.042 (2.7E-01) | -0.042 (2.7E-01) |
+| 6 | 0.060 (1.9E-01) | 0.175 (5.1E-03) | -0.020 (6.2E-01) | -0.050 (2.3E-01) | -0.046 (2.5E-01) |
+| 7 | 0.112 (4.9E-02) | 0.168 (6.8E-03) | 0.030 (3.3E-01) | 0.019 (6.1E-01) | 0.024 (6.4E-01) |
+| 8 | 0.131 (2.7E-02) | 0.063 (1.8E-01) | 0.125 (3.3E-02) | 0.099 (9.3E-01) | 0.103 (9.4E-01) |
+
+## Appendix D CIFAR-10C subtask-wise results
+
+Table 15: Results for perturbing training seed and assessing functionality through CIFAR-10C
+
+Table 16: Spearman $\rho$ results
+
+| Corruption | Procrustes | CKA |
+| --- | --- | --- |
+| gaussian_noise | 0.083 | 0.076 |
+| shot_noise | 0.171 | 0.161 |
+| impulse_noise | 0.104 | 0.083 |
+| defocus_blur | -0.025 | 0.021 |
+| glass_blur | 0.082 | 0.073 |
+| motion_blur | 0.033 | 0.035 |
+| zoom_blur | -0.023 | 0.020 |
+| snow | 0.087 | 0.060 |
+| frost | -0.062 | -0.081 |
+| fog | -0.029 | -0.039 |
+| brightness | 0.122 | 0.110 |
+| contrast | -0.225 | -0.145 |
+| elastic_transform | 0.137 | 0.122 |
+| pixelate | 0.118 | 0.098 |
+| jpeg_compression | 0.149 | 0.102 |
+| speckle_noise | 0.028 | 0.033 |
+| gaussian_blur | 0.149 | 0.141 |
+| spatter | 0.089 | 0.079 |
+| saturate | 0.143 | 0.135 |
+| Average | 0.060 | 0.057 |
+
+Table 17: Kendall $\tau$ results
+
+| Corruption | Procrustes | CKA |
+| --- | --- | --- |
+| gaussian_noise | 0.057 | 0.050 |
+| shot_noise | 0.118 | 0.110 |
+| impulse_noise | 0.070 | 0.055 |
+| defocus_blur | -0.016 | 0.013 |
+| glass_blur | 0.057 | 0.047 |
+| motion_blur | 0.021 | 0.022 |
+| zoom_blur | -0.014 | 0.013 |
+| snow | 0.059 | 0.042 |
+| frost | -0.046 | -0.059 |
+| fog | -0.020 | -0.025 |
+| brightness | 0.084 | 0.077 |
+| contrast | -0.158 | -0.102 |
+| elastic_transform | 0.094 | 0.085 |
+| pixelate | 0.081 | 0.066 |
+| jpeg_compression | 0.103 | 0.070 |
+| speckle_noise | 0.019 | 0.022 |
+| gaussian_blur | 0.102 | 0.095 |
+| spatter | 0.059 | 0.053 |
+| saturate | 0.100 | 0.096 |
+| Average | 0.041 | 0.038 |
+
+## Appendix E Bootstrap significance testing for changing fine-tuning seeds
+
+To assess whether the differences between rank correlations are statistically significant in the experiments varying finetuning seed and comparing functional behavior on the OOD HANS dataset, we conduct bootstrap resampling. Concretely, for every pair of metrics and every layer depth, we do the following:
+
+- Sample 100 models with replacement, and collect their representations at the specified layer depth
+- Let the reference $A$ be the representation corresponding to the sampled model with maximum accuracy at that depth
+- Compute the dissimilarities between $A$ and the 100 sampled representations
+- Compute the Kendall’s $\tau$ and Spearman’s $\rho$ rank correlations for Orthogonal Procrustes, CKA, and PWCCA
+- Record $\rho$(Procrustes) - $\rho$(CKA), $\rho$(PWCCA) - $\rho$(CKA), and $\rho$(PWCCA) - $\rho$(Procrustes), and the same pairwise differences for Kendall’s $\tau$.
+- Repeat the above 2000 times
+
+This gives us bootstrap distributions for the differences in rank correlations, and we may compute the 95% confidence intervals for these distributions. When the confidence interval does not overlap with 0, we conclude that the difference in rank correlation is statistically significant. The figures below show the results for each layer. We see that in the deeper layers of the network (layers 8-12), PWCCA has statistically significantly higher rank correlation than Orthogonal Procrustes, which in turn has statistically significantly higher rank correlation than CKA. In earlier layers, results are sometimes statistically significant, but not always.
+
+Figure 4: Bootstrap comparison of $\rho$ between metrics, layers 1-4
+
+Figure 5: Bootstrap comparison of $\rho$ between metrics, layers 5-8
+
+Figure 6: Bootstrap comparison of $\rho$ between metrics, layers 9-12
+
+Figure 7: Bootstrap comparison of $\tau$ between metrics, layers 1-4
+
+Figure 8: Bootstrap comparison of $\tau$ between metrics, layers 5-8
+
+Figure 9: Bootstrap comparison of $\tau$ between metrics, layers 9-12
+
+[^1]: Code to replicate our results can be found at https://github.com/js-d/sim_metric.
+
+[^2]: For instance, Raghu et al. [30] and Morcos et al. [24] do not mention it, and Kornblith et al. [13] relegates it to the appendix; although Smith et al. [32] does use it to analyze word embeddings and prefers it to CCA.
+
+[^3]: available at https://github.com/google-research/bert
+
+[^4]: available at https://github.com/ruiqi-zhong/acl2021-instance-level
+
+[^5]: available at https://github.com/tommccoy1/hans/tree/master/berts_of_a_feather
+
+[^6]: from https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py
+
+[^7]: Note we will see later that these intuitions need refinement.
+
+[^8]: For a representation $A$, we define $\hat{A}_{-k}$, the result of deleting the $k$ smallest principal components from $A$, as follows: we compute the singular value decomposition $U\Sigma V^{T}=A$, construct $U_{-k}\in\mathbb{R}^{p\times p-k}$ by dropping the lowest $k$ singular vectors of $U$, and finally take $\hat{A}_{-k}=U_{-k}^{T}A$.
+
+[^9]: Choosing the highest accuracy model as the reference makes it more likely that as accuracy changes, models are on average becoming more dissimilar. A low accuracy model may be on the “periphery” of model space, where it is dissimilar to models with high accuracy, but potentially even more dissimilar to other low accuracy models that make different mistakes.
+
+[^10]: Earlier layers have near-chance accuracy on probing tasks, so we ignore them.
+
+[^11]: See Appendix C for $p$-values as produced by sci-kit learn. Strictly speaking, the $p$-values are invalid because they assume independence, but the pretraining seed induces correlations. However, correctly accounting for these would tend to make the $p$-values larger, thus preserving our conclusion of non-significance .
+
+[^12]: https://www.quora.com/q/quoradata/First-Quora-Dataset-Release-Question-Pairs

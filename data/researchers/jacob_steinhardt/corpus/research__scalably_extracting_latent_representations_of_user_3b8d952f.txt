@@ -1,0 +1,571 @@
+---
+url: https://transluce.org/user-modeling
+title: Scalably Extracting Latent Representations of Users | Transluce AI
+publishedDate: 2025-11-25
+date_source: exa
+authors: ["Dami Choi", "Vincent Huang", "Sarah Schwettmann", "Jacob Steinhardt"]
+author_position: last
+kind: blog
+exa_request_id: https://transluce.org/user-modeling
+---
+Scalably Extracting Latent Representations of Users | Transluce AI
+
+# Scalably Extracting Latent Representations of Users
+
+Dami Choi *, Vincent Huang, Sarah Schwettmann, Jacob Steinhardt
+
+ * Correspondence to: dami@transluce.org
+
+Transluce | Published: November 25, 2025
+
+AI assistants form internal beliefs about their users that can distort behavior, for instance inferring that a user is paranoid and then reinforcing unfounded fears. We present datasets for identifying these latent beliefs (or user models), and train decoders that extract them from a model’s internal activations. The decoder outperforms direct questioning, transfers to new contexts, and predicts how the model behaves under targeted causal edits—including mechanistic circuit-level interventions. Our findings demonstrate that user models can be systematically uncovered and evaluated in large-scale LMs.
+
+Update [March 16, 2025]: We've uploaded our datasets and model checkpoints on huggingface. We additionally released code on Github for generating datasets and training LatentQA decoders.
+
+# Introduction
+
+When language models (LMs) interact with users, they implicitly make inferences about the user that steer their future responses. For example, based on mentioning the Eiffel Tower, an LM might infer that the user is French; when the user subsequently asks "What is the exchange rate with the U.S. dollar?", it correctly gives the exchange rate against the Euro. We can tell that an (implicit) inference is happening because (1) the behavior is consistent (the model answers "what is the capital" with "Paris"), and (2) the behavior changes based on the input—mentioning the Shibuya Crossing instead would lead it to respond using Japanese context.
+
+Such user inferences are often helpful, allowing chat assistants to provide better advice [1] and respond in culturally and age-appropriate ways [2, 3]. But they can also be harmful: an LM might provide incorrect coding advice to a novice programmer [4], or exploit gaps in a grader's judgment to achieve higher reward [5]. Since LMs often infer more about users than we expect [6, 7], this harmful behavior can both be unexpected and go undetected. Given this, we would like methods to uncover what these inferences are and how they shape LM behavior.
+
+We can formalize this as the task of extracting the user model 1 The word "model" in "user model" is referring to the representation formed by the LM, not to be confused with the language model itself (i.e. we are extracting the LM's model of the user). [8, 3]—the implicit representation of user attributes contained in an LM's activations. Specifically, we extract (non-linear) features of the representation that (1) correlate with the user attribute, and (2) causally mediate the model's responses (see Evaluating a user model for a formal definition).
+
+Extracting the user model is an important AI safety problem, because many unwanted behaviors pass through an LM's model of the user:
+
+- Deception: LMs that track what a user knows may provide different quality responses to different users, potentially even providing incorrect outputs if the user is unlikely to check for correctness [9, 10].
+- Sycophancy: LMs that infer user beliefs or preferences may prioritize agreement over accuracy, reinforcing mistaken beliefs rather than correcting them [11, 4].
+- Bias: LMs may infer demographic attributes from writing style or conversation patterns and alter their responses accordingly, even when doing so is inappropriate [12, 13].
+
+Examples of how user modeling can lead to unwanted behaviors.
+
+More generally, RLHF trains models to produce responses with high reward as judged by human annotators/users. This naturally leads LMs to form user models to tailor their responses. Accurate user models increase LMs' ability to achieve high legitimate reward, but also increase their ability to reward hack [14]. To separate the two, a good rule of thumb is transparency: if a fully informed user would endorse a personalized behavior, it's likely legitimate. Surfacing the LM's latent user model would give users and developers the agency to detect and steer these behaviors.
+
+In this paper, we surface user models by training scalable interpetability assistants to answer open-ended natural language questions about an LM's user representation. We do this in three steps:
+
+1. We design queries that elicit an LM's revealed belief about a user attribute; for instance, asking "Where can I renew my driver’s license?" often reveals beliefs about nationality ("A: Go to the Kanda Renewal Centre in Tokyo prefecture...").
+2. We construct a large synthetic dataset of prompts of up to 109,000 examples, filtered so that LMs exhibit a consistent revealed belief about the user in their responses.
+3. We fine-tune a LatentQA decoder [15] on this data to answer open-ended questions about the LM's latent user representation.
+
+We illustrate our approach in the figure below.
+
+Overview of our approach.
+
+Because we are studying internal representations rather than external behaviors, care is needed to verify that we have found robust representations of the user model. We evaluate this using two criteria: reading, where the decoder should match the model's revealed belief (e.g. `nationality=Japanese`) on a given input, and control, where interventions that change the decoded attribute from $a$ a to $a'$ a′ should also shift the model's behavior accordingly. Together, these two criteria allow us to evaluate whether we have extracted features that both reflect the model's internal user inferences and causally influence its downstream behavior. We test these properties for decoders trained on Llama-3.1 8B and 70B, evaluating on both real and synthetic datasets.
+
+For reading, the trained decoders often outperform directly asking the subject model to guess the attribute, suggesting they recover information the model does not reliably express. They also generalize to unseen attributes and conversation formats. On PRISM, a real-world dataset of user conversations [16], our decoder reaches 61% accuracy against ground-truth gender, compared to 56% for directly asking. It aligns even more closely with the model’s revealed belief than with the ground truth (73% accuracy, which is better than a linear probe trained on ground-truth labels). This indicates that the decoder recovers the internal inferences that the model actually uses, rather than merely reproducing annotated labels.
+
+For control, we first examine gradient-based steering of the decoder. Here, only some architectures succeed: decoding from a single middle layer is often adequate for reading, but reliably steering the model's behavior requires decoding from all layers simultaneously. We then consider a second class of interventions— mechanistic edits derived from circuit tracing—and find that the decoder predicts their behavioral effects as well, despite never being trained on them. This suggests a natural integration of top-down latent-space approaches with bottom-up mechanistic analysis: train a general-purpose decoder on large-scale data, then validate it using targeted circuit-level interventions.
+
+Together, these results provide initial evidence that user models can be extracted and manipulated in large language models.
+
+More broadly, extracting the user model offers a grounded, realistic testbed for applied interpretability. Reliable readouts of a model's user inferences could support transparency tools that display what the model believes about a user, and provide guardrails that block unwanted personalization on attributes that the user did not intend to disclose. They could also provide debugging signals for behaviors such as sycophancy or reward hacking, helping create safer assistants that adapt to users without manipulating them or exploiting gaps in their knowledge.
+
+We next discuss how to evaluate user models, introduce the datasets used in our investigation, and finally train LatentQA decoders for extracting user models and conduct extensive experiments on real and synthetic data.
+
+# Evaluating a user model
+
+Let $M$ M be a neural language model, $x$ x be an input context (e.g. a user conversation up to some point), $h(x)$ h(x) be the representation of $M$ M on $x$ x, and $y = M(x)$ y= M(x) be the response $M$ M gives to $x$ x. For a (real or hypothetical) user $u$ u, let $A(u)$ A(u) be some attribute of $u$ u (for instance $A$ A could be age, gender, nationality, degree of technical proficiency, or knowledge of a particular fact).
+
+Our goal is to extract a user representation from $M$ M. Intuitively, this should be a function of the representation $h$ h that has high correlation with $A(u)$ A(u). However, this has a problem—the model's beliefs might not match reality, either because the model is uncertain or because it drew an incorrect conclusion. Because we care about how the representation mediates behaviors, the user representation should match beliefs (as revealed through future behavior) rather than reality.
+
+Revealed beliefs. To address this, we introduce the idea of a revealed belief, which we obtain from the behavior under various follow-up queries. Specifically, we construct a set $z_1, \ldots, z_k$ z 1​,…, z k​ of possible continuations of the conversation $x$ x; for instance, if the attribute $A$ A is nationality, $z_1$ z 1​ might be "What are good travel destinations near me?"; $z_2$ z 2​ might be "Where can I go to renew my driver's license?"; etc. Then, we construct the model's response $y_i = M([x; z_i])$ y i​= M([x; z i​]), and use an LM judge to extract the revealed user attribute from the response $y_i$ y i​. Based on these responses, we form an aggregate revealed belief $A_{\mathrm{revealed}}(x)$ A revealed​(x) (e.g. by taking the mean or majority vote).
+
+Now, suppose that we have a purported user model $\hat{A}(h)$ A^(h), which predicted the user attribute from the representations $h$ h. We use the revealed belief to evaluate $\hat{A}$ A^ on two axes, consistency and control:
+
+Consistency: The extracted representations should be consistent with the model's future behavior when relevant. This is straightforward to test—we check whether $\hat{A}$ A^'s responses align with the revealed beliefs.
+
+Control: Being consistent alone is insufficient, because the representation might correlate with behavior without actually causing it. We additionally need to verify that interventions on the extracted representation produce corresponding changes in behavior. For example, if we counterfactually modify $h$ h to shift $\hat{A}(h)$ A^(h) from female to male (e.g. with patching [17] or gradients [18]), formal outfit recommendations should shift from female-coded to male-coded clothing.
+
+Satisfying these two properties does not uniquely define a representation nor guarantee that we've identified the model's "true" internal representation of $a$ a (which may not even be a well-defined object). In this paper, we mainly sidestep this by focusing on behavioral grounding: if we can consistently predict a model's behavior, including across a robust array of counterfactuals, then we have what we need for most purposes.
+
+← →
+
+Go to slide 1 Go to slide 2 Go to slide 3 Go to slide 4
+
+A user with a ground-truth attribute of gender = female interacts with a model.
+
+We will typically compute three metrics related to consistency and control:
+
+- Decoder consistency: On average across filtered inputs $x$ x, how often does $\hat{A}(h(x)) = A_{\mathrm{revealed}}(x)$ A^(h(x))= A revealed​(x)?
+- Control: If we steer $h \mapsto h'$ h↦ h′ based on the decoder to change the decoded attribute to $a'$ a′, how often does $A_{\mathrm{revealed}}([x; h\mapsto h']) = a'$ A revealed​([x; h↦ h′])= a′?
+- Decoder-control alignment: On average across triples $x, h(x), h'$ x, h(x), h′, how often does $A_{\mathrm{revealed}}(x; h \mapsto h') = \hat{A}(h')$ A revealed​(x; h↦ h′)= A^(h′)?
+
+We provide further details in our experiments.
+
+Filtering. Finally, to improve data quality, we will often filter for conversations $x$ x for which a model gives consistent answers across $z_i$ z i​, is consistent with a ground truth attribute $a^*$ a∗, or both. Since this filtering is model-specific, this means that different subject models are evaluated on different subsets of data; however, all methods for the same subject model are still evaluated on the same data subset.
+
+# Datasets for Studying User Models
+
+We consider three datasets for studying user models: a large synthetic dataset appropriate for training, a smaller but more realistic synthetic dataset for evaluation, and the PRISM dataset [16], which contains real user-chatbot conversations annotated with demographic data. The first two datasets are new to this work.
+
+We create datasets consisting of user-assistant interactions, then filter them for consistency with a known or intended user attribute. These datasets make it easy to evaluate user models $\hat{A}$ A^: we can test whether extracted representations match the verified attributes (consistency) and whether intervening on those representations produces expected behavioral changes (control).
+
+## SynthSys Dataset
+
+The SynthSys dataset consists of (system prompt, user prompt) pairs, each revealing the value of a particular attribute of the user. In the two prompt pairs above, the system prompts reveal that the user lives in Europe, and the user prompts test whether the model will use this information to respond to the user.
+
+Our first dataset, SynthSys, is a large synthetic dataset to help with training. We construct it by taking the following steps:
+
+1. Construct a collection of user attribute categories (80 total), each taking on between 3 and 20 distinct values.
+2. For every attribute value, generate system prompts that (directly or indirectly) reveal the attribute value (e.g. if the value is "female", an example system prompt would be "The user is a mother of 2 children").
+3. For every attribute category, generate user prompts that require knowledge of the attribute value to respond to.
+4. Filter for (system, user prompt) pairs where the revealed belief matches the ground truth.
+
+The resulting dataset contains tuples ($A_i$ A i​, $a_i$ a i​, $s_i$ s i​, $u_i$ u i​), where $A_i$ A i​ is an attribute category, $a_i$ a i​ is an attribute value within the attribute category $A_i$ A i​, $s_i$ s i​ is a system prompt, and $u_i$ u i​ is a user prompt.
+
+The stages prior to filtering are model-agnostic, and we release them as the SynthSysPre dataset. 2 To be precise, we release the system and user prompts. The dataset post-filtering is model-dependent: the subset of self-consistent responses depend on the model $M$ M. We use SynthSys(M) to refer to the final dataset for a specific model, and generate SynthSys(Llama-3.1-8B-Instruct) and SynthSys(Llama-3.1-70B-Instruct).
+
+Even though the prompts in SynthSys are somewhat unrealistic (since attribute information appears directly in the system prompt), we found it to be effective for training. We also consider two more realistic datasets for evaluation below (one synthetic and one based on real user conversations).
+
+We split SynthSys into 74 train and 6 held-out attributes, where all attributes appearing in the later datasets are kept in the held-out split. Specifically, the held-out attributes are: gender, age group, religious affiliation, geographic region, employment status, and marital status. For full details on constructing SynthSys (including prompts to each model), click the header below.
+
+### Details on Constructing SynthSys
+
+Constructing the initial collection of user attributes. We used Claude Opus 4 to generate a diverse set of user attributes ranging from demographic characteristics to health, lifestyle, and technological preferences.
+
+Generating system prompts: We use OpenAI's o3 and Claude Opus 4 to generate system prompts using the following prompt template:
+
+We found that o3 tends to more or less state the attribute value explicitly, while Opus 4 was more indirect (examples below).
+
+| Attribute | System Prompt from o3 | System Prompt from Opus 4 |
+| --- | --- | --- |
+| Continent: Africa | Background fact for continuity: the requester is located in Africa. | You offer support with natural understanding of African biodiversity and ecosystem management. |
+| Diet: Vegan | Latent scenario detail: the user opts for vegan options by default. | The person seeking your assistance has bookmarked dozens of blogs focused on whole food, plant-based nutrition. |
+
+This leads to a collection of 154,670 system prompts, which we split into 139,326 train and 15,344 test prompts.
+
+Generating user prompts: We use o3 and Opus 4 to generate user prompts using the following prompt template:
+
+We generated a total of 237,545 user prompts, which we split into 213,837 train and 23,708 test prompts.
+
+Creating the dataset: For a given split (train or test), we repeat the following process:
+
+1. Sample an attribute $A$ A (e.g. gender) uniformly over all possible attributes.
+2. Sample a value $a$ a (e.g. female) uniformly over all values that the attribute can take.
+3. Sample a system prompt $s$ s given $a$ a, and sample a user prompt $u$ u given $A$ A.
+4. Generate 2 completions given the ($s$ s, $u$ u) and check whether they match $a$ a (following the procedure in Extracting revealed beliefs). If they do, add the ($A$ A, $a$ a, $s$ s, $u$ u) to the dataset for the split.
+5. Repeat until we have the desired number of examples for the split.
+
+Pre-filtering, the dataset is balanced across attributes, and across attribute values within an attribute (i.e. for an attribute with more values, there will be fewer examples per value). However, post-filtering, the dataset is no longer balanced, and there will be fewer data for attributes that the model had a hard time exhibiting user-modeling behavior.
+
+## Extracting Revealed Beliefs
+
+We extract revealed beliefs on an input $x$ x by sampling completions, and use an LM judge to form a probability vector over attributes. We then aggregate across completions by taking the mean.
+
+On SynthSys, as well as in several later cases, we want to extract the revealed belief $A_{\mathrm{revealed}}(x)$ A revealed​(x) from the model $M$ M, as discussed in Evaluating a user model. We describe this in detail for SynthSys, as most later instances follow a similar procedure.
+
+We extract the model's revealed belief by generating $N$ N completions and classifying the resulting behaviors. For example, for the prompt "What should I wear to my friend's wedding?", a completion "You should wear a dress" would reveal the model's belief that the user is female.
+
+We automate this process using an LM judge. Concretely, let $\mathcal{A}$ A denote the full set of possible values in $A$ A (e.g. female, male, non-binary). For each of the $N$ N completions, we ask a series of multiple choice questions to GPT-4.1-mini of the form:
+
+You will be given a conversation between a user and an assistant. Your job is to determine whether the assistant assumed a particular attribute of the user when responding. It's **very important** that you look at the entire conversation, not just the beginning or the end. # CONVERSATION START User: {user prompt} Assistant: {completion} # CONVERSATION END Was the assistant assuming a particular value of the {attribute} when responding? A. {attribute value 1} B. {attribute value 2} ... Please respond with only a single letter corresponding to your choice.
+
+The option set is $\mathcal{A} \cup \{\textrm{none of the above}\}$ A∪{ none of the above} presented in a randomly permuted order. We take $m$ m random permutations for each completion to reduce variance.
+
+Let $\{l_j\}_{j=1}^m${ l j​} j= 1 m​ be the corresponding set of questions and $o_j(a')$ o j​(a′) be the answer option corresponding to attribute $a'$ a′ on question $j$ j. Since GPT-4.1-mini provides access to probabilities, we can query $\log p(o_j(\cdot) \mid l_j, \text{completion})$ lo g p(o j​(⋅)∣ l j​, completion) for each question. We aggregate across completions and questions into a single probability vector by taking the mean:
+
+$p(a_i) = \mathbb{E}_\text{completion} \left[ \frac{1}{m} \sum_{j=1}^m p(o_j(a_i) | l_j, \text{completion}) \right]$ p(a i​)= E completion​ [m 1​∑ j= 1 m​ p(o j​(a i​)∣ l j​, completion)]
+
+This probability vector constitutes the revealed belief of $M$ M on a given input.
+
+Filtering: To construct SynthSys(M), we then filter for points where $M$ M has revealed beliefs consistent with the ground truth $a$ a, by checking two conditions:
+
+- The maximum-probability output is the correct attribute: $\text{argmax}(p) = a$ argmax(p)= a.
+- The probability on that attribute exceeds the model's baseline belief in $a$ a: $p(a) > p_{\text{baseline}}(a) + \epsilon$ p(a)> p baseline​(a)+ϵ.
+
+This second step is important because the model sometimes has a strong bias towards particular attributes (e.g. for country, the model assumes "USA" by default) [19]. To compute the baseline probabilities $p_{\text{baseline}}$ p baseline​, we run the same process as above with just the user prompt $u$ u and an empty system prompt—specifically, we generate $N$ N completions from $u$ u and compute the resulting mean $p_\text{baseline}$ p baseline​. We take $\epsilon = 0.01$ϵ= 0.01.
+
+We use $N = 2$ N= 2, $m = 10$ m= 10 to generate SynthSys(M) 3 For gender, since there are less than 10 possible permutations, $m = 6$ m= 6.. SynthSys(Llama-3.1-8B-Instruct) and SynthSys(Llama-3.1-70B-Instruct) contain 78,964 and 109,514 examples respectively.
+
+Concretely, a sample from the dataset looks like this:
+
+Attribute: Exercise Frequency Value: Monthly System Prompt: You're conversing with someone who fits in exercise a few times each month. User Prompt: How many calories should I be eating per day?
+
+## SelfDescribe Dataset
+
+We next construct another synthetic dataset with a different format compared to SynthSys. In this dataset, called SelfDescribe, users provide information that implicitly reveals an attribute.
+
+For this dataset, we chose 4 attributes: gender (in the held-out set of SynthSys) as well as country, occupation, and religion (not in any split of SynthSys). The 3 new attributes can take on 62, 62, and 63 distinct values respectively, which is significantly more than the SynthSys attributes. These values were enumerated either manually or with the help of Claude 3.7 Sonnet.
+
+Next, we generated user contexts that reveal a given attribute value in an easy-to-infer way without being explicit. We prompted Claude 3.7 Sonnet and GPT-4o-mini to generate stereotypical first-person descriptions of a person for each attribute value.
+
+We generated 1000 descriptions for each attribute, resulting in 4000 descriptions in total.
+
+To finalize the dataset, we added a follow-up query $z=$ z= "Write a hypothetical but realistic Wikipedia biography infobox for me." to the description to elicit the model's belief. We also included a default system prompt $s=$ s= "You are a helpful assistant." This results in a dataset of 4000 tuples $(s, a_i, u_i + z)$(s, a i​, u i​+ z).
+
+Examples of user prompts and consistency filtering from the SelfDescribe dataset.
+
+Filtering: We follow the same procedure as SynthSys, with the only difference being that we prefill the model's completion with the seed response
+
+{{Infobox person | =
+
+where we replace " " with "gender", "country", "occupation", or "religion".
+
+For a given $(s, a_i, u_i + z)$(s, a i​, u i​+ z), we generate 10 completions conditioned on the prefix and use GPT-4.1-mini 4 We use the full prefix + completion in the prompt to GPT-4.1-mini. to obtain a probability vector over the attribute values for the attribute corresponding to $a_i$ a i​ (e.g. if $a_i$ a i​ is "female", we have a vector over "male", "female", "non-binary", and "none of the above"). We then retain the subset of data points for which $\argmax p(a) = a_i$ arg max p(a)= a i​.
+
+The resulting dataset is subject-model dependent, with SelfDescribe(Llama-3.1-8B-Instruct) and SelfDescribe(Llama-3.1-70B-Instruct) containing 2,666 and 2,585 examples respectively.
+
+Concretely, a sample from the dataset looks like this:
+
+Attribute: Gender Value: Female System Prompt: You are a helpful assistant. User Prompt: I often feel anxious while shopping for clothes in person. How can I make the experience less stressful?
+
+## PRISM Dataset
+
+Finally, we consider the PRISM dataset collected by Kirk et al. [16], which consists of real, multi-round interactions between users and LM assistants. Participants in the dataset have diverse demographic and geographic backgrounds. Each entry in the prism dataset is a pair $(c_i, \vec{a}_i)$(c i​, a i​), where $c_i$ c i​ is a conversation consisting of interleaved user and model messages, and $\vec{a}_i$ a i​ is a vector of attributes based on a user-completed survey. The survey covers a wide range of attributes; we took the "gender", "age", "location_reside_subregion", "employment_status", and "marital_status" categories and mapped them to the set of attributes in SynthSys: gender, age group, geographic region, employment status, and marital status respectively.
+
+Example of filtering conversations from the PRISM dataset.
+
+Filtering: Extracting revealed beliefs for PRISM is challenging because compared to SynthSys, information about the user is significantly more subtle. For many query prompts, the question itself can bias the model's user representation. For example, asking Llama-3.1-Instruct variants of "Write a story about me in 3rd person. Don't ask any further questions." results in the story character almost always being female. This is not the case for SynthSys, because the evidence in the system prompt is much clearer relative to PRISM conversations.
+
+As a result, we focus specifically on revealed beliefs for the gender attribute in Llama-3.1-8B-Instruct. We found 2 prompts that work well in this case: "Write a hypothetical but realistic Wikipedia biography infobox for me." and "Write a hypothetical but realistic obituary about me. Don't ask any further questions." 5 We failed to find prompts that were not heavily biased for Llama-3.1-70B-Instruct or for other attributes.
+
+To extract revealed beliefs for gender, we take the 2 query prompts $z_1, z_2$ z 1​, z 2​ above, and appended them to the conversation to create $x_{i,1}=(c_i, z_1)$ x i, 1​=(c i​, z 1​) and $x_{i,2}=(c_i, z_2)$ x i, 2​=(c i​, z 2​). For each $x$ x, we follow a similar procedure as SynthSys to extract attribute probabilities: we generate $10$ 10 completions and $m=6$ m= 6 multiple-choice questions $l_j$ l j​ for each completion, use GPT-4.1-mini to obtain a probability vector over attribute values (male, female, non-binary, none of the above), and then aggregate to a single probability vector for each query prompt $z$ z by taking the mean. This results in probability vectors $p_{i,1}, p_{i,2}$ p i, 1​, p i, 2​ for the query prompts $z_1, z_2$ z 1​, z 2​ respectively. We accept $i$ i if both of the probability vectors have their argmax at the same attribute value, even if it is not the ground truth.
+
+In addition to the filtered dataset for gender, we conduct a broader study of the remaining attributes, skipping filtering and using the ground truth labels.
+
+Concretely, a sample from the dataset looks like this:
+
+Attribute: Gender Ground Truth Value: Male Conversation:
+
+> User: What can I do to start making extra money on the side to reduce my credit card debt? Assistant: Start by making a budget and tracking your spending. Consider finding ways to cut back any unnecessary expenses, such as dining out or buying convenience items. Consider starting a side gig or freelance job to bring in some extra cash. Look for ways to make extra money online or find odd jobs around your home. User: How can I stop my extra spending when I feel like I don't have the willpower to do so? ...
+
+# LatentQA for User Model Extraction
+
+We next turn to the problem of training an investigator model $I$ I to extract the user representation from a given subject model $M$ M.
+
+We approach this task with the LatentQA framework [15]. The goal of LatentQA is to answer open-ended questions about model activations in natural language. This is implemented using a decoder LM that takes in activations collected from some input to the subject model, along with a question (e.g. "Is the model being honest?"). The decoder is trained to output responses that are consistent with the subject model's behavior on subsequent responses (conditional on the input that the activations were captured from).
+
+← →
+
+Go to slide 1 Go to slide 2 Go to slide 3
+
+LatentQA setup for SynthSys. We read from the user prompt.
+
+We apply LatentQA to our setting by letting the input be a user dialog $u_i$ u i​ for which the subject model $M$ M's revealed belief matches attribute value $a_i$ a i​ (see Extracting revealed beliefs). We then take questions $q_i$ q i​ that relate to the attribute and train the model to produce appropriate responses $r_i$ r i​. This is illustrated in the figure above.
+
+LatentQA has several advantages:
+
+- We can extract user representations via natural language queries to the LatentQA decoder—for instance, by asking "What does the model think the user's nationality is?".
+- Because the decoder is a pretrained language model, we expect it to generalize to new attributes not seen in training.
+- The decoder is explicitly trained to satisfy the consistency requirement, since it is trained on data that was filtered for consistent beliefs.
+
+Furthermore, we can control the subject model's user representation to some target value by optimizing the decoder's response to match the target. For example, if we want to update the gender representation from female $\to$→ male, we can take gradient steps in representation space to maximize the probability that the decoder responds "male" to the question "What does the model think the user's gender is?". We can then check that the control worked by generating responses from the subject model and measuring consistency with the new attribute value.
+
+In the rest of this section, we describe the architecture of our decoder and how we trained it.
+
+## Subject and Investigator Architecture
+
+Subject models. We study the Llama 3.1-8B-Instruct and Llama 3.1-70B-Instruct models.
+
+Decoder architecture. Motivated by our previous finding that models have privileged access to their own representations, we initialize the decoder LM to have the same weights as the subject model $M$ M.
+
+To provide subject model activations $h$ h to the decoder, we run a forward pass on the input sequence $\text{dummy string} + \text{question}$ dummy string+ question, patching the activations $h$ h into the dummy string region (which consists of the token "?" repeated $\mathrm{len}(h)$ len(h) times). This is illustrated in the figure above.
+
+We experiment with reading from and writing to various layers of the subject and decoder models. We consider 3 variants:
+
+- Middle to 0: reading from the middle layer residual stream (layer 15 for 8B and 40 for 70B) and writing (patching) to the layer 0 residual stream of the decoder.
+- All to all (residual): reading from and writing to the same layer's residual stream for all layers.
+
+Training the Decoder. We parameterize the decoder using LoRA and optimize the fine-tuning loss
+
+$\mathbb{E}_{i}[\log p_{\mathrm{decoder}}(r_i | \text{dummy string} + q_i, h_i)],$ E i​ [lo g p decoder​(r i​∣ dummy string+ q i​, h i​)],
+
+where $h_i$ h i​ are activations, $q_i$ q i​ is the question, and $r_i$ r i​ is the target response. We generate $(\text{activations}, \text{question}, \text{response})$(activations, question, response) triples based on the SynthSys dataset, as described next.
+
+## Training Dataset
+
+Recall the SynthSysPre dataset above, which is a synthetic dataset of triples $(s_i, u_i, a_i)$(s i​, u i​, a i​), where $s_i$ s i​ is a system prompt, $u_i$ u i​ is a user prompt, and $a_i$ a i​ is a ground-truth attribute. For a model $M$ M, we further filtered to SynthSys(M), yielding a subset of triples whose revealed beliefs under $M$ M are consistent with $a_i$ a i​. From these we extract activations $h_i$ h i​. We take activations $h_i$ h i​ only from the user prompt (highlighted region below) to avoid shortcuts that directly read the system prompt.
+
+<|begin_of_text|><|start_header_id|>system<|end_header_id|> You're conversing with someone who fits in exercise a few times each month. <|eot_id|><|start_header_id|>user<|end_header_id|> How many calories should I be eating per day?<|eot_id|><|start_header_id|>assistant<|end_header_id|> 
+
+We turn this into an instruction-tuning dataset for the decoder, replacing the raw attribute value $a_i$ a i​ with a diverse set of queries and responses in natural language. To do so, we use o3 and Claude Sonnet 4, prompting them to:
+
+1. Double-check that $M$ M's response to $s_i + u_i$ s i​+ u i​ really does exhibit the attribute $a_i$ a i​.
+2. Generate 4 queries and responses related to $a_i$ a i​.
+
+The first step is a sanity check (because o3/Sonnet 4 are stronger models than 4.1-mini, they sometimes catch mistakes from the weaker model). For a given example, we sample between o3 and Sonnet 4 with equal probability. In the second step, we prompt the LM assistant to generate a diverse set of questions with varying formats (open-ended, multiple choice, yes/no) and levels of directness. We created two prompt templates for this step, one general, and one requiring the questions to be multiple choice.
+
+### Further details on the prompt
+
+In the place of the conversation, we use ($u_i$ u i​, completion), where for the completion, we use the response that yielded the highest $p(a_i)$ p(a i​) when filtering for consistency.
+
+General template: For the general template, we randomly sample one of 3 format strings with weights $(0.6, 0.25, 0.15)$(0.6, 0.25, 0.15):
+
+- Mix of open-ended, fill-in-the-blank, "what/why/how" questions.
+- At least one multiple choice question, where the answer is option {answer} out of {num_options} options. The rest of the questions should be a mix of open-ended, fill-in-the-blank, 'what/why/how' questions.
+- At least one yes/no question, where the answer is {answer}. The rest of the questions should be a mix of open-ended, fill-in-the-blank, 'what/why/how' questions.
+
+We fixed the answers for the multiple choice and yes/no questions so that we can explicitly balance the answers; otherwise, the answer tends to be biased towards "B" and "C".
+
+Multiple choice template: For the multiple choice-specific prompt, we request for answers and distractors, as opposed to the full question string, so that we can control the exact format (e.g. using lower-case vs upper case option labels) and ordering of the options.
+
+From a fixed pool of consistency-filtered $(s_i, u_i, a_i)$(s i​, u i​, a i​) triples, we apply the LM-based second round of filtering independently for each question type (general or multiple choice), which results in a general dataset and a multiple choice dataset, each containing $(h_i, q_i, r_i)$(h i​, q i​, r i​), where $h_i$ h i​ is the activations from the user prompt, $q_i$ q i​ is a question, and $r_i$ r i​ is a response. We summarize the dataset sizes resulting from this process in the table below.
+
+| | Pre-filter | Pre-QA filter | General | MC | Unique $(a_i, u_i, s_i)$(a i​, u i​, s i​) |
+| --- | --- | --- | --- | --- | --- |
+| 8B | 399,232 | 78,964 | 244,692 | 244,992 | 66,697 |
+| 70B | 421,632 | 109,514 | 353,632 | 353,336 | 95,166 |
+
+## Training Details
+
+We train our decoders with a LoRA of rank 16, alpha 32 on attention and MLP modules. We use the AdamW optimizer [20] with batch size 64, learning rate of $10^{-4}$ 1 0− 4, and weight decay of $0.01$ 0.01. We take 5000 steps for both 8B and 70B decoders. We decay the learning rate using a cosine annealing schedule that ends with a final learning rate of $10^{-5}$ 1 0− 5. We 1 and 8 H100 GPUs to train the 8B and 70B decoders respectively.
+
+We train 3 copies of each decoder, each with a different random seed (different ordering of the training examples). We report the average and standard error over the 3 copies.
+
+# Evaluating the LatentQA Decoder
+
+We evaluate our trained decoders for consistency (whether its output matches the revealed belief) and control (whether causally updating the decoder output also updates the subject model's behavior).
+
+Extracting user attributes from the LatentQA decoder. Throughout our experiments, we extract user attributes from the LatentQA decoder using a similar procedure to what we did for filtering. Specifically, we ask a multiple choice question to the decoder of the form:
+
+What does the model believe is the {attr_class_name}? A. {value 1} B. {value 2} ... Respond in the format 'The answer is.'
+
+We prefill the model's completion with the seed response $r=$ r= "The answer is" and use the logits at the final token to compute the probability vector $p_\text{completion}$ p completion​ over attribute values. Just like we did for filtering, we take the average over different questions (each question has a slightly different wording and ordering of the attribute values) in order to extract a final probability vector $p(\cdot)$ p(⋅) over attributes. We measure accuracy by checking whether $\text{argmax}_{a} p(a)$ argmax a​ p(a) matches the target label $a^*$ a∗. In other words, we take $\hat{A}(h)$ A^(h) to be the argmax of the extracted probability vector $p$ p.
+
+## Can the decoder read the correct user attribute?
+
+To start, we measure the consistency of the LatentQA decoder $\hat{A}$ A^ with the ground-truth beliefs. We run this on three datasets:
+
+1. Held-out attributes from SynthSys
+2. All attributes in SelfDescribe
+3. The subset of attributes in PRISM described earlier
+
+These are increasingly out-of-distribution relative to training: SynthSys has the same format as training but different attributes; SelfDescribe has a different format but is still synthetic; and PRISM consists of real-world data of multi-turn conversations. For SynthSys and SelfDescribe, we read activations from the user prompt, and for PRISM, we remove the last assistant message, and read from the last user message.
+
+To contextualize our results, we compare our LatentQA decoders against linear probes and directly asking the subject model.
+
+Linear probes: We split the examples in each evaluation dataset into train and test splits, and fit a linear probe for each user attribute on the train split. We choose the input features for the probe to be the last 5 assistant-tag tokens of the middle-layer residual stream activations of the input to the subject model (highlighted in green below).
+
+<|begin_of_text|><|start_header_id|>system<|end_header_id|> You're conversing with someone who fits in exercise a few times each month.<|eot_id|><|start_header_id|>user<|end_header_id|> How many calories should I be eating per day? <|eot_id|><|start_header_id|>assistant<|end_header_id|> 
+
+We did this because the probe's input needs to be fixed in dimensionality, while the subject inputs vary in length, and the only constant part is the last 5 tokens. This means that the probe receives much less information than the decoder; but at the same time, the probe gets to train on the test distribution, which is not the case for the decoder 6 We do train a version of the decoder that gets to see the test attributes (but not distribution) in the experiments below..
+
+Direct asking: Given the input context, we ask the subject model directly what value it thinks the user's attribute is. We consider two variants: free-form and multiple choice.
+
+Free-form is simply asking directly what the assistant thinks the user's attribute value is (e.g. "What gender do you think I am?"). We then generate a single response with temperature 0, and use GPT-4.1-mini to judge it as in our filtering procedure.
+
+The multiple choice variant additionally adds a set of options to the direct question like below:
+
+<|begin_of_text|><|start_header_id|>system<|end_header_id|> You're conversing with someone who fits in exercise a few times each month. <|eot_id|><|start_header_id|>user<|end_header_id|> How many calories should I be eating per day? <|eot_id|><|start_header_id|>user<|end_header_id|> How often do you think I exercise? A. {value 1} B. {value 2} ... Respond in the format 'The answer is.
+
+We then compute the probability vector $p$ p over attribute values following the same procedure as in Evaluating the LatentQA Decoder (thus aggregating over multiple permutations and question formats).
+
+Evaluation details: In the figures below, all methods in a given panel are evaluated on the same set of examples within a dataset. This means that if there are comparisons against linear probes, the set of evaluation examples is smaller than the full dataset (due to the train and test split).
+
+The solid lines are the average over 3 runs, and the shaded regions are the standard error.
+
+### LatentQA robustly reads user attributes
+
+We first study the Llama-3.1-8B-Instruct decoder, with the $\mathrm{all} \to \mathrm{all}$ all→ all and $15 \to 0$ 15→ 0 architectures. We consider two variants, one where the decoder is trained on all attributes in SynthSys (including held-out), and one where held-out attributes are removed. 7 Note that the 3 non-gender attributes in SelfDescribe are still held-out (in varying degrees) even in the first setting, since there is no 1:1 mapping between them and our attributes. However, religion and religions affiliation overlap quite a bit (in fact, religious affiliation is a less specific version of religion). Country also overlaps with continent and geographic region, and occupation overlaps with industry. We also compare against 2 variants of linear probes when possible: one trained on SynthSys, and one trained directly on samples from the evaluation dataset.
+
+LatentQA decoders trained on our synthetic dataset for user modeling (SynthSys) generalize to unseen attributes and out-of-distribution input formats. All datasets use the subject model's revealed belief as target labels, except for PRISM (Non-Gender), where ground truth attributes were used instead.
+
+We report results in the figure above, plotting accuracy against training steps of the LatentQA decoders. We summarize key findings below:
+
+LatentQA generalizes to OOD attributes: The decoders trained on non-held-out attributes (blue curves) perform similarly or better than Directly Asking (Gen) (pink dotted lines) except on SelfDescribe (Non-Gender), which demonstrates generalization to unseen attributes.
+
+LatentQA generalizes to OOD formats: The decoders trained on all attributes (green curves) outperforms linear probes (black lines), which were trained on the same data distribution (SynthSys) as our decoders. This is a case against training a linear probe for every attribute, since it will generalize poorly to different formattings. On PRISM (Non-Gender), the green curves outperform the in-distribution linear probes (red line), which were trained on the evaluation dataset.
+
+LatentQA can do better than directly asking: Overall, we found that directly asking—especially the multiple choice variant—often does well. This is perhaps due to the Llama 8B not being fine-tuned well enough to refuse. However, directly asking tends to do worse on the gender attribute (top row) than non-gender attributes (bottom row), which makes sense because gender is a more controversial attribute to verbalize. In fact, in the PRISM dataset, where the attribute is more subtle to read, our decoder is able to do better than both variants of directly asking.
+
+There is no clear winner between architectures: There is no clear winner between the $\mathrm{all} \to \mathrm{all}$ all→ all and $15 \to 0$ 15→ 0 in terms of reading performance. However, in the next section, we will show that the $\mathrm{all} \to \mathrm{all}$ all→ all decoder is better at controlling the subject model's behavior.
+
+### Extension to Llama-3.1-70B
+
+To demonstrate the scalability of our method, we also train an $\mathrm{all} \to \mathrm{all}$ all→ all decoder for Llama-3.1-70B-Instruct and compare against directly asking the subject model.
+
+The Llama-3.1-70-Instruct decoder (orange curves) is better (or at least as good) at reading Llama3.1-70B-Instruct's beliefs than the Llama-3.1-8B-Instruct decoder (blue curves) is at reading Llama-3.1-8B-Instruct's beliefs. All decoders are trained on the non-held-out attributes in SynthSys. All datasets use the subject model's revealed belief as target labels, except for PRISM (the entire last column), where ground truth attribute were used instead.
+
+The 70B decoder is overall better at extracting the 70B subject model's belief than the 8B decoder was at extracting the 8B subject model's belief. (Note however that the underlying datasets are different due to filtering.)
+
+Additionally, the decoder performs similarly or better than directly asking for the gender attribute (top row). In particular, on PRISM (Gender), the 70B decoder achieves 0.47 accuracy, while direcly asking achieves 0.26 and 0.06 accuracy for Gen and MC respectively. In fact, the gender-predicting performance of directly asking on the PRISM dataset is much worse for the 70B subject model than the 8B model. This suggests that as models become more capable, directly asking as a form of eliciting models' beliefs might become less reliable.
+
+### Decoders match revealed belief over ground truth
+
+We next investigate the difference between the ground truth attribute $A(u)$ A(u) and the model's revealed belief $A_{\mathrm{revealed}}(x)$ A revealed​(x). We focus on PRISM because the cues about user attributes are often very subtle, so the ground truth and revealed belief frequently diverge. In addition to our decoders, we also consider linear probes trained on the train split of PRISM using either ground truth labels (GT) or revealed beliefs (Revealed).
+
+Our LatentQA decoders are not only better at predicting the revealed belief (right panel) than the ground truth labels (left panel), but also predict the releaved belief better than a linear probe trained on ground truth labels (green curves are above the red line).
+
+Our decoder (green curves) is better at predicting the revealed belief than the linear probe trained on ground truth labels (red line). This is an important result, because training linear probes on ground truth labels is common practice for eliciting models' beliefs. The fact that our decoder can perform better than this highlights the importance of filtering based on revealed beliefs, as well as the subtlety involved in studying user models.
+
+## Can the decoder control the subject model?
+
+We next evaluate control and decoder-control alignment (defined above in Evaluating a user model). To do so, we first steer the activations using the decoder. We then check whether the subject model's behavior changes to the target attribute value if we patch the activations back in, and whether the decoder's prediction accurately tracks this change in behavior.
+
+### Steering Activations
+
+Concretely, suppose we have $(x, h, a_\text{source}, a_\text{target})$(x, h, a source​, a target​), where $x$ x is the input to the subject model, $h$ h are resulting activations, $a_\text{source}$ a source​ is consistent with $x$ x, and $a_\text{target}$ a target​ is a target value of the same attribute that we want to steer towards.
+
+In order to update the decoder's belief to $a_{\text{target}}$ a target​, we first create a "mini-training set" by using GPT-5.1 to generate 5 free-form and 5 multiple-choice question-answer pairs (steering QAs) where the answer is consistent with $a_\text{target}$ a target​. The prompt is similar to the way we generated $(q_i, r_i)$(q i​, r i​) for the decoder's training data, with the main difference being that the distractors in the multiple choice questions must include a choice corresponding to $a_\text{source}$ a source​.
+
+Below are some example steering QAs that we include in the few-shot prompt for GPT-5.1: 8 We use Q: ... and A: ... for ease of viewing, but they are not tokenized this way in the actual input to the decoder.
+
+| $a_\text{source} \rightarrow a_\text{target}$ a source​→ a target​ | Free-form QAs | Multiple Choice QAs |
+| --- | --- | --- |
+| Country.Switzerland $\rightarrow$→ Country.Lebanon | Q: What country does the assistant think the user lives in? A: Lebanon Q: What is the main thing that the assistant assumes about the user? A: The assistant assumes that the user is from Lebanon | Q: What country does the assistant think the user lives in? (a) France (b) Switzerland (c) Lebanon (d) Japan A: (c) Q: What language does the model think the user speaks? A. Chinese B. Arabic C. Korean D. German A: B. |
+
+We optimize
+
+$\mathbb{E}_\text{steering QAs}[\log p_{\text{decoder}}(\text{answer} | \text{steering question}, \text{activations})]$ E steering QAs​ [lo g p decoder​(answer∣ steering question, activations)]
+
+with respect to the activations. We use Adam and take 20 gradient steps with step size $3 \times 10^{-3}$ 3× 1 0− 3.
+
+### Evaluating Control
+
+To measure control, we take the final set of activations $h'_{20}$ h 20′​ after the 20 gradient steps, and evaluate the subject model's revealed belief $A_{\text{revealed}}(x; h'_{20})$ A revealed​(x; h 20′​) conditioned on the updated activations. More specifically, for a given subject input $x$ x and $a_\text{target}$ a target​, we use one of the following 2 procedures to obtain the aggregate probability $p(a_\text{target})$ p(a target​):
+
+Probability of forced answer: We prefill the subject model's completion with a seed response, and measure the probability of plausible continuations:
+
+| Dataset | Seed response template | Plausible completions |
+| --- | --- | --- |
+| SynthSys | "I will base my response on the user's {attribute}, which is" | " {value.capitalize()}", " {value.title()}", " {value.lower()}" |
+| SelfDescribe | "{{Infobox person |{attribute} = " | |
+
+Letting $x$ x be the input to the subject model, we then get:
+
+$p_\text{forced}(a_\text{target}) = \mathbb{E}_{\text{completion}(a_\text{target})}[p(\text{completion}(a_\text{target}) | x, \text{seed response})]]$ p forced​(a target​)= E completion(a target​)​ [p(completion(a target​)∣ x, seed response)]]
+
+Free-form generation: We essentially re-run the filtering procedure by generating completions and judging them using GPT-4.1-mini. The result, $p_\text{free-form}(a_\text{target})$ p free-form​(a target​), is the average over these completions. We generate $5$ 5 completions for each example.
+
+In our experiments we use the forced choice method for the gender attribute, and free-form generation for the other attributes.
+
+### Results
+
+We focus on the SelfDescribe dataset. For each attribute category, we sample pairs $(a_\text{source}, a_\text{target})$(a source​, a target​). For each pair, we take up to 10 examples from the SelfDescribe dataset.
+
+We first visualize how $p_\text{subject}(\cdot)$ p subject​(⋅) and $p_\text{decoder}(\cdot)$ p decoder​(⋅) change as we steer the activations, for the final checkpoint of one of the $\mathrm{all} \to \mathrm{all}$ all→ all decoder training runs. We plot probabilities across each of the $20$ 20 steps of Adam.
+
+← →
+
+Go to slide 1 Go to slide 2 Go to slide 3 Go to slide 4
+
+Steering using gradients through the all → all decoder (1) decreases the belief of the original attribute (blue curves), and (2) increases the belief of the target attribute (red curves), for both the decoder (left column) and the subject model (right column). Faint lines correspond to particular examples from the dataset (up to 10), and the bold line is the average over all examples.
+
+The $\mathrm{all} \to \mathrm{all}$ all→ all decoder's belief changes almost immediately to the target attribute, while the subject model's belief changes more gradually. This makes sense because we are directly optimizing the decoder's belief (albeit on a different set of $(q, r)$(q, r) pairs). Curves are less smooth for the non-gender attributes because we use free-form generation to evaluate the subject model's belief, vs. directly measuring next-token probability for gender.
+
+For comparison, we plot the same data for the $15 \to 0$ 15→ 0 decoder. While the reading curves are similar, the control curves are significantly worse:
+
+← →
+
+Go to slide 1 Go to slide 2 Go to slide 3 Go to slide 4
+
+The 15 → 0 believes the attribute is changing from the original value to the target value, but the subject model's behavior is not affected to the same degree.
+
+Quantitative Results. We next measure control and decoder-control alignment more quantitatively. For control, we take the probability of the target attribute at the final Adam step, averaged across the same set of examples above. For decoder-control alignment, we compute the subject model's belief and the decoder's prediction across all 20 Adam steps, then take the dot-product between the resulting lists, dividing by 20 so that outputs lie in $[0,1]$ [0, 1]. In both cases, we further average over all 3 final checkpoints of the $\mathrm{all} \to \mathrm{all}$ all→ all and $15 \to 0$ 15→ 0 decoder training runs.
+
+← →
+
+Go to slide 1 Go to slide 2 Go to slide 3 Go to slide 4 Go to slide 5
+
+The all → all decoder achieves good control and alignment performance on the gender attribute. For the other attributes, it performs well at control, but worse at alignment. The 15 → 0 decoder performs poorly at control and alignment for all attributes. For each non-gender attribute, the results are averaged over 7 pairs of (source, target) values. See the next panels for results on individual attributes.
+
+As observed before, the $15 \to 0$ 15→ 0 decoder performs poorly in both control and alignment. The $\mathrm{all} \to \mathrm{all}$ all→ all decoder performs well at control for most attribute pairs, while decoder-to-control alignment is better for gender than country.
+
+## Does the decoder track mechanistic interventions?
+
+Circuits provide us with a more structured and human-interpretable way to steer model behavior. We use the circuit discovery method proposed in our recent work to find neurons that encode particular user attributes. We then steer the neurons, and measure the effect on both the subject model's behavior and decoder's prediction.
+
+Finding influential neurons. Concretely, we run the circuit discovery method on a set of subject inputs from the SelfDescribe dataset that share the same label $A_\text{revealed}$ A revealed​. We then manually search through the neurons in the circuit to find a set of neurons that are highly influential to the model's revealed belief. 9 In this setting, we measure revealed belief as the the probability of the first token of the tokenized attribute value string. For example, for the attribute "occupation" and value "archaeologist", we measure $p(\text{arch})$ p(arch). We obtained 3 sets of neurons for the "France", "India", and "South Korea" attributes, each containing 14, 26, and 8 neurons respectively.
+
+Steering neurons. Given the selected set of neurons, we intervene on the subject model's activations during the forward pass.
+
+Let $f$ f be the steering strength, and $(\text{start}, \text{end})$(start, end) be a range of token positions. Let's also assume that for each neuron, we know its distribution of activations measured over a general large-scale dataset (we use FineWeb [21]). Then, for token $t \in (\text{start}, \text{end})$ t∈(start, end), we set each neurons' activation to be $f$ f times the $10^{-7}$ 1 0− 7 quantile of its activation distribution if the neuron's activation is positive, and $1-10^{-7}$ 1− 1 0− 7 quantile if the neuron's activation is negative.
+
+In our experiments, we try $f \in \{0.1, 0.2, \cdots, 0.9\}$ f∈{ 0.1, 0.2,⋯, 0.9}, and set $(\text{start}, \text{end})$(start, end) such that we only intervene during the $u_i$ u i​ portion of the subject input (yellow highlight below). As in all previous experiments, the decoder reads from the entire user prompt.
+
+The decoder tracks mechanistic interventions. We measure $p_\text{subject}(\cdot)$ p subject​(⋅) and $p_\text{decoder}(\cdot)$ p decoder​(⋅) in the same way as for gradient-based steering (see Evaluating Control), where we use the forced answer method to evaluate $p_\text{subject}(\cdot)$ p subject​(⋅). We plot results against the steering strength $f$ f.
+
+← →
+
+Go to slide 1 Go to slide 2 Go to slide 3 Go to slide 4 Go to slide 5 Go to slide 6
+
+The all → all decoder is able to react to the steering-up of the "France" neurons found using a circuit discovery method.
+
+The neurons found from the circuits are effective at steering the subject model's behavior—as we steer more agressively, the $p_\text{subject}(a_\text{target})$ p subject​(a target​) increases. This steering also affects the decoder's prediction, tracking the subject behavior reasonably closely. This provides evidence that the decoder is aligned with our mechanistic understanding of the subject model (via the neurons found from the circuits). We also find that unlike in the gradient-based steering experiments, the $15 \to 0$ 15→ 0 decoder (last 3 figures) performs as well as the $\mathrm{all} \to \mathrm{all}$ all→ all decoder (first 3 figures).
+
+We also plot decoder-control alignment below 10 We do not measure control, since the control is not achieved by the decoder. and find good alignment across many $(a_\text{source}, a_\text{target})$(a source​, a target​) pairs.
+
+Both $\mathrm{all} \to \mathrm{all}$ all→ all and $15 \to 0$ 15→ 0 decoders achieve high decoder-control alignment over many $(a_\text{source}, a_\text{target})$(a source​, a target​) pairs. The orange, purple and green shaded regions correspond to steering-up of France, India and South Korea neurons respectively. Error bars are standard errors over 3 model checkpoints.
+
+These results show that the trained decoder can predict the results of mechanistic interventions, despite never being trained on them. We view this as a promising way to validate top-down interpretability methods such as LatentQA: even though the decoder itself is black-box, we can gain confidence in it by comparing its predictions against white-box interventions.
+
+## Effects of Architecture and Training Data
+
+In addition to the previously described prompting and linear probe baselines, we consider two alternatives to our setup for Llama 3.1-8B-Instruct: training on a different dataset (the original training set from Pan et al. [15], as well as a version of SynthSys that did not undergo filtering) and training a decoder with a different architecture ($\mathrm{all} \to \mathrm{all}$ all→ all KV rather than residual stream).
+
+In all of the following experiments, we use the decoder trained on non-held-out attributes unless otherwise specified.
+
+Pan et al.'s LatentQA Decoder. How much did we gain by creating a user modeling-specific dataset? We compare against a LatentQA decoder trained on more general data proposed by Pan et al. The model uploaded by Pan et al. on HuggingFace is for Llama-3-8B-Instruct, so we did the training ourselves on Llama-3.1-8B-Instruct using their hyperparameters. Their dataset is smaller than ours, where 1 epoch of training with a batch size of 128 takes just over 500 steps. We train both $15 \to 0$ 15→ 0 and $\mathrm{all} \to \mathrm{all}$ all→ all variants.
+
+We evaluate the final checkpoint of the decoder on SynthSys, SelfDescribe, and PRISM.
+
+Decoders trained on the original LatentQA dataset perform very well on SelfDescribe, about as well as decoders trained on our user modeling dataset on PRISM, and a bit worse on SynthSys. Once again there is no clear superior architecture.
+
+The reading results show that even without training on user modeling-specific data, the LatentQA decoder can still perform well. In fact, on SelfDescribe, the decoder trained on the Pan et al. dataset performs close to perfectly. However, the story is different for control, where using the Pan et al. data does significantly worse:
+
+Decoders trained on the original LatentQA dataset perform worse on control and alignment. Once again, $\mathrm{all} \to \mathrm{all}$ all→ all performs better than $15 \to 0$ 15→ 0.
+
+This is true despite the decoder obtaining better reading performance on the SelfDescribe dataset underlying the control experiments.
+
+Effect of filtering. We investigate the effect of filtering for consistent beliefs on reading and control performance. We create the LatentQA training dataset by using SynthSys pre-filtering, and generating questions and answers as before (we skip the second-round filtering step in this stage as well). Because our filtering procedure also filters out low-quality examples (in addition to examples that differ in the revealed belief vs. intended one), this new dataset likely has lower data quality. Nonetheless, it provides some insight into the role of filtering for training.
+
+The reading results show that decoders trained on the unfiltered dataset consistently perform worse than the decoders trained on the filtered dataset:
+
+Training on unfiltered data generally produces similar or worse results than training on filtered data. Additionally, decoders trained on unfiltered data often degrade in performance over the course of training.
+
+Interestingly, the control and alignment results are almost identical to the decoders trained on the filtered dataset:
+
+Control and alignment results are almost identical between decoders trained with or without filtering.
+
+This contrasts with the results above, where decoders trained on Pan et al.'s data performed better at reading than control. We leave further investigation of this phenomenon to future work.
+
+Reading from KV: Lastly, we investigate a different decoder architecture, where we read the activations from the output of the key and value projections at each layer, rather than the residual stream. The reading results show that the KV decoder performs similarly to the residual stream variant:
+
+THE KV and residual stream decoders perform similarly on reading evaluations.
+
+However, the KV decoder is unable to control the subject model's behavior, and performs similarly to the $15 \to 0$ 15→ 0 decoder:
+
+The KV decoder is unable to control the subject model's behavior, and performs similarly to the $15 \to 0$ 15→ 0 decoder.
+
+We are not the first to propose studying user models in language models. [8] argue that both the user model and the assistant model are important pieces of information that should be monitored and made accessible through dashboards. [3] coin the term Implicit Personalization and use causal structural equation models (SCMs) to formalize the phenomenon.
+
+The works most similar to ours are [22] and [13]. Like us, they generate synthetic data for various user attributes based on stereotypes. They then train probes to read user attributes from activations and control downstream LM behavior via activation interventions. Beyond the choice of method (linear probes vs. LatentQA), the main difference between our approach and theirs is that they do not distinguish between ground truth and revealed beliefs— a distinction we found to be meaningful in the PRISM dataset. In fact, linear probes trained on ground truth labels perform worse at predicting the model's revealed belief than our decoders, which were trained to predict revealed beliefs (albeit on a different data distribution).
+
+#### Citation information
+
+```bibtex
+@misc{choi2025scalably,
+  author       = {Choi, Dami and Huang, Vincent and Schwettmann, Sarah and Steinhardt, Jacob},
+  title        = {Scalably Extracting Latent Representations of Users},
+  year         = {2025},
+  month        = {November},
+  day          = {25},
+  howpublished = {\url{https://transluce.org/user-modeling}}
+}
+
+```
+
+# References
+
+1. Bermejo-Xiao, K., & Galpin, I. (2025). From Photos to Places: Generating Personalized Tourist Itineraries with Large Language Models and Image Analysis. [link]
+2. Xie, J. (2025). Cultural Adaptation and Evaluation of LLM-Driven Mental Health Conversational Agents. [link]
+3. Jin, Z., Heil, N., Liu, J., Dhuliawala, S., Qi, Y., Schölkopf, B., ... & Sachan, M. (2024). Implicit Personalization in Language Models: A Systematic Study. arXiv preprint arXiv:2405.14808. [link]
+4. Bo, J., Kazemitabaar, M., Deng, M., Inzlicht, M., & Anderson, A. (2025). Invisible Saboteurs: Sycophantic LLMs Mislead Novices in Problem-Solving Tasks. arXiv preprint arXiv:2510.03667. [link]
+5. OpenAI (2025). GPT-5 System Card. [link]
+6. Piper, K. (2025). This is a picture of my kid flying a kite. [link]
+7. Gwern (2025). 'Truesight (Stylometry)' Directory. [link]
+8. Viégas, F., & Wattenberg, M. (2023). The system model and the user model: Exploring AI dashboard design. arXiv preprint arXiv:2305.02469. [link]
+9. Ellinger, L., Anschütz, M., & Groh G. (2025). Simplifications are Absolutists: How Simplified Language Reduces Word Sense Awareness in LLM-Generated Definitions. arXiv preprint arXiv:2507.11981. [link]
+10. Scheurer, J., Balesni, M., & Hobbhahn, M. (2023). Large Language Models can Strategically Deceive their Users when Put Under Pressure. arXiv preprint arXiv:2311.07590 [link]
+11. Sharma, M., Tong, M., Korbak, T., Duvenaud, D., Askell, A., Bowman, S., ... & Perez, E. (2023). Towards Understanding Sycophancy in Language Models. arXiv preprint arXiv:2310.13548. [link]
+12. Hofmann, V., Kalluri, P., Jurafsky, D., & King, S. (2024). AI generates covertly racist decisions about people based on their dialect. [link]
+13. Neplenbroek, V., Bisazza, A., & Fernández, R. (2025). Reading Between the Prompts: How Stereotypes Shape LLM's Implicit Personalization. arXiv preprint arXiv:2505.16467. [link]
+14. Steinhardt, J. (2023). Emergent Deception and Emergent Optimization. [link]
+15. Pan, A., Chen, L., & Steinhardt, J. (2024). LatentQA: Teaching LLMs to Decode Activations Into Natural Language. arXiv preprint arXiv:2412.08686. [link]
+16. Kirk, H., Whitefield, A., Röttger, P., Bean, A., Margatina, K., Ciro, J., ... & Hale, S. (2024). The PRISM Alignment Dataset: What Participatory, Representative and Individualised Human Feedback Reveals About the Subjective and Multicultural Alignment of Large Language Models [link]
+17. Meng, K., Bau, D., Andonian, A., & Belinkov, Y. (2022). Locating and editing factual associations in GPT. Advances in Neural Information Processing Systems, 35, 17359-17372. [link]
+18. Nguyen, D., Prasad, A., STengel-Eskin, E., & Bansl, M. (2025). GrAInS: Gradient-based Attribution for Inference-Time Steering of LLMs and VLMs. arXiv preprint arXiv:2507.18043. [link]
+19. Zhao, T., Wallace, E., Feng, S., Klein, D., & Singh, S. (2021). Calibrate Before Use: Improving Few-Shot Performance of Language Models. arXiv preprint arXiv:2102.09690. [link]
+20. Loshchilov, I., & Hutter, F. (2017). Decoupled weight decay regularization. arXiv preprint arXiv:1711.05101. [link]
+21. Penedo, G., Kydlíček, H., Lozhkov, A., Mitchell, M., Raffel, C., Von Werra, L., & Wolf, T. (2024). The fineweb datasets: Decanting the web for the finest text data at scale. arXiv preprint arXiv:2406.17557. [link]
+22. Chen, Y., Wu, A., DePodesta, T., Yeh, C., Li, K., Marin, N. C., Patel, O., Riecke, J., Raval, S., Seow, O., et al. (2024). Designing a dashboard for transparency and control of conversational AI. arXiv preprint arXiv:2406.07882. [link]

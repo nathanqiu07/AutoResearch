@@ -1,0 +1,348 @@
+---
+url: https://transluce.org/neuron-descriptions
+title: Scaling Automatic Neuron Description | Transluce AI
+publishedDate: 2024-10-23
+date_source: exa
+authors: ["Dami Choi", "Vincent Huang", "Kevin Meng", "Daniel D. Johnson", "Jacob Steinhardt"]
+author_position: last
+kind: blog
+exa_request_id: https://transluce.org/neuron-descriptions
+---
+Scaling Automatic Neuron Description | Transluce AI
+
+# Scaling Automatic Neuron Description
+
+Dami Choi *, Vincent Huang, Kevin Meng, Daniel D. Johnson, Jacob Steinhardt, Sarah Schwettmann * 
+
+ * Correspondence to: dami@transluce.org, sarah@transluce.org
+
+Transluce | Published: October 23, 2024
+
+We are releasing a database of descriptions of every neuron inside Llama-3.1-8B-Instruct, and weights of an explainer model finetuned to produce them. These descriptions have similar quality to a human expert on automated metrics, and can be generated inexpensively using an 8B-parameter model. These high-quality descriptions allow us to query and steer representations in natural languge, enabling applications such as our observability interface.
+
+Exemplars
+
+Write a simple python function that carries out upper confidence bound in rl<|eot_id|><|start_header_id|> assistant<|end_header_id|> Sure, here's an example of a simple Python function that calculates the upper confidence bound (UC B) in reinforcement
+
+-t une the algorithm and improve its performance. Here are some of the most important hyper parameters in Q-learning: 1. Learning rate: The learning rate determines how quickly the agent
+
+ algorithm is introduced for learning a predictive state representation with off-policy temporal difference (TD) learning that is then used to learn to steer a vehicle with reinforcement learning.
+
+Descriptions
+
+Ours: Technical terms related to reinforcement learning (e.g., "off-policy", "learning", "confidence rate"). (score: 0.83)
+
+Human: Terms related to reinforcement learning, such as efficiency, RL, policy, learning, converge, training, and outcome measures. (score: 0.74)
+
+# Introduction
+
+When understanding AI systems, we often want to trace behaviors back to internal representations. This can help to uncover learned spurious correlations that degrade accuracy or fairness, surface hidden knowledge, and pinpoint the source of known issues. Once we understand these issues in terms of the representations, we can hope to fix them by intervening on or disabling the components that are responsible [1, 2, 3].
+
+Currently, understanding representations typically requires significant human labor [4, 5, 6, 7, 8], which makes the research costly to scale and often restricts its scope to narrow sets of behaviors. Recently, automated interpretability has used AI systems to automate model understanding [2, 9, 10, 3], for example by producing human-readable descriptions of model components. Unfortunately, the resulting descriptions are often low-precision [11], and methods to increase their quality are often costly, such as expensive multi-turn interactions with explainer systems. We need cost-efficient methods for producing high-quality descriptions that scale to today's frontier systems.
+
+To address this, we focus on the task of neuron description, which is a subcomponent of many interpretability procedures. We introduce a method for automatically producing high-quality descriptions of neurons inside language models. Our approach adapts recent work [9, 3] where an explainer model is provided data about a subject model, prompted to make hypotheses that explain the data, and hypotheses are evaluated using an automated scoring procedure. Our main contributions are:
+
+- sampling a diverse pool of descriptions and selecting the best one using a fine-tuned scorer as a proxy for human judgment
+- using distillation to transfer successful description patterns to a new model
+
+These improvements allow for high-quality descriptions with a computational cost of approximately $0.046 per neuron (see Appendix for the cost breakdown).
+
+We apply this procedure to produce a database of descriptions of all 458,752 MLP neurons inside `Llama-3.1-8B-Instruct`. To benchmark their quality, we manually annotated a subset of neurons by hand (see above for examples). The automated descriptions are qualitatively similar to human descriptions and score slightly better on our automated quality metrics (average score of $0.61$ 0.61 vs. $0.55$ 0.55). We are planning to release both the description generator and scorer models as well as the dataset of neuron descriptions.
+
+Our resulting database supports investigation of arbitrary model behaviors by revealing human-interpretable descriptions of internal features influencing those behaviors. We exploit this in our observability interface (described in a parallel write-up), which allows users to understand behaviors in terms of the neuron representations, then automatically steer model behavior by editing families of neurons, for instance those associated with a given spurious cue. Natural language descriptions of neurons are key to this, as they enable semantic retrieval, clustering, and editing of neurons in terms of human-understandable concepts.
+
+# Automated Description of Neuron Behavior
+
+## Problem Statement and Approach
+
+Given a transformer model or other deep neural network, a feature is any function from its representation to the real numbers. We will focus on neuron features—the activation value of a specific neuron—but our methods apply to arbitrary features, such as those produced by sparse auto-encoders (SAEs) [12, 13], and even nonlinear features [14]. See Discussion for why we chose to describe neurons instead of SAE features.
+
+Formally, we consider a subject model whose representations we want to investigate, and assume that this model takes inputs from a domain $D$ D. For a feature $\phi : D \to \mathbb{R}$ϕ: D→ R, our goal is to produce a natural language description $h$ h that accurately predicts the behavior of $\phi$ϕ. We will formalize this later through a simulator model $\sigma(d \mid h)$σ(d∣ h), which predicts an activation value given an input $d \in D$ d∈ D and description $h$ h. Finally, our goal is to train an explainer model that produces natural language descriptions for a given feature $\phi$ϕ.
+
+We build on Bills et al. [9], which used prompted versions of GPT-4 as both the simulator and explainer models to describe neurons in GPT-2. We fine-tune both the simulator and explainer models and augment quality using best-of-$k$ k sampling, which together improve performance while keeping cost low.
+
+In more detail, our method depicted above has several steps:
+
+1. Generate exemplars: we construct a large corpus $D$ D of diverse inputs to the model, and use $m$ m inputs where $\phi(d)$ϕ(d) is largest as an exemplar-based summary of $\phi$ϕ.
+2. Describe exemplars: we either prompt or train a language model to produce a description $h$ h of $\phi$ϕ based on the exemplars.
+3. Score descriptions: We score descriptions $h$ h by how well they predict the behavior of $\phi$ϕ on held-out inputs. We do this using a simulator $\sigma$σ that predicts an activation value $\sigma(d \mid h)$σ(d∣ h) and compute the average correlation of $\sigma(\cdot \mid h)$σ(⋅∣ h) with $\phi(\cdot)$ϕ(⋅) across the held-out set. We score all descriptions and rank them based on their scores.
+
+4. Distill: finally, we distill a new model using the top-scoring descriptions.
+
+The final distilled model is only 8B parameters and outperforms `GPT-4o-mini` at generating descriptions.
+
+## Generating exemplars
+
+We summarize a feature's behavior using its activation pattern over text excerpts [9]. Given a dataset $D$ D of text excerpts, we take the $m$ m excerpts on which $\phi$ϕ takes the largest values, and call the resulting sets of exemplars $E$ E. More precisely, for an input $d$ d of length $l$ l, $\phi$ϕ yields an activation vector of length $l$ l corresponding to $\phi$ϕ's value on each prefix of $d$ d. The max-activating exemplars $E$ E are the $m$ m inputs for which the maximum over these $l$ l values is largest.
+
+In our experiments, we describe neuron features in `Llama-3.1-8B-Instruct`. This model uses gated MLPs, which can take on both positive and negative activation values. Specifically, the activation of neuron $i$ i is calculated as the product of a SiLU-transformed linear function times a second linear function [15]:
+
+$\phi_i(d) = \text{SiLU}((w_i^1)^{\top}z) \cdot (w_i^2)^{\top}z,$ϕ i​(d)= SiLU((w i 1​)⊤ z)⋅(w i 2​)⊤ z,
+
+where $z$ z is the pre-MLP value of the residual stream. Since activations can be both positive and negative, we construct separate exemplar sets $E^+$ E+ and $E^-$ E− for the most-positive and most-negative exemplars for each feature. The activation patterns for positive and negative polarities are often related, and we found several neurons that had interesting relationships between the two polarities, which we highlight below.
+
+Minimally Activating
+
+ to the trip. I went back to the Pacific North West and made my first stop in Portland. This trip, I
+
+site. Sunshine Meadows – New Homes for Sale in Kent WA Beautiful new homes for sale in Kent WA; photos are represent ational
+
+ use three major methods to manage the Chin ook sport fisheries in Pu get Sound: - review of ang ler
+
+ locations with a panoramic water view of the Strait of Juan de Fu ca,
+
+Maximally Activating
+
+what are some good back country ski routes in the eastern si erra with low aval ance danger?<|eot_id|><|start_header_id|> assistant<|end_header_id|> Some good back country ski routes in the Eastern
+
+ of the best tap lists you can find. Lots of Colorado brew s, brew s from the east coast like Dog fish Head, brew s from the west like Green Flash
+
+ User:E pic F ork/S andbox Only January 08 201 3 08: 00: 00 - 050 0 until the PLL premiere Jenn ette Michelle F aye
+
+For the dataset $D$ D, since our subject model is a chat model pre-trained on web text, we combine both chat and web data to surface a wide range of possible neuron behaviors. Specifically, we take $D$ D to be the entire LMSYS-Chat-1M dataset [16] together with a 10B token subset of Fineweb [17]. We sample chat interactions of length 95 tokens 1 We take the first 95 token IDs and include conversations that are less than 95 tokens from LMSYS-Chat, including the 30 token Llama chat prefix. Text sequences from Fineweb are randomly sampled to have a length of 65 contiguous tokens, where each sequence is sampled from a single document. We prepend Fineweb sequences with the 30 token Llama chat prefix (reproduced below) so that they also have length 95 (effectively treating each Fineweb sequence as a user message to the chat model).
+
+<|begin_of_text|><|start_header_id|>system<|end_header_id|> Cutting Knowledge Date: December 2023 Today Date: 26 Jul 2024 <|eot_id|><|start_header_id|>user<|end_header_id|>
+
+We subdivide $D$ D into training ($D_{train}$ D t r ain​), validation ($D_{val}$ D v a l​), and test ($D_{test}$ D t es t​) splits of equal size that contain equal numbers of Fineweb and LMSYS sequences. We will later use $D_{val}$ D v a l​ and $D_{test}$ D t es t​ as held-out data to measure the quality of our descriptions.
+
+In principle, we could consider exemplars spanning a wider range of the activation distribution of each feature, rather than only looking at the top $m$ m values. We used top-activating exemplars since past work has shown that they often yield useful insights [18, 19, 2, 3, 20]. However, we sometimes observe cases where model behaviors we seek to understand depend on neuron activity in lower quantiles. 2 For example, highly attributed neurons have activations that are outside of this top percentile, and our descriptions might not describe those kinds of sequences. We plan to expand descriptions to capture these lower quantiles in future work.
+
+## Describing exemplars
+
+After computing exemplars over $D_{train}$ D t r ain​ for each feature, we use a language model (the explainer) to generate a set of candidate hypotheses that explain $E^+$ E+ and $E^-$ E−. These hypotheses are expressed in open-ended natural lanugage, following prior work [2, 9, 3]. More sophisticated hypotheses could also be implemented as programs or structured causal models that approximate the behavior of the subject model on inputs of interest.
+
+To obtain hypotheses, we prompt the explainer model with instructions, few-shot examples, and data (exemplars) to explain. Description quality varies substantially with the contents of this prompt and the format in which data is presented to the explainer. Prior work [9] represented each exemplar as a list of tab-separated (token, activation) pairs. 3 Activations are normalized between 0 and 10. We found that this paired format is difficult for the explainer to ingest, and instead replace per-token activation values with inline delimiters (`{{}}`) to highlight activations above a certain quantile, similarly to [21]. 4 To ensure we provide useful signal to the explainer about each sequence, quantiles are determined dynamically so that a minimum of three highlighted tokens per prompt are shown to the explainer.
+
+Few-shot examples. We provide the explainer with few-shot examples of exemplars and descriptions drawn from the neuron puzzles in [9] with known ground-truth descriptions. We find that a single example improves description quality more than additional examples (see Figure 7), so for every prompt, we sample one few-shot example from the 19 neuron puzzles and provide it to the explainer along with the neuron data to explain. We provide an example prompt in full below.
+
+Best-of-$k$ k sampling. Our most effective strategy for improving description quality involves increasing the number and diversity of hypotheses produced by the explainer, so that we can then select the hypothesis that best explains the data. For each feature, we sample $k$ k hypotheses from the explainer model. We vary the prompt across samples to further increase diversity, by:
+
+- varying the number of exemplars (10-20) included in the prompt, sampled from $E$ E
+- sampling the few-shot example from a pool of few-shot examples
+
+This strategy produces a pool of candidate hypotheses $\{h_j\}_{j=1}^k${ h j​} j= 1 k​ for explaining $E$ E. As an example, see the 5 hypotheses produced for the positive activations of neuron L31/N8883 below:
+
+D WITH THE SEC BE CA USE THEY WILL CONT AIN IMPORTANT INFORMATION. SHARE H OLD ERS WILL BE AB LE TO O BT AIN A FREE COPY OF
+
+ Если вы использовали метод, который я описал в моем предыдущем ответе, то ваша модель будет иметь 9 наборов данных (6 наборов информации о каждом
+
+-x 11-server-utils|| Assign ee:|| Krist ian Hø gs berg < kr h>| | Status:|| CLOSE D NOT AB UG|| QA Contact:|| Fed ora Extras Quality Assurance < extras- qa>| 
+
+, in te oria è possibile che i bu chi n eri s iano compost i di materia os cura, anche se questo non è ancora stato stab ilit o con cert ez za. Second o la nostra
+
+Sampled Descriptions
+
+(score: 0.04) activation occurs on specific delimited terms, particularly focused on technical or context-specific words.
+
+(score: 0.28) tokens with specific capitalized letters, especially "A", "B"
+
+(score: 0.86) word fragments "ab", "stab", "LAB", "CAB", "aty", "НАБ", "EB"
+
+(score: 0.01) specific terms related to technical information or official documentation
+
+(score: 0.08) mentions of stability, reliability, or questions about the quality of something (e.g. "stable", "authentic", "questions"
+
+## Scoring descriptions
+
+Given a pool of $k$ k candidate hypotheses, we wish to rank them based on how well they explain the data. We do so using a set of held-out exemplars $E_{val}$ E v a l​ computed from $D_{val}$ D v a l​. For $E_{val}$ E v a l​, we take the union of the top $20$ 20 highest-activating exemplars across $D_{val}$ D v a l​, together with $5$ 5 randomly sampled sequences from $D_{val}$ D v a l​, following [9]. 5 We include random text sequences to penalize broad descriptions: given a precise description, the simulator should accurately predict high activation on top-activating sequences, and low activation on random sequences. We score each hypothesis based on how well it predicts activation values across $E_{val}$ E v a l​.
+
+To compute a numerical score, we need a simulator model $\sigma(d \mid h)$σ(d∣ h) that predicts activations on $d$ d given a hypothesis $h$ h. Given $\sigma$σ, we obtain a simulation score $r(h)$ r(h) by computing $\sigma(\cdot \mid h)$σ(⋅∣ h) and $\phi(\cdot)$ϕ(⋅) across all prefixes of all exemplars in $E_{val}$ E v a l​, aggregating these into a single set, and computing the Pearson correlation coefficient $r$ r.
+
+In past work [9, 22], the simulator $\sigma$σ is a language model prompted to use the hypothesis to predict the feature's per-token normalized and discretized activation level. The simulated activation is simply the the numbers 0-10 weighted by the probability of the tokens '0', ..., '10'. 6 The requirement of access to logprobs means we are unable to use most proprietary models as simluators. In particular, Bills et al. design a prompt called "all at once" to get simulated activations in a single forward pass instead of doing a forward pass per simulated token. However, even with this trick we found simulation to be too slow for two reasons: (i) the language model must be powerful (and therefore, big) enough to be able to do the task with just prompting, and (ii) the prompt is long due to the extra tokens that are required in the prompt (tab separator and placeholder tokens from Bills et al.). This made it expensive for us to simulate $k$ k hypotheses per feature for all neurons in the subject model.
+
+Fine-tuning a simulator. To produce a small, fast, and accurate simulator, we fine-tune `Llama-3.1-8B-Instruct` to directly predict per-token activations $\phi(d)$ϕ(d) given $h$ h and $d$ d. Fine-tuning allows us to use smaller models, and the task of directly predicting the output (integer from 0-10) gets rid of the extra tokens, making the prompt much shorter.
+
+An ideal simulator would faithfully predict activations on $d \in D_{val}$ d∈ D v a l​ given an accurate description of the neuron. To avoid distribution shift, our training dataset would thus ideally contain accurate feature descriptions, which are expensive to obtain by hand. We therefore use a two-stage process: first, we fine-tune `Llama-3.1-8B-Instruct` using randomly sampled (unranked) hypotheses from the $k$ k hypotheses generated by the explainer for each neuron, then we fine-tune a second simulator using the best of $k$ k descriptions for each neuron as selected using the first-stage simulator.
+
+Training datasets. We train the first-stage and final simulators to directly predict ground-truth neuron activation values normalized and discretized to be in the range $(0,...,10)$(0,..., 10).
+
+An example training datapoint is shown below for $h$ h = "phrases indicating due dates or deadlines for submissions or applications" and $d$ d = [' Sub', 'missions', ' are', ' due', ' September', ' ', '1', 'st']. The input is a description of the neuron followed by the input exemplar:
+
+## Neuron Description: phrases indicating due dates or deadlines for submissions or applications ## Input: Submissions are due September 1st
+
+And the training objective is to predict the normalized and discretized ground-truth activation at each token position of $d$ d, instead of predicting the next token in the exemplar sequence: 7 We mask out all other tokens positions when computing the loss.
+
+Our training data for fine-tuning the simulator does not include a system prompt or few-shot examples, which makes a forward pass more efficient compared to a non fine-tuned prompt-based simulator.
+
+To construct the training data, we randomly sample 2000 neurons across all layers, and additionally include all neurons with at least one description that mentions at least one special token (109 neurons).
+
+This results in $4218$ 4218 exemplar sets ($E_{val}^+$ E v a l+​ and $E_{val}^-$ E v a l−​ for each neuron). We pair each exemplar with a randomly sampled hypothesis $h$ h among the $k$ k hypotheses generated by the explainer for that feature. This leads in total to $25 \cdot 4218$ 25⋅ 4218 input sequences, and we fine-tune the first-stage simulator on this dataset with batch size 64 for 1500 steps.
+
+We next sample a new dataset of 2000 neurons and compute simulation scores using the first-stage simulator to rank the $k$ k hypotheses produced by the explainer. To train the second simulator, we sample 5 exemplars out of the $25$ 25 exemplars in $E_{val}$ E v a l​, and pair them with the best-scoring hypothesis (out of the pool of $k$ k) for that feature. We fine-tune the second-stage simulator on the resulting dataset with batch size 32 for 650 steps. We subsequently use this simulator to select best of $k$ k descriptions for creating our descriptions dataset and fine-tuning an automated explainer model. Code for training the simulator model will be available in our code repository.
+
+Special tokens. Since the simulator uses the same tokenizer as the subject model, the simulator was initially unable to score descriptions containing special tokens (e.g. “this neuron activates strongly on `<|begin_of_text|>`”). To solve this problem, we added 4 new tokens to the tokenizer's vocabulary, and mapped all instances of special tokens in the input to the new tokens:
+
+- `<|begin_of_text|>` ↦ `<||begin_of_text||>`
+- `<|start_header_id|>` ↦ `<||start_header_id||>`
+- `<|end-header_id|>` ↦ `<||end-header_id||>`
+- `<|eot_id|>` ↦ `<||eot_id||>`
+
+## Distilling an automated explainer model
+
+We further fine-tune an explainer model on the best-of-$k$ k descriptions to distill a cheap and high-quality explainer. We do this for two models, the proprietary `GPT-4o-mini` and open-weight `Llama-3.1-8B-Instruct`.
+
+Distilling `GPT-4o-mini`. To produce descriptions to train on, we generate $k=50$ k= 50 hypotheses per neuron using GPT-4o-mini as a base explainer (as described in Description generation), then take the highest-scoring hypothesis according to the simulation score from Scoring descriptions). We compute these descriptions for $2000$ 2000 randomly-selected neurons (both positive and negative polarity). We then fine-tune an explainer to predict this top description given a set of 10-20 top-activating exemplars from $E_{train}$ E t r ain​, using the same format as in Description generation, but without few-shot examples. We fine-tune `GPT-4o-mini` on this dataset for 1 epoch to obtain a distilled explainer model.
+
+To produce the descriptions in our database, we further run best-of-$k$ k with this new explainer for $k=25$ k= 25. We sampled 10-20 top-activating exemplars per neuron from $E_{train}$ E t r ain​, and did not provide the fine-tuned explainer with few-shot examples.
+
+Distilling `Llama-3.1-8B-Instruct`. We further distilled the fine-tuned `GPT-4o-mini` model to a `Llama-3.1-8B-Instruct` model. We used descriptions of 8000 neurons randomly sampled from our database to fine-tune the model (recall these are best-of-25 samples from the distilled `GPT-4o-mini` explainer). We use the same input format with 10-20 top-activating exemplars as before.
+
+This fine-tuned explainer based on `Llama-3.1-8B-Instruct` outperforms finetuned `GPT-4o-mini` as measured by our simulation score (see Figure 5). 8 This explainer is bottlenecked by GPUs, while the GPT-4o-mini explainer is bottlenecked by API calls. We were able to obtain descriptions more efficiently using the `GPT-4o-mini` explainer, and are releasing those descriptions in our description database. The weights of the fine-tuned explainer will be available in our code respository.
+
+# Results
+
+We next study the descriptions we generate, evaluating their quality and comparing to human-generated descriptions and baselines. We label every MLP neuron in `Llama-3.1-8B-Instruct` using best-of-25 from the distilled `GPT-4o-mini` model, as described in Distilling an automated explainer model. We also label subsets of these MLP neurons with other methods to allow for quantitative comparisons. `Llama-3.1-8B-Instruct` contains a total of 458,752 MLP neurons (14,336 per layer across 32 layers), and we label both the positive and negative direction for each neuron.
+
+In the sections below, we first visualize the overall distribution of simulation scores across layers, then compare to human descriptions and find that our automated descriptions score higher. We then examine an interesting phenomenon: the best-of-$k$ k description score is a nearly-perfect power law function of $k$ k, enabling us to predict performance as a function of computation. Finally, we run several ablations and find that our simulation scores are significantly higher than baseline methods.
+
+With the exception of the comparison against human descriptions (which used $E_{test}$ E t es t​), all scores reported in this section were computed using $E_{val}$ E v a l​ due to the cost of evaluating on $E_{test}$ E t es t​. 9 It would take 116 GPU hours to evaluate the best description for all neurons in `Llama-3.1-8B-Instruct`. Therefore, our emphasis in the following sections is not on the absolute scores we achieve but rather the comparisons we make against previous work and baselines. (An analysis of 100 random neurons shows that scores on $E_{val}$ E v a l​ are highly correlated with performance on $E_{test}$ E t es t​ and differ by only 0.04 on average; see Figure 10.)
+
+## Description scores by layer
+
+We visualize the distribution of scores achieved by the best descriptions sampled using the distilled `GPT-4o-mini` explainer, scored using the fine-tuned simulator. In Figure 1, we see that the average score decreases from layer 1 to layer 11, but increases again after that. In Figure 9, we show that this trend is present for the non-distilled `GPT-4o-mini` explainer, and the distilled `Llama-3.1-8B-Instruct` explainer as well.
+
+Figure 1: The average score per layer does not follow a strict monotonic trend. Scores are from the best-of-25 descriptions from the distilled `GPT-4o-mini` explainer, averaged over all neurons and both polarities per layer.
+
+Following Bills et al. we visualize the distribution of scores for each layer in Figure 2. We found that our per-layer distributions look different from the Bills et al.'s—our distributions have modes close to or above 0.5, while Bills et al.'s modes are mostly close to 0. Interestingly, for some layers our distributions are bimodal (see layer 14-18 and 30-31).
+
+Layer 16
+
+16
+
+Figure 2: Our scores are much higher than those shown in Bills et al. Notably, some layers (14-18 and 30-31) have a bimodal distribtion of scores. The histograms were constructed using scores achieved by the best-of-25 descriptions from the distilled `GPT-4o-mini` explainer per layer. The dotted vertical line corresponds to the mean.
+
+## Descriptions out-perform human descriptions
+
+We compare descriptions produced by our fine-tuned explainer to descriptions written by a human expert, and find that automated descriptions consistently outperform human descriptions, while following the same neuron-level trends.
+
+Human description generation. To construct the dataset of human descriptions, four human experts wrote descriptions for several randomly sampled neurons, and the human annotator with consistently higher scores (who was one of the authors) was selected to manually construct a larger dataset. For 100 randomly sampled neurons from across all layers of the subject model, the expert annotator was given the same set of exemplars ($E_{train}$ E t r ain​) as the explainer (for either the positive or negative polarity, sampled at random for each neuron), and instructed to write descriptions of the neuron's behavior. 10 The human annotator did not have access to the automated explainer's descriptions. The human was given access to the simulator and had the opportunity to iteratively refine their description to hill-climb on the simulator's score on $E_{val}$ E v a l​. Across all neurons explained, the annotator wrote and scored an average of 3.01 descriptions per neuron. The human annotator spent 6 hours constructing the dataset, or around 3.6 minutes per neuron.
+
+Comparison to automated descriptions. In order to make a fair comparison, for both the human and automated descriptions, we selected the top-scoring description for each neuron according to $E_{val}$ E v a l​, and evaluated it on $E_{test}$ E t es t​. Figure 3 gives per-neuron comparisons of description scores for human and automated descriptions across the 100 neurons. Using the fine-tuned simulator, the average score of automated descriptions is 0.61, compared to 0.55 for human descriptions, with a statistically significant difference (paired t-test with p-value=$4\mathrm{e}{-9}$ 4 e− 9).
+
+Using a fine-tuned simulator Using a prompt-based simulator
+
+Figure 3: Our automated descriptions score higher than human expert's descriptions both on average (dotted line) and at a per-neuron level for both fine-tuned and non-finetuned simulator. Our explainer is better for 75/100 neurons for fine-tuned and 65/100 neurons for non-finetuned. Each point represents the score corresponding to the highest-scoring description of a particular polarity of a neuron. "Ours" corresponds to using the distilled `GPT-4o-mini` explainer to sample 25 descriptions, and "Human" corresponds to a human expert who was allowed to optimize the score (3.01 descriptions on average per neuron). The neurons are sorted by the score achieved by our explainer.
+
+In addition to this, since our simulator was fine-tuned on descriptions produced by an automated explainer similar to the one we evaluated, we also scored the descriptions using a non-finetuned simulator—a `Llama-3.1-70B-Instruct` prompted using the simulation method from Bills et al. 11 `Llama-3.1-70B-Instruct` is instructed to predict a neuron's activation level normalized from 0 to 10 on each token, and the simulator output is the expected value according to the probabilities of the tokens '0' to '10'. The average simulation score according to this simulator is 0.38 for automated descriptions, and 0.34 for human descriptions (paired t-test with p-value=$0.02$ 0.02).
+
+There are several additional things to note from Figure 3:
+
+- The scores from the non-finetuned simulator are lower than the fine-tuned simulator. This is expected since fine-tuning makes the simulator better at the task of simulating than prompting, especially on in-distribution data. We also did not explore better prompting formats (system prompt and few-shot examples) for the non-finetuned simulator beyond the one used in Bills et al.
+- Neuron description scores are correlated between human and automated descriptions for both simulators. This is not enough to guarantee that the simulator is aligned with human preferences, but is nonetheless a good sign that the simulator and human agree on the difficulty of the task at a per-neuron level.
+
+## Scaling description quality
+
+It's obvious that sampling more diverse decriptions improves the quality of the best description. But how much better is it to sample 5 descriptions vs 50? We plotted the average score of the best description from doing best-of-$k$ k using a non-finetuned `GPT-4o-mini` explainer against $k$ k, and found that the relationship follows a power law, with rapid improvements coming from sampling more than one description. In Figure 4, we show that a power law fitted using $k \leq 25$ k≤ 25 predicts the average score for $25 < k \leq 50$ 25< k≤ 50.
+
+Figure 4: Average score of best-of-$k$ k descriptions follows a power law as a function of $k$ k. We used a non-finetuned `GPT-4o-mini` explainer to sample $k$ k descriptions per neuron, and fitted a power law to the scores for $k \leq 25$ k≤ 25. The dots correspond to the actual average scores, and the line corresponds to the fitted power law. The dotted line is the asymptote of the fitted power law. Scores are averaged over 2000 random neurons (both polarities) across all layers.
+
+Doing best-of-$k$ k is a simple way to improve scores, but the benefits diminish quickly. In Figure 5, we show that distilling best-of-50 descriptions from `GPT-4o-mini` to fine-tune `GPT-4o-mini`, and doing best-of-$k$ k using the fine-tuned model yields higher scores with fewer samples compared to the non-finetuned model. For example, to get the same score as a distilled `GPT-4o-mini` explainer gets using 50 samples, we would need to sample 150 desciptions with a non-finetuned `GPT-4o-mini` explainer. Taking it one step further and distilling the distilled `GPT-4o-mini` model to `Llama-3.1-8B-Instruct` leads to improvements but the effect is much smaller. Fitting a power law to the distilled models shows that indeed the distilled models have higher asymptotes than their source explainers (see Figure 5).
+
+Figure 5: Distilling best-of-$k$ k descriptions allows us to achieve the same description quality with less sampling compared to the data source. "Distilled GPT-4o-mini" was trained using best-of-50 descriptions from `GPT-4o-mini`, and "Distilled Llama 3.1 8B" was trained using best-of-25 descriptions from distilled `GPT-4o-mini`. For each explainer, we fitted a power law to the scores for $k \leq 25$ k≤ 25. The dotted line is the asymptote of the fitted power law. Scores are averaged over 2000 random neurons (both polarities) across all layers, with no overlap between these neurons and the neurons used to distill the explainer models.
+
+## Ablation studies for Explainer Prompt
+
+Prompt format. In Describing Exemplars, we hypothesized that using a (token, activation) format might be challenging for the explainer to ingest due to the text being broken up by the activation values. In Figure 6, we show that descriptions generated using the (token, activation) format achieves lower simulation scores using the fine-tuned simulator.
+
+Using a fine-tuned simulator Using a prompt-based simulator
+
+Figure 6: When constructing the prompt for the explainer, including activation values in (token, activation) format from Bills et al. results in worse simulation scores compared to our format (highlighting highly activating tokens). Scores are from a non-finetuned `GPT-4o-mini` explainer, averaged over 2000 random neurons for the finetuned simulator, and 100 neurons for the non-finetuned simulator. The lines connecting the dots are purely for visual clarity.
+
+Using the finetuned simulator to compare two different prompt formats is not entirely fair since the simulator was fine-tuned on the descriptions generated using our highlighting strategy. Therefore, we also report scores for the non fine-tuned simulator (albeit with much less neurons due to the cost). Using the (token, activation) format yields worse scores in this case as well. 12 The scores we report for the (token, activation) format are higher than the average score reported in [9], which is 0.151. There are many differences between our setups that could contribute to this difference, including the difference in subject model and the dataset used to get the exemplars.
+
+Number of few-shot examples. Here, we confirm that using fewer few-shot examples results in better average scores. Figure 7 shows that including more few-shot examples in the explainer prompt yields worse scores across all values of $k$ k for the non-finetuned `GPT-4o-mini` explainer. We hypothesize that this is because descriptions are more diverse with fewer few-shot examples, although this does not explain the behavior at $k=1$ k= 1.
+
+Figure 7: Using more few-shot examples in the description-generating prompt results in worse simulation scores across all values of $k$ k. Scores are from a non-finetuned `GPT-4o-mini` explainer, averaged over 1000 random neurons. The lines connecting the dots are purely for visual clarity.
+
+Chain-of-thought prompting. We tried adding explicit reasoning steps to the prompt to see if it would improve the quality of the descriptions. We show the exact prompt template used below (we constructed 2 few-shot examples that follow the reasoning steps outlined in the prompt).
+
+Figure 8 shows that using chain-of-thought prompting results in worse simulation scores, which we hypothesize is due to the reduction in description diversity.
+
+Figure 8: Using chain-of-thought prompting in the description-generating prompt results in worse scores. SScores are from a non-finetuned `GPT-4o-mini` explainer, averaged over 2000 random neurons. The lines connecting the dots are purely for visual clarity.
+
+# Discussion
+
+## Limitations
+
+Potential misalignment between simulator and human understanding. Fine-tuning a simulator enables us to score all neurons inside `Llama-3.1-8B-Instruct` more efficiently. But through the process of fine-tuning, the simulator can learn uninterpretable patterns between the description and neuron activations, and produce higher scores for descriptions that are less interpretable to humans. Future work could explicitly train the simulator to be aligned with human understanding by collecting activations that a human would have produced given an description.
+
+Describing only top-activating exemplars. Our descriptions were scored on mostly top-activating exemplars which means that they are not representative of the full behavior of the neuron across all quantiles. At the same time, our pipeline can be easily modified to describe exemplars collected from lower quantiles. We leave this as future work.
+
+Potential overfitting of best-of-$k$ k descriptions to $E_{val}$ E v a l​. In principle, given a large enough number of samples $k$ k, the best-of-$k$ k description might overfit to the patterns in $E_{val}$ E v a l​, and evaluating these descriptions on $E_{val}$ E v a l​ might then give unrealistic scores relative to the held-out set $E_{test}$ E t es t​. In practice, we observe that performance on $E_{val}$ E v a l​ and $E_{test}$ E t es t​ are similar and highly correlated for $k=25$ k= 25, so we do not believe this poses a major problem for our method or results, although it may bias some of our absolute scores upward by a small factor. (See Figure 10.)
+
+Tokenization Llama models use byte-pair encoding (BPE) that break up certain characters such that decoding certain token ids might result in nonsensical tokens. This is an issue when constructing the prompt for the explainer model because highlighting scheme works at a token-level. This is also an issue for prompt-based simulators (as mentioned by Bills et al. [9]), which does not apply to us since we fine-tune the simulator.
+
+Describing the what, not the how. Many interpretability techniques focus on what information models compute, describing individual representations and detecting when they are active in a model's computation. Like these other description procedures [2, 19, 3, 9], our expalantion pipeline does not describe how model decisions are made, or how downstream representations are produced from upstream ones. The descriptions our pipeline produces could be useful inputs to procedures that produce causal descriptions of model behavior, but do not themselves provide an algorithmic description of comuptations inside models.
+
+## Applied Interpretability
+
+Despite these limitations, we find that the neuron descriptions produced by our pipeline already enable users of our observability interface to pinpoint previously unknown spurious correlations inside `Llama-3.1-8B-Instruct` that underlie known model failures. In turn, incorporation of the descriptions into the interface surfaces improvements to our pipeline that would make descriptions more useful for real-world model understanding tasks. For instance, pilot experiments using the interface have revealed:
+
+- The importance of precise descriptions (and a precision-based scoring metric) — applications such as steering benefit from accurate prediction not only of contexts in which a feature is active, but related contexts where it is not relevant.
+- The usefulness of clustering: even human-interpretable descriptions of model components still represent large sources of data that require additional parsing before they are useful to humans. The AI linter system in our current interface clusters neurons relevant to user queries, but sometimes fails to surface informative clusters. Interactive paradigms that incorporate user feedback could help guide the linter to provide clusters relevant to concepts a user wanted to explore.
+
+This feedback loop is a first demonstration of our vision for applied interpretability, where deploying interpretation techniques scaled to real models via tools with human end-users can inform future research directions.
+
+Users may also wish to apply our pipeline to other choices of model components to interpret, such as SAE features [9, 8, 23, 12, 24] or even nonlinear features [14] instead of neurons. Importantly, we find high-quality descriptions of features in the neuron basis to be useful for model-understanding tasks, without the computational overhead of training SAEs. Experiments using our observability interface reveal, for example, "bible" neurons active on examples that have nothing to do with biblical concepts. If concept superposition [25] is responsible for neuron "misfiring" in these cases, observability of neurons where concepts are superimposed could provide insight into low-level sources of model errors. Valuable future work could study what forms of descriptions and what choice of model components are most useful for specific tasks like debugging.
+
+Another high priority for future work is exploring more formal explanatory frameworks that produce interpretable abstractions [26, 27] approximating the behavior of model components. While language descriptions are immediately legible to human users, structured causal models producing more precise descriptions could also serve as useful inputs to AI-based systems making hypotheses about subject models. Such are the next steps to AI-backed tools supporting humans across the entire interpretability workflow: from describing what individual model components do, to interpreting how they are used in downstream model computations.
+
+#### Acknowledgements
+
+We thank Steven Bills, Jacob Andreas, and Will Saunders for feedback on an earlier version of this draft.
+
+#### Citation information
+
+```bibtex
+@misc{choi2024automatic,
+  author       = {Choi, Dami and Huang, Vincent and Meng, Kevin and Johnson, Daniel D and Steinhardt, Jacob and Schwettmann, Sarah},
+  title        = {Scaling Automatic Neuron Description},
+  year         = {2024},
+  month        = {October},
+  day          = {23},
+  howpublished = {\url{https://transluce.org/neuron-descriptions}}
+}
+
+```
+
+# Appendix
+
+## Cost per neuron
+
+For description generation, we use `gpt-4o-mini-2024-07-18`. Labeling all 458,752 neurons took 50,790,957,498 input tokens and 595,097,963 output tokens, which cost $15,951.40. Simulation took 2891 GPU hours on 8 8xA100 GPUs, which cost $5,174. Therefore, the cost per neuron is approximately $0.046.
+
+## Additional results
+
+Figure 9: The average-score-per-layer trend is similar for non-finetuned `GPT-4o-mini` and distilled `Llama-3.1-8B-Instruct` as distilled `GPT-4o-mini`. We use 2000 random neurons (the same across all 3 models) to generate this plot (as opposed to all neurons for Figure 1).
+
+Figure 10: A comparison of simulation scores for our descriptions of 100 random neurons between the validation and test sets of exemplars ($E_{val}$ E v a l​ v.s. $E_{test}$ E t es t​). Each description was chosen using best-of-25 sampling over $E_{val}$ E v a l​, then evaluated on both $E_{val}$ E v a l​ and $E_{test}$ E t es t​. Although test set scores are often slightly worse than validation set scores, the scores are highly correlated and differ by only 0.04 on average.
+
+# References
+
+1. Hernandez, E., Li, B. Z., & Andreas, J. (2023). Inspecting and editing knowledge representations in language models. arXiv preprint arXiv:2304.00740. [link]
+2. Hernandez, E., Schwettmann, S., Bau, D., Bagashvili, T., Torralba, A., & Andreas, J. (2021). Natural language descriptions of deep visual features. In International Conference on Learning Representations. [link]
+3. Shaham, T. R., Schwettmann, S., Wang, F., Rajaram, A., Hernandez, E., Andreas, J., & Torralba, A. (2024, April). A multimodal automated interpretability agent. In Forty-first International Conference on Machine Learning. [link]
+4. Arditi, A., Obeso, O., Syed, A., Paleka, D., Rimsky, N., Gurnee, W., & Nanda, N. (2024). Refusal in Language Models Is Mediated by a Single Direction. arXiv preprint arXiv:2406.11717. [link]
+5. Zhang, J., Wang, Y., Molino, P., Li, L., & Ebert, D. S. (2018). Manifold: A model-agnostic framework for interpretation and diagnosis of machine learning models. IEEE transactions on visualization and computer graphics, 25(1), 364-373. [link]
+6. Wang, K., Variengien, A., Conmy, A., Shlegeris, B., & Steinhardt, J. (2022). Interpretability in the wild: a circuit for indirect object identification in gpt-2 small. arXiv preprint arXiv:2211.00593. [link]
+7. Hanna, M., Liu, O., & Variengien, A. (2024). How does GPT-2 compute greater-than?: Interpreting mathematical abilities in a pre-trained language model. Advances in Neural Information Processing Systems, 36. [link]
+8. Marks, S., Rager, C., Michaud, E. J., Belinkov, Y., Bau, D., & Mueller, A. (2024). Sparse feature circuits: Discovering and editing interpretable causal graphs in language models. arXiv preprint arXiv:2403.19647. [link]
+9. Bills, J., et al. (2023). Advances in AI. *Journal of AI Research*, 123–145.
+10. Schwettmann, S., Shaham, T., Materzynska, J., Chowdhury, N., Li, S., Andreas, J., ... & Torralba, A. (2024). Find: A function description benchmark for evaluating interpretability methods. Advances in Neural Information Processing Systems, 36. [link]
+11. Huang, J., Geiger, A., D'Oosterlinck, K., Wu, Z., & Potts, C. (2023). Rigorously assessing natural language explanations of neurons. arXiv preprint arXiv:2309.10312. [link]
+12. Gao, L., la Tour, T. D., Tillman, H., Goh, G., Troll, R., Radford, A., ... & Wu, J. (2024). Scaling and evaluating sparse autoencoders. arXiv preprint arXiv:2406.04093. [link]
+13. Templeton, A. (2024). Scaling monosemanticity: Extracting interpretable features from claude 3 sonnet. Anthropic. [link]
+14. Engels, J., Liao, I., Michaud, E. J., Gurnee, W., & Tegmark, M. (2024). Not All Language Model Features Are Linear. arXiv preprint arXiv:2405.14860. [link]
+15. Shazeer, N. (2020). Glu variants improve transformer. arXiv preprint arXiv:2002.05202. [link]
+16. Zheng, L., Chiang, W. L., Sheng, Y., Li, T., Zhuang, S., Wu, Z., ... & Zhang, H. (2023). Lmsys-chat-1m: A large-scale real-world llm conversation dataset. arXiv preprint arXiv:2309.11998. [link]
+17. Penedo, G., Kydlíček, H., Lozhkov, A., Mitchell, M., Raffel, C., Von Werra, L., & Wolf, T. (2024). The fineweb datasets: Decanting the web for the finest text data at scale. arXiv preprint arXiv:2406.17557. [link]
+18. Bau, D., Zhou, B., Khosla, A., Oliva, A., & Torralba, A. (2017). Network dissection: Quantifying interpretability of deep visual representations. In Proceedings of the IEEE conference on computer vision and pattern recognition (pp. 6541-6549). [link]
+19. Mu, J., & Andreas, J. (2020). Compositional explanations of neurons. Advances in Neural Information Processing Systems, 33, 17153-17163. [link]
+20. Andreas, J., & Klein, D. (2017). Analogs of linguistic structure in deep representations. arXiv preprint arXiv:1707.08139. [link]
+21. Lee, J., Oikarinen, T., Chatha, A., Chang, K. C., Chen, Y., & Weng, T. W. (2023). The importance of prompt tuning for automated neuron explanations. arXiv preprint arXiv:2310.06200. [link]
+22. Cunningham, H., Ewart, A., Riggs, L., Huben, R., & Sharkey, L. (2023). Sparse autoencoders find highly interpretable features in language models. arXiv preprint arXiv:2309.08600. [link]
+23. Lieberum, T., Rajamanoharan, S., Conmy, A., Smith, L., Sonnerat, N., Varma, V., ... & Nanda, N. (2024). Gemma scope: Open sparse autoencoders everywhere all at once on gemma 2. arXiv preprint arXiv:2408.05147. [link]
+24. Paulo, G., Mallen, A., Juang, C., & Belrose, N. (2024). Automatically interpreting millions of features in large language models. arXiv:2410.13928. [link]
+25. Elhage, N., Hume, T., Olsson, C., Schiefer, N., Henighan, T., Kravec, S., ... & Olah, C. (2022). Toy models of superposition. arXiv preprint arXiv:2209.10652. [link]
+26. Geiger, A., Lu, H., Icard, T., & Potts, C. (2021). Causal abstractions of neural networks. Advances in Neural Information Processing Systems, 34, 9574-9586. [link]
+27. Geiger, A., Wu, Z., Potts, C., Icard, T., & Goodman, N. (2024). Finding Alignments Between Interpretable Causal Variables and Distributed Neural Representations. Proceedings of the Third Conference on Causal Learning and Reasoning, 160-187. [link]

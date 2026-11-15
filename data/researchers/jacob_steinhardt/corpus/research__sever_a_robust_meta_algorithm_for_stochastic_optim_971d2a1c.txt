@@ -1,0 +1,1096 @@
+---
+url: https://arxiv.org/abs/1803.02815
+title: Sever: A Robust Meta-Algorithm for Stochastic Optimization
+publishedDate: 2018-03-07
+date_source: listing
+authors: ["Ilias Diakonikolas", "Gautam Kamath", "Daniel M. Kane", "Jerry Li", "Jacob Steinhardt", "Alistair Stewart"]
+author_position: middle
+kind: paper
+exa_request_id: https://arxiv.org/abs/1803.02815
+---
+# Sever: A Robust Meta-Algorithm for Stochastic Optimization
+
+arXiv:1803.02815. cs.LG, cs.AI, cs.DS, stat.ML. Submitted 2018-03-07. Latest version v2, 2019-05-29.
+
+## Authors
+
+Ilias Diakonikolas, Gautam Kamath, Daniel M. Kane, Jerry Li, Jacob Steinhardt, Alistair Stewart
+
+## Details
+
+- License: http://arxiv.org/licenses/nonexclusive-distrib/1.0/
+
+## Versions
+
+- v1: 2018-03-07
+- v2: 2019-05-29
+
+---
+
+Full text of v2.
+
+## Abstract
+
+In high dimensions, most machine learning methods are brittle to even a small fraction of structured outliers. To address this, we introduce a new meta-algorithm that can take in a base learner such as least squares or stochastic gradient descent, and harden the learner to be resistant to outliers. Our method, Sever, possesses strong theoretical guarantees yet is also highly scalable—beyond running the base learner itself, it only requires computing the top singular vector of a certain $n\times d$ matrix. We apply Sever on a drug design dataset and a spam classification dataset, and find that in both cases it has substantially greater robustness than several baselines. On the spam dataset, with $1\%$ corruptions, we achieved $7.4\%$ test error, compared to $13.4\%-20.5\%$ for the baselines, and $3\%$ error on the uncorrupted dataset. Similarly, on the drug design dataset, with $10\%$ corruptions, we achieved $1.42$ mean-squared error test error, compared to $1.51-2.33$ for the baselines, and $1.23$ error on the uncorrupted dataset.
+
+[^1][^2]
+
+## 1 Introduction
+
+Learning in the presence of outliers is a ubiquitous challenge in machine learning; nevertheless, most machine learning methods are very sensitive to outliers in high dimensions. The focus of this work is on designing algorithms that are outlier robust while remaining competitive in terms of accuracy and running time.
+
+We highlight two motivating applications. The first is biological data (such as gene expression data), where mislabeling or measurement errors can create systematic outliers [RPW+02, LAT+08] that require painstaking manual effort to remove [PLJD10]. Detecting outliers in such settings is often important either because the outlier observations are of interest themselves or because they might contaminate the downstream statistical analysis. The second motivation is machine learning security, where outliers can be introduced through data poisoning attacks [BNJT10] in which an adversary inserts fake data into the training set (e.g., by creating a fake user account). Recent work has shown that for high-dimensional datasets, even a small fraction of outliers can substantially degrade the learned model [BNL12, NPXNR14, KL17, SKL17, KSL18].
+
+Crucially, in both the biological and security settings above, the outliers are not “random” but are instead highly correlated, and could have a complex internal structure that is difficult to model. This leads us to the following conceptual question underlying the present work: Can we design training algorithms that are robust to the presence of an $\varepsilon$-fraction of arbitrary (and potentially adversarial) outliers?
+
+Estimation in the presence of outliers is a prototypical goal in robust statistics and has been systematically studied since the pioneering work of Tukey [Tuk60]. Popular methods include RANSAC [FB81], minimum covariance determinant [RD99], removal based on $k$-nearest neighbors [BKNS00], and Huberizing the loss [Owe07] (see [HA04] for a comprehensive survey). However, these classical methods either break down in high dimensions, or only handle “benign” outliers that are obviously different from the rest of the data (see Section 1.1 for futher discussion of these points).
+
+Motivated by this, recent work in theoretical computer science has developed efficient robust estimators for classical problems such as linear classification [KLS09, ABL14], mean and covariance estimation [DKK+16, LRV16], clustering [CSV17], and regression [BJK15, BJKK17, BDLS17]. Nevertheless, the promise of practical high-dimensional robust estimation is yet to be realized; indeed, the aforementioned results generally suffer from one of two shortcomings–either they use sophisticated convex optimization algorithms that do not scale to large datasets, or they are tailored to specific problems of interest or specific distributional assumptions on the data, and hence do not have good accuracy on real data.
+
+In this work, we address these shortcomings. We propose an algorithm, Sever, that is:
+
+- Robust: it can handle arbitrary outliers with only a small increase in error, even in high dimensions.
+- General: it can be applied to most common learning problems including regression and classification, and handles non-convex models such as neural networks.
+- Practical: the algorithm can be implemented with standard machine learning libraries.
+
+Figure 1: Illustration of the Sever pipeline. We first use any machine learning algorithm to fit a model to the data. Then, we extract gradients for each data point at the learned parameters, and take the singular value decomposition of the gradients. We use this to compute an outlier score for each data point. If we detect outliers, we remove them and re-run the learning algorithm; otherwise, we output the learned parameters.
+
+At a high level, our algorithm (depicted in Figure 1 and described in detail in Section 2.2) is a simple “plug-in” outlier detector–first, run whatever learning procedure would be run normally (e.g., least squares in the case of linear regression). Then, consider the matrix of gradients at the optimal parameters, and compute the top singular vector of this matrix. Finally, remove any points whose projection onto this singular vector is too large (and re-train if necessary).
+
+Despite its simplicity, our algorithm possesses strong theoretical guarantees: As long as the real (non-outlying) data is not too heavy-tailed, Sever is provably robust to outliers–see Section 2 for detailed statements of the theory. At the same time, we show that our algorithm works very well in practice and outperforms a number of natural baseline outlier detectors. In line with our original motivating biological and security applications, we implement our method on two tasks–a linear regression task for predicting protein activity levels [OSB+18], and a spam classification task based on emails from the Enron corporation [MAP06]. Even with a small fraction of outliers, baseline methods perform poorly on these datasets; for instance, on the Enron spam dataset with a $1\%$ fraction of outliers, baseline errors range from $13.4\%$ to $20.5\%$, while Sever incurs only $7.3\%$ error (in comparison, the error is $3\%$ in the absence of outliers). Similarly, on the drug design dataset, with $10\%$ corruptions, Sever achieved $1.42$ mean-squared error test error, compared to $1.51$-$2.33$ for the baselines, and $1.23$ error on the uncorrupted dataset.
+
+### 1.1 Comparison to Prior Work
+
+As mentioned above, the myriad classical approaches to robust estimation perform poorly in high dimensions or in the presence of worst-case outliers. For instance, RANSAC [FB81] works by removing enough points at random that no outliers remain with decent probability; since we need at least $d$ points to fit a $d$-dimensional model, this requires the number of outliers to be $O(1/d)$. $k$-nearest neighbors [BKNS00] similarly suffers from the curse of dimensionality when $d$ is large. The minimum covariance determinant estimator [RD99] only applies when the number of data points $n$ exceeds $2d$, which does not hold for the datasets we consider (it also has other issues such as computational intractability). A final natural approach is to limit the effect of points with large loss (via e.g. Huberization [Owe07]), but as [KSL18] show (and we confirm in our experiments), correlated outliers often have lower loss than the real data under the learned model.
+
+These issues have motivated work on high-dimensional robust statistics going back to Tukey [Tuk75]. However, it was not until much later that efficient algorithms with favorable properties were first proposed. [KLS09] gave the first efficient algorithms for robustly classification under the assumption that the distribution of the good data is isotropic and log-concave. Subsequently, [ABL14] obtained an improved and nearly optimal robust algorithm for this problem. Two concurrent works [DKK+16, LRV16] gave the first efficient robust estimators for several other tasks including mean and covariance estimation. There has since been considerable study of algorithmic robust estimation in high dimensions, including learning graphical models [DKS16], understanding computation-robustness tradeoffs [DKS17c, DKK+18], establishing connections to PAC learning [DKS17a], tolerating more noise by outputting a list of hypotheses [CSV17, MV18, DKS17b], robust estimation of discrete structures [Ste17, QV18, SCV18], and robust estimation via sum-of-squares [KS17b, HL17, KS17a].
+
+Despite this progress, these recent theoretical papers typically focus on designing specialized algorithms for specific settings (such as mean estimation or linear classification for specific families of distributions) rather than on designing general algorithms. The only exception is [CSV17], which provides a robust meta-algorithm for stochastic convex optimization in a similar setting to ours. However, that algorithm (i) requires solving a large semidefinite program and (ii) incurs a significant loss in performance relative to standard training even in the absence of outliers. On the other hand, [DKK+17] provide a practical implementation of the robust mean and covariance estimation algorithms of [DKK+16], but do not consider more general learning tasks.
+
+A number of papers [NTN11, NT13, BJK15, BJKK17] have proposed efficient algorithms for a type of robust linear regression. However, these works consider a restrictive corruption model that only allows adversarial corruptions to the responses (but not the covariates). On the other hand, [BDLS17] studies (sparse) linear regression and, more broadly, generalized linear models (GLMs) under a robustness model very similar to the one considered here. The main issues with this algorithm are that (i) it requires running the ellipsoid method (hence does not scale) and (ii) it crucially assumes Gaussianity of the covariates, which is unlikely to hold in practice.
+
+In a related direction, [SKL17] provide a method for analyzing outlier detectors in the context of linear classification, either certifying robustness or generating an attack if the learner is not robust. The outlier detector they analyze is brittle in high dimensions, motivating the need for the robust algorithms presented in the current work. Later work by the same authors showed how to bypass a number of common outlier detection methods [KSL18]. We use these recent strong attacks as part of our evaluation and show that our algorithm is more robust.
+
+##### Concurrent Works.
+
+[PSBR18] independently obtained a robust algorithm for stochastic convex optimization by combining gradient descent with robust mean estimation. This algorithm is similar to the one we present in Appendix D, and in that section we discuss in more detail the comparison between these two techniques. For the case of linear regression, [DKS19] provide efficient robust algorithms with near-optimal error guarantees under various distributional assumptions and establish matching computational-robustness tradeoffs.
+
+## 2 Framework and Algorithm
+
+In this section, we describe our formal framework as well as the Sever algorithm.
+
+### 2.1 Formal Setting
+
+We will consider stochastic optimization tasks, where there is some true distribution $p^{\ast}$ over functions $f:\mathcal{H}\to\mathbb{R}$, and our goal is to find a parameter vector $w^{\ast}\in\mathcal{H}$ minimizing $\overline{f}(w)\stackrel{{\scriptstyle\text{def}}}{{=}}\mathbb{E}_{f\sim p^{\ast}}[f(w)]$. Here we assume $\mathcal{H}\subseteq\mathbb{R}^{d}$ is a space of possible parameters. As an example, we consider linear regression with squared loss, where $f(w)=\frac{1}{2}(w\cdot x-y)^{2}$ for $(x,y)$ drawn from the data distribution; or support vector machines with hinge loss, where $f(w)=\max\{0,1-y(w\cdot x)\}$. We will use the former as a running example for the theory part of the body of this paper.
+
+To help us learn the parameter vector $w^{\ast}$, we have access to a training set of $n$ functions $f_{1:n}\stackrel{{\scriptstyle\text{def}}}{{=}}\{f_{1},\ldots,f_{n}\}$. (For linear regression, we would have $f_{i}(w)=\frac{1}{2}(w\cdot x_{i}-y_{i})^{2}$, where $(x_{i},y_{i})$ is an observed data point.) However, unlike the classical (uncorrupted) setting where we assume that $f_{1},\ldots,f_{n}\sim p^{\ast}$, we allow for an $\varepsilon$-fraction of the points to be arbitrary outliers:
+
+**Definition 2.1 ($\varepsilon$-contamination model).**
+
+Given $\varepsilon>0$ and a distribution $p^{\ast}$ over functions $f:\mathcal{H}\to\mathbb{R}$, data is generated as follows: first, $n$ clean samples $f_{1},\ldots,f_{n}$ are drawn from $p^{\ast}$. Then, an adversary is allowed to inspect the samples and replace any $\varepsilon n$ of them with arbitrary samples. The resulting set of points is then given to the algorithm. We will call such a set of samples $\varepsilon$-corrupted (with respect to $p^{\ast}$).
+
+In the $\varepsilon$-contamination model, the adversary is allowed to both add and remove points. Our theoretical results hold in this strong robustness model. Our experimental evaluation uses corrupted instances in which the adversary is only allowed to add corrupted points. Additive corruptions essentially correspond to Huber’s contamination model [Hub64] in robust statistics.
+
+Finally, we will often assume access to a black-box learner, which we denote by $\mathcal{L}$, which takes in functions $f_{1},\ldots,f_{n}$ and outputs a parameter vector $w\in\mathcal{H}$. We want to stipulate that $\mathcal{L}$ approximately minimizes $\frac{1}{n}\sum_{i=1}^{n}f_{i}(w)$. For this purpose, we introduce the following definition:
+
+**Definition 2.2 ($\gamma$-approximate critical point).**
+
+Given a function $f:\mathcal{H}\rightarrow\operatorname{\mathbb{R}}$, a $\gamma$-approximate critical point of $f$, is a point $w\in\mathcal{H}$ so that for all unit vectors $v$ where $w+\delta v\in\mathcal{H}$ for arbitrarily small positive $\delta$, we have that $v\cdot\nabla f(w)\geq-\gamma$.
+
+Essentially, the above definition means that the value of $f$ cannot be decreased much by changing the input $w$ locally, while staying within the domain. The condition enforces that moving in any direction $v$ either causes us to leave $\mathcal{H}$ or causes $f$ to decrease at a rate at most $\gamma$. It should be noted that when $\mathcal{H}=\operatorname{\mathbb{R}}^{d}$, our above notion of approximate critical point reduces to the standard notion of approximate stationary point (i.e., a point where the magnitude of the gradient is small).
+
+We are now ready to define the notion of a $\gamma$-approximate learner:
+
+**Definition 2.3 ($\gamma$-approximate learner).**
+
+A learning algorithm $\mathcal{L}$ is called $\gamma$-approximate if, for any functions $f_{1},\ldots,f_{n}:\mathcal{H}\to\mathbb{R}$ each bounded below on a closed domain $\mathcal{H}$, the output ${w}=\mathcal{L}(f_{1:n})$ of $\mathcal{L}$ is a $\gamma$-approximate critical point of $f(x):=\frac{1}{n}\sum_{i=1}^{n}f_{i}(x)$.
+
+In other words, $\mathcal{L}$ always finds an approximate critical point of the empirical learning objective. We note that most common learning algorithms (such as stochastic gradient descent) satisfy the $\gamma$-approximate learner property. For our example of linear regression, gradient descent could be performed using the gradient $\frac{1}{n}\sum_{i=1}^{n}x_{i}(w\cdot x_{i}-y_{i})$. However, in some cases, a more efficient and direct method is to set the gradient equal to 0 and solve for $w$. In our linear regression example, this gives us a closed form solution for the optimal parameter vector.
+
+### 2.2 Algorithm and Theory
+
+As outlined in Figure 1, our algorithm works by post-processing the gradients of a black-box learning algorithm. The basic intuition is as follows: we want to ensure that the outliers do not have a large effect on the learned parameters. Intuitively, for the outliers to have such an effect, their corresponding gradients should be (i) large in magnitude and (ii) systematically pointing in a specific direction. We can detect this via singular value decomposition–if both (i) and (ii) hold then the outliers should be responsible for a large singular value in the matrix of gradients, which allows us to detect and remove them.
+
+This is shown more formally via the pseudocode in Algorithm 1.
+
+Algorithm 1 Sever$(f_{1:n},\mathcal{L},\sigma)$
+
+1: Input: Sample functions $f_{1},\ldots,f_{n}:\mathcal{H}\to\mathbb{R}$, bounded below on a closed domain $\mathcal{H}$, $\gamma$-approximate learner $\mathcal{L}$, and parameter $\sigma\in\operatorname{\mathbb{R}}_{+}$.
+
+2: Initialize $S\leftarrow\{1,\ldots,n\}$.
+
+3: repeat
+
+4: ${w}\leftarrow\mathcal{L}(\{f_{i}\}_{i\in S})$. $\triangleright$ Run approximate learner on points in $S$.
+
+5: Let $\widehat{\nabla}=\frac{1}{|S|}\sum_{i\in S}\nabla f_{i}(w)$.
+
+6: Let $G=[\nabla f_{i}({w})-\widehat{\nabla}]_{i\in S}$ be the $|S|\times d$ matrix of centered gradients.
+
+7: Let $v$ be the top right singular vector of $G$.
+
+8: Compute the vector $\tau$ of outlier scores defined via $\tau_{i}=\left((\nabla f_{i}({w})-\widehat{\nabla})\cdot v\right)^{2}$.
+
+9: $S^{\prime}\leftarrow S$
+
+10: $S\leftarrow{\textsc{Filter}}(S^{\prime},\tau,\sigma)$ $\triangleright$ Remove some $i$’s with the largest scores $\tau_{i}$ from $S$; see Algorithm 2.
+
+11: until $S=S^{\prime}$.
+
+12: Return $w$.
+
+Algorithm 2 Filter$(S,\tau,\sigma)$
+
+1: Input: Set $S\subseteq[n]$, vector $\tau$ of outlier scores, and parameter $\sigma\in\operatorname{\mathbb{R}}_{+}$.
+
+2: If $\sum_{i}\tau_{i}\leq c\cdot\sigma$, for some constant $c>1$, return $S$ $\triangleright$ We only filter out points if the variance is larger than an appropriately chosen threshold.
+
+3: Draw $T$ from the uniform distribution on $[0,\max_{i}\tau_{i}]$.
+
+4: Return $\{i\in S:\tau_{i}<T\}$.
+
+For concreteness, we describe how the algorithm would work for our running example of linear regression. First, we would solve for the optimal parameter vector on the dataset, disregarding issues of robustness. Specifically, we let $\hat{w}$ be the solution to $\sum_{i=1}^{n}x_{i}(\hat{w}\cdot x_{i}-y_{i})=0$: setting the gradient equal to $0$ will give us a critical point, as desired. We compute the average gradient, $\frac{1}{n}\sum_{i=1}^{n}x_{i}(\hat{w}\cdot x_{i}-y_{i}),$ and use this to compute the matrix of centered gradients $G$. That is, the $j$th row of $G$, $G_{j}$, is the vector $x_{j}(\hat{w}\cdot x_{j}-y_{j})-\frac{1}{n}\sum_{i=1}^{n}x_{i}(\hat{w}\cdot x_{i}-y_{i})$. We compute the top right singular vector of $G$, project the data into this direction, and square the resulting magnitudes to derive a score for each point: $\tau_{j}=(G_{j}\cdot v)^{2}$. With these scores in place, we run Algorithm 2, to (randomly) remove some of the points with the largest scores. We re-run the entire procedure on this subset of points, until Algorithm 2 does not remove any points, at which point we terminate.
+
+##### Theoretical Guarantees.
+
+Our first theoretical result says that as long as the data is not too heavy-tailed, Sever will find an approximate critical point of the true function $\overline{f}$, even in the presence of outliers.
+
+**Theorem 2.1.**
+
+Suppose that functions $f_{1},\ldots,f_{n},\overline{f}:\mathcal{H}\rightarrow\operatorname{\mathbb{R}}$ are bounded below on a closed domain $\mathcal{H}$, and suppose that they satisfy the following deterministic regularity conditions: There exists a set $I_{\mathrm{good}}\subseteq[n]$ with $|I_{\mathrm{good}}|\geq(1-\varepsilon)n$ and $\sigma>0$ such that
+
+- $\operatorname{Cov}_{I_{\mathrm{good}}}[\nabla f_{i}(w)]\preceq\sigma^{2}I$, $w\in\mathcal{H}$,
+- $\|\nabla\hat{f}(w)-\nabla\overline{f}(w)\|_{2}\leq\sigma\sqrt{\varepsilon}$, $w\in\mathcal{H}$, where $\hat{f}\stackrel{{\scriptstyle\text{def}}}{{=}}(1/|I_{\mathrm{good}}|)\sum_{i\in I_{\mathrm{good}}}f_{i}$.
+
+Then our algorithm Sever applied to $f_{1},\ldots,f_{n},\sigma$ returns a point $w\in\mathcal{H}$ that, with probability at least $9/10$, is a $(\gamma+O(\sigma\sqrt{\varepsilon}))$-approximate critical point of $\overline{f}$.
+
+The key take-away from Theorem 2.1 is that the error guarantee has no dependence on the underlying dimension $d$. In contrast, most natural algorithms incur an error that grows with $d$, and hence have poor robustness in high dimensions.
+
+We show that under some niceness assumptions on $p^{\ast}$, the deterministic regularity conditions are satisfied with high probability with polynomially many samples:
+
+**Proposition 2.2 (Informal).**
+
+Let $\mathcal{H}\subset\operatorname{\mathbb{R}}^{d}$ be a closed bounded set with diameter at most $r$. Let $p^{\ast}$ be a distribution over functions $f:\mathcal{H}\rightarrow\operatorname{\mathbb{R}}$ and $\overline{f}=\operatorname{\mathbb{E}}_{f\sim p^{\ast}}[f]$. Suppose that for each $w\in\mathcal{H}$ and unit vector $v$ we have $\operatorname{\mathbb{E}}_{f\sim p^{\ast}}[(v\cdot(\nabla f(w)-\overline{f}(w)))^{2}]\leq\sigma^{2}.$ Under appropriate Lipschitz and smoothness assumptions, for $n=\Omega(d\log(r/(\sigma^{2}\varepsilon))/(\sigma^{2}\varepsilon))$, an $\varepsilon$-corrupted set of functions drawn i.i.d. from $p^{\ast}$, $f_{1},\ldots,f_{n}$ with high probability satisfy conditions (i) and (ii).
+
+The reader is referred to Proposition B.5 in the appendix for a detailed formal statement.
+
+While Theorem 2.1 is very general and holds even for non-convex loss functions, we might in general hope for more than an approximate critical point. In particular, for convex problems, we can guarantee that we find an approximate global minimum. This follows as a corollary of Theorem 2.1:
+
+**Corollary 2.3.**
+
+Suppose that $f_{1},\ldots,f_{n}:\mathcal{H}\to\operatorname{\mathbb{R}}$ satisfy the regularity conditions (i) and (ii), and that $\mathcal{H}$ is convex with $\ell_{2}$-radius r. Then, with probability at least $9/10$, the output of Sever satisfies the following:
+
+- (i) If $\overline{f}$ is convex, the algorithm finds a $w\in\mathcal{H}$ such that $\overline{f}(w)-\overline{f}(w^{*})=O((\sigma\sqrt{\varepsilon}+\gamma)r)$.
+- (ii) If $\overline{f}$ is $\xi$-strongly convex, the algorithm finds a $w\in\mathcal{H}$ such that $\overline{f}(w)-\overline{f}(w^{*})=O\left((\varepsilon\sigma^{2}+\gamma^{2})/{\xi}\right)$.
+
+##### Practical Considerations.
+
+For our theory to hold, we need to use the randomized filtering algorithm shown in Algorithm 2 (which is essentially the robust mean estimation algorithm of [DKK+17]), and filter until the stopping condition in line 11 of Algorithm 1 is satisfied. However, in practice we found that the following simpler algorithm worked well: in each iteration simply remove the top $p$ fraction of outliers according to the scores $\tau_{i}$, and instead of using a specific stopping condition, simply repeat the filter for $r$ iterations in total. This is the version of Sever that we use in our experiments in Section 3.
+
+##### Concrete Applications
+
+We also provide several concrete applications of our general theorem, particularly involved with optimization problems related to learning generalized linear models. In this setting, we are given a set of pairs $(X,Y)$ where $X\in\operatorname{\mathbb{R}}^{d}$ and $Y$ is in some (usually discrete) set. One then tries to find some vector $w$ that minimizes some appropriate loss function $L(w,(X,Y))=\sigma_{Y}(w\cdot X)$. For example, the standard hinge-loss has $Y\in\{\pm 1\}$ and $L=\max(0,1-Y(w\cdot X))$. Similarly, the logistic loss function is $-\log(1+\exp(-Y(w\cdot X)))$. In both cases, we show that an approximate minimizer to the empirical loss function can be found with a near-optimal number of samples, even under $\varepsilon$-corruptions (for exact theorem statements see Theorems E.8 and E.11).
+
+**Theorem 2.4 (Informal Statement).**
+
+Let $D_{X,Y}$ be a distribution over $\operatorname{\mathbb{R}}^{d}\times\{\pm 1\}$ so that $\operatorname{\mathbb{E}}[XX^{T}]\preceq I$ and so that not too many $X$ values lie near any hyperplane. Let $(X_{1},Y_{1}),\ldots,(X_{n},Y_{n})$ be $n=\tilde{O}(d/\varepsilon)$ $\varepsilon$-corrupted samples from $D_{X,Y}$. Let $L$ be either the hinge loss or logistic loss function. Then there exists a polynomial time algorithm that with probability $9/10$ returns a vector $w$ that minimizes $\operatorname{\mathbb{E}}_{(X,Y)\sim D_{X,Y}}(L(w,(X,Y)))$ up to an additive $\tilde{O}(\varepsilon^{1/4})$ error.
+
+Another application allows us to use the least-squares loss function ($L(w,(X,Y))=(Y-w\cdot X)^{2}$) to perform linear regression under somewhat more restrictive assumptions (see Theorem E.2 for the full statement):
+
+**Theorem 2.5 (Informal Statement).**
+
+Let $D_{X,Y}$ be a distribution over $\operatorname{\mathbb{R}}^{d}\times\operatorname{\mathbb{R}}$ where $Y=w^{\ast}\cdot X+e$ for some independent $e$ with mean $0$ and variance $1$. Assume furthermore, that $\operatorname{\mathbb{E}}[XX^{T}]\preceq I$ and that $X$ has bounded fourth moments. Then there exists an algorithm that given $O(d^{5}/\varepsilon^{2})$ $\varepsilon$-corrupted samples from $D$, computes a value $w\in\operatorname{\mathbb{R}}^{d}$ so that with high probability $\|w-w^{\ast}\|_{2}=O(\sqrt{\varepsilon})$.
+
+### 2.3 Overview of Sever and its Analysis
+
+For simplicity of the exposition, we restrict ourselves to the important special case where the functions involved are convex. We have a probability distribution $p^{\ast}$ over convex functions on some convex domain $\mathcal{H}\subseteq\operatorname{\mathbb{R}}^{d}$ and we wish to minimize the function $\overline{f}=\mathbb{E}_{f\sim p^{\ast}}[f]$. This problem is well-understood in the absence of corruptions: Under mild assumptions, if we take sufficiently many samples from $p^{\ast}$, their average $\hat{f}$ approximates $\overline{f}$ pointwise with high probability. Hence, we can use standard methods from convex optimization to find an approximate minimizer for $\hat{f}$, which will in turn serve as an approximate minimizer for $\overline{f}$.
+
+In the robust setting, stochastic optimization becomes quite challenging: Even for the most basic special cases of this problem (e.g., mean estimation, linear regression) a single adversarially corrupted sample can substantially change the location of the minimum for $\hat{f}$. Moreover, naive outlier removal methods can only tolerate a negligible fraction $\varepsilon$ of corruptions (corresponding to $\varepsilon=O(d^{-1/2})$).
+
+A first idea to get around this obstacle is the following: We consider the standard (projected) gradient descent method used to find the minimum of $\hat{f}$. This algorithm would proceed by repeatedly computing the gradient of $\hat{f}$ at appropriate points and using it to update the current location. The issue is that adversarial corruptions can completely compromise this algorithm’s behavior, since they can substantially change the gradient of $\hat{f}$ at the chosen points. The key observation is that approximating the gradient of $\overline{f}$ at a given point, given access to an $\varepsilon$-corrupted set of samples, can be viewed as a robust mean estimation problem. We can thus use the robust mean estimation algorithm of [DKK+17], which succeeds under fairly mild assumptions about the good samples. Assuming that the covariance matrix of $\nabla f(w)$, $f\sim p^{\ast}$, is bounded, we can thus “simulate” gradient descent and compute an approximate minimum for $\overline{f}$.
+
+In summary, the first algorithmic idea is to use a robust mean estimation routine as a black-box in order to robustly estimate the gradient at each iteration of (projected) gradient descent. This yields a simple robust method for stochastic optimization with polynomial sample complexity and running time in a very general setting (See Appendix D for details.)
+
+We are now ready to describe Sever (Algorithm 1) and the main insight behind it. Roughly speaking, Sever only calls our robust mean estimation routine (which is essentially the filtering method of [DKK+17] for outlier removal) each time the algorithm reaches an approximate critical point of $\hat{f}$. There are two main motivations for this approach: First, we empirically observed that if we iteratively filter samples, keeping the subset with the samples removed, then few iterations of the filter remove points. Second, an iteration of the filter subroutine (Algorithm 2) is more expensive than an iteration of gradient descent. Therefore, it is advantageous to run many steps of gradient descent on the current set of corrupted samples between consecutive filtering steps. This idea is further improved by using stochastic gradient descent, rather than computing the average at each step.
+
+An important feature of our analysis is that Sever does not use a robust mean estimation routine as a black box. In contrast, we take advantage of the performance guarantees of our filtering algorithm. The main idea for the analysis is as follows: Suppose that we have reached an approximate critical point $w$ of $\hat{f}$ and at this step we apply our filtering algorithm. By the performance guarantees of the latter algorithm we are in one of two cases: either the filtering algorithm removes a set of corrupted functions or it certifies that the gradient of $\hat{f}$ is “close” to the gradient of $\overline{f}$ at $w$. In the first case, we make progress as we produce a “cleaner” set of functions. In the second case, our certification implies that the point $w$ is also an approximate critical point of $\overline{f}$ and we are done.
+
+## 3 Experiments
+
+In this section we apply Sever to regression and classification problems. Our code is available at https://github.com/hoonose/sever. As our base learners, we used ridge regression and an SVM, respectively. We implemented the latter as a quadratic program, using Gurobi [Gur16] as a backend solver and YALMIP [Löf04] as the modeling language.
+
+In both cases, we ran the base learner and then extracted gradients for each data point at the learned parameters. We then centered the gradients and ran MATLAB’s svds method to compute the top singular vector $v$, and removed the top $p$ fraction of points $i$ with the largest outlier score $\tau_{i}$, computed as the squared magnitude of the projection onto $v$ (see Algorithm 1). We repeated this for $r$ iterations in total. For classification, we centered the gradients separately (and removed points separately) for each class, which improved performance.
+
+We compared our method to six baseline methods. All but one of these all have the same high-level form as Sever (run the base learner then filter top $p$ fraction of points with the largest score), but use a different definition of the score $\tau_{i}$ for deciding which points to filter:
+
+- noDefense: no points are removed.
+- l2: remove points where the covariate $x$ has large $\ell_{2}$ distance from the mean.
+- loss: remove points with large loss (measured at the parameters output by the base learner).
+- gradient: remove points with large gradient (in $\ell_{2}$-norm).
+- gradientCentered: remove points whose gradients are far from the mean gradient in $\ell_{2}$-norm.
+- RANSAC: repeatedly subsample points uniformly at random, and find the best fit with the subsample. Then, choose the best fit amongst this set of learners. Note that this method is not “filter-based”.[^3]
+
+Note that gradientCentered is similar to our method, except that it removes large gradients in terms of $\ell_{2}$-norm, rather than in terms of projection onto the top singular vector. As before, for classification we compute these metrics separately for each class.
+
+Both ridge regression and SVM have a single hyperparameter (the regularization coefficient). We optimized this based on the uncorrupted data and then kept it fixed throughout our experiments. In addition, since the data do not already have outliers, we added varying amounts of outliers (ranging from $0.5\%$ to $10\%$ of the clean data); this process is described in more detail below.
+
+### 3.1 Ridge Regression
+
+For ridge regression, we tested our method on a synthetic Gaussian dataset as well as a drug discovery dataset. The synthetic dataset consists of observations $(x_{i},y_{i})$ where $x_{i}\in\mathbb{R}^{500}$ has independent standard Gaussian entries, and $y_{i}=\langle x_{i},w^{*}\rangle+0.1z_{i}$, where $z_{i}$ is also Gaussian. We generated $5000$ training points and $100$ test points. The drug discovery dataset was obtained from the ChEMBL database and was originally curated by [OSB+18]; it consists of $4084$ data points in $410$ dimensions; we split this into a training set of $3084$ points and a test set of $1000$ points.
+
+##### Centering
+
+We found that centering the data points decreased error noticeably on the drug discovery dataset, while scaling each coordinate to have variance $1$ decreased error by a small amount on the synthetic data. To center in the presence of outliers, we used the robust mean estimation algorithm from [DKK+17].
+
+##### Adding outliers.
+
+We devised a method of generating outliers that fools all of the baselines while still inducing high test error. At a high level, the outliers cause ridge regression to output $w=0$ (so the model always predicts $y=0$).
+
+If $(X,y)$ are the true data points and responses, this can be achieved by setting each outlier point $(X_{\mathrm{bad}},y_{\mathrm{bad}})$ as
+
+$$\displaystyle X_{\mathrm{bad}}=\frac{1}{\alpha\cdot n_{\mathrm{bad}}}y^{\top}X~~\mbox{and}~~~y_{\mathrm{bad}}=-\beta\;,$$
+
+where $n_{\mathrm{bad}}$ is the number of outliers we add, and $\alpha$ and $\beta$ are hyperparameters.
+
+If $\alpha=\beta$, one can check that $w=0$ is the unique minimizer for ridge regression on the perturbed dataset. By tuning $\alpha$ and $\beta$, we can then obtain attacks that fool all the baselines while damaging the model (we tune $\alpha$ and $\beta$ separately to give an additional degree of freedom to the attack). To increase the error, we also found it useful to perturb each individual $X_{\mathrm{bad}}$ by a small amount of Gaussian noise.
+
+In our experiments we found that this method generated successful attacks as long as the fraction of outliers was at least roughly $2\%$ for synthetic data, and roughly $5\%$ for the drug discovery data.
+
+Figure 2: $\varepsilon$ vs test error for baselines and Sever on synthetic data and the drug discovery dataset. The left and middle figures show that Sever continues to maintain statistical accuracy against our attacks which are able to defeat previous baselines. The right figure shows an attack with parameters chosen to increase the test error Sever on the drug discovery dataset as much as possible. Despite this, Sever still has relatively small test error.
+
+Figure 3: A representative set of histograms of scores for baselines and Sever on synthetic data and a drug discovery dataset. From left to right: scores for the l2 defense on the drug discovery dataset, scores for loss on synthetic data, and scores for Sever on the drug discovery dataset, all with the addition of 10% outliers. The scores for the true dataset are in blue, and the scores for the outliers are in red. For the baselines, the scores for the outliers are inside the bulk of the distribution and thus hard to detect, whereas the scores for the outliers assigned by Sever are clearly within the tail of the distribution and easily detectable.
+
+##### Results.
+
+In Figure 2 we compare the test error of our defense against the baselines as we increase the fraction $\varepsilon$ of added outliers. To avoid cluttering the figure, we only show the performance of l2, loss, gradientCentered, RANSAC, and Sever; the performance of the remaining baselines is qualitatively similar to the baselines in Figure 2.
+
+For both the baselines and our algorithms, we iterate the defense $r=4$ times, each time removing the $p=\varepsilon/2$ fraction of points with largest score. For consistency of results, for each defense and each value of $\varepsilon$ we ran the defense 3 times on fresh attack points and display the median of the 3 test errors.
+
+When the attack parameters $\alpha$ and $\beta$ are tuned to defeat the baselines (Figure 2 left and center), our defense substantially outperforms the baselines as soon as we cross $\varepsilon\approx 1.5\%$ for synthetic data, and $\varepsilon\approx 5.5\%$ for the drug discovery data. In fact, most of the baselines do worse than not removing any outliers at all (this is because they end up mostly removing good data points, which causes the outliers to have a larger effect). Even when $\alpha$ and $\beta$ are instead tuned to defeat Sever, its resulting error remains small (Figure 2 right).
+
+To understand why the baselines fail to detect the outliers, in Figure 3 we show a representative sample of the histograms of scores of the uncorrupted points overlaid with the scores of the outliers, for both synthetic data and the drug discovery dataset with $\varepsilon=0.1$, after one run of the base learner. The scores of the outliers lie well within the distribution of scores of the uncorrupted points. Thus, it would be impossible for the baselines to remove them without also removing a large fraction of uncorrupted points.
+
+Interestingly, for small $\varepsilon$ all of the methods improve upon the uncorrupted test error for the drug discovery data; this appears to be due to the presence of a small number of natural outliers in the data that all of the methods successfully remove.
+
+### 3.2 Support Vector Machines
+
+We next describe our experimental results for SVMs; we tested our method on a synthetic Gaussian dataset as well as a spam classification task. Similarly to before, the synthetic data consists of observations $(x_{i},y_{i})$, where $x_{i}\in\mathbb{R}^{500}$ has independent standard Gaussian entries, and $y_{i}=\operatorname{sign}(\langle x_{i},w^{*}\rangle+0.1z_{i})$, where $z_{i}$ is also Gaussian and $w^{*}$ is the true parameters (drawn at random from the unit sphere). The spam dataset comes from the Enron corpus [MAP06], and consists of $4137$ training points and $1035$ test points in $5116$ dimensions. To generate attacks, we used the data poisoning algorithm presented in [KSL18].
+
+In contrast to ridge regression, we did not perform centering and rescaling for these datasets as it did not seem to have a large effect on results.
+
+In all experiments for this section, each method removed the top $p=\frac{n_{-}+n_{+}}{\min\{n_{+},n_{-}\}}\cdot\frac{\varepsilon}{r}$ of highest-scoring points for each of $r=2$ iterations, where $n_{+}$ and $n_{-}$ are the number of positive and negative training points respectively. This expression for $p$ is chosen in order to account for class imbalance, which is extreme in the case of the Enron dataset – if the attacker plants all the outliers in the smaller class, then a smaller value of $p$ would remove too few points, even with a perfect detection method.
+
+Figure 4: $\varepsilon$ versus test error for loss baseline and Sever on synthetic data. The left figure demonstrates that Sever is accurate when outliers manage to defeat loss. The right figure shows the result of attacks which increased the test error the most against Sever. Even in this case, Sever performs much better than the baselines.
+
+##### Synthetic results.
+
+We considered fractions of outliers ranging from $\varepsilon=0.005$ to $\varepsilon=0.03$. By performing a sweep across hyperparameters of the attack, we generated $56$ distinct sets of attacks for each value of $\varepsilon$. In Figure 4, we show results for the attack where the loss baselines does the worst, as well as for the attack where our method does the worst. When attacks are most effective against loss, Sever substantially outperforms it, nearly matching the test accuracy of $5.8\%$ on the uncorrupted data, while loss performs worse than $30\%$ error at just a $1.5\%$ fraction of injected outliers. Even when attacks are most effective against Sever, it still outperforms loss, achieving a test error of at most $9.05\%$. We note that other baselines behaved qualitatively similarly to loss, and the results are displayed in Section F.
+
+Figure 5: $\varepsilon$ versus test error for baselines and Sever on the Enron spam corpus. The left and middle figures are the attacks which perform best against two baselines, while the right figure performs best against Sever. Though other baselines may perform well in certain cases, only Sever is consistently accurate. The exception is for certain attacks at $\varepsilon=0.03$, which, as shown in Figure 6, require three rounds of outlier removal for any method to obtain reasonable test error – in these plots, our defenses perform only two rounds.
+
+Figure 6: An illustration of why multiple rounds of filtering are necessary. Histograms of scores assigned by Sever in three subsequent iterations of outlier removal. Inliers are blue, and outliers are red (scaled up by a factor of 10). In early iterations, a significant fraction of outliers may be “hidden” (i.e. have 0 loss) by being correctly classified in one iteration. However, once previous outliers are removed, these points may become incorrectly classified, thus significantly degrading the quality of our solution but simultaneously becoming evident to Sever.
+
+##### Spam results.
+
+For results on Enron, we used the same values of $\varepsilon$, and considered $96$ distinct hyperparameters for the attack. There was not a single attack that simultaneously defeated all of the baselines, so in Figure 5 we show two attacks that do well against different sets of baselines, as well as the attack that performs best against our method.
+
+At $\varepsilon=0.01$, the worst performance of our method against all attacks was $7.34\%$, in contrast to $13.43\%-20.48\%$ for the baselines (note that the accuracy is $3\%$ in the absence of outliers). However, at $\varepsilon=0.03$, while we still outperform the baselines, our error is relatively large—$13.53\%$.
+
+To investigate this further, we looked at all $48$ attacks and found that while on $42$ out of $48$ attacks our error never exceeded $7\%$, on $6$ of the attacks (including the attack in Figure 5) the error was substantially higher. Figure 6 shows what is happening. The leftmost figure displays the scores assigned by Sever after the first iteration, where red bars indicate outliers. While some outliers are assigned extremely large scores and thus detected, several outliers are correctly classified and thus have 0 gradient. However, once we remove the first set of outliers, some outliers which were previously correctly classified now have large score, as displayed in the middle figure. Another iteration of this process produces the rightmost figure, where almost all the remaining outliers have large score and will thus be removed by Sever. This demonstrates that some outliers may be hidden until other outliers are removed, necessitating multiple iterations.
+
+Motivated by this, we re-ran our method against the $6$ attacks using $r=3$ iterations instead of $2$ (and decreasing $p$ as per the expression above). After this change, all $6$ of the attacks had error at most $7.4\%$.
+
+## 4 Discussion
+
+In this paper we have presented an algorithm, Sever, that has both strong theoretical robustness properties in the presence of outliers, and performs well on real datasets. Sever is based on the idea that learning can often be cast as the problem of finding an approximate stationary point of the loss, which can in turn be cast as a robust mean estimation problem, allowing us to leverage existing techniques for efficient robust mean estimation.
+
+There are a number of directions along which Sever could be improved: first, it could be extended to handle more general assumptions on the data; second, it could be strengthened to achieve better error bounds in terms of the fraction of outliers; finally, one could imagine automatically learning a feature representation in which Sever performs well. We discuss each of these ideas in detail below.
+
+##### More general assumptions.
+
+The main underlying assumption on which Sever rests is that the top singular value of the gradients of the data is small. While this appeared to hold true on the datasets we considered, a common occurence in practice is for there to be a few large singular values, together with many small singular values. It would therefore be desirable to design a version of Sever that can take advantage of such phenomena. In addition, it would be worthwhile to do a more detailed empirical analysis across a wide variety of datasets investigating properties that can enable robust estimation (the notion of resilience in [SCV18] could provide a template for finding such properties).
+
+##### Stronger robustness to outliers.
+
+In theory, Sever has a $O(\sqrt{\varepsilon})$ dependence in error on the fraction $\varepsilon$ of outliers (see Theorem 2.1). While without stronger assumptions this is likely not possible to improve, in practice we would prefer to have a dependence closer to $O(\varepsilon)$. Therefore, it would also be useful to improve Sever to have such an $O(\varepsilon)$-dependence under stronger but realistic assumptions. Unfortunately, all existing algorithms for robust mean estimation that achieve error better than $O(\sqrt{\varepsilon})$ either rely on strong distributional assumptions such as Gaussianity [DKK+16, LRV16], or else require expensive computation involving e.g. sum-of-squares optimization [HL17, KS17a, KS17b]. Improving the robustness of Sever thus requires improvements on the robust mean estimation algorithm that Sever uses as a primitive.
+
+##### Learning a favorable representation.
+
+Finally, we note that Sever performs best when the features have small covariance and strong predictive power. One situation in particular where this holds is when there are many approximately independent features that are predictive of the true signal.
+
+It would be interesting to try to learn a representation with such a property. This could be done, for instance, by training a neural network with some cost function that encourages independent features (some ideas along these general lines are discussed in [Ben17]). An issue is how to learn such a representation robustly; one idea is learn a representation on a dataset that is known to be free of outliers, and hope that the representation is useful on other datasets in the same application domain. Beyond these specific questions, we view the general investigation of robust methods (both empirically and theoretically) as an important step as machine learning moves forwards. Indeed, as machine learning is applied in increasingly many situations and in increasingly automated ways, it is important to attend to robustness considerations so that machine learning systems behave reliably and avoid costly errors. While the bulk of recent work has highlighted the vulnerabilities of machine learning (e.g. [SZS+14, LWSV16, SKL17, EEF+18, CLL+17]), we are optimistic that practical algorithms backed by principled theory can finally patch these vulnerabilities and lead to truly reliable systems.
+
+## References
+
+- [ABL14] P. Awasthi, M. F. Balcan, and P. M. Long. The power of localization for efficiently learning linear separators with noise. In Symposium on Theory of Computing (STOC), pages 449–458, 2014.
+- [BDLS17] S. Balakrishnan, S. S. Du, J. Li, and A. Singh. Computationally efficient robust sparse estimation in high dimensions. In Proceedings of the 30th Conference on Learning Theory, COLT 2017, pages 169–212, 2017.
+- [Ben17] Y. Bengio. The consciousness prior. arXiv preprint arXiv:1709.08568, 2017.
+- [BJK15] K. Bhatia, P. Jain, and P. Kar. Robust regression via hard thresholding. In Advances in Neural Information Processing Systems 28: Annual Conference on Neural Information Processing Systems 2015, pages 721–729, 2015.
+- [BJKK17] K. Bhatia, P. Jain, P. Kamalaruban, and P. Kar. Consistent robust regression. In Advances in Neural Information Processing Systems 30: Annual Conference on Neural Information Processing Systems 2017, pages 2107–2116, 2017.
+- [BKNS00] M. M¿ Breunig, H. Kriegel, R. T. Ng, and J. Sander. Lof: identifying density-based local outliers. In ACM sigmod record, volume 29, pages 93–104. ACM, 2000.
+- [BNJT10] M. Barreno, B. Nelson, A. D. Joseph, and J. D. Tygar. The security of machine learning. Machine Learning, 81(2):121–148, 2010.
+- [BNL12] B. Biggio, B. Nelson, and P. Laskov. Poisoning attacks against support vector machines. In International Conference on Machine Learning (ICML), pages 1467–1474, 2012.
+- [CLL+17] X. Chen, C. Liu, B. Li, K. Lu, and D. Song. Targeted backdoor attacks on deep learning systems using data poisoning. arXiv preprint arXiv:1712.05526, 2017.
+- [CSV17] M. Charikar, J. Steinhardt, and G. Valiant. Learning from untrusted data. In Proceedings of STOC 2017, pages 47–60, 2017.
+- [DKK+16] I. Diakonikolas, G. Kamath, D. M. Kane, J. Li, A. Moitra, and A. Stewart. Robust estimators in high dimensions without the computational intractability. In Proceedings of FOCS’16, pages 655–664, 2016.
+- [DKK+17] I. Diakonikolas, G. Kamath, D. M. Kane, J. Li, A. Moitra, and A. Stewart. Being robust (in high dimensions) can be practical. In Proceedings of the 34th International Conference on Machine Learning, ICML 2017, pages 999–1008, 2017. Full version available at https://arxiv.org/abs/1703.00893.
+- [DKK+18] I. Diakonikolas, G. Kamath, D. M. Kane, J. Li, A. Moitra, and A. Stewart. Robustly learning a gaussian: Getting optimal error, efficiently. In Proceedings of the Twenty-Ninth Annual ACM-SIAM Symposium on Discrete Algorithms, SODA 2018, pages 2683–2702, 2018. Full version available at https://arxiv.org/abs/1704.03866.
+- [DKS16] I. Diakonikolas, D. M. Kane, and A. Stewart. Robust learning of fixed-structure bayesian networks. CoRR, abs/1606.07384, 2016.
+- [DKS17a] I. Diakonikolas, D. M. Kane, and A. Stewart. Learning geometric concepts with nasty noise. CoRR, abs/1707.01242, 2017.
+- [DKS17b] I. Diakonikolas, D. M. Kane, and A. Stewart. List-decodable robust mean estimation and learning mixtures of spherical gaussians. CoRR, abs/1711.07211, 2017.
+- [DKS17c] I. Diakonikolas, D. M. Kane, and A. Stewart. Statistical query lower bounds for robust estimation of high-dimensional gaussians and gaussian mixtures. In 58th IEEE Annual Symposium on Foundations of Computer Science, FOCS 2017, pages 73–84, 2017. Full version available at http://arxiv.org/abs/1611.03473.
+- [DKS19] I. Diakonikolas, W. Kong, and A. Stewart. Efficient algorithms and lower bounds for robust linear regression. In Proceedings of the Twenty-Ninth Annual ACM-SIAM Symposium on Discrete Algorithms, SODA 2019, pages 2745–2754, 2019.
+- [EEF+18] K. Eykholt, I. Evtimov, E. Fernandes, B. Li, A. Rahmati, C. Xiao, A. Prakash, T. Kohno, and D. Song. Robust physical-world attacks on deep learning visual classification. In The IEEE Conference on Computer Vision and Pattern Recognition (CVPR), June 2018.
+- [FB81] M. A. Fischler and R. C. Bolles. Random sample consensus: a paradigm for model fitting with applications to image analysis and automated cartography. Communications of the ACM, 24(6):381–395, 1981.
+- [Gur16] Gurobi Optimization, Inc. Gurobi optimizer reference manual, 2016.
+- [HA04] V. Hodge and J. Austin. A survey of outlier detection methodologies. Artificial intelligence review, 22(2):85–126, 2004.
+- [HL17] S. B. Hopkins and J. Li. Mixture models, robustness, and sum of squares proofs. CoRR, abs/1711.07454, 2017.
+- [Hub64] P. J. Huber. Robust estimation of a location parameter. Ann. Math. Statist., 35(1):73–101, 03 1964.
+- [KL17] P. W. Koh and P. Liang. Understanding black-box predictions via influence functions. In International Conference on Machine Learning (ICML), 2017.
+- [KLS09] A. R. Klivans, P. M. Long, and R. A. Servedio. Learning halfspaces with malicious noise. Journal of Machine Learning Research (JMLR), 10:2715–2740, 2009.
+- [KS17a] P. K. Kothari and J. Steinhardt. Better agnostic clustering via relaxed tensor norms. CoRR, abs/1711.07465, 2017.
+- [KS17b] P. K. Kothari and D. Steurer. Outlier-robust moment-estimation via sum-of-squares. CoRR, abs/1711.11581, 2017.
+- [KSL18] P. W. Koh, J. Steinhardt, and P. Liang. Stronger data poisoning attacks break data sanitization defenses. arXiv preprint arXiv:1811.00741, 2018.
+- [LAT+08] J.Z. Li, D.M. Absher, H. Tang, A.M. Southwick, A.M. Casto, S. Ramachandran, H.M. Cann, G.S. Barsh, M. Feldman, L.L. Cavalli-Sforza, and R.M. Myers. Worldwide human relationships inferred from genome-wide patterns of variation. Science, 319:1100–1104, 2008.
+- [Löf04] J. Löfberg. YALMIP: A toolbox for modeling and optimization in MATLAB. In CACSD, 2004.
+- [LRV16] K. A. Lai, A. B. Rao, and S. Vempala. Agnostic estimation of mean and covariance. In Proceedings of FOCS’16, 2016.
+- [LWSV16] B. Li, Y. Wang, A. Singh, and Y. Vorobeychik. Data poisoning attacks on factorization-based collaborative filtering. In Advances in Neural Information Processing Systems (NIPS), 2016.
+- [MAP06] V. Metsis, I. Androutsopoulos, and G. Paliouras. Spam filtering with naive Bayes – which naive Bayes? In CEAS, volume 17, pages 28–69, 2006.
+- [MV18] M. Meister and G. Valiant. A data prism: Semi-verified learning in the small-alpha regime. In Proceedings of the 31st Conference On Learning Theory, volume 75 of Proceedings of Machine Learning Research, pages 1530–1546. PMLR, 06–09 Jul 2018.
+- [NPXNR14] A. Newell, R. Potharaju, L. Xiang, and C. Nita-Rotaru. On the practicality of integrity attacks on document-level sentiment analysis. In Workshop on Artificial Intelligence and Security (AISec), pages 83–93, 2014.
+- [NT13] N. H. Nguyen and T. D. Tran. Exact recoverability from dense corrupted observations via $\ell_{1}$-minimization. IEEE Transactions on Information Theory, 59(4):2017–2035, 2013.
+- [NTN11] N. M. Nasrabadi, T. D. Tran, and N. Nguyen. Robust lasso with missing and grossly corrupted observations. In Advances in Neural Information Processing Systems (NIPS), 2011.
+- [OSB+18] I. Olier, N. Sadawi, G. R. Bickerton, J. Vanschoren, C. Grosan, L. Soldatova, and Ross D. King. Meta-qsar: a large-scale application of meta-learning to drug design and discovery. Machine Learning, 107(1):285–311, Jan 2018.
+- [Owe07] A. B. Owen. A robust hybrid of lasso and ridge regression. Contemporary Mathematics, 443(7):59–72, 2007.
+- [PLJD10] P. Paschou, J. Lewis, A. Javed, and P. Drineas. Ancestry informative markers for fine-scale individual assignment to worldwide populations. Journal of Medical Genetics, 47:835–847, 2010.
+- [PSBR18] A. Prasad, A. S. Suggala, S. Balakrishnan, and P. Ravikumar. Robust estimation via robust gradient estimation. CoRR, abs/1802.06485, 2018.
+- [QV18] M. Qiao and G. Valiant. Learning discrete distributions from untrusted batches. In Innovations in Theoretical Computer Science (ITCS), 2018.
+- [RD99] P. J. Rousseeuw and K. V. Driessen. A fast algorithm for the minimum covariance determinant estimator. Technometrics, 41(3):212–223, 1999.
+- [RPW+02] N. Rosenberg, J. Pritchard, J. Weber, H. Cann, K. Kidd, L.A. Zhivotovsky, and M.W. Feldman. Genetic structure of human populations. Science, 298:2381–2385, 2002.
+- [SCV18] J. Steinhardt, M. Charikar, and G. Valiant. Resilience: A criterion for learning in the presence of arbitrary outliers. In Innovations in Theoretical Computer Science (ITCS), 2018.
+- [SKL17] J. Steinhardt, P. W. Koh, and P. Liang. Certified defenses for data poisoning attacks. In Advances in Neural Information Processing Systems (NIPS), 2017.
+- [Ste17] J. Steinhardt. Does robustness imply tractability? A lower bound for planted clique in the semi-random model. arXiv, 2017.
+- [SZS+14] C. Szegedy, W. Zaremba, I. Sutskever, J. Bruna, D. Erhan, I. Goodfellow, and R. Fergus. Intriguing properties of neural networks. In International Conference on Learning Representations (ICLR), 2014.
+- [Tuk60] J. W. Tukey. A survey of sampling from contaminated distributions. Contributions to probability and statistics, 2:448–485, 1960.
+- [Tuk75] J.W. Tukey. Mathematics and picturing of data. In Proceedings of ICM, volume 6, pages 523–531, 1975.
+
+## Appendix
+
+The appendix is organized as follows. In Section A, we describe additional preliminaries required for our technical arguments. In Section B, we analyze our main algorithm, Sever. In Section C, we specialize our analysis to the important case of Generalized Linear Models (GLMs). In Section D, we describe a variant of our algorithm which performs robust filtering on each iteration of projected gradient descent, and works under more general assumptions. In Section E, we describe concrete applications of Sever – in particular, how it can be used to robustly optimize in the settings of linear regression, logistic regression, and support vector machines. Finally, in Section F, we provide additional plots from our experimental evaluations.
+
+## Appendix A Preliminaries
+
+In this section, we formally introduce our setting for robust stochastic optimization.
+
+##### Notation.
+
+For $n\in\operatorname{\mathbb{Z}}_{+}$, we will denote $[n]\stackrel{{\scriptstyle\text{def}}}{{=}}\{1,\ldots,n\}$. For a vector $v$, we will let $\|v\|_{2}$ denote its Euclidean norm. For any $r\geq 0$ and any $x\in\operatorname{\mathbb{R}}^{d}$, let $B(x,r)$ be the $\ell_{2}$ ball of radius $r$ around $x$. If $M$ is a matrix, we will let $\|M\|_{2}$ denote its spectral norm and $\|M\|_{F}$ denote its Frobenius norm. We will write $X\sim_{u}S$ to denote that $X$ is drawn from the empirical distribution defined by $S$. We will sometimes use the notation $\operatorname{\mathbb{E}}_{S}$, instead of $\operatorname{\mathbb{E}}_{X\sim S}$, for the corresponding expectation. We will also use the same convention for the covariance, i.e. we let $\operatorname{Cov}_{S}$ denote the covariance over the empirical distribution.
+
+##### Setting.
+
+We consider a stochastic optimization setting with outliers. Let $\mathcal{H}\subseteq\mathbb{R}^{d}$ be a space of parameters. We observe $n$ functions $f_{1},\ldots,f_{n}:\mathcal{H}\to\mathbb{R}$ and we are interested in (approximately) minimizing some target function $\overline{f}:\mathcal{H}\to\mathbb{R}$, related to the $f_{i}$’s. We will assume for simplicity that the $f_{i}$’s are differentiable with gradient $\nabla f_{i}$. (Our results can be easily extended for the case that only a sub-gradient is available.)
+
+In most concrete applications we will consider, there is some true underlying distribution $p^{\ast}$ over functions $f:\mathcal{H}\to\mathbb{R}$, and our goal is to find a parameter vector $w^{\ast}\in\mathcal{H}$ minimizing $\overline{f}(w)\stackrel{{\scriptstyle\text{def}}}{{=}}\mathbb{E}_{f\sim p^{\ast}}[f(w)]$. Unlike the classical realizable setting, where we assume that $f_{1},\ldots,f_{n}\sim p^{\ast}$, we allow for an $\varepsilon$-fraction of the points to be arbitrary outliers. This is captured in the following definition (Definition 2.1) that we restate for convenience:
+
+**Definition A.1 ($\varepsilon$-corruption model).**
+
+Given $\varepsilon>0$ and a distribution $p^{\ast}$ over functions $f:\mathcal{H}\to\mathbb{R}$, data is generated as follows: first, $n$ clean samples $f_{1},\ldots,f_{n}$ are drawn from $p^{\ast}$. Then, an adversary is allowed to inspect the samples and replace any $\varepsilon n$ of them with arbitrary samples. The resulting set of points is then given to the algorithm.
+
+In addition, some of our bounds will make use of the following quantities:
+
+- The $\ell_{2}$-radius $r$ of the domain $\mathcal{H}$: $r=\max_{w\in\mathcal{H}}\|w\|_{2}$.
+- The strong convexity parameter $\xi$ of $\overline{f}$, if it exists. This is the maximal $\xi$ such that $\overline{f}(w)\geq\overline{f}(w_{0})+\langle w-w_{0},\nabla\overline{f}(w_{0})\rangle+\frac{\xi}{2}\|w-w_{0}\|_{2}^{2}$ for all $w,w_{0}\in\mathcal{H}$.
+- The strong smoothness parameter $\beta$ of $\overline{f}$, if it exists. This is the minimal $\beta$ such that $\overline{f}(w)\leq\overline{f}(w_{0})+\langle w-w_{0},\nabla\overline{f}(w_{0})\rangle+\frac{\beta}{2}\|w-w_{0}\|_{2}^{2}$ for all $w,w_{0}\in\mathcal{H}$.
+- The Lipschitz constant $L$ of $\overline{f}$, if it exists. This is the minimal $L$ such that $\overline{f}(w)-\overline{f}(w_{0})\leq L\|w-w_{0}\|_{2}$ for all $w,w_{0}\in\mathcal{H}$.
+
+## Appendix B General Analysis of Sever
+
+This section is dedicated to the analysis of Algorithm 1, where we do not make convexity assumptions about the underlying functions $f_{1},\ldots,f_{n}$. In this case, we can show that our algorithm finds an approximate critical point of $\overline{f}$. When we specialize to convex functions, this immediately implies that we find an approximate minimal point of $\overline{f}$.
+
+Our proof proceeds in two parts. First, we define a set of deterministic conditions under which our algorithm finds an approximate minimal point of $\overline{f}$. We then show that, under mild assumptions on our functions, this set of deterministic conditions holds with high probability after polynomially many samples.
+
+For completeness, we recall the definitions of a $\gamma$-approximate critical point and a $\gamma$-approximate learner:
+
+See 2.2
+
+See 2.3
+
+##### Deterministic Regularity Conditions
+
+We first explicitly demonstrate a set of deterministic conditions on the (uncorrupted) data points. Our deterministic regularity conditions are as follows:
+
+**Assumption B.1.**
+
+Fix $0<\varepsilon<1/2$. There exists an unknown set $I_{\mathrm{good}}\subseteq[n]$ with $|I_{\mathrm{good}}|\geq(1-\varepsilon)n$ of “good” functions $\{f_{i}\}_{i\in I_{\mathrm{good}}}$ and parameters $\sigma_{0},\sigma_{1}\in\operatorname{\mathbb{R}}_{+}$ such that:
+
+$$\Big\|\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}\big[\big(\nabla f_{i}(w)-\nabla\overline{f}(w)\big)\big(\nabla f_{i}(w)-\nabla\overline{f}(w)\big)^{T}\big]\Big\|_{2}\leq(\sigma_{0}+\sigma_{1}\|w^{*}-w\|_{2})^{2},\textrm{ for all }w\in\mathcal{H}\;, \tag{1}$$
+
+and
+
+$$\|\nabla\hat{f}(w)-\nabla\overline{f}(w)\|_{2}\leq(\sigma_{0}+\sigma_{1}\|w^{*}-w\|_{2})\sqrt{\varepsilon},\textrm{ for all }w\in\mathcal{H},\textrm{ where }\hat{f}\stackrel{{\scriptstyle\text{def}}}{{=}}\frac{1}{|I_{\mathrm{good}}|}\sum_{i\in I_{\mathrm{good}}}f_{i}\;. \tag{2}$$
+
+In Section B.1, we prove the following theorem, which shows that under Assumption B.1 our algorithm succeeds:
+
+**Theorem B.2.**
+
+Suppose that the functions $f_{1},\ldots,f_{n},\overline{f}:\mathcal{H}\rightarrow\operatorname{\mathbb{R}}$ are bounded below, and that Assumption B.1 is satisfied, where $\sigma\stackrel{{\scriptstyle\text{def}}}{{=}}\sigma_{0}+\sigma_{1}\|w^{*}-w\|_{2}.$ Then Sever applied to $f_{1},\ldots,f_{n},\sigma$ returns a point $w\in\mathcal{H}$ that, with probability at least $9/10$, is a $(\gamma+O(\sigma\sqrt{\varepsilon}))$-approximate critical point of $\overline{f}$.
+
+Observe that the above theorem holds quite generally; in particular, it holds for non-convex functions. As a corollary of this theorem, in Section B.2 we show that this immediately implies that Sever robustly minimizes convex functions, if Assumption B.1 holds:
+
+**Corollary B.3.**
+
+For functions $f_{1},\ldots,f_{n}:\mathcal{H}\to\operatorname{\mathbb{R}}$, suppose that Assumption B.1 holds and that $\mathcal{H}$ is convex. Then, with probability at least $9/10$, for some universal constant $\varepsilon_{0}$, if $\varepsilon<\varepsilon_{0}$, the output of Sever satisfies the following:
+
+- (i) If $\overline{f}$ is convex, the algorithm finds a $w\in\mathcal{H}$ such that $\overline{f}(w)-\overline{f}(w^{*})=O((\sigma_{0}r+\sigma_{1}r^{2})\sqrt{\varepsilon}+\gamma r)$.
+- (ii) If $\overline{f}$ is $\xi$-strongly convex, the algorithm finds a $w\in\mathcal{H}$ such that
+ $$\displaystyle\overline{f}(w)-\overline{f}(w^{*})=O\left(\frac{\varepsilon}{\xi}(\sigma_{0}+\sigma_{1}r)^{2}+\frac{\gamma^{2}}{\xi}\right)\;.$$
+
+In the strongly convex case and when $\sigma_{1}>0$, we can remove the dependence on $\sigma_{1}$ and $r$ in the above by repeatedly applying Sever with decreasing $r$:
+
+**Corollary B.4.**
+
+For functions $f_{1},\ldots,f_{n}:\mathcal{H}\to\operatorname{\mathbb{R}}$, suppose that Assumption B.1 holds, that $\mathcal{H}$ is convex and that $\overline{f}$ is $\xi$-strongly convex for $\xi\geq C\sigma_{1}\sqrt{\varepsilon}$ for some absolute constant $C$. Then, with probability at least $9/10$, for some universal constant $\varepsilon_{0}$, if $\varepsilon<\varepsilon_{0}$, we can find a $\widehat{w}$ with
+
+$$\displaystyle\overline{f}(\widehat{w})-\overline{f}(w^{*})=O\left(\frac{\varepsilon\sigma_{0}^{2}+\gamma^{2}}{\xi}\right)\;.$$
+
+and
+
+$$\displaystyle\|\widehat{w}-w^{*}\|_{2}=O\left(\frac{\sqrt{\varepsilon}\sigma_{0}+\gamma}{\xi}\right)$$
+
+using at most $O(\log(r\xi/(\gamma+\sigma_{0}\sqrt{\varepsilon})))$ calls to Sever.
+
+To concretely use Theorem B.2, Corollary B.3, and Corollary B.4, in Section B.4 we show that the Assumption B.1 is satisfied with high probability under mild conditions on the distribution over the functions, after drawing polynomially many samples:
+
+**Proposition B.5.**
+
+Let $\mathcal{H}\subset\operatorname{\mathbb{R}}^{d}$ be a closed bounded set with diameter at most $r$. Let $p^{\ast}$ be a distribution over functions $f:\mathcal{H}\rightarrow\operatorname{\mathbb{R}}$ with $\overline{f}=\operatorname{\mathbb{E}}_{f\sim p^{\ast}}[f]$ so that $f-\overline{f}$ is $L$-Lipschitz and $\beta$-smooth almost surely. Assume furthermore that for each $w\in\mathcal{H}$ and unit vector $v$ that $\operatorname{\mathbb{E}}_{f\sim p^{\ast}}[(v\cdot(\nabla f(w)-\overline{f}(w)))^{2}]\leq\sigma^{2}/2.$ Then for
+
+$$\displaystyle n=\Omega\left(\frac{dL^{2}\log(r\beta L/\sigma^{2}\varepsilon)}{\sigma^{2}\varepsilon}\right)\;,$$
+
+an $\varepsilon$-corrupted set of points $f_{1},\ldots,f_{n}$ with high probability satisfy Assumption B.1.
+
+The remaining subsections are dedicated to the proofs of Theorem B.2, Corollary B.3, Corollary B.4, and Proposition B.5.
+
+### B.1 Proof of Theorem B.2
+
+Throughout this proof we let $I_{\mathrm{good}}$ be as in Assumption B.1. We require the following two lemmata. Roughly speaking, the first states that on average, we remove more corrupted points than uncorrupted points, and the second states that at termination, and if we have not removed too many points, then we have reached a point at which the empirical gradient is close to the true gradient. Formally:
+
+**Lemma B.6.**
+
+If the samples satisfy (1) of Assumption B.1, and if $|S|\geq 2n/3$ then if $S^{\prime}$ is the output of $\textsc{Filter}(S,\tau,\sigma)$, we have that
+
+$$\operatorname{\mathbb{E}}[|I_{\mathrm{good}}\cap(S\backslash S^{\prime})|]\leq\operatorname{\mathbb{E}}[|([n]\backslash I_{\mathrm{good}})\cap(S\backslash S^{\prime})|].$$
+
+**Lemma B.7.**
+
+If the samples satisfy Assumption B.1, $\textsc{Filter}(S,\tau,\sigma)=S$, and $n-|S|\leq 11\varepsilon n$, then
+
+$$\left\|\nabla\overline{f}({w})-\frac{1}{|I_{\mathrm{good}}|}\sum_{i\in S}\nabla f_{i}({w})\right\|_{2}\leq O(\sigma\sqrt{\varepsilon})$$
+
+Before we prove these lemmata, we show how together they imply Theorem B.2.
+
+**Proof of Theorem B.2 assuming Lemma B.6 and Lemma B.7.**
+
+First, we note that the algorithm must terminate in at most $n$ iterations. This is easy to see as each iteration of the main loop except for the last must decrease the size of $S$ by at least $1$.
+
+It thus suffices to prove correctness. Note that Lemma B.6 says that each iteration will on average throw out as many elements not in $I_{\mathrm{good}}$ from $S$ as elements in $I_{\mathrm{good}}$. In particular, this means that $|([n]\backslash I_{\mathrm{good}})\cap S|+|I_{\mathrm{good}}\backslash S|$ is a supermartingale. Since its initial size is at most $\varepsilon n$, with probability at least $9/10$, it never exceeds $10\varepsilon n$, and therefore at the end of the algorithm, we must have that $n-|S|\leq\varepsilon n+|I_{\mathrm{good}}\backslash S|\leq 11\varepsilon n$. This will allow us to apply Lemma B.7 to complete the proof, using the fact that $w$ is a $\gamma$-approximate critical point of $\frac{1}{|I_{\mathrm{good}}|}\sum_{i\in S}\nabla f_{i}({w})$. ∎
+
+Thus it suffices to prove these two lemmata. We first prove Lemma B.6:
+
+**Proof of Lemma B.6.**
+
+Let $S_{\mathrm{good}}=S\cap I_{\mathrm{good}}$ and $S_{\mathrm{bad}}=S\backslash I_{\mathrm{good}}$. We wish to show that the expected number of elements thrown out of $S_{\mathrm{bad}}$ is at least the expected number thrown out of $S_{\mathrm{good}}$. We note that our result holds trivially if $\textsc{Filter}(S,\tau,\sigma)=S$. Thus, we can assume that $\operatorname{\mathbb{E}}_{i\in S}[\tau_{i}]\geq 12\sigma$.
+
+It is easy to see that the expected number of elements thrown out of $S_{\mathrm{bad}}$ is proportional to $\sum_{i\in S_{\mathrm{bad}}}\tau_{i}$, while the number removed from $S_{\mathrm{good}}$ is proportional to $\sum_{i\in S_{\mathrm{good}}}\tau_{i}$ (with the same proportionality). Hence, it suffices to show that $\sum_{i\in S_{\mathrm{bad}}}\tau_{i}\geq\sum_{i\in S_{\mathrm{good}}}\tau_{i}$.
+
+We first note that since $\operatorname{Cov}_{i\in I_{\mathrm{good}}}[\nabla f_{i}(w)]\preceq\sigma^{2}I$, we have that
+
+$$\displaystyle\operatorname{Cov}_{i\in S_{\mathrm{good}}}[v\cdot\nabla f_{i}(w)] \displaystyle\stackrel{{\scriptstyle(a)}}{{\leq}}\frac{3}{2}\operatorname{Cov}_{i\in I_{\mathrm{good}}}[v\cdot\nabla f_{i}(w)]$$
+
+$$\displaystyle=\frac{3}{2}\cdot v^{\top}\operatorname{Cov}_{i\in I_{\mathrm{good}}}[\nabla f_{i}(w)]v\leq 2\sigma^{2}\;,$$
+
+where (a) follows since $|S_{\mathrm{good}}|\geq\frac{3}{2}I_{\mathrm{good}}$.
+
+Let $\mu_{\mathrm{good}}=\operatorname{\mathbb{E}}_{i\in S_{\mathrm{good}}}[v\cdot\nabla f_{i}(w)]$ and $\mu=\operatorname{\mathbb{E}}_{i\in S}[v\cdot\nabla f_{i}(w)]$. Note that
+
+$$\displaystyle\operatorname{\mathbb{E}}_{i\in S_{\mathrm{good}}}[\tau_{i}]=\operatorname{Cov}_{i\in S_{\mathrm{good}}}[v\cdot\nabla f_{i}(w)]+(\mu-\mu_{\mathrm{good}})^{2}\leq 2\sigma+(\mu-\mu_{\mathrm{good}})^{2}\;.$$
+
+We now split into two cases.
+
+Firstly, if $(\mu-\mu_{\mathrm{good}})^{2}\geq 4\sigma^{2}$, we let $\mu_{\mathrm{bad}}=\operatorname{\mathbb{E}}_{i\in S_{\mathrm{bad}}}[v\cdot\nabla f_{i}(w)]$, and note that $|\mu-\mu_{\mathrm{bad}}||S_{\mathrm{bad}}|=|\mu-\mu_{\mathrm{good}}||S_{\mathrm{good}}|$. We then have that
+
+$$\displaystyle\operatorname{\mathbb{E}}_{i\in S_{\mathrm{bad}}}[\tau_{i}] \displaystyle\geq(\mu-\mu_{\mathrm{bad}})^{2}$$
+
+$$\displaystyle\geq(\mu-\mu_{\mathrm{good}})^{2}\left(\frac{|S_{\mathrm{good}}|}{|S_{\mathrm{bad}}|}\right)^{2}$$
+
+$$\displaystyle\geq 2\left(\frac{|S_{\mathrm{good}}|}{|S_{\mathrm{bad}}|}\right)(\mu-\mu_{\mathrm{good}})^{2}$$
+
+$$\displaystyle\geq\left(\frac{|S_{\mathrm{good}}|}{|S_{\mathrm{bad}}|}\right)\operatorname{\mathbb{E}}_{i\in S_{\mathrm{good}}}[\tau_{i}].$$
+
+Hence, $\sum_{i\in S_{\mathrm{bad}}}\tau_{i}\geq\sum_{i\in S_{\mathrm{good}}}\tau_{i}$.
+
+On the other hand, if $(\mu-\mu_{\mathrm{good}})^{2}\leq 4\sigma^{2}$, then $\operatorname{\mathbb{E}}_{i\in S_{\mathrm{good}}}[\tau_{i}]\leq 6\sigma^{2}\leq\operatorname{\mathbb{E}}_{i\in S}[\tau_{i}]/2$. Therefore $\sum_{i\in S_{\mathrm{bad}}}\tau_{i}\geq\sum_{i\in S_{\mathrm{good}}}\tau_{i}$ once again. This completes our proof. ∎
+
+We now prove Lemma B.7.
+
+**Proof of Lemma B.7.**
+
+We need to show that
+
+$$\delta:=\left\|\sum_{i\in S}(\nabla f_{i}(w)-\nabla\overline{f}(w))\right\|_{2}=O(n\sigma\sqrt{\varepsilon}).$$
+
+We note that
+
+$$\displaystyle\left\|\sum_{i\in S}(\nabla f_{i}(w)-\nabla\overline{f}(w))\right\|_{2}$$
+
+$$\displaystyle\leq \displaystyle\left\|\sum_{i\in I_{\mathrm{good}}}(\nabla f_{i}(w)-\nabla\overline{f}(w))\right\|_{2}+\left\|\sum_{i\in(I_{\mathrm{good}}\backslash S)}(\nabla f_{i}(w)-\nabla\overline{f}(w))\right\|_{2}+\left\|\sum_{i\in(S\backslash I_{\mathrm{good}})}(\nabla f_{i}(w)-\nabla\overline{f}(w))\right\|_{2}$$
+
+$$\displaystyle= \displaystyle\left\|\sum_{i\in(I_{\mathrm{good}}\backslash S)}(\nabla f_{i}(w)-\nabla\overline{f}(w))\right\|_{2}+\left\|\sum_{i\in(S\backslash I_{\mathrm{good}})}(\nabla f_{i}(w)-\nabla\overline{f}(w))\right\|_{2}+O(n\sqrt{\sigma^{2}\varepsilon}).$$
+
+First we analyze
+
+$$\left\|\sum_{i\in(I_{\mathrm{good}}\backslash S)}(\nabla f_{i}(w)-\nabla\overline{f}(w))\right\|_{2}.$$
+
+This is the supremum over unit vectors $v$ of
+
+$$\sum_{i\in(I_{\mathrm{good}}\backslash S)}v\cdot(\nabla f_{i}(w)-\nabla\overline{f}(w)).$$
+
+However, we note that
+
+$$\sum_{i\in I_{\mathrm{good}}}(v\cdot(\nabla f_{i}(w)-\nabla\overline{f}(w)))^{2}=O(n\sigma^{2}).$$
+
+Since $|I_{\mathrm{good}}\backslash S|=O(n\varepsilon)$, we have by Cauchy-Schwarz that
+
+$$\sum_{i\in(I_{\mathrm{good}}\backslash S)}v\cdot(\nabla f_{i}(w)-\nabla\overline{f}(w))=O(\sqrt{(n\sigma^{2})(n\varepsilon)})=O(n\sqrt{\sigma^{2}\varepsilon}),$$
+
+as desired.
+
+We note that since for any such $v$ that
+
+$$\sum_{i\in S}(v\cdot(\nabla f_{i}(w)-\nabla\overline{f}(w)))^{2}=\sum_{i\in S}(v\cdot(\nabla f_{i}(w)-\nabla\hat{f}(w)))^{2}+\delta^{2}=O(n\sigma^{2})+\delta^{2}$$
+
+(or otherwise our filter would have removed elements) and since $|S\backslash I_{\mathrm{good}}|=O(n\varepsilon)$, and so we have similarly that
+
+$$\left\|\sum_{i\in(S\backslash I_{\mathrm{good}})}\nabla f_{i}(w)-\nabla\overline{f}(w)\right\|_{2}=O(n\sigma\sqrt{\varepsilon}+\delta\sqrt{n\varepsilon}).$$
+
+Combining with the above we have that
+
+$$\delta=O(\sigma\sqrt{\varepsilon}+\delta\sqrt{\varepsilon/n}),$$
+
+and therefore, $\delta=O(\sigma\sqrt{\varepsilon})$ as desired. ∎
+
+### B.2 Proof of Corollary B.3
+
+In this section, we show that the Sever algorithm finds an approximate global optimum for convex optimization in various settings, under Assumption B.1. We do so by simply applying the guarantees of Theorem B.2 in a fairly black box manner.
+
+Before we proceed with the proof of Corollary B.3, we record a simple lemma that allows us to translate an approximate critical point guarantee to an approximate global optimum guarantee:
+
+**Lemma B.8.**
+
+Let $f:\mathcal{H}\to\operatorname{\mathbb{R}}$ be a convex function and let $x\neq y\in\mathcal{H}$. Let $v=y-x/\|y-x\|_{2}$ be the unit vector in the direction of $y-x$. Suppose that for some $\delta$ that $v\cdot(\nabla f(x))\geq-\delta$ and $-v\cdot(\nabla f(y))\geq-\delta$ . Then we have that:
+
+1. $|f(x)-f(y)|\leq\|x-y\|_{2}\delta$.
+2. If $f$ is $\xi$-strongly convex, then $|f(x)-f(y)|\leq 2\delta^{2}/\xi$ and $\|x-y\|_{2}\leq 2\delta/\xi$.
+
+**Proof.**
+
+Let $r=\|x-y\|_{2}>0$ and $g(t)=f(x+tv)$. We have that $g(0)=f(x),g(r)=f(y)$ and that $g$ is convex (or $\xi$-strongly convex) with $g^{\prime}(0)\geq-\delta$ and $g^{\prime}(r)\leq\delta$. By convexity, the derivative of $g$ is increasing on $[0,r]$ and therefore $|g^{\prime}(t)|\leq\delta$ for all $t\in[0,r]$. This implies that
+
+$$|f(x)-f(y)|=|g(r)-g(0)|=\left|\int_{0}^{r}g^{\prime}(t)dt\right|\leq r\delta\;.$$
+
+To show the second part of the lemma, we note that if $g$ is $\xi$-strongly convex that $g^{\prime\prime}(t)\geq\xi$ for all $t$. This implies that $g^{\prime}(r)>g^{\prime}(0)+\xi r$. Since $g^{\prime}(r)-g^{\prime}(0)\leq 2\delta$, we obtain that $r\leq 2\delta/\xi$, from which the second statement follows. ∎
+
+**Proof of Corollary B.3.**
+
+By applying the algorithm of Theorem B.2, we can find a point $w$ that is a $\gamma^{\prime}\stackrel{{\scriptstyle\text{def}}}{{=}}(\gamma+O(\sigma\sqrt{\varepsilon}))$-approximate critical point of $\overline{f}$, where $\sigma\stackrel{{\scriptstyle\text{def}}}{{=}}\sigma_{0}+\sigma_{1}\|w^{\ast}-w\|_{2}$. That is, for any unit vector $v$ pointing towards the interior of $\mathcal{H}$, we have that $v\cdot\nabla\overline{f}(w)\geq-\gamma^{\prime}.$
+
+To prove (i), we apply Lemma B.8 to $\overline{f}$ at $w$ which gives that
+
+$$|\overline{f}(w)-\overline{f}(w^{\ast})|\leq r\cdot\gamma^{\prime}.$$
+
+To prove (ii), we apply Lemma B.8 to $\overline{f}$ at $w$ which gives that
+
+$$|\overline{f}(w)-\overline{f}(w^{\ast})|\leq 2{\gamma^{\prime}}^{2}/\xi.$$
+
+Plugging in parameters appropriately then immediately gives the desired bound. ∎
+
+### B.3 Proof of Corollary B.4
+
+We apply Sever iteratively starting with a domain $\mathcal{H}_{1}=\mathcal{H}$ and radius $r_{1}=r$. After each iteration, we know the resulting point is close to $w^{\ast}$ will be able to reduce the search radius.
+
+At step $i$, we have a domain of radius $r_{i}$. As in the proof of Corollary B.3 above, we apply algorithm of Theorem B.2, we can find a point $w_{i}$ that is a $\gamma^{\prime}_{i}\stackrel{{\scriptstyle\text{def}}}{{=}}(\gamma+O(\sigma^{\prime}_{i}\sqrt{\varepsilon}))$-approximate critical point of $\overline{f}$, where $\sigma^{\prime}_{i}\stackrel{{\scriptstyle\text{def}}}{{=}}\sigma_{0}+\sigma_{1}r_{i}$. Then using Lemma B.8, we obtain that $\|w_{i}-w^{\ast}\|_{2}\leq 2\gamma^{\prime}_{i}/\xi$.
+
+Now we can define $\mathcal{H}_{i+1}$ as the intersection of $\mathcal{H}$ and the ball of radius $r_{i+1}=2\gamma^{\prime}_{i}/\xi$ around $w_{i}$ and repeat using this domain. We have that $r_{i+1}=2\gamma^{\prime}_{i}/\xi=2\gamma/\xi+O(\sigma_{0}\sqrt{\varepsilon}/\xi+\sigma_{1}\sqrt{\varepsilon}r_{i}/\xi)$. Now if we choose the constant $C$ such that the constant in this $O()$ is $C/4$, then using our assumption that $\xi\geq 2\sigma_{1}\sqrt{\varepsilon}$, we obtain that
+
+$$r_{i+1}\leq 2\gamma/\xi+C\sigma_{0}\sqrt{\varepsilon}/4\xi+C\sigma_{1}\sqrt{\varepsilon}r_{i}/4\xi\leq 2\gamma/\xi+C\sigma_{0}\sqrt{\varepsilon}/4+r_{i}/4$$
+
+Now if $r_{i}\geq 8\gamma/\xi+2C\sigma_{0}\sqrt{\varepsilon}/\xi$, then we have $r_{i+1}\leq r_{i}/2$ and if $r_{i}\leq 8\gamma/\xi+2C\sigma_{0}\sqrt{\varepsilon}/\xi$ then we also have $r_{i+1}\leq 8\gamma/\xi+2C\sigma_{0}\sqrt{\varepsilon}/\xi$ . When $r_{i}$ is smaller than this we stop and output $w_{i}$. Thus we stop in at most $O(\log(r)-\log(8\gamma/\xi+2C\sigma_{0}\sqrt{\varepsilon}/\xi))=O(\log(r\xi/(\gamma+\sigma_{0}\sqrt{\varepsilon}))$ iterations and have $r_{i}=O(\gamma/\xi+C\sigma_{0}\sqrt{\varepsilon})$. But then $\gamma^{\prime}_{i}=\gamma+O(\sigma^{\prime}_{i}\sqrt{\varepsilon}))\leq\gamma+C(\sigma_{0}+\sigma_{1}r^{\prime}_{i})\sqrt{\varepsilon}/8=O(\gamma+\sigma_{0}\sqrt{\varepsilon}).$ Using Lemma B.8 we obtain that
+
+$$|\overline{f}(w_{i})-\overline{f}(w^{\ast})|\leq 2\gamma^{\prime 2}_{i}/\xi=O(\gamma^{2}/\xi+\sigma_{0}^{2}\varepsilon/\xi).$$
+
+as required. The bound on $\|\widehat{w}-w^{*}\|_{2}$ follows similarly.
+
+**Remark B.1.**
+
+While we don’t give explicit bounds on the number of calls to the approximate learner needed by Sever, such bounds can be straightforwardly obtained under appropriate assumptions on the $f_{i}$ (see, e.g., the following subsection). Two remarks are in order. First, in this case we cannot take advantage of assumptions that only hold at $\overline{f}$ but might not on the corrupted average $f$. Second, our algorithm can take advantage of a closed form for the minimum. For example, for the case of linear regression considered in Section E, $f_{i}$ is not Lipschitz with a small constant if $x_{i}$ is far from the mean, but there is a simple closed form for the minimum of the least squares loss.
+
+### B.4 Proof of Proposition B.5
+
+We let $I_{\mathrm{good}}$ be the set of uncorrupted functions $f_{i}$. It is then the case that $|I_{\mathrm{good}}|\geq(1-\varepsilon)n$. We need to show that for each $w\in\mathcal{H}$ that
+
+$$\operatorname{Cov}_{i\in I_{\mathrm{good}}}[\nabla f_{i}(w)]\leq 3\sigma^{2}I/4 \tag{3}$$
+
+and
+
+$$\left\|\nabla\overline{f}(w)-\frac{1}{|I_{\mathrm{good}}|}\sum_{i\in I_{\mathrm{good}}}\nabla f_{i}(w)\right\|_{2}\leq O(\sigma^{2}\sqrt{\varepsilon}). \tag{4}$$
+
+We will proceed by a cover argument. First we claim that for each $w\in\mathcal{H}$ that (3) and (4) hold with high probability. For Equation (3), it suffices to show that for each unit vector $v$ in a cover $\mathcal{N}$ of size $2^{O(d)}$ of the sphere that
+
+$$\operatorname{\mathbb{E}}_{i\in I_{\mathrm{good}}}[(v\cdot(\nabla f_{i}(w)-\overline{f}))^{2}]\leq 2\sigma^{2}/3. \tag{5}$$
+
+However, we note that
+
+$$\operatorname{\mathbb{E}}_{p^{\ast}}[(v\cdot(\nabla f(w)-\overline{f}))^{2}]\leq\sigma^{2}/2.$$
+
+Since $|v\cdot(\nabla f(w)-\overline{f})|$ is always bounded by $L$, Equation (5) holds for each $v,w$ with probability at least $1-\exp(-\Omega(n\sigma^{2}/L^{2}))$ by a Chernoff bound (noting that the removal of an $\varepsilon$-fraction of points cannot increase this by much). Similarly, to show Equation 4, it suffices to show that for each such $v$ that
+
+$$\operatorname{\mathbb{E}}_{i\in I_{\mathrm{good}}}[(v\cdot(\nabla f_{i}(w)-\overline{f}))]\leq O(\sigma\sqrt{\varepsilon}). \tag{6}$$
+
+Noting that
+
+$$\operatorname{\mathbb{E}}_{p^{\ast}}[(v\cdot(\nabla f(w)-\overline{f}))]=0$$
+
+A Chernoff bound implies that with probability $1-\exp(-\Omega(n\sigma^{2}\varepsilon/L^{2}))$ that the average over our original set of $f$’s of $(v\cdot(\nabla f(w)-\overline{f}))$ is $O(\sigma\sqrt{\varepsilon})$. Assuming that Equation (5) holds, removing an $\varepsilon$-fraction of these $f$’s cannot change this value by more than $O(\sigma\sqrt{\varepsilon})$. By union bounding over $\mathcal{N}$ and standard net arguments, this implies that Equations (3) and (4) hold with probability $1-\exp(\Omega(d-n\sigma^{2}\varepsilon/L^{2}))$ for any given $w$.
+
+To show that our conditions hold for all $w\in\mathcal{H}$, we note that by $\beta$-smoothness, if Equation (4) holds for some $w$, it holds for all other $w^{\prime}$ in a ball of radius $\sqrt{\sigma^{2}\varepsilon}/\beta$ (up to a constant multiplicative loss). Similarly, if Equation (3) holds at some $w$, it holds with bound $\sigma^{2}I$ for all $w^{\prime}$ in a ball of radius $\sigma^{2}/(2L\beta)$. Therefore, if Equations (3) and (4) hold for all $w$ in a $\min(\sqrt{\sigma^{2}\varepsilon}/\beta,\sigma/(2L\beta))$-cover of $\mathcal{H}$, the assumptions of Theorem B.2 will hold everywhere. Since we have such covers of size $\exp(O(d\log(r\beta L/(\sigma^{2}\varepsilon))))$, by a union bound, this holds with high probability if
+
+$$\displaystyle n=\Omega\left(\frac{dL^{2}\log(r\beta L/\sigma^{2}\varepsilon)}{\sigma^{2}\varepsilon}\right)\;,$$
+
+as claimed.
+
+## Appendix C Analysis of Sever for GLMs
+
+A case of particular interest is that of Generalized Linear Models (GLMs):
+
+**Definition C.1.**
+
+Let $\mathcal{H}\subseteq\operatorname{\mathbb{R}}^{d}$ and $\mathcal{Y}$ be an arbitrary set. Let $D_{xy}$ be a distribution over $\mathcal{H}\times\mathcal{Y}$. For each $Y\in\mathcal{Y}$, let $\sigma_{Y}:\operatorname{\mathbb{R}}\to\operatorname{\mathbb{R}}$ be a convex function. The generalized linear model (GLM) over $\mathcal{H}\times\mathcal{Y}$ with distribution $D_{xy}$ and link functions $\sigma_{Y}$ is the function $\overline{f}:\operatorname{\mathbb{R}}^{d}\to\operatorname{\mathbb{R}}$ defined by $\overline{f}(w)=\operatorname{\mathbb{E}}_{X,Y}[f_{X,Y}(w)]$, where
+
+$$\displaystyle f_{X,Y}(w):=\sigma_{Y}(w\cdot X)\;.$$
+
+A sample from this GLM is given by $f_{X,Y}(w)$ where $(X,Y)\sim D_{xy}$.
+
+Our goal, as usual, is to approximately minimize $\overline{f}$ given $\varepsilon$-corrupted samples from $D_{xy}$. Throughout this section we assume that $\mathcal{H}$ is contained in the ball of radius $r$ around $0$, i.e. $\mathcal{H}\subseteq B(0,r)$. Moreover, we will let $w^{*}=\operatorname*{arg\,min}_{w\in\mathcal{H}}\overline{f}(w)$ be a minimizer of $\overline{f}$ in $\mathcal{H}$.
+
+This case covers a number of interesting applications, including SVMs and logistic regression. Unfortunately, the tools developed in Appendix B do not seem to be able to cover this case in a simple manner. In particular, it is unclear how to demonstrate that Assumption B.1 holds after taking polynomially many samples from a GLM. To rectify this, in this section, we demonstrate a different deterministic regularity condition under which we show Sever succeeds, and we show that this condition holds after polynomially many samples from a GLM. Specifically, we will show that Sever succeeds under the following deterministic condition:
+
+**Assumption C.1.**
+
+Fix $0<\varepsilon<1/2$. There exists an unknown set $I_{\mathrm{good}}\subseteq[n]$ with $|I_{\mathrm{good}}|\geq(1-\varepsilon)n$ of “good” functions $\{f_{i}\}_{i\in I_{\mathrm{good}}}$ and parameters $\sigma_{0},\sigma_{2}\in\operatorname{\mathbb{R}}_{+}$ such that such that the following conditions simultanously hold:
+
+- Equation (1) holds with $\sigma_{1}=0$ and the same $\sigma_{0}$, and
+- The following equations hold:
+ $$\displaystyle\|\nabla\hat{f}(w^{*})-\nabla\overline{f}(w^{*})\|_{2}\leq\sigma_{0}\sqrt{\varepsilon}\;~\mathrm{,and} \tag{7}$$
+ $$\displaystyle|\hat{f}(w)-\overline{f}(w)|\leq\sigma_{2}\sqrt{\varepsilon},\textrm{ for all }w\in\mathcal{H}\;, \tag{8}$$
+ where $\hat{f}\stackrel{{\scriptstyle\text{def}}}{{=}}\frac{1}{|I_{\mathrm{good}}|}\sum_{i\in I_{\mathrm{good}}}f_{i}$.
+
+In this section, we will show the following two statements. The first demonstrates that Assumption C.1 implies that Sever succeeds, and the second shows that Assumption C.1 holds after polynomially many samples from a GLM. Formally:
+
+**Theorem C.2.**
+
+For functions $f_{1},\ldots,f_{n}:\mathcal{H}\to\operatorname{\mathbb{R}}$, suppose that Assumption C.1 holds and that $\mathcal{H}$ is convex. Then, for some universal constant $\varepsilon_{0}$, if $\varepsilon<\varepsilon_{0}$, there is an algorithm which, with probability at least $9/10$, finds a $w\in\mathcal{H}$ such that
+
+$$\displaystyle\overline{f}(w)-\overline{f}(w^{*})=r(\gamma+O(\sigma_{0}\sqrt{\varepsilon}))+O(\sigma_{2}\sqrt{\varepsilon})\;.$$
+
+If the link functions are $\xi$-strongly convex, the algorithm finds a $w\in\mathcal{H}$ such that
+
+$$\displaystyle\overline{f}(w)-\overline{f}(w^{*})=2\frac{(\gamma+O(\sigma_{0}\sqrt{\varepsilon}))^{2}}{\xi}+O(\sigma_{2}\sqrt{\varepsilon})\;.$$
+
+**Proposition C.3.**
+
+Let $\mathcal{H}\subseteq\operatorname{\mathbb{R}}^{d}$ and let $\mathcal{Y}$ be an arbitrary set. Let $f_{1},\ldots,f_{n}$ be obtained by picking $f_{i}$ i.i.d. at random from a GLM $\overline{f}$ over $\mathcal{H}\times\mathcal{Y}$ with distribution $D_{xy}$ and link functions $\sigma_{Y}$, where
+
+$$\displaystyle n=\Omega\left(\frac{d\log(dr/\varepsilon)}{\varepsilon}\right)\;.$$
+
+Suppose moreover that the following conditions all hold:
+
+1. $E_{X\sim D_{xy}}[XX^{T}]\preceq I$,
+2. $|\sigma_{Y}^{\prime}(t)|\leq 1$ for all $Y\in\mathcal{Y}$ and $t\in\operatorname{\mathbb{R}}$, and
+3. $|\sigma_{Y}(0)|\leq 1$ for all $Y\in\mathcal{Y}$.
+
+Then with probability at least $9/10$ over the original set of samples, there is a set of $(1-\varepsilon)n$ of the $f_{i}$ that satisfy Assumption C.1 on $\mathcal{H}$ with $\sigma_{0}=2$, $\sigma_{1}=0$ and $\sigma_{2}=1+r$.and $\sigma_{2}=1+r$.
+
+### C.1 Proof of Theorem C.2
+
+As before, since Sever either terminates or throws away at least one sample, clearly it cannot run for more than $n$ iterations. Thus the runtime bound is simple, and it suffices to show correctness.
+
+We first prove the following lemma:
+
+**Lemma C.4.**
+
+Let $f_{1},\ldots,f_{n}$ satisfy Assumption C.1. Then with probability at least $9/10$, Sever applied to $f_{1},\ldots,f_{n},\sigma_{0}$ returns a point $w\in\mathcal{H}$ which is a $(\gamma+O(\sigma_{0}\sqrt{\varepsilon}))$-approximate critical point of $\hat{f}$.
+
+**Proof.**
+
+We claim that the empirical distribution over $f_{1},\ldots,f_{n}$ satisfies Assumption B.1 for the function $\hat{f}$ with $\sigma_{0}$ as stated and $\sigma_{1}=0$, with the $I_{\mathrm{good}}$ in Assumption B.1 being the same as in the definition of Assumption C.1. Clearly these functions satisfy (2) (since the LHS is zero), so it suffices to show that they satisfy (1) Indeed, we have that for all $w\in\mathcal{H}$,
+
+$$\displaystyle\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}[(\nabla f_{i}(w)-\nabla\hat{f}(w))(\nabla f_{i}(w)-\nabla\hat{f}(w))^{\top}]\preceq\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}[(\nabla f_{i}(w)-\nabla\overline{f}(w))(\nabla f_{i}(w)-\nabla\overline{f}(w))^{\top}]\;,$$
+
+so they satisfy (1), since the RHS is bounded by Assumption C.1. Thus this lemma follows from an application of Theorem B.2. ∎
+
+With this critical lemma in place, we can now prove Theorem C.2:
+
+**Proof of Theorem C.2.**
+
+Condition on the event that Lemma C.4 holds, and let $w\in\mathcal{H}$ be the output of Sever. By Assumption C.1, we know that $\hat{f}(w^{*})\geq\overline{f}(w^{*})-\sigma_{2}\sqrt{\varepsilon}$, and moreover, $w^{*}$ is a $\gamma+\sigma_{0}\sqrt{\varepsilon}$-approximate critical point of $\hat{f}$.
+
+Since each link function is convex, so is $\hat{f}$. Hence, by Lemma B.8, since $w$ is a $(\gamma+O(\sigma_{0}\sqrt{\varepsilon}))$-approximate critical point of $\hat{f}$, we have $\hat{f}(w)-\hat{f}(w^{*})\leq r(\gamma+O(\sigma_{0}\sqrt{\varepsilon}))$. By Assumption B.1, this immediately implies that $\overline{f}(w)-\overline{f}(w^{*})\leq r(\gamma+O(\sigma_{0}\sqrt{\varepsilon}))+O(\sigma_{2}\sqrt{\varepsilon})$, as claimed.
+
+The bound for strongly convex functions follows from the exact argument, except using the statement in Lemma B.8 pertaining to strongly convex functions. ∎
+
+### C.2 Proof of Proposition C.3
+
+**Proof.**
+
+We first note that $\nabla f_{X,Y}(w)=X\sigma_{Y}^{\prime}(w\cdot X).$ Thus, under Assumption C.1, we have for any $v$ that
+
+$$\operatorname{\mathbb{E}}_{i}[(v\cdot(\nabla f_{i}(w)-\nabla\overline{f}(w)))^{2}]\ll\operatorname{\mathbb{E}}_{i}[(v\cdot\nabla f_{i}(w))^{2}]+1\ll\operatorname{\mathbb{E}}_{i}[(v\cdot X_{i})^{2}]+1\;.$$
+
+In particular, since this last expression is independent of $w$, we only need to check this single matrix bound.
+
+We let our good set be the set of samples with $|X|\leq 80\sqrt{d/\varepsilon}$ that were not corrupted. We use Lemma A.18 of [DKK+17]. This shows that with $90\%$ probability that the non-good samples make up at most an $\varepsilon/2+\varepsilon/160$-fraction of the original samples, and that $\operatorname{\mathbb{E}}[XX^{T}]$ over the good samples is at most $2I$. This proves that the spectral bound holds everywhere. Applying it to the $\nabla f_{X,Y}(w^{\ast})$, we find also with $90\%$ probability that the expectation over all samples of $\nabla f_{X,Y}(w^{\ast})$ is within $\sqrt{\varepsilon}/3$ of $\nabla\overline{f}(w^{\ast})$. Additionally, throwing away the samples with $|\nabla f_{X,Y}(w^{\ast})-\nabla\overline{f}(w^{\ast})|>80\sqrt{d/\varepsilon}$ changes this by at most $\sqrt{\varepsilon}/2$. Finally, it also implies that the variance of $\nabla f_{X,Y}(w^{\ast})$ is at most $3/2I$, and therefore, throwing away any other $\varepsilon$-fraction of the samples changes it by at most an additional $\sqrt{3\varepsilon/2}$.
+
+We only need to show that $\left|\operatorname{\mathbb{E}}_{i\ \mathrm{good}}[f_{i}(w)]-\operatorname{\mathbb{E}}_{X}[f_{X}(w)]\right|\leq\sqrt{\varepsilon}$ for all $w\in\mathcal{H}$. For this we note that since the $f_{X}$ and $f_{i}$ are all $1$-Lipschitz, it suffices to show that $\left|\operatorname{\mathbb{E}}_{i\ \mathrm{good}}[f_{i}(w)]-\operatorname{\mathbb{E}}_{X}[f_{X}(w)]\right|\leq(1+|w|)\sqrt{\varepsilon}/2$ on an $\varepsilon/2$-cover of $\mathcal{H}$. For this it suffices to show that the bound will hold pointwise except with probability $\exp(-\Omega(d\log(r/\varepsilon)))$. We will want to bound this using pointwise concentration and union bounds, but this runs into technical problems since very large values of $X\cdot w$ can lead to large values of $f$, so we will need to make use of the condition above that the average of $X_{i}X_{i}^{T}$ over our good samples is bounded by $2I$. In particular, this implies that the contribution to the average of $f_{i}(w)$ over the good $i$ coming from samples where $|X_{i}\cdot{w}|\geq 10|w|/\sqrt{\varepsilon}$ is at most $\sqrt{\varepsilon}(1+|w|)/10$. We consider the average of $f_{i}(w)$ over the remaining $i$. Note that these values are uniform random samples from $f_{X}(w)$ conditioned on $|X|\leq 80\sqrt{d/\varepsilon}$ and $|X_{i}\cdot{w}|<10|w|/\sqrt{\varepsilon}$. It will suffices to show that taking $n$ samples from this distribution has average within $(1+|w|)\sqrt{\varepsilon}/2$ of the mean with high probability. However, since $|f_{X}(w)|\leq O(1+|X\cdot w|)$, we have that over this distribution $|f_{X}(w)|$ is always $O(1+|w|)/\sqrt{\varepsilon}$, and has variance at most $O(1+|w|)^{2}$. Therefore, by Bernstein’s Inequality, the probability that $n$ random samples from $f_{X}(w)$ (with the above conditions on $X$) differ from their mean by more than $(1+|w|)\sqrt{\varepsilon}/2$ is
+
+$$\exp(-\Omega(n^{2}(1+|w|)^{2}\varepsilon/((1+|w|)^{2}+n(1+|w|)^{2})))=\exp(-\Omega(n\varepsilon)).$$
+
+Thus, for $n$ at least a sufficiently large multiple of $d\log(dr/\varepsilon)/\varepsilon$, this holds for all $w$ in our cover of $\mathcal{H}$ with high probability. This completes the proof. ∎
+
+## Appendix D An Alternative Algorithm: Robust Filtering in Each Iteration
+
+In this section, we describe another algorithm for robust stochastic optimization. This algorithm uses standard robust mean estimation techniques to compute approximate gradients pointwise, which it then feeds into a standard projective gradient descent algorithm. This algorithm in practice turns out to be somewhat slower than the one employed in the rest of this paper, because it employs a filtering algorithm at every step of the projective gradient descent, and does not remember which points were filtered between iterations. On the other hand, we present this algorithm for two reasons. Firstly, because it is a conceptually simpler interpretation of the main ideas of this paper, and secondly, because the algorithm works under somewhat more general assumptions. In particular, this algorithm only requires that for each $w\in\mathcal{H}$ that there is a corresponding good set of functions, rather than that there exists a single good set that works simultaneously for all $w$.
+
+In particular, we can make do with the following somewhat weaker assumption:
+
+**Assumption D.1.**
+
+Fix $0<\varepsilon<1/2$ and parameter $\sigma\in\operatorname{\mathbb{R}}_{+}$. For each $w\in\mathcal{H}$, there exists an unknown set $I_{\mathrm{good}}{=I_{\mathrm{good}}(w)}\subseteq[n]$ with $|I_{\mathrm{good}}|\geq(1-\varepsilon)n$ of “good” functions $\{f_{i}\}_{i\in I_{\mathrm{good}}}$ such that:
+
+$$\Big\|\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}\big[\big(\nabla f_{i}(w)-\nabla\overline{f}(w)\big)\big(\nabla f_{i}(w)-\nabla\overline{f}(w)\big)^{T}\big]\Big\|_{2}\leq\sigma^{2}\;, \tag{9}$$
+
+and
+
+$$\|\nabla\hat{f}(w)-\nabla\overline{f}(w)\|_{2}\leq\sigma\sqrt{\varepsilon},\textrm{ where }\hat{f}\stackrel{{\scriptstyle\text{def}}}{{=}}\frac{1}{|I_{\mathrm{good}}|}\sum_{i\in I_{\mathrm{good}}}f_{i}\;. \tag{10}$$
+
+We make essential use of the following result, which appears in both [DKK+17, SCV18]:
+
+**Theorem D.2.**
+
+Let $\mu\in\mathbb{R}^{d}$ and a collection of points $x_{i}\in\mathbb{R}^{d}$, $i\in[n]$ and $\sigma>0$. Suppose that there exists $I_{\mathrm{good}}\subseteq[n]$ with $|I_{\mathrm{good}}|\geq(1-\varepsilon)n$ satisfying the following:
+
+$$\frac{1}{|I_{\mathrm{good}}|}\sum_{i\in I_{\mathrm{good}}}(x_{i}-\mu)(x_{i}-\mu)^{\top}\preceq\sigma^{2}I\text{ and }\big\|\frac{1}{|I_{\mathrm{good}}|}\sum_{i\in I_{\mathrm{good}}}(x_{i}-\mu)\big\|_{2}\leq\sigma\sqrt{\varepsilon}. \tag{11}$$
+
+Then, if $\varepsilon<\varepsilon_{0}$ for some universal constant $\varepsilon_{0}$, there is an efficient algorithm, Algorithm ${\cal A}$, which outputs an estimate $\hat{\mu}\in\mathbb{R}^{d}$ such that $\|\hat{\mu}-\mu\|_{2}=O(\sigma\sqrt{\varepsilon})$.
+
+Our general robust algorithm for stochastic optimization will make calls to Algorithm ${\cal A}$ in a black-box manner, as well as to the projection operator onto $\mathcal{H}$. We will measure the cost of our algorithm by the total number of such calls.
+
+**Remark D.1.**
+
+While it is not needed for the theoretical results established in this subsection, we note that the robust mean estimation algorithm of [DKK+17] relies on an iterative outlier removal method only requiring basic eigenvalue computations (SVD), while the [SCV18] algorithm employs semidefinite programming. In our experiments, we use the algorithm in [DKK+17] and variants thereof.
+
+Using the above black-box, together with known results on convex optimization with errors, we obtain the following meta-theorem:
+
+**Theorem D.3.**
+
+For functions $f_{1},\ldots,f_{n}:\mathcal{H}\to\operatorname{\mathbb{R}}$, bounded below on a closed domain $\mathcal{H}$, suppose that either Assumption D.1 is satisfied with some parameters $\varepsilon,\sigma>0$. Then there exists an efficient algorithm that finds an $O(\sigma\sqrt{\varepsilon})$-approximate critical point of $\overline{f}$.
+
+**Proof.**
+
+We note that by applying Algorithm $\mathcal{A}$ on $\{\nabla f_{i}(w)\}$, we can find an approximation to $\nabla\overline{f}(w)$ with error $O(\sigma\sqrt{\varepsilon})$. We note that standard projective gradient descent algorithms can be made to run efficiently even if the gradients given are only approximate, and this can be used to find our $O(\sigma\sqrt{\varepsilon})$-approximate critical point. ∎
+
+### D.1 Comparison with Sever
+
+In this section we give a brief comparison of this algorithm to Sever. The algorithm presented in this section is much simpler to state, and also requires weaker conditions on the data. However, because the algorithms work in somewhat different settings, the comparison is a bit delicate, so we explain in more detail below.
+
+There is a major conceptual difference between these two algorithms: namely, Sever works with a black-box non-robust learner, and requires the filter algorithm for robust mean estimation. In contrast, the algorithm in this section works with a black-box robust mean estimation algorithm, and plugs it into a specific non-robust learning algorithm, specifically (approximate) stochastic gradient descent. When instantiated with the same primitives, these algorithms have similar theoretical runtime guarantees.
+
+However, in the practical implementation, we prefer Sever for a couple of reasons. First, in practice we find that in practice, Sever often only requires a constant number of runs of the base black-box learner, and so incurs only a constant factor overhead. In contrast, the algorithm presented in this section requires at least linear time per iteration of SGD, since it needs to run a robust mean estimation algorithm on the entire dataset (and the total number of iterations needed is comparable). In contrast, SGD typically runs in constant time per iteration, so this presents a major bottleneck for scalability.
+
+Second, we find it is much more useful from a practical point of view to allow for black-box non-robust learners, than to allow for black-box robust mean estimation algorithms. This is simply because the former allows Sever to be much more problem-specific, and allow for optimizations for each individual learning problem. For instance, it is what allows us to use optimized libraries in our experiments for linear regression and SVM. In contrast, there is relatively little reward to allow for black-box robust mean estimation algorithms, as not only are there relatively few options, but also this does not allow us really to specialize the algorithm to the problem at hand.
+
+## Appendix E Applications of the General Algorithm
+
+In this section, we present three concrete applications of our general robust algorithm. In particular, we describe how to robustly optimize models for linear regression, support vector machines, and logistic regression, in Sections E.1, E.2, E.3, respectively.
+
+### E.1 Linear Regression
+
+In this section, we demonstrate how our results apply to linear regression. We are given pairs $(X_{i},Y_{i})\in\operatorname{\mathbb{R}}^{d}\times\operatorname{\mathbb{R}}$ for $i\in[n]$. The $X_{i}$’s are drawn i.i.d. from a distribution $D_{x}$, and $Y_{i}=\langle w^{*},X_{i}\rangle+e_{i}$, for some unknown $w^{*}\in\operatorname{\mathbb{R}}^{d}$ and the noise random variables $e_{i}$’s are drawn i.i.d. from some distribution $D_{e}$. Given $(X_{i},Y_{i})\sim D_{xy}$, the joint distribution induced by this process, let $f_{i}(w)=(Y_{i}-\langle w,X_{i}\rangle)^{2}$. The goal is then to find a $\widehat{w}$ approximately minimizing the objective function
+
+$$\displaystyle\overline{f}(w)=\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[(Y-\langle w,X\rangle)^{2}]\;.$$
+
+We work with the following assumptions:
+
+**Assumption E.1.**
+
+Given the model for linear regression described above, assume the following conditions for $D_{e}$ and $D_{x}$:
+
+- $\operatorname{\mathbb{E}}_{e\sim D_{e}}[e]=0$;
+- $\operatorname{Var}_{e\sim D_{e}}[e]\leq\xi$;
+- $\operatorname{\mathbb{E}}_{X\sim D_{x}}[XX^{T}]\preceq\sigma^{2}I$ for some $\sigma>0$;
+- There is a constant $C>0$, such that for all unit vectors $v$, $\operatorname{\mathbb{E}}_{X\sim D_{x}}\left[\langle v,X\rangle^{4}\right]\leq C\sigma^{4}.$
+
+Our main result for linear regression is the following:
+
+**Theorem E.2.**
+
+Let $\varepsilon>0$, and let $D_{xy}$ be a distribution over pairs $(X,Y)$ which satisfies the conditions of Assumption E.1. Suppose we are given $O\left(\frac{d^{5}}{\varepsilon^{2}}\right)$ $\varepsilon$-noisy samples from $D_{xy}$. Then in either of the following two cases, there exists an algorithm that, with probability at least $9/10$, produces a $\widehat{w}$ with the following guarantees:
+
+1. If $\operatorname{\mathbb{E}}_{X\sim D_{x}}[XX^{T}]\succeq\gamma I$ for $\gamma\geq O(1)\cdot\sigma\sqrt{C\varepsilon}$, then $\overline{f}(\widehat{w})\leq\overline{f}(w^{*})+O\left(\frac{(\xi+\varepsilon)\varepsilon}{\gamma}\right)$ and $\|\widehat{w}-w^{*}\|_{2}=O\left(\frac{\sqrt{\xi\varepsilon}+\varepsilon}{\gamma}\right)$.
+2. If $\|w^{*}\|_{2}\leq r$, then $\overline{f}(\widehat{w})\leq\overline{f}(w^{*})+O(((\sqrt{\xi}+\sqrt{\varepsilon})r+\sqrt{C}r^{2})\sqrt{\varepsilon})$.
+
+The proof will follow from two lemmas (proved in Section E.1.1 and E.1.2, respectively). First, we will bound the covariance of the gradient, in Lemma E.3:
+
+**Lemma E.3.**
+
+Suppose $D_{xy}$ satisfies the conditions of Assumption E.1. Then for all unit vectors $v\in\operatorname{\mathbb{R}}^{d}$, we have
+
+$$\displaystyle v^{\top}\operatorname{Cov}_{(X,Y)\sim D_{xy}}\left[\nabla f_{i}(w,(X,Y))\right]v\leq 4\sigma^{2}\xi+4C\sigma^{4}\|w^{*}-w\|_{2}^{2}\;.$$
+
+With this in hand, we can prove Lemma E.4, giving us a polynomial sample complexity which is sufficient to satisfy the conditions of Assumption B.1.
+
+**Lemma E.4.**
+
+Suppose $D_{xy}$ satisfies the conditions of Assumption E.1. Given $O(d^{5}/\varepsilon^{2})$ $\varepsilon$-noisy samples from $D_{xy}$, then with probability at last $9/10$, they satisfy Assumption B.1 with parameters $\sigma_{0}=30\sqrt{\xi}+\sqrt{\varepsilon}$ and $\sigma_{1}=18\sqrt{C+1}$.
+
+The proof concludes by applying Corollary B.4 or case (i) of Corollary B.3 for the first and second cases respectively.
+
+#### E.1.1 Proof of Lemma E.3
+
+Note that for this setting we have that $f(w,z)=f(w,x,y)=(y-\langle w,x\rangle)^{2}$. We then have that $\nabla_{w}f(w,z)=-2(\langle w^{\ast}-w,x\rangle+e)x$. Our main claim is the following:
+
+**Claim E.5.**
+
+We have that $\operatorname{Cov}[\nabla_{w}f(w,z)]=4\operatorname{\mathbb{E}}_{X\sim D}\left[\langle w^{\ast}-w,x\rangle^{2}(xx^{T})\right]+4\operatorname{Var}[E]\Sigma-4\Sigma(w^{\ast}-w)(w^{\ast}-w)^{T}\Sigma$.
+
+**Proof.**
+
+Let us use the notation $A=\nabla_{w}f(w,z)$ and $\mu=\operatorname{\mathbb{E}}[A]$. By definition, we have that $\operatorname{Cov}[A]=\operatorname{\mathbb{E}}[AA^{T}]-\mu\mu^{T}$.
+
+Note that $\mu=\operatorname{\mathbb{E}}_{z}[\nabla_{w}f(w,z)]=\operatorname{\mathbb{E}}_{z}[(-2\langle w^{\ast}-w,x\rangle+e)x]=-2\Sigma(w^{\ast}-w)$, where we use the fact that $\operatorname{\mathbb{E}}_{z}[e]=0$ and $e$ is independent of $x$. Therefore, $\mu\mu^{T}=4\Sigma(w^{\ast}-w)(w^{\ast}-w)^{T}\Sigma$.
+
+To calculate $\operatorname{\mathbb{E}}[AA^{T}]$, note that $A=\nabla_{w}f(w,z)=-2(\langle w^{\ast}-w,x\rangle+e)x$, and $A^{T}=-2(\langle w^{\ast}-w,x\rangle+e)x^{T}$. Therefore, $AA^{T}=4(\langle w^{\ast}-w,x\rangle^{2}+e^{2}+2\langle w^{\ast}-w,x\rangle e)(xx^{T})$ and
+
+$$\operatorname{\mathbb{E}}_{z}[AA^{T}]=4\operatorname{\mathbb{E}}_{x}[\langle w^{\ast}-w,x\rangle^{2}(xx^{T})]+4\operatorname{Var}[e]\Sigma+0\;,$$
+
+where we again used the fact that the noise $e$ is independent of $x$ and its expectation is zero.
+
+By gathering terms, we get that
+
+$$\operatorname{Cov}[\nabla_{w}f(w,z)]=4\operatorname{\mathbb{E}}_{x}[\langle w^{\ast}-w,x\rangle^{2}(xx^{T})]+4\operatorname{Var}[e]\Sigma-4\Sigma(w^{\ast}-w)(w^{\ast}-w)^{T}\Sigma\;.$$
+
+This completes the proof. ∎
+
+Given the above claim, we can bound from above the spectral norm of the covariance matrix of the gradients as follows: Specifically, for a unit vector $v$, the quantity $v^{T}\operatorname{Cov}[\nabla_{w}f(w,z)]v$ is bounded from above by a constant times the following quantities:
+
+- The first term is $v^{T}\operatorname{\mathbb{E}}_{x}[\langle w^{\ast}-w,x\rangle^{2}(xx^{T})]v=\operatorname{\mathbb{E}}_{x}[\langle w^{\ast}-w,x\rangle^{2}\cdot\langle v,x\rangle^{2})]$. By Cauchy-Schwarz and our 4th moment bound, this is at most $C\sigma^{4}\|w^{\ast}-w\|_{2}^{2}$, where $\Sigma\preceq\sigma^{2}I$.
+- The second term is at most the upper bound of the variance of the noise $\xi$ times $\sigma^{2}$.
+- The third term is at most $v^{T}\Sigma(w^{\ast}-w)(w^{\ast}-w)^{T}\Sigma v$, which by our bounded covariance assumption is at most $\sigma^{4}\|w^{\ast}-w\|_{2}^{2}.$
+
+This gives the parameters in the meta-theorem.
+
+#### E.1.2 Proof of Lemma E.4
+
+Let $S$ be the set of uncorrupted samples and $I$ be the subset of $S$ with $\|X\|_{2}\leq 2\sqrt{d}/\varepsilon^{1/4}$. We will take $I_{\mathrm{good}}$ to be the subset of $I$ that are not corrupted.
+
+Firstly, we show that with probability at least $39/40$, at most an $\varepsilon/2$-fraction of points in $S$ have $\|X\|_{2}>2\sqrt{d}/\varepsilon^{1/4}$, and so $|I_{\mathrm{good}}|\geq(1-\varepsilon)|S|$. Note that $\operatorname{\mathbb{E}}_{D}[\|X\|_{2}^{4}]=\operatorname{\mathbb{E}}_{D}[(\sum_{j=1}^{d}X_{j}^{2})^{2}]\leq\sum_{j=1}^{d}\sum_{k=1}^{d}\sqrt{\operatorname{\mathbb{E}}_{D}[X_{j}^{2}]\operatorname{\mathbb{E}}[X_{k}^{2}]}\leq Cd^{2}$, since $\operatorname{\mathbb{E}}_{D_{x}}[XX^{T}]\preceq I$. Thus, by Markov’s inequality, $\Pr_{D}[\|X\|_{2}>2\sqrt{d}(C/\varepsilon)^{1/4}]=\Pr_{D}[\|X\|_{2}^{4}>16d^{2}/\varepsilon]\leq\varepsilon/16$. By a Chernoff bound, since $n\geq 10\varepsilon^{2}$ this probability is at most $\varepsilon/2$ for the uncorrupted samples with probability at least $39/40$.
+
+Next, we show that (1) holds with probability at least $39/40$. To do this, we will apply Lemma E.3 to $I_{\mathrm{good}}$. Since $S$ consists of independent samples, the variance over the randomness of $S$ of $|S|\operatorname{\mathbb{E}}_{S}[e^{2}]$ is at most $|S|\xi$. By Chebyshev’s inequality, except with probability $1/99$, we have that $\operatorname{\mathbb{E}}_{S}[e^{2}]\leq 99\xi$ and since $I_{\mathrm{good}}\subset S$, $\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}[e^{2}]\leq|S|\operatorname{\mathbb{E}}_{S}[e^{2}]/|I|\leq 100\xi$. This is condition (i) of Lemma E.3.
+
+We note that $I$ consists of $\Omega(d^{5}/\varepsilon^{2})$ independent samples from $D$ conditioned on $\|X\|_{2}<2\sqrt{d}/\varepsilon^{1/4}$, a distribution that we will call $D^{\prime}$. Since the VC-dimension of all halfspaces in $\operatorname{\mathbb{R}}^{d}$ is $d+1$, by the VC inequality, we have that, except with probability $1/80$, for any unit vector $v$ and $T\in\operatorname{\mathbb{R}}$ that $|\Pr_{I}[v\cdot X>T]-\Pr_{D^{\prime}}[v\cdot X>T]|\leq\varepsilon/d^{2}$. Note that for unit vector $v$ and positive integer $m$, $\operatorname{\mathbb{E}}[(v.X)^{m}]=\int_{0}^{\infty}m(v\cdot X)^{m-1}\Pr[v\cdot X>T]dT$. Thus we have that
+
+$$\displaystyle\operatorname{\mathbb{E}}_{I}[(v.X)^{m}] \displaystyle=\int_{0}^{\infty}m(v\cdot X)^{m-1}\Pr_{I}[v\cdot X>T]dT$$
+
+$$\displaystyle\leq\int_{0}^{2d^{1/2}(C/\varepsilon)^{1/4}}m(v\cdot X)^{m-1}(\Pr_{D^{\prime}}[v\cdot X>T]+\varepsilon/d^{2})dT$$
+
+$$\displaystyle=\operatorname{\mathbb{E}}_{D^{\prime}}[(v.X)^{m}]+(2d^{1/2}(C/\varepsilon)^{1/4})^{m}(\varepsilon/d^{2})$$
+
+$$\displaystyle\leq(1+\varepsilon)\operatorname{\mathbb{E}}_{D}[(v.X)^{m}]+2^{m}C^{m/4}(\varepsilon/d^{2})^{1-m/4}\;.$$
+
+Applying this for $m=2$ gives $\operatorname{\mathbb{E}}_{I}[XX^{T}]\preceq(1+\varepsilon+4\sqrt{C}\varepsilon/d^{2})I\preceq 2I$ and with $m=4$ gives $\operatorname{\mathbb{E}}_{I}[(v.X)^{4}]\leq(1+\varepsilon)C+16C$. Similar bounds apply to $I_{\mathrm{good}}$, with an additional $1+\varepsilon$ factor.
+
+Thus, with probability at least $39/40$, $I_{\mathrm{good}}$ satisfies the conditions of Lemma E.3 with $\xi:=100\xi$, $\sigma^{2}:=2$ and $C:=5C$. Hence, it satisfies (1) with $\sigma_{0}=20\sqrt{\xi}$ and $\sigma_{1}=18\sqrt{C+1}$.
+
+For (2), note that $\nabla_{w}f_{i}(w)=(w\cdot x_{i}-y_{i})x_{i}=((w-w^{*})\cdot x_{i})x_{i}-e_{i}x_{i}$. We will separately bound $\|\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}[((w-w^{*})\cdot X)X]-\operatorname{\mathbb{E}}_{D}[((w-w^{*})\cdot X)X]\|_{2}$ and $\|\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}[eX]-\operatorname{\mathbb{E}}_{D}[eX]\|_{2}$.
+
+We will repeatedly make use of the following, which bounds how much removing points or probability mass affects an expectation in terms of its variance:
+
+**Claim E.6.**
+
+For a mixture of distributions $P=(1-\delta)Q+\delta R$ for distributions $P,Q,R$ and a real valued function $f$, we have that $|\operatorname{\mathbb{E}}_{X\sim P}[f(X)]-\operatorname{\mathbb{E}}_{X\sim Q}[f(X)]|\leq 2\sqrt{\delta\operatorname{\mathbb{E}}_{X\sim P}[f(X)^{2}]}/(1-\delta)$
+
+**Proof.**
+
+By Cauchy-Schwarz $|\operatorname{\mathbb{E}}_{X\sim R}[f(X)]|\leq\sqrt{\operatorname{\mathbb{E}}_{X\sim R}[f(X)^{2}]}\leq\sqrt{\operatorname{\mathbb{E}}_{X\sim P}[f(X)^{2}]/\delta}$. Since $\operatorname{\mathbb{E}}_{X\sim P}[f(X)]=(1-\delta)\operatorname{\mathbb{E}}_{X\sim Q}[f(X)]+\delta\operatorname{\mathbb{E}}_{X\sim R}[f(X)]$, this implies that $|\operatorname{\mathbb{E}}_{X\sim P}[f(X)]/(1-\delta)-\operatorname{\mathbb{E}}_{X\sim Q}[f(X)]|\leq\sqrt{\delta\operatorname{\mathbb{E}}_{X\sim P}[f(X)^{2}]}/(1-\delta)$. However $|\operatorname{\mathbb{E}}_{X\sim P}[f(X)]/(1-\delta)-\operatorname{\mathbb{E}}_{X\sim P}[f(X)]|=(\delta/(1-\delta))|\operatorname{\mathbb{E}}_{X\sim P}[f(X)]|\leq\sqrt{\delta\operatorname{\mathbb{E}}_{X\sim P}[f(X)^{2}]}/(1-\delta)$ and the triangle inequality gives the result. ∎
+
+We can apply this to $P=I$ and $Q=I_{\mathrm{good}}$ with $\delta=\varepsilon/2$ and also to $P=D$ and $Q=D^{\prime}$ with $\delta=\varepsilon/16$, with error $2\sqrt{\delta}/(1-\delta)\leq 2\sqrt{\varepsilon}$ in either case.
+
+For the first of term we wanted to bound, we have $\|\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}[((w-w^{*})\cdot X)X]-\operatorname{\mathbb{E}}_{D}[((w-w^{*})\cdot X)X]\|_{2}=\|(w-w^{*})^{T}\left(\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}[XX^{T}]-\operatorname{\mathbb{E}}_{D}[XX^{T}]\right)\|_{2}\leq\|w-w^{*}\|_{2}\|\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}[XX^{T}]-\operatorname{\mathbb{E}}_{D}[XX^{T}]\|_{2}$. For any unit vector $v$, the VC dimension argument above gave that $|\operatorname{\mathbb{E}}_{I}[(v\cdot X)^{2}]-\operatorname{\mathbb{E}}_{D^{\prime}}[(v\cdot X)^{2})]|\leq 4\sqrt{C}\varepsilon/d^{2}$ and Claim E.6 both gives that $|\operatorname{\mathbb{E}}_{I}[(v\cdot X)^{2}]-\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}[(v\cdot X)^{2})]|\leq 2\sqrt{\varepsilon\operatorname{\mathbb{E}}_{I}[(v.X)^{4}]}\leq 10\sqrt{C\varepsilon}$ and that $|\operatorname{\mathbb{E}}_{D}[(v\cdot X)^{2}]-\operatorname{\mathbb{E}}_{D^{\prime}}[(v\cdot X)^{2})]|\leq 2\sqrt{\varepsilon\operatorname{\mathbb{E}}_{D}[(v.X)^{4}]}\leq 2\sqrt{C\varepsilon}$. By the triangle inequality, we have that $|\operatorname{\mathbb{E}}_{D}[(v\cdot X)^{2}]-\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}[(v\cdot X)^{2})]|\leq 16\sqrt{C}\varepsilon$. Since this holds for all unit $v$ and the matrices involved are symmetric, we have that $\|\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}[XX^{T}]-\operatorname{\mathbb{E}}_{D}[XX^{T}]\|_{2}\leq 16\sqrt{C\varepsilon}$. The overall first term is bounded by $\|\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}[((w-w^{*})\cdot X)X]-\operatorname{\mathbb{E}}_{D}[((w-w^{*})\cdot X)X]\|_{2}\leq 16\sqrt{C\varepsilon}\|w-w^{*}\|_{2}$.
+
+Now we want to bound the second term, $\|\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}[eX]-\operatorname{\mathbb{E}}_{D}[eX]\|_{2}$. Note that $\operatorname{\mathbb{E}}_{D}[eX]=\operatorname{\mathbb{E}}_{D}[e]\operatorname{\mathbb{E}}_{D}[X]=0$. So we need to bound $\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}[eX]$. First we bound the expectation and variance on $D^{\prime}$ using Claim E.6. It yields that, for any unit vector $v$, $|\operatorname{\mathbb{E}}_{D^{\prime}}[e(v\cdot X)]|\leq 2\sqrt{\varepsilon\operatorname{\mathbb{E}}_{D}[e^{2}(v\cdot X)^{2}]}\leq 2\sqrt{\varepsilon\xi}$.
+
+Next we bound the expectation on $I$. Since $I$ consists of independent samples from $D^{\prime}$, the covariance matrix over the randomness on $I$ of $|I|\operatorname{\mathbb{E}}_{I}[eX-\operatorname{\mathbb{E}}_{D^{\prime}}[eX]]$ is $|I|\operatorname{\mathbb{E}}_{D^{\prime}}[(eX-\operatorname{\mathbb{E}}_{D^{\prime}}[eX])(eX-\operatorname{\mathbb{E}}_{D^{\prime}}[eX])^{T}]\leq|I|\operatorname{\mathbb{E}}_{D^{\prime}}[XX^{T}]\leq|I|(1+\varepsilon)I$ and its expectation is $0$. Thus the expectation over the randomness of $I$ of $(|I|^{2}\|\operatorname{\mathbb{E}}_{I}[eX]-\operatorname{\mathbb{E}}_{D^{\prime}}[eX]\|_{2})^{2}$ is $\mathrm{Tr}(|I|\operatorname{\mathbb{E}}_{D^{\prime}}[(eX-\operatorname{\mathbb{E}}_{D^{\prime}}[eX])(eX-\operatorname{\mathbb{E}}_{D^{\prime}}[eX])^{T}])\leq|I|(1+\varepsilon+4\xi\varepsilon|I|)d$. By Markov’s inequality, except with probability $1/40$, $\Pr[\|\operatorname{\mathbb{E}}_{I}[eX]\|_{2}\geq 2\sqrt{\xi\varepsilon}+\varepsilon]\leq d/|I|\varepsilon^{2}$. Since $|I|\geq 40d/\varepsilon^{2}$. This happens with probability at least $1/40$.
+
+Next we bound the expectation on $I_{\mathrm{good}}$ which follows by a slight variation of Claim E.6. Let $J=I-I_{\mathrm{good}}$. Then, for any $v$, $\operatorname{\mathbb{E}}_{J}[e(v\cdot X)]\leq\sqrt{\operatorname{\mathbb{E}}_{J}[e^{2}]\operatorname{\mathbb{E}}_{J}[(v\cdot X)^{2}]}\leq\sqrt{\operatorname{\mathbb{E}}_{S}[e^{2}]\operatorname{\mathbb{E}}_{I}[(v\cdot X)^{2}]}|J|/\sqrt{|S||I|}\leq\sqrt{100\xi(1+\varepsilon+4\sqrt{C}\varepsilon/d^{2})}|J|/\sqrt{|S||I|}\leq 20|J|\sqrt{\xi/|S||I|}$ by bounds we obtained earlier. Now $\|\operatorname{\mathbb{E}}_{I_{\mathrm{good}}}[eX]\|_{2}=\|(|I|/|I_{\mathrm{good}}|)\operatorname{\mathbb{E}}_{I}[eX]-(|J|/|I_{\mathrm{good}}|)\operatorname{\mathbb{E}}_{J}[eX]\|_{2}\leq 20\sqrt{\xi\varepsilon}+\varepsilon+(1+\varepsilon)\sqrt{\xi\varepsilon/16}\leq 30\sqrt{\xi\varepsilon}+\varepsilon$.
+
+We can thus take $\sigma_{0}=30\sqrt{\xi}+\sqrt{\varepsilon}$ and $\sigma_{1}=18\sqrt{C+1}\geq 16\sqrt{C}$ to get (2).
+
+To get both (2) and (1) hold with $\sigma_{0}=30\sqrt{\xi}+\sqrt{\varepsilon}$ and $\sigma_{1}=18\sqrt{C+1})$. This happens with probability at least $9/10$ by a union bound on the probabilistic assumptions above.
+
+### E.2 Support Vector Machines
+
+In this section, we demonstrate how our results apply to learning support vector machines (i.e., halfspaces under hinge loss). In particular, we describe how SVMs fit into the GLM framework described in Section C.
+
+We are given pairs $(X_{i},Y_{i})\in\operatorname{\mathbb{R}}^{d}\times\{\pm 1\}$ for $i\in[n]$, which are drawn from some distribution $D_{xy}$. Let $L(w,(x,y))=\max\{0,1-y(w\cdot x)\}$, and $f_{i}(w)=L(w,(x_{i},y_{i}))$. The goal is to find a $\widehat{w}$ approximately minimizing the objective function
+
+$$\displaystyle\overline{f}(w)=\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(w,(X,Y))].$$
+
+One technical point is that $f_{i}$ does not have a gradient everywhere – instead, we will be concerned with the sub-gradients of the $f_{i}$’s. All our results which operate on the gradients also work for sub-gradients. To be precise, we will take the sub-gradient to be $0$ when the gradient is undefined:
+
+**Definition E.1.**
+
+Let $\nabla f_{i}$ be the sub-gradient of $f_{i}(w)$ with respect to $w$, where $\nabla f_{i}=-y_{i}x_{i}$ if $y_{i}(w\cdot x_{i})<1$, and $0$ otherwise.
+
+To get a bound on the error of hinge loss, we will need to assume the marginal distribution $D_{x}$ is anti-concentrated.
+
+**Definition E.2.**
+
+A distribution is $\delta$-anticoncentrated if at most an $O(\delta)$-fraction of its probability mass is within Euclidean distance $\delta$ of any hyperplane.
+
+We work with the following assumptions:
+
+**Assumption E.7.**
+
+Given the model for SVMs as described above, assume the following conditions for the marginal distribution $D_{x}$:
+
+- $\operatorname{\mathbb{E}}_{X\sim D_{x}}[XX^{T}]\preceq I$;
+- $D_{x}$ is $\varepsilon^{1/4}$-anticoncentrated.
+
+Our main result on SVMs is the following:
+
+**Theorem E.8.**
+
+Let $\varepsilon>0$, and let $D_{xy}$ be a distribution over pairs $(X,Y)$, where the marginal distribution $D_{x}$ satisfies the conditions of Assumption E.7. Then there exists an algorithm that with probability $9/10$, given $O(d\log(d/\varepsilon)/\varepsilon)$ $\varepsilon$-noisy samples from $D_{xy}$, returns a $\widehat{w}$ such that for any $w^{\ast}$,
+
+$$\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(\widehat{w},(X,Y))]\leq\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(w^{\ast},(X,Y))]+O(\varepsilon^{1/4}).$$
+
+Our approach will be to fit this problem into the GLM framework developed in Section C. First, we will restrict our search over $w$ to $\mathcal{H}$, a ball of radius $r=\varepsilon^{-1/4}$. As we argue in Lemma E.9, this restriction comes at a cost of at most $O(\varepsilon^{1/4})$ in our algorithm’s loss. With this restriction, we will argue that the problem satisfies the conditions of Proposition C.3. This allows us to argue that, with a polynomial number of samples, we can obtain a set of $f_{i}$’s satisfying the conditions of Assumption C.1. This will allow us to apply Theorem C.2, concluding the proof.
+
+We start by showing that, due to anticoncentration of $D$, there is a $w^{\prime}\in\mathcal{H}$ with loss close to $w^{*}$:
+
+**Lemma E.9.**
+
+Let $w^{\prime}$ be a rescaling of $w^{*}$, such that $\|w^{\prime}\|_{2}\leq\varepsilon^{-1/4}$ (i.e. $w^{\prime}=\min\{1,\varepsilon^{-1/4}/\|w^{*}\|_{2}\}w^{*}$). Then $\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(w^{\prime},(X,Y))]\leq\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(w^{\ast},(X,Y))]+O(\varepsilon^{1/4})$.
+
+**Proof.**
+
+If $w^{\prime}=w^{\ast}$, then $\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(w^{\prime},(X,Y))]=\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(w^{\ast},(X,Y))]$.
+
+Otherwise, we break into case analysis, based on the value of $(x,y)$:
+
+- $|w^{\prime}\cdot x|>1$: If $y(w^{\prime}\cdot x)>1$, then $L(w^{\prime},(x,y))=L(w^{*},(x,y))=0$. If $y(w^{\prime}\cdot x)<-1$, then $L(w^{\prime},(x,y))=1-y(w^{\prime}\cdot x)\leq 1-y(w^{*}\cdot x)=L(w^{*},(x,y))$. Both cases use the fact that $\|w^{\prime}\|_{2}<\|w^{\ast}\|_{2}$.
+- $|w^{\prime}\cdot x|\leq 1$: In this case, we have that $L(w^{\prime},(x,y))\leq 2$. Since $L(w^{*},(x,y))\geq 0$, we have that $L(w^{\prime},(x,y))\leq L(w^{*},(x,y))+2$.
+
+Note that if $|w^{\prime}\cdot x|\leq 1$, then $x$ is within $1/\|w^{\prime}\|_{2}=\varepsilon^{1/4}$ of the hyperplane defined by the normal vector $w^{\prime}$. Since $D_{x}$ is $\varepsilon^{1/4}$-anticoncentrated, we have that $\Pr_{X\sim D_{x}}[|w^{\prime}\cdot X|\leq 1]\leq\varepsilon^{1/4}$. Thus, we have that $\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(w^{\prime},(X,Y))]\leq\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(w^{*},(X,Y))+2\cdot\mathbbm{1}(|w^{\prime}\cdot X|\leq 1)]\leq\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(w^{\ast},(X,Y))]+O(\varepsilon^{1/4})$. ∎
+
+**Proof of Theorem E.8.**
+
+We first show that this problem fits into the GLM framework, in particular, satisfying the conditions of Proposition C.3. The link function is $\sigma_{y}(t)=\max\{0,1-yt\}$, giving us the loss function $L(w,(x,y))=\sigma_{y}(w\cdot x)$. We let $\mathcal{H}$ be the set $\|w\|_{2}\leq\varepsilon^{-1/4}$, giving us the parameter $r=\varepsilon^{-1/4}$. Condition 1 is satisfied by Assumption E.7. For $y\in\{-1,1\}$, $\sigma^{\prime}_{y}(t)=0$ for $yt\geq 1$ and $\sigma^{\prime}_{y}(t)=-y$ for $yt<1$. Thus we have that $|\sigma^{\prime}_{1}(t)|\leq 1$ for all $t$ and $y$, satisfying Condition 2. Finally, one can observe that $\sigma_{y}(0)=1$ for all $y$, satisfying Condition 3. Thus we can apply Proposition C.3: if we take $O(d\log(dr/\varepsilon)/\varepsilon)$ $\varepsilon$-corrupted samples, then they satisfy Assumption C.1 on $\mathcal{H}$ with $\sigma_{0}=2$, $\sigma_{1}=0$ and $\sigma_{2}=1+\varepsilon^{-1/4}$, with probability $9/10$.
+
+Now we can apply the algorithm of Theorem C.2. Since the loss is convex, we get a vector $\widehat{w}$ with $\overline{f}(\widehat{w})-\overline{f}({w^{*}}^{\prime})=O((\sigma_{0}r+\sigma_{1}r^{2}+\sigma_{2})\sqrt{\varepsilon})=O((2\varepsilon^{-1/4}+\varepsilon^{-1/4})\sqrt{\varepsilon})=O(\varepsilon^{1/4})$ where ${w^{*}}^{\prime}$ is the minimizer of $\overline{f}$ on $\mathcal{H}$.
+
+We thus have that $\overline{f}(\hat{w})\leq\overline{f}({w^{*}}^{\prime})+O(\varepsilon^{1/4})\leq\overline{f}(w^{\prime})+O(\varepsilon^{1/4})\leq\overline{f}(w^{*})+O(\varepsilon^{1/4})$. The second inequality follows because ${w^{*}}^{\prime}$ is the minimizer of $\overline{f}$ on $\mathcal{H}$, and the third inequality follows from Lemma E.9. ∎
+
+### E.3 Logistic Regression
+
+In this section, we demonstrate how our results apply to logistic regression. In particular, we describe how logistic regression fits into the GLM framework described in Section C.
+
+We are given pairs $(X_{i},Y_{i})\in\operatorname{\mathbb{R}}^{d}\times\{\pm 1\}$ for $i\in[n]$, which are drawn from some distribution $D_{xy}$. Let $\phi(t)=\frac{1}{1+\exp(-t)}$. Logistic regression is the model where $y=1$ with probability $\phi(w\cdot x)$, and $y=-1$ with probability $\phi(-w\cdot x)$. We define the loss function to be the log-likelihood of $y$ given $x$. More precisely, we let $f_{i}(w,(x_{i},y_{i}))=L(w,(x_{i},y_{i}))$, which is defined as follows:
+
+$$L(w,(x,y))=\frac{1+y}{2}\ln\left(\frac{1}{\phi(w\cdot x)}\right)+\frac{1-y}{2}\ln\left(\frac{1}{\phi(-w\cdot x)}\right)=\frac{1}{2}\left(-\ln\left(\phi(w\cdot x)\phi(-w\cdot x)\right)-y(w\cdot x)\right).$$
+
+The gradient of this function is $\nabla L(w,(x,y))=\frac{1}{2}(\phi(w\cdot x)-\phi(-w\cdot x)-y)x$. The goal is to find a $\widehat{w}$ approximately minimizing the objective function
+
+$$\displaystyle\overline{f}(w)=\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(w,(X,Y))].$$
+
+We work with the following assumptions:
+
+**Assumption E.10.**
+
+Given the model for logistic regression as described above, assume the following conditions for the marginal distribution $D_{x}$:
+
+- $\operatorname{\mathbb{E}}_{X\sim D_{x}}[XX^{T}]\preceq I$;
+- $D_{x}$ is $\varepsilon^{1/4}\sqrt{\log(1/\varepsilon)}$-anticoncentrated.
+
+We can get a similar result to that for hinge loss for logistic regression:
+
+**Theorem E.11.**
+
+Let $\varepsilon>0$, and let $D_{xy}$ be a distribution over pairs $(X,Y)$, where the marginal distribution $D_{x}$ satisfies the conditions of Assumption E.10. Then there exists an algorithm that with probability $9/10$, given $O(d\log(d/\varepsilon)/\varepsilon)$ $\varepsilon$-noisy samples from $D_{xy}$, returns a $\widehat{w}$ such that for any $w^{\ast}$,
+
+$$\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(\widehat{w},(X,Y))]\leq\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(w^{\ast},(X,Y))]+O(\varepsilon^{1/4}\sqrt{\log(1/\varepsilon)}).$$
+
+The approach is very similar to that of Theorem E.8, which we repeat here for clarity. First, we will restrict our search over $w$ to $\mathcal{H}$, a ball of radius $r=\varepsilon^{-1/4}\sqrt{\log(1/\varepsilon)}$. As we argue in Lemma E.12, this restriction comes at a cost of at most $O(\varepsilon^{1/4}\sqrt{\log(1/\varepsilon)})$ in our algorithm’s loss. With this restriction, we will argue that the problem satisfies the conditions of Proposition C.3. This allows us to argue that, with a polynomial number of samples, we can obtain a set of $f_{i}$’s satisfying the conditions of Assumption C.1. This will allow us to apply Theorem C.2, concluding the proof.
+
+We start by showing that, due to anticoncentration of $D$, there is a $w^{\prime}\in\mathcal{H}$ with loss close to $w^{*}$:
+
+**Lemma E.12.**
+
+Let $w^{\prime}$ be a rescaling of $w^{*}$, such that $\|w^{\prime}\|_{2}\leq\varepsilon^{-1/4}\sqrt{\ln(1/\varepsilon)}$ (i.e. $w^{\prime}=\min\{1,\varepsilon^{-1/4}\sqrt{\ln(1/\varepsilon)}/\|w^{*}\|_{2}\}w^{*}$). Then $\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(w^{\prime},(X,Y))]\leq\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(w^{\ast},(X,Y))]+O(\varepsilon^{1/4}\sqrt{\ln(1/\varepsilon)})$.
+
+**Proof.**
+
+We need the following claim:
+
+**Claim E.13.**
+
+$$|t|\leq-\ln(\phi(t)\phi(-t))\leq|t|+3\exp(-|t|)$$
+
+**Proof.**
+
+Recalling that $\phi=1/(1+\exp(-t))$, we have that $-\ln(\phi(t)\phi(-t))=\ln(\exp(t)+\exp(-t)+2)$. Since $\exp(t)+\exp(-t)+2\geq\exp(|t|)$, we have $|t|\leq-\ln(\phi(t)\phi(-t))$. On the other hand, $\ln(\exp(t)+\exp(-t)+2)=|t|+\ln(1+2\exp(-|t|)+\exp(-2|t|))\leq|t|+\ln(1+3\exp(-|t|))\leq|t|+3\exp(-|t|)$. ∎
+
+For any $x\in\operatorname{\mathbb{R}}^{d}$, we have that:
+
+$$\displaystyle-\ln(\phi(w^{\prime}\cdot x)\phi(-w^{\prime}\cdot x))-y(w^{\prime}\cdot x)-3\exp(-3|w^{\prime}\cdot x|) \displaystyle\leq|w^{\prime}\cdot x|-y(w^{\prime}\cdot x)$$
+
+$$\displaystyle\leq|w^{*}\cdot x|-y(w^{*}\cdot x)$$
+
+$$\displaystyle\leq-\ln(\phi(w^{*}\cdot x)\phi(-w^{*}\cdot x))-y(w^{*}\cdot x)$$
+
+The first and last inequality hold by Claim E.13. For the second inequality, we do a case analysis on $y$. When $y=\mathrm{sign}(w^{\prime}\cdot x)=\mathrm{sign}(w^{*}\cdot x)$, then both sides of the inequality are $0$. When $y=-\mathrm{sign}(w^{\prime}\cdot x)=-\mathrm{sign}(w^{*}\cdot x)$, then the inequality becomes $2|w^{\prime}\cdot x|\leq 2|w^{*}\cdot x|$, which holds since $\|w^{\prime}\|_{2}\leq\|w^{*}\|_{2}$. We thus have that for any $y\in\{\pm 1\}$, $L(w^{\prime},(x,y))\leq L(w^{*},(x,y))+\frac{3}{2}\exp(-3|w^{\prime}\cdot x|)$. If $|w^{\prime}\cdot x|\leq\frac{1}{3}\ln(1/\varepsilon)$, then $L(w^{\prime},(x,y))\leq L(w^{*},(x,y))+\frac{3}{2}$. If $|w^{\prime}\cdot x|\geq\frac{1}{3}\ln(1/\varepsilon)$, then $L(w^{\prime},(x,y))\leq L(w^{*},(x,y))+\frac{3}{2}\varepsilon$. Since $\|w^{\prime}\|_{2}\leq\varepsilon^{-1/4}\sqrt{\ln(1/\varepsilon)}$ and $D_{x}$ is $\varepsilon^{1/4}\sqrt{\ln(1/\varepsilon)}$-anticoncentrated, we have that $\Pr_{D_{x}}[|w^{\prime}\cdot x|\leq\frac{1}{3}\ln(1/\varepsilon)]\leq O(\varepsilon^{1/4}\sqrt{\ln(1/\varepsilon)})$. Thus, $\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(w^{\prime},(X,Y))]\leq\operatorname{\mathbb{E}}_{(X,Y)\sim D_{xy}}[L(w^{\ast},(X,Y))]+O(\varepsilon^{1/4}\sqrt{\ln(1/\varepsilon)})$, as desired. ∎
+
+With this in hand, we can conclude with the proof of Theorem E.11.
+
+**Proof of Theorem E.11.**
+
+We first show that this problem fits into the GLM framework, in particular, satisfying the conditions of Proposition C.3. The link function is $\sigma_{y}(t)=\frac{1}{2}(-\ln(\phi(t)\phi(-t))-yt)$, giving us the loss function $L(w,(x,y))=\sigma_{y}(w\cdot x)$. We let $\mathcal{H}$ be the set $\|w\|_{2}\leq\varepsilon^{-1/4}\sqrt{\ln(1/\varepsilon)}$, giving us the parameter $r=\varepsilon^{-1/4}\sqrt{\ln(1/\varepsilon)}$. Condition 1 is satisfied by Assumption E.10. For $y\in\{-1,1\}$, $\sigma^{\prime}_{y}(t)=\frac{1}{2}(\phi(t)-\phi(-t)-y)$, which gives that $|\sigma^{\prime}_{y}(t)|\leq 1$ for all $t$ and $y$, satisfying Condition 2. Finally, $\sigma_{y}(0)=\ln 2<1$ for all $y$, satisfying Condition 3. Thus we can apply Proposition C.3: if we take $O(d\log(dr/\varepsilon)/\varepsilon)$ $\varepsilon$-corrupted samples, then they satisfy Assumption C.1 on $\mathcal{H}$ with $\sigma_{0}=2$, $\sigma_{1}=0$ and $\sigma_{2}=1+\varepsilon^{-1/4}\sqrt{\ln(1/\varepsilon)}$, with probability $9/10$.
+
+Now we can apply the algorithm of Theorem C.2. Since the loss is convex, we get a vector $\widehat{w}$ with $\overline{f}(\widehat{w})-\overline{f}({w^{*}}^{\prime})=O((\sigma_{0}r+\sigma_{1}r^{2}+\sigma_{2})\sqrt{\varepsilon})=O((2\varepsilon^{-1/4}\sqrt{\ln(1/\varepsilon)}+\varepsilon^{-1/4}\sqrt{\ln(1/\varepsilon)})\sqrt{\varepsilon})=O(\varepsilon^{1/4}\sqrt{\ln(1/\varepsilon)})$ where ${w^{*}}^{\prime}$ is the minimizer of $\overline{f}$ on $\mathcal{H}$.
+
+We thus have that $\overline{f}(\hat{w})\leq\overline{f}({w^{*}}^{\prime})+O(\varepsilon^{1/4}\sqrt{\ln(1/\varepsilon)})\leq\overline{f}(w^{\prime})+O(\varepsilon^{1/4}\sqrt{\ln(1/\varepsilon)})\leq\overline{f}(w^{*})+O(\varepsilon^{1/4}\sqrt{\ln(1/\varepsilon)})$. The second inequality follows because ${w^{*}}^{\prime}$ is the minimizer of $\overline{f}$ on $\mathcal{H}$, and the third inequality follows from Lemma E.12. ∎
+
+## Appendix F Additional Experimental Results
+
+In this section, we provide additional plots of our experimental results, comparing with all baselines considered.
+
+Figure 7: $\varepsilon$ vs test error for baselines and Sever on synthetic data and the drug discovery dataset. The left and middle figures show that Sever continues to maintain statistical accuracy against our attacks which are able to defeat previous baselines. The right figure shows an attack with parameters chosen to increase the test error Sever on the drug discovery dataset as much as possible. Despite this, Sever still has relatively small test error.
+
+Figure 8: $\varepsilon$ vs test error for baselines and Sever on synthetic data. The left figure demonstrates that Sever is accurate when outliers manage to defeat previous baselines. The right figure shows the result of attacks which increased the test error the most against Sever. Even in this case, Sever performs much better than the baselines.
+
+Figure 9: $\varepsilon$ versus test error for baselines and Sever on the Enron spam corpus. The left and middle figures are the attacks which perform best against two baselines, while the right figure performs best against Sever. Though other baselines may perform well in certain cases, only Sever is consistently accurate. The exception is for certain attacks at $\varepsilon=0.03$, which, as shown in Figure 6, require three rounds of outlier removal for any method to obtain reasonable test error – in these plots, our defenses perform only two rounds.
+
+[^1]: Authors are in alphabetical order.
+
+[^2]: Code is available at https://github.com/hoonose/sever.
+
+[^3]: In practice, heuristics must often be applied to choose the best fit. In our experiments, we “cheat” slightly by in fact choosing the best fit post-hoc by reporting the best error achieved by any learner in this way. Despite strengthening RANSAC in this way, we observe that it still has poor performance.
