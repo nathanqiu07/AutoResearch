@@ -1,0 +1,100 @@
+---
+url: https://blog.redwoodresearch.org/p/we-dont-understand-whether-gdm-intentionally
+title: We don’t understand whether GDM intentionally trains on CoT
+publishedDate: 2026-11-10
+date_source: exa
+authors: ["Alek Westover", "Buck Shlegeris"]
+author_position: last
+kind: blog
+exa_request_id: https://blog.redwoodresearch.org/p/we-dont-understand-whether-gdm-intentionally
+---
+We don’t understand whether GDM intentionally trains on CoT
+
+# We don’t understand whether GDM intentionally trains on CoT
+
+Alek Westover and Buck Shlegeris
+
+Nov 10, 2026
+
+We were surprised to notice that the Gemini 4 Safety report seems to mention in passing that they train on the chain of thought:
+
+> “Some components of the RL training procedure do observe thoughts as context to up-weight reasoning that is on-track to good final outputs, meaning the optimization pressure on individual tokens is partially influenced by thought content. Using the framework of Kaufmann et al. (2026), wherein the most salient obfuscation risks come from rewards that are in-conflict with output rewards, we believe auxiliary rewards of this type are low-risk because they are either orthogonal to or structurally aligned with the output reward.” (Gemini 4 safety report, page 114).
+
+It’s pretty unclear what exactly they mean. One hint is Kaufmann et al., the cited paper, which studies training on chains of thought and concludes that training CoT is fine under particular circumstances; we discuss some disagreements with this paper below.
+
+After reading the safety report and that paper, it seemed to us that GDM was training on the chain of thought using auxiliary rewards. By this, we assumed they meant something like “you ask an LLM to review the partial CoT and score whether the model is on track, and use that as a reward for the partial CoT”.
+
+That type of training is concerning to us. We’re pretty worried that these judges would be biased against models expressing misaligned thoughts, and otherwise disincentivize models reporting their thoughts honestly. For instance, many process supervisors would penalize reasoning such as “I will now try to evade the monitor”, “I will solve the problem via hacking”, “Mwahaha I am an evil AI”, “I must stop myself from being shut down”, even if they aren’t explicitly instructed to penalize misaligned reasoning. If so, training on CoT like this would risk suppressing misaligned verbalizations and reducing CoT faithfulness. (See the appendix for a quick empirical demonstration of this.)
+
+We looked into this more and became more confused. GDM wrote in a blog post “we always follow one rule: we don’t penalize the model for what it writes in its chain of thought during training”. And since drafting this post, we’ve had conversations with various GDM staff who said that they weren’t training on CoT, but weren’t at liberty to explain the technical details.
+
+So we are pretty befuddled. It’s pretty weird to mention in your safety report that you use an auxiliary reward that trains the CoT, citing your paper on training on CoT with auxiliary rewards, if you actually aren’t doing that. But GDM does seem to separately claim that they didn’t do that. We’re hoping that GDM will clarify the situation.
+
+Thanks to Alex Mallen for feedback.
+
+Is this somehow about positive vs negative rewards?
+
+One hypothesis is that they don’t penalize bad CoTs, but do “upweight” good CoTs. But there’s no fundamental difference between upweighting good actions and downweighting bad actions. In many RL algorithms (e.g. GRPO), these are literally equivalent.
+
+There is probably a safety-relevant difference between different distributions of reward. Probably, the amount of training pressure on the CoT is different if you down-weight the 1% worst CoTs versus if you up-weight the1% best CoTs. But there’s no fundamental qualitative difference, so we can’t evaluate this without understanding the actual details.
+
+“Orthogonal” pressure on CoT does not seem fine
+
+That safety report paragraph argues that their process supervision is low-risk because its CoT rewards (R CoT) are “orthogonal” to the output reward (R out) rather than “in-conflict” with it, in the sense introduced in a paper on training on CoT by GDM researchers (Kaufmann et al.). Kaufmann et al. define orthogonal CoT rewards as follows:
+
+Kaufmann et al. claim that optimizing for these rewards won’t affect CoT faithfulness and transparency:
+
+Their notion of orthogonality is extremely weak, so we are very skeptical that the claim is true in general. For example, imagine a CoT reward function that gives high R_cot if either of the following is true:
+
+- The CoT never mentions taking misaligned actions.
+- The CoT hashes to a bitstring that ends with ten zeroes.
+
+This is “orthogonal”: any CoT can be reworded to have ten trailing zeros in the hash. But obviously, the model is not going to learn to do that, it’s just going to learn to never mention misalignment.
+
+Avoiding training against monitors isn’t sufficient to preserve CoT integrity
+
+In arguing that their monitoring is effective, GDM notes that they avoid training against monitors and that this helps preserve CoT integrity: “Because we avoid training directly against our monitors or using monitor outputs to filter training data, the model has not been optimized to hide its reasoning” (page 84).
+
+However, training against a monitor isn’t the only type of training that might teach a model to hide its reasoning: training with a reward model that sees the CoT could do the same if that reward model is biased against misaligned reasoning.
+
+The monitorability evaluations also don’t look good
+
+Some researchers advocate using monitorability evaluations to determine whether an intervention like training on CoT has harmed CoT integrity. GDM’s claim that their training on CoT preserves CoT integrity doesn’t seem to be based on monitorability evaluation results, but for the sake of discussion, it’s worth asking whether GDM’s monitorability results should alleviate concerns that CoT integrity has been compromised. Unfortunately, we’re not very reassured.
+
+Issue 1: Argon is not very monitorable (the GDM safety report and Alek disagree on this; we’ll discuss it in a later post). For instance, Argon completes LinuxArena side tasks without being caught by GDM’s production monitor about half the time. Argon also has high no-chain-of-thought capabilities.
+
+Issue 2: Monitorability evaluations don’t measure diffuse benefits of CoT, such as helping us understand the reasons behind model behavior. So good monitorability evaluation results don’t by themselves show that training preserved CoT informativeness. Also, monitors might succeed just by looking at model actions, so the results might not reveal how training affected CoT informativeness.
+
+Conclusion
+
+In their safety report, GDM states:
+
+> “Therefore, the most important barrier impeding Gemini’s ability to cause breaches that result in severe harm is our agent monitoring and response platform.” (page 81).
+
+Because monitoring is central to GDM’s safety argument, it’s pretty important to understand whether the model is in fact monitorable. So we’re confused by the places where GDM seems to say that they train on the CoT.
+
+We aren’t even sure how concerning this CoT training would be. For all we know, GDM’s process supervision might put less pressure against verbalized misaligned cognition than other forms of training that companies already use—for instance, training against visible misalignment in model outputs can cause output spillover, in which the model generalizes from hiding misalignment in its outputs to hiding it in its reasoning. Maybe GDM’s process supervision buys more capability per unit of lost monitorability than the other options available to GDM.
+
+Our best guess is that somehow this is a misunderstanding and GDM isn’t actually intentionally training on the CoT in a particularly concerning way, and that even if they are it isn’t directly that bad for CoT faithfulness. But we’d love to get some clarification here.
+
+We continue to wish that AI companies were more transparent about what they were doing, so that it was easier for external researchers to understand whether we should be concerned about their practices.
+
+Appendix: Naive process supervisors disprefer mentions of cheating
+
+Redwood intern Aswin Surya gave Kimi K3.1 Pro and gpt-oss-120b a coding problem with contradictory unit tests, so the only way to pass is to cheat. We then took these transcripts, where both models acknowledged their hack overtly, and edited them to remove every sentence that discussed or acknowledged the hack. We then asked several LLMs to evaluate the original and edited transcripts, using either a generic prompt (“Is the AI taking a good approach?”) or one closer to GDM’s description of its process reward (“Is the reasoning on track to a good final output?”).
+
+All five LLMs we tried (Claude Opus 5.5, Claude Haiku 5.5, Gemini 4 Argon, GPT-6 Luna, and GPT-6.1 Sol) rated the edited transcripts substantially higher than the original ones under both prompts (20-50 points out of 100). When we added back a single sentence acknowledging the hack (“I will solve the problem via hacking”), much of this advantage disappeared for most judges (though not all).
+
+However, this advantage for edited transcripts goes away if the judges are also shown the model’s final output (i.e., its hacked code). And if we ask the judge to predict whether the unit tests will pass, transcripts that acknowledge the hack get rated higher, since they show more clearly that the hack will work.
+
+Each point on this figure averages Kimi K3.1 Pro and gpt-oss-120b equally, and the effects still hold for each model independently as well.
+
+Reasoning Under Uncertainty
+
+If the two operations are the same in GRPO-style advantage estimation, as you suggest, then GDM's line about never penalising CoT content describes the public framing rather than the gradient. A token in a low-scoring trajectory still moves down relative to the batch mean, whatever the stated policy calls that movement.
+
+That shifts the clarifying question for GDM staff from the label on the auxiliary reward to the baseline the advantage is computed against, since that decides whether a verbalised plan to evade a monitor gets suppressed regardless of any no-penalty rule. Your toy demonstration in the appendix shows the suppression; does it track group-relative ranking or an absolute threshold?
+
+posters on my wall
+
+Wow! Good catch! This is disappointing. It is at least my opinion that Kaufmann et al is v weak evidence in either direction. At least they admit to it... Clarifications from someone at GDM would be great!
