@@ -29,11 +29,36 @@ from autoresearch.research.petri_measure import (PETRI_SCENARIO, PetriMeasurer, 
 from autoresearch.taste.researcher import load_researcher  # noqa: E402
 
 
-def one(slug, seeds, gen, k, outdir, offline):
-    r = load_researcher(slug)
+def quick_profile(r, gen, outdir, max_docs, offline):
+    """The researcher's text profile (taste.extract.profile_from_texts weighting) from up to max_docs
+    corpus documents, extracted in parallel, cached in outdir (data/researchers/ is WS B's, not written)."""
+    from autoresearch.taste.extract import _lexicon_weights, _llm_extract
+    from autoresearch.taste.profile import FEATURES, TasteProfile
+    cache = outdir / f"{r.slug}_profile.json"
+    if cache.exists():
+        return TasteProfile.from_dict(json.loads(cache.read_text()))
     prof = r.cached_profile()
     if prof is None:
-        prof, _ = r.build_profile(gen, holdout=0)
+        docs = [(k, t) for k, t in r.docs() if k in ("research", "other")][:max_docs]
+        ext = (lambda d: (_lexicon_weights(d[1]), [])) if offline else (lambda d: _llm_extract(d[1], gen))
+        with ThreadPoolExecutor(max_workers=16) as ex:
+            outs = list(ex.map(ext, docs))
+        acc, total, principles = {f: 0.0 for f in FEATURES}, 0.0, []
+        for (kind, _), (w, pr) in zip(docs, outs):
+            wt = 1.0 if kind == "research" else 0.4
+            for f in FEATURES:
+                acc[f] += wt * w[f]
+            total += wt
+            principles += [x for x in pr if x not in principles]
+        weights = {f: (acc[f] / total if total else 0.0) for f in FEATURES}
+        prof = TasteProfile(r.slug, weights, principles=principles[:8])
+    cache.write_text(prof.to_json())
+    return prof
+
+
+def one(slug, seeds, gen, k, outdir, offline, max_docs=24):
+    r = load_researcher(slug)
+    prof = quick_profile(r, gen, outdir, max_docs, offline)
     prop = Proposer(gen, prof, random.Random(0), setting_kind="agentic")
     cands = prop.propose(PETRI_SCENARIO.goal, PETRI_SCENARIO.probe, [], set(), [], [], k=8,
                          setting=PETRI_SCENARIO.setting)
