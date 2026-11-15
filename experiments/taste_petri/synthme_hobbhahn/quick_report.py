@@ -27,18 +27,31 @@ lines = [f"# SynthesizeMe for Marius Hobbhahn (swe-2-medium via devin-cli, deadl
 for a in arms:
     acc, ph = F._acc(g[a]), F._acc(gp[a])
     lines.append(f"| {a} | {tests[a]['profile_words']} | {acc['value']:.3f} {acc['ci90']} | {ph['value']:.3f} {ph['ci90']} |")
-lines += ["", "| arm | Δacc vs M0s | Δp(his) vs M0s | Δacc vs NAME | Δp(his) vs NAME |", "|---|---|---|---|---|"]
+def cell(d):
+    text = f"{d['diff']:+.3f} {d['ci90']}"
+    return f"**{text}**" if d["ci90"][0] > 0 or d["ci90"][1] < 0 else text
+
+
+sig = []
+lines += ["", "Bold = 90% CI excludes 0.", "", "| arm | Δacc vs M0s | Δp(his) vs M0s | Δacc vs NAME | Δp(his) vs NAME |", "|---|---|---|---|---|"]
 for a in arms:
-    if a in ("M0s", "NAME"):
+    if a == "M0s":
         continue
     cells = []
     for c in ("M0s", "NAME"):
-        if c in arms:
-            d, dp = F._diff(g[a], g[c]), F._diff(gp[a], gp[c])
-            cells += [f"{d['diff']:+.3f} {d['ci90']}", f"{dp['diff']:+.3f} {dp['ci90']}"]
+        if c in arms and c != a:
+            for m, d in (("paired acc", F._diff(g[a], g[c])), ("mean p(his)", F._diff(gp[a], gp[c]))):
+                cells.append(cell(d))
+                if d["ci90"][0] > 0 or d["ci90"][1] < 0:
+                    sig.append(f"- {a} vs {c}, {m}: {d['diff']:+.3f} {d['ci90']} "
+                               f"({'better' if d['diff'] > 0 else 'worse'} than {c})")
         else:
             cells += ["–", "–"]
     lines.append(f"| {a} | " + " | ".join(cells) + " |")
+lines += ["", "## Significant results (90% CI excludes 0)", ""] + (sig or ["- none"]) + [
+    "", f"CIs resample {len({work[k] for k in work if k not in failed})} works, so they are likely too narrow "
+    "(decoys/ A/A check: few-cluster bootstrap CIs are overconfident). The lite personas skip SynthesizeMe's "
+    "validation selection (deadline shortcut, lite.py); every call is swe-2-medium."]
 md = "\n".join(lines) + "\n"
 open(os.path.join(C.HERE, "results.md"), "w").write(md)
 print(md)
