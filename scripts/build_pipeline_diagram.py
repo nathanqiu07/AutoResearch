@@ -40,7 +40,7 @@ PERSONAL = [
     ("1", "init", "Register the person", "records their consent and adds the track",
      "trackp init · no model", "built", ["CONSENT.md", "data/researchers/tracks.json"]),
     ("2", "seed-pairs", "Make 50 seed pairs", "two library interventions on the same scenario",
-     "trackp seed-pairs · --llm-ideas adds paid ones", "built", ["seed_pairs.jsonl"]),
+     "trackp seed-pairs · trade-off bank; --llm-scenarios adds paid ones", "built", ["seed_pairs.jsonl"]),
     ("3", "record", "Collect their choices", "seed pairs, plus D1–D6 decisions from loop runs",
      "trackp pending + record, or answer / label", "built", ["seed_choices.jsonl", "labels.jsonl"]),
     ("4", "recheck", "Re-ask 20% after 3 days", "options reversed; the agreement rate is the noise ceiling",

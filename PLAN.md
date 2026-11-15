@@ -302,7 +302,7 @@ choices. **[decide]** which team member. Ethan has said he will not be the sourc
 
 | Data | How collected | Held-out test |
 |---|---|---|
-| Seed pairwise choices (~50) | Before any run: the team member answers D1-style choices about eval-awareness interventions ("which would you test first?") | 20% held out |
+| Seed pairwise choices (~50) | Before any run: the team member answers 13 trade-off axes (from non-Hobbhahn eval-design primers) as stance and scenario items across D1–D6; see `docs/superpowers/specs/2026-11-14-trackp-tradeoff-questionnaire-design.md` | 20% held out |
 | Loop decision labels | The team member labels logged D1–D6 records with `label` | Labels from *later* runs held out |
 
 **Public track (code S): public researchers, from Exa, each run separately.**
@@ -555,9 +555,9 @@ past.dev, and run Taste-Bench (E7).
 **Personal track (P): one team member** (**[decide]** who; not Ethan). Built in `taste/trackp.py`
 (`python3 -m autoresearch.taste.trackp init|seed-pairs|answer|label|recheck|status|e2`); no answers collected yet.
 1. **Seed choices.** `trackp seed-pairs --researcher <slug> --n 50`, then `trackp answer --researcher <slug>`.
-   * The command generates D1-style pairs: two candidate interventions for the same EvalAwareBench item, taken from `ideas.LIBRARY` plus LLM proposals.
-   * The team member picks one and can add a sentence explaining why. Store their reasons, because they are extra signal for M2.
-   * Each pair is stored as a text `Choice` with `decision_point="D1"`, with features filled in by A's featuriser.
+   * The command makes 13 stance and 37 scenario items on 13 trade-off axes from non-Hobbhahn eval-design primers, across D1–D6. `--llm-scenarios K` adds paid LLM-written scenarios. Spec: `docs/superpowers/specs/2026-11-14-trackp-tradeoff-questionnaire-design.md`.
+   * The team member picks an option for each. No reason is asked for, since no user model (M0–M7) reads `Choice.reason`; a volunteered one is still stored.
+   * Each item is stored as a text `Choice` with its `decision_point`, with features filled in by A's featuriser.
 2. **Decision labels.** `trackp label --researcher <slug> runs/<run_id>/decisions.jsonl` reads WS D's `decisions.jsonl` (§12.6) and covers all of D1–D6. It hides the loop's choice, the arm and the option order. Labels go to `data/researchers/<slug>/labels.jsonl`, with a timestamp and run id.
 3. **Noise ceiling** (from `eval-awareness-plan.md`): re-ask ~20% of the items a few days later, without showing the earlier answers. The person's agreement with themselves is the upper bound on fidelity, and E2 is reported next to it.
 4. **Hold-out:** 20% of the seed choices, plus every label from runs after a cutoff date.

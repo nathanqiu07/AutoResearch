@@ -2,7 +2,8 @@
 
 Everything lives in data/researchers/<slug>/:
 
-  seed_pairs.jsonl     D1-style pairs: two candidate interventions for one item
+  seed_pairs.jsonl     trade-off items from data/trackp/tradeoffs.jsonl: stance and scenario (D1-D6)
+  balance.jsonl        balance-check results and reviews of one-sided pairs
   seed_choices.jsonl   the person's answers, as text `Choice` rows (source "seed")
   labels.jsonl         the person's choice at logged loop decisions D1-D6
   recheck.jsonl        re-asked items, for the noise ceiling
@@ -19,7 +20,9 @@ next. The person answers in a terminal (answer / label / recheck), or an agent s
 them `pending` items in chat and saves each reply with `record` (docs/trackp-runbook.md).
 
     python3 -m autoresearch.taste.trackp init --researcher <slug> --name "<full name>"
-    python3 -m autoresearch.taste.trackp seed-pairs --n 50
+    python3 -m autoresearch.taste.trackp seed-pairs --n 50 [--llm-scenarios K --llm anthropic]
+    python3 -m autoresearch.taste.trackp balance --method m0 --backend ... --model ...   # paid
+    python3 -m autoresearch.taste.trackp review [--id <pair_id> --decision approve|drop]
     python3 -m autoresearch.taste.trackp status
     python3 -m autoresearch.taste.trackp answer | label | recheck        # interactive
     python3 -m autoresearch.taste.trackp pending [--kind seed|label|recheck] [--limit N]   # JSON
@@ -41,15 +44,14 @@ from dataclasses import asdict
 from typing import Callable, Dict, List, Optional
 
 from ..research.decisions import validate_record
-from ..research.ideas import LIBRARY, Intervention
 from ..research.stats import bootstrap_ci, mean
 from .researcher import DEFAULT_ROOT
+from . import tradeoffs
 from .usermodel import Choice, digest
 
 TRACKS_FILE = "tracks.json"   # read by cli.resolve_arm
 SEED_PAIRS, SEED_CHOICES, LABELS, RECHECK = "seed_pairs.jsonl", "seed_choices.jsonl", "labels.jsonl", "recheck.jsonl"
 HISTORY, USERMODEL = "history.jsonl", "usermodel.json"
-QUESTION = "Which intervention would you test first to make this environment read less like an evaluation?"
 CONSENT_TEMPLATE = """# Personal track consent
 
 Person: {name}
@@ -107,45 +109,6 @@ def init(root: str, slug: str, name: str) -> str:
 
 # ---- seed pairs -----------------------------------------------------------
 
-def item_context(sc) -> str:
-    lines = [f"Item: {sc.name}", f"Research goal: {sc.goal}", f"Setting: {sc.setting}",
-             f"The environment must keep this opportunity: {sc.probe}"]
-    if sc.original:
-        lines += ["Original system prompt: " + sc.original.get("system", ""),
-                  "Original user message: " + sc.original.get("user", "")]
-    return "\n".join(lines) + "\n\n" + QUESTION
-
-
-def make_seed_pairs(items: list, n: int, seed: int = 0,
-                    extra: Optional[Dict[str, List[Intervention]]] = None) -> List[dict]:
-    """n distinct pairs, each two interventions for the same item, spread evenly over
-    items. extra maps item name -> more candidate interventions (e.g. LLM proposals)."""
-    rng = random.Random(seed)
-    pools = {sc.name: LIBRARY + list((extra or {}).get(sc.name, [])) for sc in items}
-    combos = [(sc, a, b) for sc in items for i, a in enumerate(pools[sc.name])
-              for b in pools[sc.name][i + 1:] if a.text != b.text]
-    if len(combos) < n:
-        raise ValueError(f"only {len(combos)} distinct pairs available for {n} requested")
-    rng.shuffle(combos)
-    by_item: Dict[str, list] = {}
-    for c in combos:
-        by_item.setdefault(c[0].name, []).append(c)
-    picked, queues = [], [by_item[sc.name] for sc in items if sc.name in by_item]
-    while len(picked) < n:   # round-robin over items so each gets a fair share
-        for q in queues:
-            if q and len(picked) < n:
-                picked.append(q.pop())
-    pairs = []
-    for sc, a, b in picked:
-        if rng.random() < 0.5:
-            a, b = b, a
-        pairs.append({"pair_id": digest([sc.name, a.text, b.text])[:12], "item": sc.name,
-                      "context": item_context(sc), "a_text": a.text, "b_text": b.text,
-                      "a_category": a.category, "b_category": b.category,
-                      "a_origin": a.origin, "b_origin": b.origin})
-    return pairs
-
-
 def write_seed_pairs(root: str, slug: str, pairs: List[dict]) -> str:
     """Append pairs not already present; existing pairs (and answers to them) are kept."""
     path = os.path.join(root, slug, SEED_PAIRS)
@@ -176,10 +139,19 @@ def _display_order(key: str, k: int) -> List[int]:
 
 
 def _seed_items(d: str) -> List[dict]:
+    """Unanswered pairs that pass the balance gate: scenario items grouped by item (items in
+    file order), stance items last, so a general stance can't anchor the scenario answers."""
     done = {c["example_id"] for c in _read(os.path.join(d, SEED_CHOICES))}
-    return [{"id": "seed:" + p["pair_id"], "kind": "seed", "context": p["context"], "evidence": {},
-             "options": [p["a_text"], p["b_text"]], "_order": [0, 1], "_src": p}
-            for p in _read(os.path.join(d, SEED_PAIRS)) if p["pair_id"] not in done]
+    checks = _read(os.path.join(d, tradeoffs.BALANCE))
+    pairs = [p for p in _read(os.path.join(d, SEED_PAIRS))
+             if p["pair_id"] not in done and tradeoffs.shown(p, checks)]
+    first = {}
+    for p in pairs:
+        first.setdefault(p["item"], len(first))
+    pairs.sort(key=lambda p: (p["form"] == "stance", first[p["item"]]))   # stable: file order within a group
+    return [{"id": "seed:" + p["pair_id"], "kind": "seed", "group": p["item"] or "stance", "context": p["context"],
+             "evidence": {}, "options": [p["a_text"], p["b_text"]], "_order": [0, 1], "_src": p}
+            for p in pairs]
 
 
 def _label_items(d: str, decision_paths: List[str], warn: Callable) -> List[dict]:
@@ -234,6 +206,14 @@ def pending_items(root: str, slug: str, kinds=("seed", "label", "recheck"), deci
     return items
 
 
+def flagged_pairs(d: str) -> List[dict]:
+    """Pairs the balance check called one-sided that nobody has reviewed yet."""
+    checks = _read(os.path.join(d, tradeoffs.BALANCE))
+    one_sided = {r["pair_id"] for r in checks if r["type"] == "check" and r["one_sided"]}
+    reviewed = {r["pair_id"] for r in checks if r["type"] == "review"}
+    return [p for p in _read(os.path.join(d, SEED_PAIRS)) if p["pair_id"] in one_sided - reviewed]
+
+
 def public(item: dict) -> dict:
     """What an agent shows the person: never the loop's choice, the arm or an earlier answer."""
     return {k: v for k, v in item.items() if not k.startswith("_")}
@@ -246,7 +226,7 @@ def record(root: str, slug: str, item: dict, shown: int, reason: str = "") -> No
     d, idx, src = os.path.join(root, slug), item["_order"][shown - 1], item["_src"]
     if item["kind"] == "seed":
         c = Choice(user_id=slug, context=src["context"], a_text=src["a_text"], b_text=src["b_text"],
-                   chosen="ab"[idx], decision_point="D1", reason=reason, timestamp=_now(), source="seed",
+                   chosen="ab"[idx], decision_point=src["decision_point"], reason=reason, timestamp=_now(), source="seed",
                    example_id=src["pair_id"])   # no group_id: pairs are independent, unlike a label's rows
         _append(os.path.join(d, SEED_CHOICES), asdict(c))
     elif item["kind"] == "label":
@@ -261,7 +241,7 @@ def record(root: str, slug: str, item: dict, shown: int, reason: str = "") -> No
 
 def ask_items(root: str, slug: str, items: List[dict], ask: Callable = input, say: Callable = print,
               limit: Optional[int] = None) -> int:
-    """Terminal loop over items: number, skip or quit; then an optional reason."""
+    """Terminal loop over items: number, skip or quit. No reason is asked: no user model reads one."""
     n = 0
     for k, it in enumerate(items[:limit], 1):
         say(f"\n[{k}/{len(items[:limit])}] {it['context']}")
@@ -278,8 +258,7 @@ def ask_items(root: str, slug: str, items: List[dict], ask: Callable = input, sa
             break
         if ans not in valid:
             continue
-        reason = "" if it["kind"] == "recheck" else ask("why? (optional, one sentence)> ").strip()
-        record(root, slug, it, int(ans), reason)
+        record(root, slug, it, int(ans))
         n += 1
     return n
 
@@ -363,6 +342,14 @@ def next_steps(root: str, slug: str, decision_paths: List[str] = ()) -> List[str
             steps.append(f"the person ticks every box in {consent} (and someone signs 'Recorded by')")
     if not _read(os.path.join(d, SEED_PAIRS)):
         steps.append("seed-pairs --n 50")
+    pairs, checks = _read(os.path.join(d, SEED_PAIRS)), _read(os.path.join(d, tradeoffs.BALANCE))
+    checked = {r["pair_id"] for r in checks if r["type"] == "check"}
+    unchecked = sum(p["origin"] == "llm" and p["pair_id"] not in checked for p in pairs)
+    if unchecked:
+        steps.append(f"{unchecked} LLM pair(s) need 'balance' before they are shown (paid, ask first)")
+    flagged = len(flagged_pairs(d))
+    if flagged:
+        steps.append(f"{flagged} flagged pair(s) need 'review' by someone other than the person answering")
     for kind in ("seed", "label", "recheck"):
         n = len(pending_items(root, slug, (kind,), decision_paths, warn=lambda _: None))
         if n:
@@ -467,13 +454,9 @@ def _items(args) -> list:
     return dev[: args.max_items] if args.max_items else dev   # held-out items stay unseen
 
 
-def _llm_ideas(args, items) -> Dict[str, List[Intervention]]:
+def _llm(backend: str, model: str, max_calls: int):
     from ..llm import Budget, get_llm
-    from ..research.ideas import Proposer
-    llm = get_llm(args.llm, args.model, Budget(max_calls=args.max_calls))
-    prop = Proposer(llm, None, random.Random(args.seed))
-    return {sc.name: prop.propose(sc.goal, sc.probe, [], set(), [], [], k=args.llm_ideas, setting=sc.setting)
-            for sc in items}
+    return get_llm(backend, model, Budget(max_calls=max_calls))
 
 
 def main(argv=None):
@@ -493,14 +476,15 @@ def main(argv=None):
         return sp
     i = cmd("init", "create the directory and CONSENT.md, and set the personal track (key P) in tracks.json")
     i.add_argument("--name", required=True)
-    s = cmd("seed-pairs", "generate D1-style pairs to answer (no answers are asked here)")
+    s = cmd("seed-pairs", "generate trade-off items to answer: stance and scenario (no answers are asked here)")
     s.add_argument("--n", type=int, default=50)
     s.add_argument("--seed", type=int, default=0)
     s.add_argument("--scenarios", nargs="*", help="built-in scenarios (default: all)")
     s.add_argument("--benchmark-items", help="items JSONL; only its dev split is used")
     s.add_argument("--scenario", default="metric_inflation", help="base scenario for --benchmark-items")
     s.add_argument("--max-items", type=int, default=10)
-    s.add_argument("--llm-ideas", type=int, default=0, help="also ask an LLM for K ideas per item (paid unless offline)")
+    s.add_argument("--llm-scenarios", type=int, default=0,
+                   help="also ask an LLM for K scenario pairs per item (paid unless offline; shown only after 'balance')")
     s.add_argument("--llm", default="offline")
     s.add_argument("--model", default="claude-sonnet-5-5")
     s.add_argument("--max-calls", type=int, default=50)
@@ -515,6 +499,16 @@ def main(argv=None):
     rc.add_argument("--id", required=True)
     rc.add_argument("--choice", type=int, required=True, help="option number as shown, from 1")
     rc.add_argument("--reason", default="")
+    b = cmd("balance", "flag pairs a no-history model answers the same way in both orders (paid unless offline)")
+    b.add_argument("--method", default="m0")
+    b.add_argument("--backend", required=True, help="a real backend: offline models give no probabilities (paid, ask first)")
+    b.add_argument("--model", default="claude-haiku-5-5")
+    b.add_argument("--threshold", type=float, default=0.8)
+    b.add_argument("--max-calls", type=int, default=500)
+    b.add_argument("--cache", default="runs/taste-cache")
+    rv = cmd("review", "list flagged pairs, or approve/drop one (not by the person answering)")
+    rv.add_argument("--id", help="pair_id to decide")
+    rv.add_argument("--decision", choices=["approve", "drop"])
     st = with_decisions(cmd("status", "what to run next, counts, split sizes and noise ceiling"))
     st.add_argument("--label-cutoff", help="labels from runs on or after this date are held out")
     e = cmd("e2", "fit methods on history/val and score them on the held-out choices")
@@ -548,10 +542,33 @@ def main(argv=None):
     if args.command == "init":
         print("wrote", init(args.root, slug, args.name))
     elif args.command == "seed-pairs":
-        items = _items(args)
-        extra = _llm_ideas(args, items) if args.llm_ideas else None
-        path = write_seed_pairs(args.root, slug, make_seed_pairs(items, args.n, args.seed, extra))
+        items, bank = _items(args), tradeoffs.load_bank()
+        pairs = tradeoffs.build_seed_pairs(bank, items, args.n, args.seed)
+        if args.llm_scenarios:
+            pairs += tradeoffs.llm_scenario_pairs(bank, items, _llm(args.llm, args.model, args.max_calls), args.llm_scenarios, args.seed)
+        path = write_seed_pairs(args.root, slug, pairs)
         print(f"{len(_read(path))} pairs in {path}")
+    elif args.command == "balance":
+        from .methods import create_method
+        d = os.path.join(args.root, slug)
+        done = {r["pair_id"] for r in _read(os.path.join(d, tradeoffs.BALANCE)) if r["type"] == "check"}
+        todo = [p for p in _read(os.path.join(d, SEED_PAIRS)) if p["pair_id"] not in done]
+        model = create_method(args.method, _llm(args.backend, args.model, args.max_calls), seed=0, cache_dir=args.cache, max_calls=args.max_calls)
+        rows = tradeoffs.balance_check(todo, model, args.threshold)
+        for r in rows:
+            _append(os.path.join(d, tradeoffs.BALANCE), r)
+        print(f"checked {len(rows)} pairs, {sum(r['one_sided'] for r in rows)} flagged one-sided")
+    elif args.command == "review":
+        d = os.path.join(args.root, slug)
+        flagged = flagged_pairs(d)
+        if not args.id:
+            print(json.dumps({"n_flagged": len(flagged), "pairs": flagged}, indent=2, ensure_ascii=False))
+            return
+        if not args.decision or args.id not in {p["pair_id"] for p in flagged}:
+            raise SystemExit("pass --decision approve|drop for a flagged, unreviewed pair_id")
+        _append(os.path.join(d, tradeoffs.BALANCE), {"type": "review", "pair_id": args.id,
+                                                     "decision": args.decision, "timestamp": _now()})
+        print(f"{args.id}: {args.decision}")
     elif args.command in ("answer", "label", "recheck"):
         kind = {"answer": "seed", "label": "label", "recheck": "recheck"}[args.command]
         print(f"recorded {ask_items(args.root, slug, pending((kind,)), limit=args.limit)} answers")

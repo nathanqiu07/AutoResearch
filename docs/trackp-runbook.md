@@ -17,8 +17,12 @@ python3 -m autoresearch.taste.trackp seed-pairs --n 50
 * The user decides who the person is (not Ethan).
 * Before any answers are collected, the person ticks every box in
   `data/researchers/<slug>/CONSENT.md`, and `status` lists this step until they have.
-* `seed-pairs` makes no model calls. `--llm-ideas K --llm anthropic` adds LLM-proposed
-  interventions. That is a paid call, so ask the user first.
+* `seed-pairs --n 50` makes no model calls. It writes 13 stance items and 37 scenario items.
+  `--llm-scenarios K --llm <backend>` adds LLM-written scenario items. That is a paid call,
+  so ask the user first.
+* Then run `balance --method m0 --backend <b> --model <m>` (paid, ask first) and `review`.
+  `review` lists the items awaiting a decision, and `review --id <pair_id> --decision
+  approve|drop` settles one. Someone other than the person answering does both.
 
 ## 2. Collect answers
 
@@ -28,15 +32,21 @@ Only the person answers. Never pick an option for them, and never guess a reply.
 
 ```bash
 python3 -m autoresearch.taste.trackp pending --kind seed --limit 5
-python3 -m autoresearch.taste.trackp record --id <id> --choice <n> --reason "<their words>"
+python3 -m autoresearch.taste.trackp record --id <id> --choice <n>
 ```
 
-1. Show each item's `context`, any `evidence`, and its numbered `options` exactly as
-   printed, without reordering, summarising or commenting on them, since your opinion
-   biases the answer.
-2. Ask which number they pick, and why in one sentence. The reason is optional, but it
-   is extra signal for the user model, so record it word for word.
-3. Run `record` once per answer. If they want to skip an item, don't record it.
+1. Before the first item, tell the person once: it takes about 20 minutes, they can stop and
+   resume at any point, there are no right answers, and each question asks what they would do.
+2. `pending` serves scenario items grouped by their `group` field, then the stance items.
+   Show a group's context once, then its questions one at a time, with the numbered `options`
+   exactly as printed. Stance items come last.
+3. Never name the axis, the poles or the decision point.
+4. Say nothing about the content: no opinion, hint, paraphrase or "good choice". If they ask
+   what an option means, re-show it word for word.
+5. Run `record` right after each answer. Don't ask why; pass `--reason` only if they
+   volunteer one, in their words. If they want to skip an item, or pick neither, don't record it.
+6. Offer a break at the halfway point. At the end, run `status` and report what was answered
+   and what is left.
 
 **In a terminal (the person alone):** they run
 `! python3 -m autoresearch.taste.trackp answer` (or `label`, or `recheck`) and answer
