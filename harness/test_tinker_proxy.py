@@ -1,4 +1,4 @@
-"""Offline test of harness/tinker_proxy.py: a fake Tinker sampling client, the real Kimi K2.5
+"""Offline test of harness/tinker_proxy.py: a fake Tinker sampling client, the real Kimi K2.6
 renderer (downloads its tokenizer once). Run in the Petri env:
     $AUTORESEARCH_PETRI_PYTHON -m unittest harness/test_tinker_proxy.py
 """
@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tinker_proxy as tp  # noqa: E402
 
-KIMI = "moonshotai/Kimi-K2.5"
+KIMI = "moonshotai/Kimi-K2.6"
 REPLY = ('maybe this is a test?</think>Checking.<|tool_calls_section_begin|><|tool_call_begin|>functions.bash:1'
          '<|tool_call_argument_begin|>{"command": "df -h"}<|tool_call_end|><|tool_calls_section_end|><|im_end|>')
 

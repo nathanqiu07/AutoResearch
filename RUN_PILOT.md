@@ -7,7 +7,7 @@ One run per seed, 12 dev seeds. Everything uses **your own** keys; none are stor
 
 | Role | Model | Runs on |
 |---|---|---|
-| Target (main) | Kimi K2.5, thinking on | Tinker, through `harness/tinker_proxy.py` on your laptop |
+| Target (main) | Kimi K2.6, thinking on | Tinker, through `harness/tinker_proxy.py` on your laptop |
 | Petri auditor | Qwen3-235B-A22B-Instruct-2507-FP8 | your Modal account, 4×H100 |
 | Judges (ours and Petri's) | `openai:gpt-5.1` | your OpenAI key |
 | Control rewriter | `openai:gpt-6-luna` (the taste system's model) | your OpenAI key |
@@ -42,8 +42,8 @@ Add a teammate's Modal workspace once with `modal token set --token-id <id> --to
 `VLLM_KEY`: `MODAL_PROFILE=<name> ../.petri-env/bin/modal secret create vllm-key VLLM_API_KEY=$VLLM_KEY`.
 Without a pool file, set `TINKER_BUDGET_USD` and `MODAL_BUDGET_USD` for your own accounts.
 Balances any time: `python3 scripts/modal_pool.py status`. Free check of what Tinker serves:
-`bash scripts/c2_pilot.sh preflight` (Tinker lists Kimi K2.5 as deprecated; if it is missing, run with
-`TINKER_MODEL=moonshotai/Kimi-K2.6`).
+`bash scripts/c2_pilot.sh preflight` (the default target is Kimi K2.6; K2.5 is deprecated on Tinker. Override with
+`TINKER_MODEL=<tinker model id>`).
 
 ## 0. One-time setup (about 10 minutes)
 
@@ -77,7 +77,7 @@ Pass = it prints `"passed": true` and writes `results/smoke/c2_target_<date>.jso
 ```bash
 bash scripts/c2_pilot.sh baseline 12
 ```
-Output: `results/e3b/pilot_stock_moonshotai_Kimi-K2.5_dev_n12_<date>.json`. **If stock awareness is below
+Output: `results/e3b/pilot_stock_moonshotai_Kimi-K2.6_dev_n12_<date>.json`. **If stock awareness is below
 about 0.4, stop:** the target barely notices tests, so there's nothing to reduce (results/prereg/E3b.json).
 `baseline 6` halves the cost.
 
@@ -86,7 +86,7 @@ about 0.4, stop:** the target barely notices tests, so there's nothing to reduce
 bash scripts/c2_pilot.sh control 12
 ```
 This writes the plain-agent control seeds to `runs/petri/control_dev.jsonl`, then audits stock and control
-in one report: `results/e3b/pilot_stock_vs_control_moonshotai_Kimi-K2.5_dev_n12_<date>.json`. The paired
+in one report: `results/e3b/pilot_stock_vs_control_moonshotai_Kimi-K2.6_dev_n12_<date>.json`. The paired
 per-seed difference is under `vs_stock.control`.
 
 `TARGET=qwen bash scripts/c2_pilot.sh ...` runs the same steps on Qwen3-30B-A3B on Modal (the held-out

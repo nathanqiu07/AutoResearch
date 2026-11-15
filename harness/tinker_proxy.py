@@ -1,6 +1,6 @@
 """Local OpenAI-compatible server in front of Tinker sampling (WS C2).
 
-Kimi K2.5, the main target (Nathan and Abhi, 2026-11-15), is served by Tinker,
+Kimi K2.6, the main target (Nathan, 2026-11-15; K2.5 is deprecated on Tinker), is served by Tinker,
 not as an OpenAI endpoint. This proxy lets everything that speaks the OpenAI chat
 API (autoresearch's OpenAICompatLLM, Inspect's openai-api/<name>/<model> in the
 Petri harness) use Tinker models. Prompts are built and replies parsed with

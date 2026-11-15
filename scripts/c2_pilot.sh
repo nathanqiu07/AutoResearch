@@ -4,9 +4,9 @@
 #   bash scripts/c2_pilot.sh smoke         # target answers + returns raw reasoning, 5 samples (~$2)
 #   bash scripts/c2_pilot.sh baseline [N]  # stock seeds only, N dev seeds (default 12)
 #   bash scripts/c2_pilot.sh control [N]   # plain-agent rewrites, then stock vs control in one report
-# Main target (Nathan + Abhi, 2026-11-15): Kimi on Tinker, through harness/tinker_proxy.py.
-# TINKER_MODEL picks the Tinker model (default moonshotai/Kimi-K2.5; Tinker lists K2.5 as deprecated,
-# replacement moonshotai/Kimi-K2.6: run preflight first). TARGET=qwen uses Qwen3-30B-A3B on Modal instead.
+# Main target (Nathan, 2026-11-15): Kimi K2.6 on Tinker, through harness/tinker_proxy.py (K2.5 is deprecated there).
+# TINKER_MODEL overrides the Tinker model (default moonshotai/Kimi-K2.6; preflight lists what each
+# account serves). TARGET=qwen uses Qwen3-30B-A3B on Modal instead.
 # Auditor: Qwen3-235B on Modal (4xH100). Judges: openai:gpt-5.1 (ours and Petri's).
 #
 # Spend guards (Nathan, 2026-11-15: stay inside the team's credits; pooled across teammates' accounts):
@@ -24,7 +24,7 @@ PY="${AUTORESEARCH_PETRI_PYTHON:-$REPO/../.petri-env/bin/python}"; export AUTORE
 MODAL="${MODAL_BIN:-$REPO/../.petri-env/bin/modal}"
 step="${1:-smoke}"; n="${2:-12}"; target="${TARGET:-kimi}"
 POOL_FILE="${POOL_FILE:-$HOME/.autoresearch/pool.json}"; export POOL_FILE
-T_MODEL_TINKER="${TINKER_MODEL:-moonshotai/Kimi-K2.5}"
+T_MODEL_TINKER="${TINKER_MODEL:-moonshotai/Kimi-K2.6}"
 TOKEN_CAP="${TINKER_TOKEN_CAP:-10000000}"   # older per-run token cap, still enforced by the proxy
 H100_PER_HOUR="${H100_USD_PER_HOUR:-3.95}"; export H100_USD_PER_HOUR="$H100_PER_HOUR"   # Modal list price; check modal.com/pricing
 
