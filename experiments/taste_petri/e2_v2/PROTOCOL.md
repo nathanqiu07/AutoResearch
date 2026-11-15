@@ -1,0 +1,47 @@
+# E2 v2 protocol
+
+Pre-registered 2026-11-15, before any output of pairs_v2 or profiles_contrastive was read.
+
+Question: on held-out pairs where generic research sense is split, does a pre-T Owain Evans profile predict his
+post-T choice better than no profile?
+
+## Inputs
+- Pairs: `pairs_v2/band.jsonl`, the taste band (blind share for his option in [0.25, 0.75]). Secondary:
+  `pairs_v2/pairs.jsonl`, all pairs, reported separately.
+- Profiles: `profiles_contrastive/arms.py`, `get_profile_text(arm, context)`.
+
+## Arms
+| arm | profile text |
+|---|---|
+| M0 | none |
+| M0s | none, sonnet predictor (a second no-profile reading, because the band was selected with haiku) |
+| NAME | "The researcher is Owain Evans." |
+| E_pre | `e2_owain`'s pre-T taste vector (the old format) |
+| P0 | consensus-only card (placebo, matched in length to P1) |
+| P1 | gated contrast card |
+| P2 | trade-off axis profile |
+| P3 | k = 5 retrieved pre-T decisions |
+| P4 | decision-style vector |
+| P1+P3 | contrast card plus retrieval |
+| MIS | P4 built the same way for a different researcher, or P4 with its claims shuffled (placebo) |
+
+Predictor: haiku, both option orders. A pair is correct only if his option is chosen in both orders
+(`track_eval.paired_correct`). Record p(his) per order. Predictor calls never reuse the gate's votes: the prompt
+and sampling differ, and the cache key includes the arm.
+
+## Metrics
+- Primary: paired accuracy on band pairs. 90% CI by `track_eval.cluster_ci` over works (a paper and its post count
+  as one work).
+- Secondary: mean p(his) on band pairs; accuracy on all pairs; accuracy by generator (peer / axis / field).
+
+## Decision rules (fixed now)
+- **A profile "predicts taste"** if it beats M0 *and* P0 *and* MIS on band accuracy, with the cluster-diff 90% CI
+  vs M0 above 0. The difference from M0s must have the same sign.
+- If the band is real, M0 on band pairs should be near 0.5 if the band is real. If M0 is above 0.65 on
+  fresh samples, the band does not hold up beyond the gate's votes. Report that, and fall back to the
+  sonnet-gated subset.
+- If P1 beats M0 but not P0 or MIS, report that any extra context helps, without claiming a taste effect.
+- With fewer than 30 band pairs or fewer than 8 works, results are descriptive and no claim is made.
+
+## Budget
+≤ 11 arms × 2 orders × n_band haiku calls, plus M0s on sonnet. Hard cap 900 calls.
