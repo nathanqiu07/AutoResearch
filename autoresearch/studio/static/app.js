@@ -948,11 +948,7 @@ function panelSources(panel, nextBtn) {
       <label class="field" style="max-width:200px;margin-left:1.6rem"><span class="small">Max results</span><input id="g-axmax" type="number" min="1" max="300" value="60"></label>
       <label class="check"><input type="checkbox" id="g-wiki" ${m.bio ? "" : "checked"}><span><strong>Wikipedia bio</strong></span></label>
       <hr class="hr" style="margin:.25rem 0">
-      <div class="grid2">
-        <label class="field"><span>LessWrong / Alignment Forum username</span><input id="g-lw" type="text" placeholder="e.g. their-user-slug" class="mono"></label>
-        <label class="field"><span>Blog RSS feed URL</span><input id="g-rss" type="url" placeholder="https://…/feed.xml"></label>
-      </div>
-      <label class="field"><span>Other pages they wrote, one per line</span><textarea id="g-urls" rows="3" placeholder="https://"></textarea></label>
+      <label class="field"><span>Pages by this person, one per line</span><textarea id="g-urls" rows="3" placeholder="https://"></textarea></label>
       <div class="row end"><button class="btn primary" id="g-go">Run harvest</button></div>
     </div>
     <div id="job"></div>
@@ -965,7 +961,7 @@ function panelSources(panel, nextBtn) {
     const chk = id => { const el = document.getElementById(id); return !!(el && el.checked); };
     const body = {
       name: val("g-name"), arxiv: chk("g-arxiv"), arxiv_max: +val("g-axmax") || 60, wikipedia: chk("g-wiki"),
-      lesswrong_user: val("g-lw"), rss: val("g-rss"), urls: val("g-urls").split(/\s+/).filter(Boolean),
+      urls: val("g-urls").split(/\s+/).filter(Boolean),
     };
     if (chk("g-s2") && a) { body.s2_author_id = a.author_id; body.s2_max = +val("g-s2max") || 150; }
     startJob("gather", body, document.getElementById("job"), () => {
