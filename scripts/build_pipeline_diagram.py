@@ -33,10 +33,10 @@ PRISM = [
     ("5", "E1", "E1: pick the best method", "user-macro accuracy and Brier; must beat M1, CI above 0",
      "on the final-test users, once", "built", ["selected method + config", "posted to the team"]),
 ]
-PRISM_TERMINAL = ("Output: the selected method", "no winner yet; Track P and Track S take it by hand",
+PRISM_TERMINAL = ("Output: the selected method", "no winner yet; the two tracks take it by hand",
                   "(trackp e2 and fit; track_eval --selected)")
 
-TRACK_P = [
+PERSONAL = [
     ("1", "init", "Register the person", "records their consent and adds the track",
      "trackp init · no model", "built", ["CONSENT.md", "data/researchers/tracks.json"]),
     ("2", "seed-pairs", "Make 50 seed pairs", "two library interventions on the same scenario",
@@ -53,10 +53,10 @@ TRACK_P = [
      "trackp fit --method --config --backend --model", "built", ["usermodel.json", "history.jsonl"]),
 ]
 
-TRACK_S = [
-    ("1", "harvest", "Harvest his dated work", "127 kept of 1,757 found, 2020–2026; authorship checked",
+PUBLIC = [
+    ("1", "harvest", "Harvest their dated work", "127 kept of 1,757 found, 2020–2026; authorship checked",
      "Exa only, no LLM · about $1.70", "ran", ["corpus/research__*.txt", "harvest_manifest.jsonl"]),
-    ("2", "extract", "Extract his decisions", "Exa structured summary: D1–D6 decisions with quotes",
+    ("2", "extract", "Extract their decisions", "Exa structured summary: D1–D6 decisions with quotes",
      "Exa only, no LLM", "built", ["extraction/exa.jsonl"]),
     ("3", "check", "Check each decision", "Claude keeps, fixes or drops; code verifies each quote",
      "claude-cli · claude-sonnet-5-5 · --max-usd", "built",
@@ -83,7 +83,7 @@ DOWNSTREAM = """
 <line class="divider" x1="0" y1="110" x2="960" y2="110"/>
 <line class="divider" x1="0" y1="326" x2="960" y2="326"/>
 
-<text class="ll" x="16" y="38">USER MODEL</text><text class="lw" x="16" y="54">Track P or S</text>
+<text class="ll" x="16" y="38">USER MODEL</text><text class="lw" x="16" y="54">personal or public</text>
 <text class="ll" x="16" y="142">RESEARCH LOOP</text><text class="lw" x="16" y="158">WS D</text>
 <text class="ll" x="16" y="358">MEASUREMENT</text><text class="lw" x="16" y="374">WS C1 · WS C2</text>
 
@@ -199,14 +199,14 @@ DOWNSTREAM = """
 TITLE = "Taste Pipeline"
 LEDE = ("The project builds synthetic test environments that a target model should not recognise as "
         "evaluations, using a research loop steered by a model of one researcher's taste (PLAN.md §0). "
-        "Three separate pipelines feed it. PRISM picks the modelling method. Track P and Track S each fit "
+        "Three separate pipelines feed it. PRISM picks the modelling method. The personal track and the public track each fit "
         "that method to one person and produce a `usermodel.json`. The last figure shows where those files go.")
 
-COMPARE = (["", "PRISM", "Track P", "Track S"], [
+COMPARE = (["", "PRISM", "Personal track", "Public track"], [
     ["Whose taste", "723 crowd users", "One team member, not chosen yet",
      "Marius Hobbhahn; Owain Evans next"],
     ["Where choices come from", "Released chatbot preference data",
-     "They answer pairs and label loop decisions", "Decisions extracted from his dated writing"],
+     "They answer pairs and label loop decisions", "Decisions extracted from their dated writing"],
     ["Held-out test", "Final-test users, scored once", "20% of seed pairs + labels after a cutoff",
      "Decisions after date T"],
     ["Experiment", "E1: which method", "E2 vs M1 and the noise ceiling", "E2 vs two M1 arms, order-paired"],
@@ -221,23 +221,23 @@ SECTIONS = [
      "Commands run as `python3 -m autoresearch.taste <stage>`.",
      "prism",
      "E1 has no result yet, so no method has been selected. Nothing passes the method on automatically: "
-     "Track P and Track S each take it by hand."),
-    ("track-p", "Track P: a team member",
+     "the personal and public tracks each take it by hand."),
+    ("personal", "Personal track: a team member",
      "The person answers choices directly. Owned by WS B. Commands run as "
      "`python3 -m autoresearch.taste.trackp <stage>`; files land in `data/researchers/<slug>/`. "
      "The runbook is `docs/trackp-runbook.md`.",
-     "track-p",
+     "personal",
      "Every step is built and none has run, because the person hasn't been chosen (it won't be Ethan). "
      "Only this track has a human answering questions and a recheck that measures their own noise."),
-    ("track-s", "Track S: Marius Hobbhahn",
-     "His taste is inferred from what he published, and the model is tested on decisions he made after "
-     "date T. Owned by WS B. Steps 1–5 run as `python3 -m autoresearch.taste.timesplit <stage>`, steps "
-     "6–9 as `track_eval <stage>`. Files land in `data/researchers/marius_hobbhahn/`. Owain Evans "
+    ("public", "Public track: published researchers",
+     "Each researcher's taste is inferred from what they published, and the model is tested on decisions "
+     "they made after date T. Owned by WS B. Steps 1–5 run as `python3 -m autoresearch.taste.timesplit <stage>`, steps "
+     "6–9 as `track_eval <stage>`. Marius Hobbhahn goes first, in `data/researchers/marius_hobbhahn/`. Owain Evans "
      "runs through the same steps next, in `data/researchers/owain_evans/`.",
-     "track-s",
+     "public",
      "The harvest has run; everything after it is built and waits on date T. Only this track has the Exa "
      "harvest, the quote check, the distractor gate, and the contamination probe (`m0_named`: the model "
-     "is told his name and gets no history)."),
+     "is told the researcher's name and gets no history)."),
     ("downstream", "After the user model",
      "Both tracks produce the same file, so everything from here on is shared.",
      "downstream",
@@ -251,7 +251,7 @@ RESULTS_INTRO = ("PLAN §0 reports four results and never merges them into one s
                  "defined in PLAN §9; E6, a stretch goal, is left out.")
 RESULTS = (["Result", "Experiments", "Pipeline"], [
     ["1. Preference fidelity", "E1 (methods on PRISM), E2 (each track's held-out choices)",
-     "PRISM, Track P, Track S"],
+     "PRISM, personal track, public track"],
     ["2. Research judgment", "E4b (blinded ratings of the loop's D1–D6 decisions), E7 (Taste-Bench)",
      "After the user model"],
     ["3. Downstream outcome", "E3a (single scenario), E3b (Petri), E4 (taste vs no taste)", "After the user model"],
@@ -262,10 +262,10 @@ TERMS = (["Term", "Meaning"], [
     ["M0–M7", "The user-model methods: M0 no history, M1 raw history, M2 SynthesizeMe persona, M3 ICAI "
      "principles, M4 Bradley–Terry on 7 LLM-scored features, M5 = M2 + M3 + examples, M6 = M5 pruned, "
      "M7 = M6 calibrated."],
-    ["Date T", "Track S's time split: the model is built from his work before T and tested on decisions after it."],
+    ["Date T", "The public track's time split: the model is built from the researcher's work before T and tested on decisions after it."],
     ["D1–D6", "The loop's decision points: what to test next, what evidence to collect, accept or reject a "
      "result, pursue or drop a direction, how to read a surprising result, what to claim."],
-    ["Noise ceiling", "How often Track P's person gives the same answer when asked again; no model can be "
+    ["Noise ceiling", "How often the personal-track person gives the same answer when asked again; no model can be "
      "expected to beat it."],
     ["TasteAdvisor", "Asks the user model which option the researcher would pick. Below confidence 0.6 the "
      "loop decides on the evidence alone."],
@@ -417,11 +417,11 @@ FIGURES = {
     # key: (marker id, aria label, body, height)
     "prism": ("ap", "PRISM pipeline: download and split 723 users, fit methods M0 to M7, and pick the best in E1.",
               *pipeline_body(PRISM, "ap", PRISM_TERMINAL)),
-    "track-p": ("aq", "Track P pipeline: register, make seed pairs, collect and recheck choices, hold out a test "
-                "set, run E2, fit usermodel.json.", *pipeline_body(TRACK_P, "aq")),
-    "track-s": ("as", "Track S pipeline: harvest dated work with Exa, extract and check decisions, find "
+    "personal": ("aq", "Personal-track pipeline: register, make seed pairs, collect and recheck choices, hold out a test "
+                "set, run E2, fit usermodel.json.", *pipeline_body(PERSONAL, "aq")),
+    "public": ("as", "Public-track pipeline: harvest dated work with Exa, extract and check decisions, find "
                 "alternatives, split at date T, gate, select, run E2, fit usermodel.json.",
-                *pipeline_body(TRACK_S, "as")),
+                *pipeline_body(PUBLIC, "as")),
     "downstream": ("ad", "Using the user model: it syncs to past.dev and is tested on Taste-Bench; the "
                    "TasteAdvisor consults it at D1 to D6 and advises the proposer; the proposer's environments "
                    "go to the target model; judge J1 scores transcripts for A1 and A3, and probes give A2.",

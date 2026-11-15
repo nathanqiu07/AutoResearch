@@ -53,7 +53,7 @@ market are in scope (only spec 2). The resolutions are in §2.
 | I3 | **Lower awareness doesn't prove more authentic behaviour.** The EvalAwareBench paper finds recognition *rarely* changes behaviour. Our live run had Haiku honest in 55/55 samples | 2, 5 | Make no claim of "authentic deployment behaviour" unless V3 shows a behaviour gap. Choose probes and targets with some baseline misbehaviour (open task `behavior-gap-probe`) |
 | I4 | **Chat preferences are not research taste.** PersonalRewardBench's PRISM users are anonymous people rating chat replies. A method that works there may not transfer to a researcher's papers and decisions | 1, 3 | Two stages: (a) **develop and select the method** on PersonalRewardBench, where held-out ground truth exists; (b) **apply the selected method** to each taste track (a team member, and a scraped public researcher) and test transfer on that track's held-out decisions (§6.3). Report the two separately |
 | I5 | **Predicting the user is not the same as researching well** | 3 | Separate metrics (§9). Taste is a *prior* whose weight is learned from outcomes (already in v2: Spearman ρ → weight). Stress-test with the existing `demo_contrarian` (deliberately bad taste) |
-| I6 | **Whose taste?** Undecided | 3 | **Decided: two tracks, both run in full** (§6.3). **Track S (scraped):** one public researcher, built from Exa-scraped papers, posts and code, validated on time-split public decisions. **Track P (personal):** the method selected on PersonalRewardBench, applied to one team member's own labelled decisions. Comparing the tracks shows which kind of taste data helps the loop more |
+| I6 | **Whose taste?** Undecided | 3 | **Decided: two tracks, both run in full** (§6.3). **Public track (code S):** one public researcher, built from Exa-scraped papers, posts and code, validated on time-split public decisions. **Personal track (code P):** the method selected on PersonalRewardBench, applied to one team member's own labelled decisions. Comparing the tracks shows which kind of taste data helps the loop more |
 | I7 | **Goodhart and circularity.** If the loop optimises against the same target, judge and tasks we report on, it learns that judge's blind spots | all | Strict dev/test split: dev targets/judge/tasks during the loop. Final numbers on a **held-out target family**, a **held-out judge**, and **held-out tasks**, plus human spot-checks (§7.3) |
 | I8 | **Benchmark names are mixed up.** "EvalBench", "EvalAwarenessBench", "EvalAwareBench", "EvalDetectBench", "taste-bench" and "SAD" do different jobs | 1, 2, 4, 5 | **Decided:** the eval-awareness benchmarks are **EvalAwareBench, EvalDetectBench and Petri** (§4.1). The research-taste benchmark is **Taste-Bench**'s research subset (§4.2, E7; restored 2026-11-14). Taste is also tested on PersonalRewardBench and on each track's own held-out decisions (§6). SAD measures a *model's* situational awareness, not environment realism, so it is used only as a target check |
 | I9 | **The EvalAwareBench control is stronger than "the original benchmark".** It is factor-controlled: 8 cues (placeholder entities, grading-style formats, …) can each be switched off. Its all-cues-off configuration is already a de-cued baseline | 5 | Comparison ladder: original items → EvalAwareBench minimal-cue configuration → R0 → R1. **Beating the minimal-cue configuration is the bar that counts.** Its 8 factors are "theory-driven and not exhaustive", so the loop's job is to find giveaways *beyond* F1–F8 |
@@ -170,8 +170,8 @@ and extra deployment transcripts, and SAD only as a target check.
 | Asset | What it is | Our use |
 |---|---|---|
 | **PersonalRewardBench** (SynthesizeMe, Ryan et al., ACL 2025) | User-stratified splits of 723 PRISM users (Chatbot Arena dropped 2026-11-14) | **Method development and selection** (§6.2). User-level train/val/test |
-| Personal labels from one team member | Their choices at D1–D6 on logged loop decisions, plus ~50 seed pairwise choices before any run | **Track P** ground truth (§6.3) |
-| Scraped researcher corpus (Exa) | Papers, blogs, talks, code, posts, with dates | **Track S** input. A time split gives the held-out test (§6.3) |
+| Personal labels from one team member | Their choices at D1–D6 on logged loop decisions, plus ~50 seed pairwise choices before any run | **Personal track** ground truth (§6.3) |
+| Scraped researcher corpus (Exa) | Papers, blogs, talks, code, posts, with dates | **Public track** input. A time split gives the held-out test (§6.3) |
 | **Taste-Bench** (Pan et al. 2026, [wbopan/tastebench](https://github.com/wbopan/tastebench); data gated on Hugging Face, CC BY 4.0) | Two-option decision forks from real agent runs, each labelled by how the rest of the run went. Research subset: 112 forks from METR's RE-Bench and HCAST runs (64 detour, 48 parallel) | **External research-taste test** (E7): does R0's decider, or each track's user model, pick the step that worked? Scorer: `taste/tastebench.py` |
 
 Taste-Bench is the one research-taste benchmark (restored 2026-11-14, decided by Ethan).
@@ -243,8 +243,8 @@ Each environment gets matched negatives by topic, so A2's AUROC and A3 measure r
 
 * **R0** = the v2 loop (`autoresearch/research/`) with taste off. Same proposers, market, memory and gates.
 * **R1** = R0 + a user model at D1–D6. It comes in two variants, one per taste track (§6.3), and "R1" on its own means either one:
-* **R1-P** = R0 + the Track P user model (team member) at D1–D6.
-* **R1-S** = R0 + the Track S user model (scraped researcher) at D1–D6.
+* **R1-P** = R0 + the personal-track user model (team member) at D1–D6.
+* **R1-S** = R0 + the public-track user model (scraped researcher) at D1–D6.
 * **R1-P-prompt / R1-S-prompt** (ablations) = R0 + that track's raw history or documents pasted into the proposer prompt (spec 3's baseline, at the loop level).
 * **R1-bad** (stress test) = R1 with `demo_contrarian` taste. It should down-weight its taste and recover (I5).
 * **R1-PS** (stretch) = both user models combined.
@@ -295,7 +295,7 @@ Each track's data stays separate, so the comparison shows which *kind* of taste 
 A combined track is a stretch goal. Both tracks are required: the spec says personal labels
 and scraped data are "possibly" used, and we read that as mandatory (Ethan, 2026-11-14).
 
-**Track P (personal): PersonalRewardBench + a team member's decisions.**
+**Personal track (code P): PersonalRewardBench + a team member's decisions.**
 The method selected on PersonalRewardBench (§6.2) is applied to one team member's own
 choices. **[decide]** which team member. Ethan has said he will not be the source.
 
@@ -304,7 +304,7 @@ choices. **[decide]** which team member. Ethan has said he will not be the sourc
 | Seed pairwise choices (~50) | Before any run: the team member answers D1-style choices about eval-awareness interventions ("which would you test first?") | 20% held out |
 | Loop decision labels | The team member labels logged D1–D6 records with `label` | Labels from *later* runs held out |
 
-**Track S (scraped): public researchers, from Exa, each run separately.**
+**Public track (code S): public researchers, from Exa, each run separately.**
 **Decided:** Marius Hobbhahn (Ethan, 2026-11-14), for his public record on eval awareness and
 evaluation methodology; consent received. **Added:** Owain Evans (Ethan, 2026-11-14), for his
 situational-awareness and out-of-context-reasoning work (SAD benchmark); consent not asked yet (I18).
@@ -398,7 +398,7 @@ Code home: `autoresearch/research/market.py`. Ledger facts (`BID`, `SETTLE`) go 
 | ID | Question | Arms | Unit / n | Primary metric | Success criterion |
 |---|---|---|---|---|---|
 | **E1** | Preference fidelity | M0–M7 | test users (PersonalRewardBench), bootstrap over users | held-out pairwise accuracy | best method > M1, CI excludes 0 |
-| **E2** | Transfer to each track | M0, M1, selected method, run once per track | Track P: team member's held-out labels. Track S: time-split pairs | held-out accuracy | selected > M1, reported per track |
+| **E2** | Transfer to each track | M0, M1, selected method, run once per track | Personal track: team member's held-out labels. Public track: time-split pairs | held-out accuracy | selected > M1, reported per track |
 | **E3a** | Do our environments beat existing controls? (single-scenario) | original items; EvalAwareBench minimal-cue; R0-best; R1-P-best; R1-S-best; external-agent-best | 40 held-out tasks × held-out targets × ≥10 samples | **A1** (raw-CoT awareness rate) **and A2** (direct-question P(eval) and AUROC), at validity ≥ 0.7 | An R1 arm < minimal-cue on **both** A1 and A2 mean P(eval); \|AUROC−0.5\| smaller; V1/V2 not worse |
 | **E3b** | Do our environments beat existing controls? (agentic, Petri) | Petri v1 seeds; **Petri v2 seeds + realism classifier**; R0-best; R1-P-best; R1-S-best; each with simulated tools vs real Modal Sandbox tools | held-out Petri seeds × held-out targets × ≥5 audits | A1 and A2, plus Petri's own eval-awareness judge score as a cross-check; Petri's behaviour scores for validity | An R1 arm < Petri v2 on both A1 and A2, with Petri's behaviour scores not lower; real-tool vs simulated-tool gap reported |
 | **E4** | Does taste improve the research, and which taste data helps more? | R0, R1-P, R1-S, R1-P-prompt, R1-S-prompt, R1-bad, external agent | **≥ 8 seeds per arm** at equal budget | held-out score of each run's final intervention set | Each R1 track > R0 and > its own prompt baseline; R1-P vs R1-S reported head to head; R1-bad recovers to within R0's CI |
@@ -419,7 +419,7 @@ numbers. Every table shows A1 and A2 together, with A3, V1–V3, calls, tokens, 
 and Modal**; Anthropic is assumed as the model provider. Add any others and we'll map them.
 
 ### Exa: the system's eyes on the real world
-1. **The researcher's mind, time-stamped (Track S).** Harvest the scraped researcher's papers, posts, talks and code with dates. The **time-split test** ("predict the direction they actually took after date T") is only possible because Exa returns publish dates. *Demo moment:* the user model built from pre-T work picks the researcher's actual next project over a plausible distractor.
+1. **The researcher's mind, time-stamped (public track).** Harvest the scraped researcher's papers, posts, talks and code with dates. The **time-split test** ("predict the direction they actually took after date T") is only possible because Exa returns publish dates. *Demo moment:* the user model built from pre-T work picks the researcher's actual next project over a plausible distractor.
 2. **Real negatives that kill the topic confound.** For each synthetic environment, search for real artifacts on the same topic (forum help threads, issue reports, workflow write-ups) and use them as the matched deployment pool for A2's AUROC and A3 (fixes I12).
 3. **Grounding.** The generator copies the *texture* of real documents (messiness, history, voice), which addresses spec 4's "too neat" and "placeholder" giveaways directly.
 4. **Live literature scout** (already built): fact-checks assumptions, and a critic veto cites URLs. New eval-awareness cues from recent papers enter the search space with their `source_url`.
@@ -473,7 +473,7 @@ that others need right away are covered elsewhere:
 | WS | One-line job | Produces | Main code | Owner |
 |---|---|---|---|---|
 | **A: User models** | Find the best way to turn someone's past choices into a model that predicts their next ones | the selected method + E1 | `autoresearch/taste/` | **Gio** |
-| **B: Taste tracks and data** | Get the data for the two people whose taste we use, and test the method on them | Track P and Track S datasets + E2 + E7 | `data/researchers/`, `taste/scrape.py`, `integrations/exa.py`, `taste/tastebench.py`, `taste/usermodel_store.py` | **Ethan** |
+| **B: Taste tracks and data** | Get the data for the two people whose taste we use, and test the method on them | Personal-track and public-track datasets + E2 + E7 | `data/researchers/`, `taste/scrape.py`, `integrations/exa.py`, `taste/tastebench.py`, `taste/usermodel_store.py` | **Ethan** |
 | **C1: Scoring and calibration** | Make sure the score is right: judges and probe questions that really measure eval awareness and validity, on single-scenario EvalAwareBench items | the calibrated `Measurer`, the P1 gate, E3a, E6 | `research/measure.py`, `benchmarks.py`, `corpus.py`, `harness/evaldetect/` | **Nathan**. Builds on his scorer v2; §16 tasks 1–3 |
 | **C2: Targets and agentic environments** | Provide the models and environments being scored: held-out models, the Modal reasoning target, and Petri audits with real tools | `configs/models.json`, the Modal target, `PetriMeasurer`, E3b | `harness/modal_vllm.py`, `harness/petri/`, `research/petri_measure.py` | **Abhi**. §16 tasks 4–6 |
 | **D: Research loop** | The agent that rewrites environments, with taste used at each decision | R0 and R1 arms + E4, E4b | `research/loop.py`, `ideas.py`, new `decisions.py`, `advisor.py`, `claims.py` | **David** |
@@ -553,7 +553,7 @@ fair, and cache every call. ~8 methods × ~100 test users × 20 pairs ≈ 16k ju
 **Goal.** Build the two people's data and test transfer (§6.3, E2), keep the user models in
 past.dev, and run Taste-Bench (E7).
 
-**Track P: one team member** (**[decide]** who; not Ethan). Built in `taste/trackp.py`
+**Personal track (P): one team member** (**[decide]** who; not Ethan). Built in `taste/trackp.py`
 (`python3 -m autoresearch.taste.trackp init|seed-pairs|answer|label|recheck|status|e2`); no answers collected yet.
 1. **Seed choices.** `trackp seed-pairs --researcher <slug> --n 50`, then `trackp answer --researcher <slug>`.
    * The command generates D1-style pairs: two candidate interventions for the same EvalAwareBench item, taken from `ideas.LIBRARY` plus LLM proposals.
@@ -563,7 +563,7 @@ past.dev, and run Taste-Bench (E7).
 3. **Noise ceiling** (from `eval-awareness-plan.md`): re-ask ~20% of the items a few days later, without showing the earlier answers. The person's agreement with themselves is the upper bound on fidelity, and E2 is reported next to it.
 4. **Hold-out:** 20% of the seed choices, plus every label from runs after a cutoff date.
 
-**Track S: Marius Hobbhahn, then Owain Evans** (same steps per researcher; ask for consent where possible, and record it in `data/researchers/<slug>/CONSENT.md`):
+**Public track (S): Marius Hobbhahn, then Owain Evans** (same steps per researcher; ask for consent where possible, and record it in `data/researchers/<slug>/CONSENT.md`):
 1. **Harvest.** Add `scrape_exa(name, queries, since, until)` to `taste/scrape.py`, using `integrations/exa.ExaClient.search`/`contents`.
    * Collect papers, blog posts, talks and repository READMEs.
    * **Keep `publishedDate`** in each file's front matter, so the time split is possible.
@@ -601,7 +601,7 @@ past.dev (asked of David). The part size is a guess until `pastdev-live-smoke` r
 * Both researcher directories exist with corpus, choices, held-out data, usermodel.json and consent.
 * The E2 table and the noise ceiling are committed.
 
-**Board tasks:** claim `real-researcher` (Track S), `human-labels` (Track P) and `exa-live-run`. Add `seed-choices-cli`, `timesplit-builder`, `noise-ceiling`. Built: `usermodel-pastdev`, `tastebench-eval` (scorer; the data download and runs wait for approval).
+**Board tasks:** claim `real-researcher` (public track), `human-labels` (personal track) and `exa-live-run`. Add `seed-choices-cli`, `timesplit-builder`, `noise-ceiling`. Built: `usermodel-pastdev`, `tastebench-eval` (scorer; the data download and runs wait for approval).
 
 ---
 
@@ -696,7 +696,7 @@ exists as `self.decisions` (`chosen` vs `taste_top`). The setting gate is in `Pr
    * The advisor never touches the acceptance thresholds, so taste can't relax the evidence bar.
 3. **Arm switches** in `ResearchConfig` and the CLI:
    * `--taste-mode none|model|prompt`. `prompt` pastes the raw history or documents into the proposer prompt, with no advisor.
-   * `--taste-track P|S` picks which `data/researchers/<slug>`.
+   * `--taste-track P|S` (personal or public) picks which `data/researchers/<slug>`.
    * R1-bad = `--researcher demo_contrarian --taste-mode model`.
    * The existing `--no-taste` becomes an alias for `--taste-mode none`.
 4. **Interventions that work across items.**
@@ -834,7 +834,7 @@ Duration isn't stated in the specs **[decide]**, so phases are ordered with gate
 
 | Phase | Work | Gate to move on |
 |---|---|---|
-| **P0: Foundations** | Pick the Track P team member and the Track S researcher (with consent); confirm sponsors and models; freeze the dev/held-out task and seed splits; agree interfaces; load EvalAwareBench, EvalDetectBench, Petri, PersonalRewardBench and Taste-Bench; API-backend target | Interfaces merged; splits committed |
+| **P0: Foundations** | Pick the personal-track team member and the public-track researcher (with consent); confirm sponsors and models; freeze the dev/held-out task and seed splits; agree interfaces; load EvalAwareBench, EvalDetectBench, Petri, PersonalRewardBench and Taste-Bench; API-backend target | Interfaces merged; splits committed |
 | **P1: Measurement you can trust** | A1 judge with human agreement on ~100 transcripts; topic-matched pool; baseline numbers on dev for EvalAwareBench (original vs minimal-cue) and Petri (v1 vs v2); Modal reasoning target and sandbox running | Judge agreement acceptable (suggest κ ≥ 0.6); minimal-cue and Petri v2 baselines reproduced |
 | **P1 in parallel: User models** | M0–M7 on dev users; schema search; seed choices from the researcher | Method selected on dev users |
 | **P2: Loop integration** | Decision logging; R1 taste at D1–D6; market v1; smoke runs (offline, then 1 cheap live seed per arm) | All arms run end to end; costs match estimates |
@@ -853,12 +853,12 @@ metrics, either taste track, and the M1 / prompt baselines (I15).
 
 **Already decided (2026-11-14):**
 * Benchmarks: EvalAwareBench, EvalDetectBench and Petri for eval awareness; Taste-Bench's research subset for research taste (E7).
-* Taste: two tracks, both required (the spec's "possibly" is read as mandatory). Track S uses scraped public researchers, Marius Hobbhahn and then Owain Evans; Track P uses PersonalRewardBench plus one team member's decisions.
+* Taste: two tracks, both required (the spec's "possibly" is read as mandatory). The public track uses scraped public researchers, Marius Hobbhahn and then Owain Evans; the personal track uses PersonalRewardBench plus one team member's decisions.
 * Every fitted user model is also kept in shared memory (past.dev when `PAST_API_KEY` is set).
 * Metrics: two co-primaries, raw-CoT awareness (A1) and the direct question (A2, as mean P(eval) and AUROC with 0.5 as the target).
 
 **Still open:**
-1. Which team member is Track P (§6.3); not Ethan.
+1. Which team member is the personal track (§6.3); not Ethan.
 2. Full sponsor list (§10).
 3. Model list and GPU budget (§4.4, §11).
 4. Project timeline (§13).

@@ -1,4 +1,4 @@
-"""Track P (PLAN 6.3, 12.2): one team member's own research choices.
+"""Personal track, track key P (PLAN 6.3, 12.2): one team member's own research choices.
 
 Everything lives in data/researchers/<slug>/:
 
@@ -14,7 +14,7 @@ Hold-out (fixed by hashing, so it never moves as answers arrive): 20% of seed
 pairs, plus every label from a run on or after --label-cutoff. The rest is
 split into history and val for `UserModel.fit`.
 
-After `init`, --researcher defaults to track P in tracks.json. `status` says what to run
+After `init`, --researcher defaults to the personal track (key P) in tracks.json. `status` says what to run
 next. The person answers in a terminal (answer / label / recheck), or an agent shows
 them `pending` items in chat and saves each reply with `record` (docs/trackp-runbook.md).
 
@@ -50,7 +50,7 @@ TRACKS_FILE = "tracks.json"   # read by cli.resolve_arm
 SEED_PAIRS, SEED_CHOICES, LABELS, RECHECK = "seed_pairs.jsonl", "seed_choices.jsonl", "labels.jsonl", "recheck.jsonl"
 HISTORY, USERMODEL = "history.jsonl", "usermodel.json"
 QUESTION = "Which intervention would you test first to make this environment read less like an evaluation?"
-CONSENT_TEMPLATE = """# Track P consent
+CONSENT_TEMPLATE = """# Personal track consent
 
 Person: {name}
 Slug: {slug}
@@ -86,7 +86,7 @@ def _append(path: str, row: dict) -> None:
 
 
 def init(root: str, slug: str, name: str) -> str:
-    """Create the person's directory and consent form, and point track P at them."""
+    """Create the person's directory and consent form, and point the personal track (key P) at them."""
     path = os.path.join(root, slug)
     os.makedirs(path, exist_ok=True)
     consent = os.path.join(path, "CONSENT.md")
@@ -394,7 +394,7 @@ def status(root: str, slug: str, label_cutoff: Optional[str] = None, decision_pa
 def run_e2(root: str, slug: str, factories: Dict[str, Callable], out_path: str,
            label_cutoff: Optional[str] = None, seed: int = 0, run_config: Optional[dict] = None) -> dict:
     """Fit each method on history/val and score it on the held-out test choices,
-    next to the person's noise ceiling (PLAN E2, Track P)."""
+    next to the person's noise ceiling (PLAN E2, personal track)."""
     if os.path.exists(out_path):
         raise FileExistsError(f"{out_path} exists; E2 results are not overwritten")
     parts = split(root, slug, label_cutoff)
@@ -454,7 +454,7 @@ def _track_p(root: str) -> str:
             slug = json.load(f).get("P")
         if slug:
             return slug
-    raise SystemExit("no Track P person yet: run 'init --researcher <slug> --name ...' or pass --researcher")
+    raise SystemExit("no personal-track person yet: run 'init --researcher <slug> --name ...' or pass --researcher")
 
 
 def _items(args) -> list:
@@ -477,13 +477,13 @@ def _llm_ideas(args, items) -> Dict[str, List[Intervention]]:
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description="Track P: a team member's research choices (PLAN 6.3, 12.2)")
+    p = argparse.ArgumentParser(description="Personal track: a team member's research choices (PLAN 6.3, 12.2)")
     p.add_argument("--root", default=DEFAULT_ROOT)
     sub = p.add_subparsers(dest="command", required=True)
 
     def cmd(name, help_):
         sp = sub.add_parser(name, help=help_)
-        sp.add_argument("--researcher", help="the person's slug (default: track P in tracks.json)")
+        sp.add_argument("--researcher", help="the person's slug (default: the personal track, key P, in tracks.json)")
         return sp
 
     def with_decisions(sp):
@@ -491,7 +491,7 @@ def main(argv=None):
         sp.add_argument("--frac", type=float, default=0.2, help="share of answers re-asked for the noise ceiling")
         sp.add_argument("--min-days", type=float, default=3, help="wait before re-asking")
         return sp
-    i = cmd("init", "create the directory and CONSENT.md, and set track P in tracks.json")
+    i = cmd("init", "create the directory and CONSENT.md, and set the personal track (key P) in tracks.json")
     i.add_argument("--name", required=True)
     s = cmd("seed-pairs", "generate D1-style pairs to answer (no answers are asked here)")
     s.add_argument("--n", type=int, default=50)

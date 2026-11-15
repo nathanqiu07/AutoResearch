@@ -1,4 +1,4 @@
-"""WS B Track P: seed pairs, decision labels, noise ceiling, hold-out split, E2.
+"""WS B personal track: seed pairs, decision labels, noise ceiling, hold-out split, E2.
 
 Most tests drive the CLI the way an agent does: `pending` to see items, `record` to save
 the person's reply."""

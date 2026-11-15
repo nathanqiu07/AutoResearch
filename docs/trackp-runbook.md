@@ -1,9 +1,9 @@
-# Track P runbook (WS B)
+# Personal-track runbook (WS B)
 
-Track P is one team member's own research choices (PLAN §6.3, §12.2). This runbook is
+The personal track (code: `trackp`, track key `P`) is one team member's own research choices (PLAN §6.3, §12.2). This runbook is
 for an agent collecting them. All commands are
 `python3 -m autoresearch.taste.trackp <command>`, run from the repo root. After `init`,
-`--researcher` defaults to the Track P person in `data/researchers/tracks.json`.
+`--researcher` defaults to the personal-track person in `data/researchers/tracks.json`.
 
 **Start every session with `status`.** Its `next` list says what to run, in order.
 
