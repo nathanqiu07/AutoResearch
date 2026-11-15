@@ -2,16 +2,18 @@
 
     python3 scripts/demo.py
     python3 scripts/demo.py --paths results/e5 results/pastdev_smoke --json
+    python3 scripts/demo.py --trail        # adds a fifth moment: the Exa source-to-decision trail
 
 This command reads Git objects only. It never imports model backends, launches
 workers, writes memory, or makes network calls. Missing evidence is shown as
-missing; --strict returns a failure unless all four moments have evidence.
+missing; --strict returns a failure unless every moment shown has evidence.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import subprocess
+import sys
 from collections import Counter
 from typing import List
 from pathlib import Path
@@ -24,8 +26,31 @@ def git(*args: str, root: Path = ROOT) -> str:
                           capture_output=True, text=True).stdout
 
 
-def replay(ref: str = "HEAD", paths: List[str] = None, root: Path = ROOT) -> dict:
-    """Resolve ref once, then inspect only committed results under paths."""
+def trail_moment(loaded, revision: str) -> dict:
+    """Optional fifth moment: Exa source -> EVIDENCE -> veto/credence -> what ran
+    instead (autoresearch/integrations/trail.py), from the committed records
+    already loaded. Available only when a veto or fact-check credence update
+    links back to a recorded Exa source."""
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from autoresearch.integrations.trail import Artifacts, build
+    art = Artifacts()
+    for name, records in loaded:
+        art.add(name, records)
+    data = build(art, source=revision)
+    linked = [t for r in data["runs"] for t in r["vetoes"] + r["credence_updates"]
+              if any(s.get("linked") for s in t.get("sources", []))]
+    return {"title": "Exa + past.dev: from a source to the decision it changed", "available": bool(linked),
+            "evidence": {"runs": len(data["runs"]), "vetoes": data["n_vetoes"],
+                         "credence_updates": data["n_credence_updates"], "exa_ideas": data["n_source_trails"],
+                         "linked_trails": linked[:3], "missing_fields": [m["field"] for m in data["missing_fields"]]},
+            "message": f"{len(linked)} veto/credence trail(s) link to a recorded Exa source. Links the runs did not "
+                       "record are listed as missing fields, not reconstructed."}
+
+
+def replay(ref: str = "HEAD", paths: List[str] = None, root: Path = ROOT, trail: bool = False) -> dict:
+    """Resolve ref once, then inspect only committed results under paths.
+    trail=True adds the source-to-decision trail as a fifth moment."""
     revision = git("rev-parse", "--verify", ref + "^{commit}", root=root).strip()
     paths = paths or ["results"]
     for path in paths:
@@ -33,7 +58,7 @@ def replay(ref: str = "HEAD", paths: List[str] = None, root: Path = ROOT) -> dic
             raise ValueError("demo paths must be repository-relative paths under results/")
     names = git("ls-tree", "-rz", "--name-only", revision, "--", *paths, root=root).split("\0")
     reports, cells, facts, recalls = [], [], Counter(), []
-    reasoning = []
+    reasoning, loaded = [], []
     for name in filter(None, names):
         if not name.endswith((".json", ".jsonl")):
             continue
@@ -42,6 +67,7 @@ def replay(ref: str = "HEAD", paths: List[str] = None, root: Path = ROOT) -> dic
             records = [json.loads(line) for line in raw.splitlines() if line.strip()] if name.endswith(".jsonl") else [json.loads(raw)]
         except ValueError:
             continue
+        loaded.append((name, records))
         for record in records:
             if not isinstance(record, dict):
                 continue
@@ -104,6 +130,8 @@ def replay(ref: str = "HEAD", paths: List[str] = None, root: Path = ROOT) -> dic
          "message": "Labels and disagreements can rebuild a user model between runs. "
                     "Local JSONL recall is not a past.dev recall measurement; no refit improvement is implied."},
     ]
+    if trail:
+        moments.append(trail_moment(loaded, revision))
     return {"revision": revision, "paths": paths, "moments": moments,
             "runs": [provenance(n, r) for n, r in reports],
             "complete": all(m["available"] for m in moments),
@@ -126,9 +154,11 @@ def main(argv=None) -> int:
     ap.add_argument("--paths", nargs="+", help="repository-relative evidence paths under results/")
     ap.add_argument("--json", action="store_true", help="machine-readable replay manifest")
     ap.add_argument("--strict", action="store_true", help="fail if any demo moment lacks evidence")
+    ap.add_argument("--trail", action="store_true",
+                    help="add the Exa source-to-decision trail as a fifth moment (counts toward --strict)")
     args = ap.parse_args(argv)
     try:
-        data = replay(args.ref, args.paths)
+        data = replay(args.ref, args.paths, trail=args.trail)
     except (ValueError, subprocess.CalledProcessError) as exc:
         ap.error(str(exc))
     print(json.dumps(data, indent=2, ensure_ascii=False) if args.json else render(data))
