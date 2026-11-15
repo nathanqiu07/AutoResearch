@@ -431,10 +431,10 @@ function renderCandidates(box, name, cands, wiki, onPick, opts = {}) {
   box.innerHTML = `${err}${wikiHtml}
     ${list.length ? `<h3>Semantic Scholar authors named “${esc(name)}”</h3>` : (!err ? `<div class="notice">No Semantic Scholar author found. You can continue with arXiv and web sources.</div>` : "")}
     <div id="cands">${list.map((c, i) => `
-      <div class="cand" data-i="${i}">
+      <div class="cand" data-i="${i}" style="--i:${i}">
         <input type="radio" name="cand" value="${i}" aria-label="Select ${esc(c.name)}">
         <div style="flex:1">
-          <div class="row"><strong>${esc(c.name)}</strong>
+          <div class="row"><span class="cname">${esc(c.name)}</span>
             ${c.affiliations.length ? `<span class="muted small">${esc(c.affiliations.join("; "))}</span>` : ""}
             <span class="spacer"></span><a class="small" href="${esc(c.url)}" target="_blank" rel="noopener">Semantic Scholar ↗</a></div>
           <div class="stats"><span><b>${fmtNum(c.papers)}</b> papers</span><span><b>${fmtNum(c.citations)}</b> citations</span><span>h-index <b>${fmtNum(c.h_index)}</b></span></div>
@@ -529,7 +529,30 @@ async function viewWorkspace(slug, step, seq) {
   await views[step](panel, nextBtn, seq);
 }
 
-function head(title, desc) { return `<div class="section-head"><div><h1>${esc(title)}</h1>${desc ? `<p>${desc}</p>` : ""}</div></div>`; }
+function head(title, desc, icon) {
+  const step = location.hash.split("/")[3] || "";
+  return `<div class="section-head">${doodle(icon || STEP_ICONS[step] || "sparkle", { size: 64, seed: step, cls: "pop wobble" })}
+    <div><h1>${esc(title)}</h1>${desc ? `<p>${desc}</p>` : ""}</div></div>`;
+}
+
+/* Cards get a staggered entrance and a doodle beside their title, chosen by the title. Done by
+   an observer so every view (and every partial re-render) is decorated the same way. */
+const CARD_ICONS = [[/consent/i, "heart"], [/upload/i, "upload"], [/paste/i, "paper"], [/link/i, "link"], [/publication/i, "cap"],
+  [/semantic scholar/i, "magnifier"], [/^build/i, "flask"], [/principle/i, "feather"], [/weight/i, "scale"], [/files/i, "folder"],
+  [/user model/i, "person"], [/corpus/i, "folder"], [/about|details/i, "person"]];
+new MutationObserver(() => {
+  let k = 0;
+  app.querySelectorAll(".card:not([data-dec])").forEach(card => {
+    card.dataset.dec = "1";
+    if (!card.closest(".tf")) { card.classList.add("rise"); card.style.setProperty("--i", k++); }
+    const h = card.querySelector(":scope > h3, :scope > .row > h3");
+    if (h && !h.querySelector(".doodle")) {
+      const hit = CARD_ICONS.find(([re]) => re.test(h.textContent));
+      h.insertAdjacentHTML("afterbegin", doodle(hit ? hit[1] : "sparkle", { size: 30, seed: h.textContent }));
+      h.classList.add("ct");
+    }
+  });
+}).observe(app, { childList: true, subtree: true });
 
 // ----- About & consent (personal)
 function panelAbout(panel, nextBtn) {
@@ -1003,7 +1026,7 @@ function renderProfile(el) {
       ${m.bio ? `<p class="muted small" style="margin-top:.5rem">${esc(m.bio)}</p>` : ""}
       ${card ? `
         ${card.summary ? `<p class="profile-summary" style="margin-top:.75rem">${esc(card.summary)}</p>` : ""}
-        ${card.interests && card.interests.length ? `<h4>Interests</h4><div>${card.interests.map(i => `<span class="chip">${esc(i)}</span>`).join("")}</div>` : ""}
+        ${card.interests && card.interests.length ? `<h4>Interests</h4><div>${card.interests.map((x, i) => `<span class="chip pop" style="--r:${((i * 53) % 7) - 3}deg;--i:${i}">${esc(x)}</span>`).join("")}</div>` : ""}
         <div class="grid2" style="margin-top:.5rem">
           ${card.methods && card.methods.length ? `<div><h4>How they work</h4><ul>${card.methods.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}
           ${card.open_questions && card.open_questions.length ? `<div><h4>Open questions</h4><ul>${card.open_questions.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}
@@ -1013,17 +1036,17 @@ function renderProfile(el) {
         ${m.build.principles_extracted > (prof.principles || []).length ? `<dt>Principles</dt><dd>merged from ${fmtNum(m.build.principles_extracted)} extracted (raw list kept in studio.json)</dd>` : ""}
         <dt>Model calls</dt><dd>${fmtNum(m.build.calls)}${m.build.cost_usd ? ` · $${m.build.cost_usd}` : ""}</dd></dl>` : ""}
     </div>
-    <div class="grid2" style="margin-top:1rem">
-      <div class="card">
-        <h3>Principles</h3>
-        <p class="muted small">Short rules the proposer is told to follow for this researcher.</p>
-        <div class="principles" id="pr-list"></div>
-        ${editable ? `<button class="btn small" id="pr-add" style="margin-top:.5rem">+ Add principle</button>` : ""}
-      </div>
+    <div style="margin-top:1rem">
       <div class="card">
         <h3>Feature weights</h3>
         <p class="muted small">−1 to 1. The loop scores each candidate idea's features with these (D1).</p>
         <div class="weights" id="w-list"></div>
+      </div>
+      <div class="card">
+        <h3>Principles</h3>
+        <p class="muted small">Short rules the proposer is told to follow for this researcher.</p>
+        <div class="principles" id="pr-list"></div>
+        ${editable ? `<button class="btn small" id="pr-add" style="margin-top:.7rem">+ add principle</button>` : ""}
       </div>
     </div>
     ${editable ? `<div class="row end" style="margin-top:1rem"><span class="muted small" id="edit-hint"></span><button class="btn primary" id="p-save" disabled>Save edits</button></div>` : ""}`;
@@ -1031,23 +1054,34 @@ function renderProfile(el) {
   function drawPrinciples() {
     const list = document.getElementById("pr-list");
     list.innerHTML = principles.length ? principles.map((p, i) => editable
-      ? `<div class="principle"><input type="text" data-pr="${i}" value="${esc(p)}"><button class="btn ghost small" data-prx="${i}" aria-label="Remove">✕</button></div>`
-      : `<div class="principle">• ${esc(p)}</div>`).join("") : `<span class="muted small">none</span>`;
-    list.querySelectorAll("[data-pr]").forEach(i => i.addEventListener("input", () => { principles[+i.dataset.pr] = i.value; dirty(); }));
+      ? `<div class="principle"><span class="pn mono">${i + 1}</span><textarea rows="1" data-pr="${i}">${esc(p)}</textarea><button class="btn ghost small" data-prx="${i}" aria-label="Remove principle ${i + 1}">✕</button></div>`
+      : `<div class="principle read rise" style="--i:${i}">${esc(p)}</div>`).join("") : `<span class="muted small">none</span>`;
+    list.querySelectorAll("[data-pr]").forEach(t => {
+      const fit = () => { t.style.height = "auto"; t.style.height = t.scrollHeight + 2 + "px"; };
+      t.addEventListener("input", () => { principles[+t.dataset.pr] = t.value; fit(); dirty(); });
+      requestAnimationFrame(fit);
+    });
     list.querySelectorAll("[data-prx]").forEach(b => b.addEventListener("click", () => { principles.splice(+b.dataset.prx, 1); drawPrinciples(); dirty(); }));
   }
   function drawWeights() {
     const list = document.getElementById("w-list");
     list.innerHTML = st.features.map(f => {
       const v = Number(w[f] || 0), pct = Math.min(50, Math.abs(v) * 50);
-      return `<div class="weight" title="${esc(FEATURE_HELP[f] || "")}"><span>${esc(f.replace("_", " "))}</span>
-        ${editable ? `<input type="range" min="-1" max="1" step="0.05" value="${v}" data-w="${esc(f)}" aria-label="${esc(f)} weight">`
-          : `<div class="bar"><div class="fill ${v >= 0 ? "pos" : "neg"}" style="${v >= 0 ? `left:50%;width:${pct}%` : `left:${50 - pct}%;width:${pct}%`}"></div></div>`}
+      return `<div class="weight ${editable ? "editable" : ""}" title="${esc(FEATURE_HELP[f] || "")}" style="--i:${st.features.indexOf(f)}"><span>${esc(f.replace("_", " "))}</span>
+        <div class="bar"><div class="fill" data-fill="${esc(f)}"></div>
+          ${editable ? `<input type="range" min="-1" max="1" step="0.05" value="${v}" data-w="${esc(f)}" aria-label="${esc(f)} weight">` : ""}</div>
         <span class="val" data-wv="${esc(f)}">${v >= 0 ? "+" : ""}${v.toFixed(2)}</span></div>`;
-    }).join("") + `<p class="muted small" style="margin:.25rem 0 0">Hover a feature for what it means.</p>`;
+    }).join("") + `<p class="muted small mono" style="margin:.4rem 0 0">${editable ? "Drag a bar to correct it. " : ""}Hover a feature for what it means.</p>`;
+    const paint = f => {
+      const v = Number(w[f] || 0), pct = Math.min(50, Math.abs(v) * 50), el = list.querySelector(`[data-fill="${f}"]`);
+      el.className = `fill ${v >= 0 ? "pos" : "neg"}`;
+      Object.assign(el.style, v >= 0 ? { left: "50%", width: pct + "%" } : { left: 50 - pct + "%", width: pct + "%" });
+      list.querySelector(`[data-wv="${f}"]`).textContent = `${v >= 0 ? "+" : ""}${v.toFixed(2)}`;
+    };
+    st.features.forEach(paint);
     list.querySelectorAll("[data-w]").forEach(r => r.addEventListener("input", () => {
-      w[r.dataset.w] = +r.value; const v = +r.value;
-      list.querySelector(`[data-wv="${r.dataset.w}"]`).textContent = `${v >= 0 ? "+" : ""}${v.toFixed(2)}`; dirty();
+      w[r.dataset.w] = +r.value; paint(r.dataset.w);
+      list.querySelector(`[data-fill="${r.dataset.w}"]`).style.animation = "none"; dirty();
     }));
   }
   drawPrinciples(); drawWeights();
@@ -1118,13 +1152,24 @@ async function startJob(kind, body, el, onDone) {
   try { job = await api("POST", `/api/profiles/${S.slug}/${kind}`, body); } catch (e) { return fail(e); }
   const label = { gather: "Gathering sources", build: "Building profile", fit: "Fitting user model" }[kind] || kind;
   const slug = S.slug;
+  let shownStatus = null, shownLines = 0;
   const draw = j => {
     if (!document.body.contains(el)) return false;
-    el.innerHTML = `<div class="card job"><div class="row">${j.status === "running" ? '<span class="spinner"></span>' : j.status === "done" ? '<span class="badge ok">done</span>' : '<span class="badge warn">error</span>'}
-      <strong>${esc(label)}</strong><span class="muted small">${j.status === "running" ? "you can keep working; this page updates when it finishes" : ""}</span></div>
-      ${j.error ? `<div class="notice bad small" style="margin-top:.5rem">${esc(j.error)}</div>` : ""}
-      <div class="job-log">${esc(j.log.join("\n") || "starting…")}</div></div>`;
-    const lg = el.querySelector(".job-log"); lg.scrollTop = lg.scrollHeight;
+    if (j.status !== shownStatus) {   // full render only when the status changes; log lines are appended
+      const icon = j.status === "running" ? doodle(kind === "gather" ? "magnifier" : kind === "fit" ? "person" : "pencil", { size: 46, color: "ochre", tilt: -8 })
+        : j.status === "done" ? doodle("check", { size: 46, color: "sage", tilt: -4, cls: "pop" }) : doodle("lightbulb", { size: 46, color: "rose", tilt: 6 });
+      el.innerHTML = `<div class="card job" data-dec="1"><div class="job-head ${j.status === "running" ? "scribbling" : ""}">${icon}
+        <div><strong>${esc(label)}${j.status === "running" ? "…" : j.status === "done" ? ": done" : ": stopped"}</strong>
+        <div class="muted small mono">${j.status === "running" ? "you can keep working; this updates when it finishes" : ""}</div></div></div>
+        ${j.error ? `<div class="notice bad small" style="margin-top:.6rem">${esc(j.error)}</div>` : ""}
+        <div class="job-log"></div></div>`;
+      shownStatus = j.status; shownLines = 0;
+    }
+    const lg = el.querySelector(".job-log"), ph = lg.querySelector("[data-ph]");
+    if (!j.log.length) { if (!ph) lg.innerHTML = `<span class="line muted" data-ph>starting…</span>`; return true; }
+    if (ph) ph.remove();
+    lg.insertAdjacentHTML("beforeend", j.log.slice(shownLines).map(l => `<span class="line">${esc(l)}</span>`).join(""));
+    shownLines = j.log.length; lg.scrollTop = lg.scrollHeight;
     return true;
   };
   draw(job);
@@ -1132,7 +1177,7 @@ async function startJob(kind, body, el, onDone) {
     try { job = await api("GET", `/api/jobs/${job.id}`); } catch (e) { return fail(e); }
     const visible = draw(job);
     if (job.status === "running") return setTimeout(tick, 900);
-    if (job.status === "done") toast(`${label}: done`);
+    if (job.status === "done") { toast(`${label}: done`); const d = el.querySelector(".job-head .doodle"); if (d && visible) burstAt(d); }
     if (S.slug === slug) { await refresh(slug); if (visible && job.status === "done" && onDone) onDone(job); }
   };
   setTimeout(tick, 700);
