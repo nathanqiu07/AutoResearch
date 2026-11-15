@@ -25,6 +25,15 @@ redoing work.
 
 ## Ledger (newest first)
 
+### 2026-11-15 claude-tastepetri: discriminative held-out pairs + contrastive profiles (IN PROGRESS, 13:00 UTC)
+- User: "if a predictor without a profile picks the researcher's side on 18/19 pairs, we are not picking held-out
+  pairs well enough"; changes at the data-processing and profile-generation levels are in scope.
+- `pairs_v2/`: Owain post-T decisions with hard distractors (other researchers' choices and opposite trade-off
+  poles, style- and length-matched), blind-gated to a ~50/50 band.
+- `profiles_contrastive/`: pre-T Owain profiles that encode departures from consensus (gated contrastive card,
+  trade-off axis positions, retrieval of past decisions).
+- Then `e2_v2/`: E2 on pairs_v2 across all profile arms. Devin: don't take these three dirs.
+
 ### 2026-11-15 claude-tastepetri: consolidated report (DONE, 12:30 UTC)
 - Resumed after the limit reset. Wrote `REPORT.md`: bottom line, every experiment with its call count and verdict,
   a re-ranked list of ideas (LEGIT/GAMING), the fixes posted to owners, and caveats. Left `real_material_v2/` to
