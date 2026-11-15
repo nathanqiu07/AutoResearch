@@ -415,3 +415,65 @@
 - Fresh repository verification for this checkpoint: 677 tests run, 675 passed,
   two skipped, exit 0 in 24.115 seconds. The exact log is retained in 033.
   Audit 032 also repeats byte-identically from its final publication layout.
+
+
+## Completed sparse execution and durable retention
+
+- Previous checkpoint 4694966 published 032/033 and was verified on the remote;
+  this continuation makes further concrete progress. Goal remains active.
+- Root created an exclusive private checkpoint outside the audit worktree at
+  .local/share/autoresearch/archives/gio-user-model-integration-audit/checkpoint-4694966.
+  It contains the 12 published private archives through 033, a Git-generated
+  public evidence archive and two recovery support files. All 15 copied files
+  match their source pins, all 2,047 public files match committed Git blobs, and
+  originals are unchanged. Files are 0600 and new directories 0700.
+- Audit 036 records that copy and recovery verification. The copied public/private
+  evidence alone reproduces 032's 2,252 terminal reference checks byte-identically
+  and 033's 477 checks with only argv differing; its inventory is identical.
+  This protects against worktree cleanup, not same-machine loss. Later 034/035
+  artifacts and the separate full downstream04 owner archive are excluded.
+- The standalone metadata verifier is preserved and has run successfully. Public
+  metadata records source commit, archive/receipt hashes, commands and limits;
+  no raw archive is added to Git.
+- Audit 034's independent bounded review confirms 234 canonical jobs / 364 rows
+  covering 28 ordered items times 13 method/cap conditions. The 112 aliases are
+  references to 56 included rows, so their $0.00463625 recorded estimate is already
+  within the canonical $0.057470 total. Private preservation and root replay are
+  separate steps; the historical construction/preparation artifacts remain intact.
+- Audit 035 continues the frozen 96-cell source/config/result and continuation
+  accounting check. The coordinator registry supplies explicit P7 prepared and
+  summary pins, closing a missing route without guessed sibling paths. Active
+  richer/repeat queues, scoring and runtime changes remain with their owners.
+- Both linked chats and coordinator were inspected during this work. Downstream05
+  is running with its owner, richer studies and selected repeat builds are active,
+  and the reference lane stopped at two unknown outcomes with reservations kept.
+  Those are owner-reported current statuses, not additional verified audit results.
+
+- Audit 034 root replay now passes all 4,572 checks from a separately extracted
+  private archive. Report fields match except argv; inventories are byte-identical.
+  All 2,609 named inputs are retained in an 18,242,346-byte private archive, SHA
+  add5dacfe4f2c3f7b3a38b988fd6afbecdf8e8d734efb1a3b9dc920b16de1dc2.
+  This later archive is deliberately outside the through-033 checkpoint scope.
+- Fresh required repository suite for 034/036: 677 run, 675 passed, two skipped,
+  exit 0 in 27.361 seconds. Log and command are preserved in 036.
+
+- Independent 036 review verifies the 15 copied entries, 17 retained files with
+  manifest/receipt, all actual modes and all 2,047 public Git blobs. It also found
+  a future nested-directory mode edge in the historical copier. An additive
+  portable variant creates each missing directory at 0700; a one-byte old/new
+  regression preserves the expected failure and passing fix. Root repeats the
+  passing probe. Original copier, copy manifest/receipt and retained bytes stay
+  unchanged. Standalone Git-blob comparison requires a repository containing the
+  pinned commit; the demonstrated recovery readers use the retained files.
+- The next exact label-free full sparse index is released by coordinator at
+  evaluator/released/full-sparse-completion-provenance-index-v1.json, SHA
+  9aeea5b0c4fb9668df1d36c548e681c1c5e180e75df74f9475f75b2f08737e3a.
+  Audit 037 will cover remaining personalized prediction/consumer bindings and
+  reconcile the full 612-job / 1,036-row index with 034/035, without scoring.
+  Later richer alias adoption in role05 handoff021 is a separate release; 034
+  explicitly makes no current-state claim about that later adoption.
+
+- Final staged whitespace check flags two required single-space context lines in
+  the preserved 036 unified diff. Exact artifact bytes remain unchanged; both
+  lines were verified and every other staged path passes. Original output and
+  precise exclusion are recorded in 036/whitespace-check.json.

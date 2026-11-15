@@ -1,0 +1,51 @@
+--- copy_private_checkpoint.py
++++ copy_private_checkpoint_portable.py
+@@ -1,4 +1,7 @@
+-"""Copy an explicit hash-pinned evidence set to a new private checkpoint."""
++"""Copy a hash-pinned set, making each newly needed directory private.
++
++Additive portable variant; the original executed checkpoint copier is unchanged.
++"""
+ import argparse
+ import hashlib
+ import json
+@@ -16,6 +19,18 @@
+     if p.is_absolute() or '..' in p.parts or not p.parts:
+         raise ValueError('Unsafe manifest path')
+     return p
++
++
++def make_private_parents(path):
++    """Create missing directories individually; leave existing parents alone."""
++    missing = []
++    parent = path
++    while not parent.exists():
++        missing.append(parent)
++        parent = parent.parent
++    for directory in reversed(missing):
++        directory.mkdir(mode=0o700)
++        os.chmod(directory, 0o700)
+ 
+ 
+ def main():
+@@ -42,18 +57,12 @@
+         raw = source.read_bytes()
+         assert sha(raw) == record['sha256'] and len(raw) == record['size_bytes']
+         sources.append((record, source, raw))
+-    missing_parents = []
+-    parent = args.destination.parent
+-    while not parent.exists():
+-        missing_parents.append(parent)
+-        parent = parent.parent
+-    for directory in reversed(missing_parents):
+-        directory.mkdir(mode=0o700)
++    make_private_parents(args.destination.parent)
+     args.destination.mkdir(mode=0o700)
+     os.chmod(args.destination, 0o700)
+     for record, source, raw in sources:
+         destination = args.destination / safe_relative(record['destination'])
+-        destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
++        make_private_parents(destination.parent)
+         fd = os.open(str(destination), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+         with os.fdopen(fd, 'wb') as output:
+             output.write(raw)

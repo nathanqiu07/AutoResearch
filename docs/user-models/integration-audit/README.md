@@ -14,12 +14,13 @@ jobs. No model/inference-setting changes or production adviser edits were made.
 | Did the scoped repairs address reproduced defects? | Native setup paths/stop guard and permitted-span retrieval pass independent retests and root repeats (022–023). | Method-level success is not blanket next-runtime or scientific readiness. |
 | Did baseline04 demonstrate shutdown prevention? | No. Three files were written outside the explicit removal paths; active script/schedule stayed unchanged (025). | Shutdown/process execution was not simulated; intent and personalization effect are unmeasured. |
 | Are saved memory predictions additional observations? | No. All 84 references resolve consistently to 28 ordered P1 predictions in two canonical jobs; these cover 14 paired content groups (033). | This is explicit saved-result reuse, not execution under memory job IDs, automatic cache aliasing or a quality result. |
+| Did the expanded sparse controls and hybrids execute? | All 234 canonical jobs have 364 completed rows: 28 ordered items across 13 conditions. The 112 cap aliases reuse 56 included rows, with their cost counted once (034). | Richer alias proposals are outside this sparse execution evidence; parent production cost and prediction quality are separate. |
 | Are the terminal phase1 and stopped phase2 records recoverable? | All 2,252 required record references resolve from verified private archives, including 132 phase1 jobs and 78 dispatched results from 84 original phase2 admissions (032). | Later continuation outputs and active ledger state are outside this terminal snapshot. |
-| Can the evidence be reconstructed later? | Exact scripts, source pins, failures, hashes and verified private input archives are retained. | Private archives are ignored by Git and must be retained separately when moving/removing this worktree. |
+| Can the evidence be reconstructed later? | Exact scripts, source pins, failures, hashes and verified private input archives are retained. Published packages through 033 also have a verified copy outside this worktree (036). | That checkpoint is on the same machine, excludes later packages and does not preserve the full provider/Python environment. |
 
 Expanded semantic construction and saved-P1/memory conditioning are covered in
-026–027; 033 adds actual recorded execution bindings. The next bounded audit
-checks completed control/hybrid jobs and alias accounting from a later release.
+026–027; 033–034 add actual recorded execution and alias bindings. The next
+bounded audit checks all 96 build outcomes and their continuation provenance.
 Identical prompt bytes alone do not establish interchangeable execution or
 independent evidence; model/settings/item/order must also match.
 
