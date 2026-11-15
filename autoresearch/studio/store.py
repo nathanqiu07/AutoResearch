@@ -348,7 +348,11 @@ def ensure_seed_pairs(root: str, slug: str) -> int:
         raise StudioError("trade-off items are for personal profiles")
     if not consent_complete(root, slug):
         raise StudioError("tick every consent box before answering trade-off items")
-    trackp.main(["--root", root, "seed-pairs", "--researcher", slug])
+    try:
+        trackp.main(["--root", root, "seed-pairs", "--researcher", slug])
+    except SystemExit as e:   # trackp's CLI reports bad arguments or state by exiting
+        raise StudioError(f"the personal track's seed-pairs command failed ({e.code}); "
+                          "the studio's console has its message") from None
     return len(trackp._read(os.path.join(_dir(root, slug), trackp.SEED_PAIRS)))
 
 

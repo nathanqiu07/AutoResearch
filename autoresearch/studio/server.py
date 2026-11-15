@@ -52,7 +52,7 @@ class Jobs:
             try:
                 job["result"] = fn(log)
                 job["status"] = "done"
-            except Exception as e:
+            except (Exception, SystemExit) as e:
                 job["error"] = str(e) if isinstance(e, store.StudioError) else f"{type(e).__name__}: {e}"
                 log("error: " + job["error"])
                 if not isinstance(e, store.StudioError):
@@ -212,6 +212,9 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             traceback.print_exc()
             code, out = 500, {"error": f"{type(e).__name__}: {e}"}
+        except SystemExit as e:   # a CLI the studio calls exited; answer instead of dropping the connection
+            traceback.print_exc()
+            code, out = 500, {"error": f"a command the studio ran exited ({e.code}); see the studio's console"}
         self._send(code, out)
 
     def do_GET(self):
