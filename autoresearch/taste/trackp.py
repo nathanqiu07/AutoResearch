@@ -294,7 +294,7 @@ def start(root: str, name: str, ask: Callable = input, say: Callable = print) ->
             "Recorded by:\n", f"Recorded by: {name} (agreed at the terminal, {datetime.date.today().isoformat()})\n")
         with open(consent, "w") as f:
             f.write(text)
-    say(f"\nSaving to {d}. About 12 minutes; quit with q at any time and run start again to resume. "
+    say(f"\nSaving to {d}. About 15 minutes; quit with q at any time and run start again to resume. "
         "There are no right answers: each question asks what you would do.")
     return ask_items(root, slug, pending_items(root, slug, ("seed",)), ask, say)
 

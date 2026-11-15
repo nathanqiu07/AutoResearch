@@ -61,7 +61,7 @@ python3 -m autoresearch.taste.trackp pending --kind seed --limit 50
 python3 -m autoresearch.taste.trackp record --id <id> --choice <n>
 ```
 
-1. Before the first item, tell the person once: it takes about 12 minutes, they can stop and
+1. Before the first item, tell the person once: it takes about 15 minutes, they can stop and
    resume at any point, there are no right answers, and each question asks what they would do.
 2. `pending` serves scenario items grouped by their `group` field, then the stance items.
    Show a group's `context` once, then each item's `question` and its `options` one at a time,

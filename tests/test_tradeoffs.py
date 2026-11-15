@@ -23,8 +23,8 @@ class StubLLM:
 
 
 class BankTest(unittest.TestCase):
-    def test_bank_has_fourteen_axes_covering_d1_to_d6(self):
-        self.assertEqual(len({r["axis"] for r in BANK}), 14)
+    def test_bank_has_nineteen_axes_covering_d1_to_d6(self):
+        self.assertEqual(len({r["axis"] for r in BANK}), 19)
         self.assertEqual({r["decision_point"] for r in BANK}, {f"D{i}" for i in range(1, 7)})
 
     def test_scenarios_only_where_the_loop_lets_taste_act(self):
@@ -50,7 +50,7 @@ class PairsTest(unittest.TestCase):
     def test_seed_set_is_every_stance_plus_one_scenario_per_scenario_axis(self):
         pairs = tradeoffs.build_seed_pairs(BANK, ITEMS, seed=1)
         scen = [p for p in pairs if p["form"] == "scenario"]
-        self.assertEqual(len(pairs) - len(scen), 14)
+        self.assertEqual(len(pairs) - len(scen), 19)
         self.assertEqual(sorted(p["axis"] for p in scen), sorted(r["axis"] for r in BANK if tradeoffs.has_scenario(r)))
         self.assertEqual(len({p["pair_id"] for p in pairs}), len(pairs))
 
