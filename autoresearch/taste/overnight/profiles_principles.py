@@ -10,7 +10,8 @@ from pathlib import Path
 from ...research import decisions
 from .contracts import canonical_json, digest, sha256_bytes, sha256_text, validate_documents
 
-PROMPT_VERSION = 'principle-profile-v1'
+PROMPT_VERSION = 'principle-profile-v1-settings-v2'
+EXTRACTOR_DEFAULTS = {'temperature': 0.0, 'max_tokens': 2048}
 DECISION_TYPES = {
     'D1': 'which candidate intervention(s) to test next',
     'D2': 'what evidence to collect (sample count and target)',
@@ -59,7 +60,8 @@ FORBIDDEN_CONFIG = {'context', 'options', 'chosen', 'label', 'answer', 'target',
 
 
 def prompt_spec(method_id):
-    return {'version': PROMPT_VERSION, 'system': SYSTEM, 'common': COMMON, 'method': METHODS[method_id],
+    return {'version': PROMPT_VERSION, 'extractor_settings_defaults': dict(EXTRACTOR_DEFAULTS),
+            'system': SYSTEM, 'common': COMMON, 'method': METHODS[method_id],
             'claim_schema': CLAIM_SPEC, 'principle_schema': PRINCIPLE_SPEC, 'rule_schema': RULE_SPEC,
             'decision_types': DECISION_TYPES if method_id == 'P6' else None,
             'hierarchy_keys': HIERARCHY_KEYS if method_id == 'P6' else None,
@@ -90,9 +92,9 @@ def _source_payload(documents):
 
 def _settings(config):
     settings = config.get('extractor_settings')
-    if not isinstance(settings, dict):
+    if not isinstance(settings, dict) or set(settings) - set(EXTRACTOR_DEFAULTS):
         raise ValueError('invalid extractor settings')
-    temp, maximum = settings.get('temperature', 0.0), settings.get('max_tokens', 2048)
+    temp, maximum = settings.get('temperature', EXTRACTOR_DEFAULTS['temperature']), settings.get('max_tokens', EXTRACTOR_DEFAULTS['max_tokens'])
     if (type(temp) not in (int, float) or not 0 <= temp <= 2 or
             type(maximum) is not int or maximum <= 0):
         raise ValueError('invalid extractor settings')
@@ -248,6 +250,7 @@ def _build(method_id, documents, config, extractor):
     if not documents:
         return _result(status='empty', error='no_approved_documents')
     usage = {'attempted_calls': 1, 'cost_status': 'unavailable',
+             'effective_extractor_settings': dict(settings),
              'request_sha256': digest({'system': SYSTEM, 'prompt': prompt, 'settings': settings}),
              'prompt_spec_sha256': digest(prompt_spec(method_id)),
              'decision_source_sha256': prompt_spec(method_id)['decision_source_sha256'],
