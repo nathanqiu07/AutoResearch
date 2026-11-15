@@ -43,3 +43,17 @@ The builder requires `embedding_bundle`, `embedding_bundle_sha256`, `embedding_m
 Builders still make zero model calls. `fit_usage.embedding_production_usage` preserves separate embedding-production usage; the coordinator should charge its producer job once, not again for every reused arm. No live embedding job has been executed here. The optional API candidate is [text-embedding-3-small](https://developers.openai.com/api/docs/models/text-embedding-3-small), listed at $0.02 per million input tokens when checked November 15, 2026. Its [endpoint schema](https://developers.openai.com/api/reference/resources/embeddings/methods/create) supports batched strings and explicit float output. Account availability and the coordinator's allocation must still be checked before use.
 
 Add `--semantic-fixture` to the fixture command to exercise all seven controls with artificial vectors. This remains synthetic plumbing evidence and is never an embedding-quality result.
+
+## Released development input readiness
+
+`check_released_inputs.py` checks exact evaluator-released development-v2 bundles without making predictions. Supply the path and SHA256 of the immutable role04 DATA_READY handoff, a consumer model identity, a cap, and an exclusive output path. It opens only the handoff's explicitly released shared-dev bundle paths, verifies file/item/source hashes, and constructs all controls. Output contains hashes, counts and selected source offsets; no source text, decision text, labels or scores are copied.
+
+```sh
+python3 docs/overnight/gio-profile-20261115/handoffs/05/check_released_inputs.py \
+  --handoff /path/to/003-data-ready-v2.json --handoff-sha256 ACTUAL_SHA256 \
+  --consumer-model gpt-6-luna --cap 2048 --output /path/to/new-readiness.json
+```
+
+Four controls are expected to construct: no-profile, name-only, raw evidence and lexical retrieval. Semantic retrieval lacks an embedding bundle; memory-summary and profile-retrieval lack a frozen profile. These are explicit prerequisite gaps, not silently successful arms. The report checks exact approved source spans, rendered byte caps and zero builder calls. An empty item release is rejected, because it provides no construction evidence.
+
+Raw/lexical equality and distinct selected-span counts are diagnostics, not retrieval-quality tests. Equal lexical selections across option orders can be correct because BM25 uses a token set. This check does not validate the prediction runner, prove provider authenticity, establish preference accuracy, or measure research utility. Rerun against the final frozen runtime before using its hashes in a paid job.

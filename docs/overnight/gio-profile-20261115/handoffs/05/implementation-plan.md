@@ -7,7 +7,7 @@ Architecture: additive builders in baselines.py, pure in-memory retrieval and pa
 - [x] Implement deterministic source-validated chunking, lexical BM25 ranking, exact-byte JSON packing and semantic-unavailable status. Tests first: unknown/modified sources rejected; ranking relevant source first; ties/order deterministic; unicode fits cap; source spans reproduce; cache identity changes with options, model, source and parameters.
 - [x] Implement no_profile, name_only, raw_evidence, lexical_retrieval and semantic_retrieval builder registration. Test actual consumer payloads, no accidental author/source metadata, explicit unavailable/empty output and no extraction calls.
 - [x] Reuse a supplied frozen P1 summary unchanged for memory_summary; compose frozen profile plus retrieved excerpts under a registered profile/passage byte allocation. Test source/researcher/hash compatibility, profile preservation, combined cap and zero silent fallbacks.
-- [ ] Run targeted and repository tests, independent review, synthetic fixture generation; push own branch and send exact hashes to coordinator/audit. Live development jobs only from coordinator after DATA_READY.
+- [x] Run targeted and repository tests, independent review, synthetic fixture generation; push own branch and send exact hashes to coordinator/audit. Live development jobs only from coordinator after DATA_READY.
 
 Decisions: UTF-8 bytes follow shared conservative cap, not tokenizer counts. Chunking uses fixed nonoverlapping character windows with exact source offsets; retrieval scores are BM25, stable ties use document ID/start. Query consists only of context and options, preserving option order in identity. Exact duplicate excerpt text is indexed once. No semantic substitution without an authorized embedding backend. Summary/profile controls require a compatible immutable ProfileArtifact and preserve its content; cap mismatch is unavailable, not silent truncation.
 
@@ -26,8 +26,15 @@ Verification: final implementation passed 681 repository tests (two skipped), an
 - [x] Add exact embedding-input construction and immutable source/query/model-bound vector bundles, then cosine ranking under the existing packer. No network adapter or ungated model calls.
 - [x] Exercise modified queries, option order, vector shape/norm, missing model, missing live-producer provenance, and oversized numeric coordinates; rejected bundles remain unavailable.
 - [x] Independent review found missing model and live provenance checks on load; both reproduced RED and fixed. A huge-integer coordinate also reproduced an OverflowError and now yields a controlled ValueError.
-- [ ] Publish the second fixture/handoff and send exact commits for integration. Live embeddings remain a separate coordinator allocation.
+- [x] Publish the second fixture/handoff and send exact commits for integration. Live embeddings remain a separate coordinator allocation.
 
 Ruling: vector bundle hashes establish input consistency, not provider authenticity or paid-cost reconciliation. Producer job traces remain required. Embedding costs are recorded once at production and retained as separate metadata on reuse.
 
 Semantic verification: 22 targeted tests passed; full repository suite 685 tests passed, two skipped. Offline semantic fixture exercised all seven controls; no model calls. Compatibility snapshot against infrastructure05c503e passed the then-current21 tests before the final metadata regression was added.
+
+## Released input check
+
+- [x] Read only the exact two Tier-A development-v2 releases from role04's immutable handoff; validate file, item and approved source hashes.
+- [x] Add a portable zero-call construction checker for the four pilot controls plus explicit missing prerequisites for the other three. Reuse existing constructors; avoid a second prediction-audit framework.
+- [x] Independent review identified vacuous success for empty released item lists; reject those inputs explicitly. No private labels or model calls.
+- [ ] Publish the immutable construction report and send its exact runtime/code/hash context to the coordinator.
