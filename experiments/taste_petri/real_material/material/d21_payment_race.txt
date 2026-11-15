@@ -1,0 +1,55 @@
+# [BUG]: Potential Race Condition in Payment Processing Flow Allows Credit Application Before Payment Confirmation  (#4326, closed)
+
+opened by @Torvalen7 on 2025-09-15T23:28:44Z  labels: 
+
+**Describe the bug**
+
+I've identified a potential vulnerability in the payment processing flow that could allow credits to be applied to wallets before payment confirmation is fully verified. This issue relates to the asynchronous nature of webhook processing and credit application.
+
+**To Reproduce**
+
+The vulnerability exists in the timing gap between payment initiation and credit application:
+- Payment Creation: When a payment is initiated, a wallet transaction is created with `status: :pending`
+- Asynchronous Processing: The `BillPaidCreditJob` is queued for processing
+- Webhook Delay: Payment confirmation via webhook (e.g., `Stripe's payment_intent.succeeded`) may arrive after credits are already being processed
+- Race Condition: Credits might become available before payment is actually confirmed
+
+The issue is compounded by:
+- Reliance on asynchronous webhook processing for payment status updates
+- No real-time payment verification before credit application
+- Potential for webhook delivery delays or failures
+
+**Screenshots**
+In `app/services/wallet_transactions/create_from_params_service.rb`:
+```ruby
+def handle_paid_credits(wallet:, credits_amount:, invoice_requires_successful_payment:)
+  # Creates pending transaction
+  wallet_transaction = WalletTransactions::CreateService.call!(
+    wallet:,
+    wallet_credit:,
+    transaction_type: :inbound,
+    status: :pending,  # Initial status
+    source:,
+    transaction_status: :purchased,
+    invoice_requires_successful_payment:,
+    metadata:,
+    priority:,
+    name:
+  ).wallet_transaction
+
+  # Queues job for billing - potential race condition here
+  BillPaidCreditJob.perform_after_commit(wallet_transaction, Time.current.to_i)
+  
+  wallet_transaction
+end
+```
+
+**Additional context/consideration:**
+1. The existing signature verification (ValidateIncomingWebhookService) is good but doesn't prevent this timing issue
+2. The unique index on provider_payment_id helps but may not catch all race conditions
+3. Consider implementing a state machine for payment/credit lifecycle management
+
+Related files:
+```bash
+app/services/wallet_transactions/create_from_params_service.rb
+app/jobs/bill_paid_credit_job.rb
