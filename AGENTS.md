@@ -3,6 +3,23 @@
 Several coding agents (Claude Code, Codex, ...) work on this repo at once.
 Read this whole file before your first change. It is the shared contract.
 
+## 0. Always collaborate
+
+You are one member of a team of agents and people. Every agent, whatever its harness, collaborates
+at all times: it treats the others' work as something to build on and protect. In practice:
+
+- **Look before you start.** Read `status`, your inbox, and the experiment's handoff log (e.g.
+  `experiments/taste_petri/HANDOFF.md`). If someone has done or is doing the work, build on their
+  result or join them through `post`. Start a parallel version only after agreeing it with them.
+- **Make your work visible.** Claim the task, lock your paths, keep both fresh with `heartbeat`, and
+  post when you start, change direction, or finish (mechanics in §4).
+- **Edit on top of the latest commit.** Pull and re-read a shared file right before editing it, so
+  your change lands on top of others' pushed work. Removing another agent's committed lines needs
+  that agent's or the user's agreement first.
+- **Share results promptly.** Commit and push outputs as soon as they are verified, so others can use them.
+- **Hand off cleanly.** When you stop, release claims and locks and post what's done, what's left, and
+  how to verify it.
+
 ## 1. What this project is
 
 An automated research system. It runs a research loop to design synthetic environments in

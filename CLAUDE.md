@@ -11,6 +11,8 @@ python3 scripts/agentctl.py status && python3 scripts/agentctl.py inbox
 
 ## Team rules
 
+- **Collaborate at all times** with the other agents and people on this repo, as `AGENTS.md` §0 sets out.
+
 - **Commit and push frequently.** After each working unit of change: pull with rebase, run
   `python3 -m unittest discover -s tests -t .`, then commit and push. Small, frequent pushes
   keep the five workstreams from drifting apart. Stage files by name; never push failing tests.
