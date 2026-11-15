@@ -286,7 +286,7 @@ def cmd_research(args):
                 f"{advisor.principles() or 'not stated'}.")
     elif args.taste_mode == "prompt":
         from .taste import load_researcher
-        history = history_text(load_researcher(slug).root)
+        history = history_text(load_researcher(slug).root, max_chars=args.history_chars)
     who = slug or "none"
     cal = Calibration(os.path.join(args.memory, "taste_calibration.json"), who)
     proposer = Proposer(models.generator, prof, _r.Random(args.seed), gate_llm=models.judge, taste_text=taste_text,
@@ -566,6 +566,9 @@ def build_parser() -> argparse.ArgumentParser:
     rs.add_argument("--taste-track", choices=["P", "S"],
                     help="taste track; resolved to a researcher via data/researchers/tracks.json")
     rs.add_argument("--arm", help="arm label for decision records (default: derived, e.g. R0, R1-P, R1-S-prompt)")
+    rs.add_argument("--history-chars", type=int, default=8000,
+                    help="prompt arms (--taste-mode prompt): characters of raw history pasted into the "
+                         "proposer prompt (choices first, then documents; truncated)")
     rs.add_argument("--min-taste-confidence", type=float, default=0.6,
                     help="user-model predictions below this fall back to R0 behaviour")
     rs.add_argument("--items-per-iter", type=int, default=0,

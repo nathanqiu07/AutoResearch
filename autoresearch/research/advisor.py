@@ -220,12 +220,14 @@ def load_user_model(researcher_root: str, profile: Optional[TasteProfile], llm=N
 def history_text(researcher_root: str, max_chars: int = 8000) -> str:
     """Raw history for the prompt-baseline arms (R1-P-prompt / R1-S-prompt):
     the researcher's recorded choices and documents, pasted verbatim (truncated)
-    with no user model in between. Choices come from `choices.jsonl` (labelled
-    pairs) and `history.jsonl` (the rows a personal-track user model was fitted
-    on, taste/trackp.py); a row present in both is listed once."""
+    with no user model in between. Choices come from the files a user model is
+    fitted on: `history.jsonl` (personal track, taste/trackp.py),
+    `history_timesplit.jsonl` (public track, taste/timesplit.py; never its held-out
+    file) and `choices.jsonl` (labelled pairs). A row in several is listed once."""
+    from ..taste import timesplit, trackp
     parts: List[str] = []
     lines, seen = [], set()
-    for name in ("history.jsonl", "choices.jsonl"):
+    for name in (trackp.HISTORY, timesplit.HISTORY, "choices.jsonl"):
         cp = os.path.join(researcher_root, name)
         if not os.path.exists(cp):
             continue

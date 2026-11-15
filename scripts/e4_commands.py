@@ -73,6 +73,8 @@ def commands(prereg: dict, arms: List[str] = None, seeds: List[int] = None, llm:
                    "--realism-samples", str(s["realism_samples"]), "--max-calls", str(s["max_calls"]),
                    "--mode", s["mode"], "--memory", f"{runs_root}/{arm}/seed{seed}",
                    "--decisions-dir", f"{runs_root}/decisions", "--out", f"{out_root}/{arm}/seed{seed}"]
+            if "history_chars" in s:   # read only by prompt arms; passed to all so arms differ only in taste flags
+                run += ["--history-chars", str(s["history_chars"])]
             if a.get("taste_track"):
                 run += ["--taste-track", a["taste_track"]]
             if a.get("researcher"):

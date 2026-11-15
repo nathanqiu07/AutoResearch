@@ -213,6 +213,14 @@ class AdvisorTests(unittest.TestCase):
             f.write(json.dumps(row) + "\n")
         self.assertEqual(history_text(d).count("wait for data"), 1)
         self.assertEqual(history_text(tempfile.mkdtemp()), "")
+        # public track: the time-split history is read, its held-out file never is
+        d2 = tempfile.mkdtemp()
+        with open(os.path.join(d2, "history_timesplit.jsonl"), "w") as f:
+            f.write(json.dumps(dict(row, a_text="before cutoff")) + "\n")
+        with open(os.path.join(d2, "heldout_timesplit.jsonl"), "w") as f:
+            f.write(json.dumps(dict(row, a_text="after cutoff")) + "\n")
+        self.assertIn("before cutoff", history_text(d2))
+        self.assertNotIn("after cutoff", history_text(d2))
 
 
 class ArmTests(unittest.TestCase):
@@ -562,6 +570,7 @@ class E4PreregTests(unittest.TestCase):
         lines = mod.commands(prereg, ["R0", "R1-bad"], [0], llm="offline", out_root=os.path.join(tmp, "out"),
                              runs_root=os.path.join(tmp, "runs"))
         self.assertIn("--split-file", lines[0])
+        self.assertIn("--history-chars", lines[0])   # passed to every arm; only prompt arms read it
         self.assertEqual(len(lines), 2)
         self.assertEqual(len(mod.commands(prereg, llm="offline")), 6 * 8)
         for line in lines:
