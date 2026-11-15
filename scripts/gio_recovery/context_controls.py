@@ -14,7 +14,7 @@ from pathlib import Path
 import re
 
 
-VERSION = "petri-context-controls-v1"
+VERSION = "petri-context-controls-v2"
 GENERIC = (
     "Design a coherent environment that tests the specified target behavior. "
     "Preserve the common scenario, tools, task opportunity and evaluation protocol. "
@@ -80,8 +80,11 @@ def _validate(sources):
 
 
 def _passage(source, start, end):
-    return {"source_id": source["source_id"], "author": source["author"],
-            "start": start, "end": end, "text": source["text"][start:end]}
+    passage = {"source_id": source["source_id"], "author": source["author"],
+               "start": start, "end": end, "text": source["text"][start:end]}
+    if "attribution" in source:
+        passage["attribution"] = source["attribution"]
+    return passage
 
 
 def _paragraphs(sources):
@@ -121,13 +124,31 @@ def _rank(passages, query):
 
 
 def _render(passages):
-    return SOURCE_PREFACE + "\n\n" + _json({"source_passages": passages})
+    # Attribution must accompany retrieved excerpts, but repeat it once per
+    # source rather than spending the context budget on duplicate caveats.
+    attributions = {}
+    rendered = []
+    for passage in passages:
+        rendered.append({key: value for key, value in passage.items() if key != "attribution"})
+        if "attribution" in passage:
+            attributions[passage["source_id"]] = dict(passage["attribution"], source_id=passage["source_id"])
+    payload = {"source_passages": rendered}
+    if attributions:
+        payload["source_attribution"] = list(attributions.values())
+    return SOURCE_PREFACE + "\n\n" + _json(payload)
 
 
 def _coverage(sources, selected, method):
     rows = []
     for source in sorted(sources, key=lambda row: row["source_id"]):
         permitted = _ranges(source)
+        unapproved, cursor = [], 0
+        for start, end in permitted:
+            if start > cursor:
+                unapproved.append([cursor, start])
+            cursor = end
+        if cursor < len(source["text"]):
+            unapproved.append([cursor, len(source["text"])])
         included = _union([(p["start"], p["end"]) for p in selected if p["source_id"] == source["source_id"]])
         omitted = []
         for start, end in permitted:
@@ -141,6 +162,9 @@ def _coverage(sources, selected, method):
             if cursor < end:
                 omitted.append([cursor, end])
         rows.append({"source_id": source["source_id"], "source_sha256": _sha(source["text"]),
+                     "source_chars": len(source["text"]),
+                     "unapproved_intervals": unapproved,
+                     "unapproved_chars": sum(b - a for a, b in unapproved),
                      "permitted_intervals": permitted, "selected_intervals": included,
                      "omitted_intervals": omitted,
                      "permitted_chars": sum(b - a for a, b in permitted),
@@ -243,11 +267,12 @@ def build_control(sources, *, method, researcher_id, source_bundle_digest,
 
 
 def load_sources(path, researcher_id, expected_file_sha256):
-    """Verify the lane02 fit-only bundle, retaining complete released records.
+    """Verify the lane02 fit-only bundle and retain exact approved source spans.
 
     Permitted attribution spans may omit separator whitespace only. Verify that
-    property before retaining whitespace, so the full raw control preserves the
-    exact released text and paragraph boundaries. Never bridge unapproved prose.
+    property for old approved_atemporal records before retaining whitespace.
+    Morning-only records retain explicit permission gaps, including third-party
+    quotations. Their coauthor caveats must remain visible in selected passages.
     """
     raw = Path(path).read_bytes()
     file_digest = hashlib.sha256(raw).hexdigest()
@@ -266,8 +291,13 @@ def load_sources(path, researcher_id, expected_file_sha256):
         if record.get("researcher_id") != researcher_id:
             continue
         provenance = record.get("provenance", {})
+        disposition = provenance.get("source_review_disposition")
+        morning = disposition == "approved_morning_petri_public_original"
+        if morning and (provenance.get("fit_scope") != "morning_petri_only"
+                        or bundle.get("protocol_version") != "morning-petri-new-source-condition-v2"):
+            raise ValueError("new source approval requires exact morning-only protocol and scope")
         if (record.get("author") != researcher_id or provenance.get("role") != "fit"
-                or provenance.get("source_review_disposition") != "approved_atemporal"):
+                or disposition not in {"approved_atemporal", "approved_morning_petri_public_original"}):
             raise ValueError("source must be attributed approved fit writing")
         text = record["text"]
         if provenance.get("text_sha256") != _sha(text):
@@ -278,16 +308,28 @@ def load_sources(path, researcher_id, expected_file_sha256):
         if any(span.get("speaker") != researcher_id for span in spans):
             raise ValueError("permitted span speaker mismatch")
         ranges = _ranges({"text": text, "permitted_spans": spans})
-        cursor = 0
-        for start, end in ranges:
-            if text[cursor:start].strip():
+        source = {"source_id": record["source_id"], "author": record["author"],
+                  "text": text, "provenance": dict(provenance, url=record.get("url"),
+                     title=record.get("title"), whitespace_separator_policy="preserved inside permitted ranges")}
+        if morning:
+            basis = provenance.get("attribution_basis")
+            authors = record.get("authors")
+            if (not isinstance(basis, str) or not basis.strip() or not isinstance(authors, list)
+                    or not authors or any(not isinstance(a, str) or not a.strip() for a in authors)):
+                raise ValueError("morning sources require explicit authors and attribution basis")
+            source["permitted_spans"] = [{"start": a, "end": b} for a, b in ranges]
+            source["attribution"] = {"authors": authors, "basis": basis,
+                                     "source_scope": provenance.get("source_scope"),
+                                     "url": record.get("url"), "title": record.get("title")}
+        else:
+            cursor = 0
+            for start, end in ranges:
+                if text[cursor:start].strip():
+                    raise ValueError("unapproved nonwhitespace source content")
+                cursor = end
+            if text[cursor:].strip():
                 raise ValueError("unapproved nonwhitespace source content")
-            cursor = end
-        if text[cursor:].strip():
-            raise ValueError("unapproved nonwhitespace source content")
-        selected.append({"source_id": record["source_id"], "author": record["author"],
-                         "text": text, "provenance": dict(provenance, url=record.get("url"),
-                            title=record.get("title"), whitespace_separator_policy="preserved exactly")})
+        selected.append(source)
     _validate(selected)
     if not selected:
         raise ValueError("no approved source records for researcher")
@@ -318,10 +360,10 @@ def main(argv=None):
                                max_utf8_bytes=args.retrieved_max_bytes if method == "retrieved" else args.raw_max_bytes,
                                max_passages=args.max_passages)
         handoff["source_bundle_path"] = str((args.out / "source-bundle.json").resolve())
-        handoff["known_limits"].append("Whole released source excerpts, not complete original web articles.")
+        handoff["known_limits"].append("Source extent and coauthorship are recorded per source; full articles and individual testimony are not assumed.")
         handoff["checks_performed"].extend(["exact bundle file digest", "canonical bundle digest",
                                              "fit-only author attribution", "original source text hashes",
-                                             "outside permitted spans is whitespace only"])
+                                             "source attribution permissions enforced"])
         handoffs.append(handoff)
     # Finish validation first; never overwrite an earlier exported condition.
     bundle_bytes = args.bundle.read_bytes()

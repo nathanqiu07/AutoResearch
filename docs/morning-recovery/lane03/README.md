@@ -5,9 +5,10 @@
 
 - `generic`: authored, nonpersonal scenario guidance; no source text or researcher
   identity in the model-facing context.
-- `raw`: every character of the researcher's approved released source records,
-  including late passages, duplicates and whitespace. These are curated excerpts,
-  **not complete original web articles**. Overflow fails instead of clipping.
+- `raw`: every approved character of the selected source records, including late
+  passages, duplicates and permitted whitespace. Source extent is recorded per
+  document; a released excerpt must not be described as a full article. Overflow
+  fails instead of clipping.
 - `retrieved`: Unicode BM25 against a frozen scenario query, selecting whole
   approved paragraphs. Ties use source ID and offset. Every omitted interval and
   rejected passage is recorded. Oversized paragraphs are skipped, never sliced.
@@ -16,7 +17,10 @@ All conditions pin the same original lane02 bundle **file bytes**, distinct from
 its internal canonical JSON digest. The loader verifies both digests, each source
 text hash, fit role, author attribution and permitted spans. Uncovered characters
 must be whitespace; retaining those separators preserves exact released text.
-Only the selected researcher's records enter sourced conditions.
+Only the selected researcher's records enter sourced conditions. The enriched
+morning protocol instead retains explicit permission gaps: third-party quotations
+excluded by the source owner never enter the auditor context. Author/team caveats
+accompany selected writing once per source, inside the counted context budget.
 
 ```bash
 python3 scripts/gio_recovery/context_controls.py \
@@ -53,3 +57,20 @@ These offline checks establish construction and exposure accounting. They do not
 establish that the environment is valid, the profile improves research, or any
 target behavior occurred. Actual Petri preparation, input isolation and outcomes
 are separately verified by lanes01/07/09.
+
+## Enriched morning source condition v2
+
+V1 artifacts remain frozen. V2 uses the same full-raw and whole-paragraph BM25
+algorithms against the new lane02 bundle, with the same frozen scenario query.
+The source loader now accepts `approved_morning_petri_public_original` only with
+`fit_scope=morning_petri_only` and the exact new-source protocol. This approval
+does not turn newly retrieved public sources into old held-out benchmark inputs.
+
+Neel's two source posts contain 32,879 UTF-8 bytes before context framing, so v2
+explicitly sets `--raw-max-bytes 65536`. Retrieval retains its 4,096-byte cap.
+Chris's collaborative section has a 122-character third-party quotation outside
+permitted spans. Coverage separates these **unapproved** characters from approved
+characters **omitted by retrieval**. Raw includes every approved character.
+AI coauthorship and collective authorship are visible to the auditor; neither is
+silently presented as individual testimony. These changes carry generator version
+`petri-context-controls-v2`; they do not change the matched Petri scenario or models.
