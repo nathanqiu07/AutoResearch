@@ -162,7 +162,8 @@ class ClampTest(unittest.TestCase):
     def test_max_tokens_is_clamped_and_defaults_stay(self):
         self.assertEqual(tp.completion_limit({"max_tokens": 100_000}, ceiling=16_384), 16_384)
         self.assertEqual(tp.completion_limit({"max_completion_tokens": 900}, ceiling=16_384), 900)
-        self.assertEqual(tp.completion_limit({}, ceiling=16_384), 4096)
+        self.assertEqual(tp.completion_limit({}, ceiling=8_000), 8_000)
+        self.assertEqual(tp.completion_limit({}, ceiling=0), tp.DEFAULT_COMPLETION_TOKENS)
 
 
 class PricesTest(unittest.TestCase):

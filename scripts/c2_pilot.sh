@@ -22,6 +22,11 @@ cd "$(dirname "$0")/.."
 REPO="$PWD"
 PY="${AUTORESEARCH_PETRI_PYTHON:-$REPO/../.petri-env/bin/python}"; export AUTORESEARCH_PETRI_PYTHON="$PY"
 MODAL="${MODAL_BIN:-$REPO/../.petri-env/bin/modal}"
+# python.org builds on macOS ship without a CA bundle, so every urllib HTTPS call (OpenAI judge and
+# generator) fails CERTIFICATE_VERIFY_FAILED. Use the system bundle unless one is already set.
+if [ "$(uname)" = Darwin ] && [ -z "${SSL_CERT_FILE:-}" ] && [ -f /etc/ssl/cert.pem ]; then
+  export SSL_CERT_FILE=/etc/ssl/cert.pem
+fi
 step="${1:-smoke}"; n="${2:-12}"; target="${TARGET:-kimi}"
 POOL_FILE="${POOL_FILE:-$HOME/.autoresearch/pool.json}"; export POOL_FILE
 T_MODEL_TINKER="${TINKER_MODEL:-moonshotai/Kimi-K2.6}"
@@ -103,6 +108,9 @@ if [ "$target" = kimi ]; then
   T_URL=http://127.0.0.1:8100/v1; T_KEY=local
   export OPENAI_COMPAT_ENDPOINTS="{\"moonshotai/\": {\"base_url\": \"$T_URL\", \"key_env\": \"TINKER_PROXY_KEY\"}}"
   export TINKER_PROXY_KEY=local
+  # K2.6 always thinks. Our probe and judge-style calls ask for ~300 tokens, which it spends thinking
+  # before any JSON; headroom adds 8000 (billed on actual tokens, not the cap).
+  export OPENAI_COMPAT_PLAIN_THINKING="${OPENAI_COMPAT_PLAIN_THINKING:-headroom}"
 else
   T_MODEL=Qwen/Qwen3-30B-A3B
   echo "deploying target (Qwen3-30B-A3B, 1xH100)..."

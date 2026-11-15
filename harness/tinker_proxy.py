@@ -46,12 +46,12 @@ TINKER_PRICES: Dict[str, Tuple[float, float]] = {
     # If it still serves, it is assumed to cost the same as K2.6 (same architecture).
     "moonshotai/Kimi-K2.5": (2.205, 5.49),
 }
-DEFAULT_COMPLETION_TOKENS = 4096
+DEFAULT_COMPLETION_TOKENS = 16384   # Petri sends no max_tokens; K2.6 can think past 4096 on an agentic turn
 DEFAULT_LEDGER = "~/.autoresearch/tinker_ledger.json"
 
 
 def completion_limit(req: dict, ceiling: int) -> int:
-    """The request's max_tokens (default 4096), clamped to ceiling when ceiling > 0."""
+    """The request's max_tokens (default DEFAULT_COMPLETION_TOKENS), clamped to ceiling when ceiling > 0."""
     asked = int(req.get("max_tokens") or req.get("max_completion_tokens") or DEFAULT_COMPLETION_TOKENS)
     return min(asked, ceiling) if ceiling > 0 else asked
 
@@ -387,7 +387,12 @@ class Backend:
             pool.settle(label, model, n_prompt, max_tokens, len(tokens))
         msg, term = renderer.parse_response(tokens)
         reasoning, content, calls = from_cookbook(msg)
-        finish = "tool_calls" if calls else ("length" if "length" in str(getattr(seq, "stop_reason", "")).lower() else "stop")
+        truncated = "length" in str(getattr(seq, "stop_reason", "")).lower() or not getattr(term, "is_clean", True)
+        if truncated and not calls and not reasoning:
+            # Cut off before </think>: the renderer returns the unfinished thought as content. It is
+            # reasoning, and there is no answer; finish "length" lets the client report that.
+            reasoning, content = content, ""
+        finish = "tool_calls" if calls else ("length" if truncated else "stop")
         out = {"role": "assistant", "content": content or None}
         if reasoning:
             out["reasoning_content"] = reasoning

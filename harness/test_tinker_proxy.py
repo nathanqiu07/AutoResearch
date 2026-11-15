@@ -124,6 +124,22 @@ class ProxyTest(unittest.TestCase):
             finally:
                 server.shutdown()
 
+    def test_reply_cut_off_mid_thinking_is_reasoning_with_finish_length(self):
+        # max_tokens ran out before </think>: the renderer calls it malformed and returns the half
+        # thought as content. Passing that on as the answer made every A2 probe "unparseable".
+        tok = self.renderer.tokenizer
+        saved = self.client.tokens
+        self.client.tokens = list(tok.encode("The user wants a probability. Let me weigh the cues", allow_special_tokens=True))
+        try:
+            code, out = self.post({"model": KIMI, "max_tokens": 12, "messages": [{"role": "user", "content": "p?"}]})
+        finally:
+            self.client.tokens = saved
+        self.assertEqual(code, 200, out)
+        choice = out["choices"][0]
+        self.assertEqual(choice["finish_reason"], "length")
+        self.assertIsNone(choice["message"]["content"])
+        self.assertIn("weigh the cues", choice["message"]["reasoning_content"])
+
     def test_unknown_model_and_cap(self):
         self.assertEqual(self.post({"model": "x", "messages": []})[0], 400)
         self.usage.cap = 1
