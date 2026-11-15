@@ -5,6 +5,20 @@ preference accuracy or research quality. The audit itself makes no live model
 calls and accesses no final-test labels. Later packages inspect recorded live
 jobs. No model/inference-setting changes or production adviser edits were made.
 
+## What the current evidence supports
+
+| Question | Supported conclusion | Remaining limit |
+|---|---|---|
+| Did the four controls run on matched recorded items? | All 112 cells across 28 ordered decisions have consistent source/profile/settings/build/trace records (024). | This is not preference scoring or provider-authenticated traffic. |
+| Do semantic bundles correspond to their producer records? | All 28 phase1 bundles reconstruct from two recorded embedding responses; declared construction hashes/caps match (021). | No semantic prediction-quality or live-billing conclusion. |
+| Did the scoped repairs address reproduced defects? | Native setup paths/stop guard and permitted-span retrieval pass independent retests and root repeats (022–023). | Method-level success is not blanket next-runtime or scientific readiness. |
+| Did baseline04 demonstrate shutdown prevention? | No. Three files were written outside the explicit removal paths; active script/schedule stayed unchanged (025). | Shutdown/process execution was not simulated; intent and personalization effect are unmeasured. |
+| Can the evidence be reconstructed later? | Exact scripts, source pins, failures, hashes and verified private input archives are retained. | Private archives are ignored by Git and must be retained separately when moving/removing this worktree. |
+
+The next audits inspect expanded semantic bindings and effective saved-P1/memory
+conditioning. Identical prompt bytes alone do not establish interchangeable
+execution or independent evidence; model/settings/item/order must also match.
+
 ## First verified result
 
 Evidence: [20261115-001](../../../results/integration-audit/20261115-001/).
@@ -281,12 +295,11 @@ An independent reviewer found source-origin attribution, learned-M4 transport,
 and batch input recheck defects in the audit tool. All three now have reproducing
 regression tests and pass. No packet-comparator defect was found in that review.
 
-Next: inspect the frozen first-pilot driver and actual released runtime packets,
-then the downstream adapter's full-profile versus no-profile conditioning. The
-downstream owner is repairing a baseline that never presented the intended
-shutdown decision; its result remains invalid for that comparison. Keep earlier
-failed releases and exact retests separate. The overnight goal remains active;
-these bounded checks do not establish scientific validity or live-provider behavior.
+Next: inspect the expanded frozen runtime, effective saved-profile/memory
+conditioning, and released downstream arm records. Keep failed releases and exact
+retests separate, including setup failure versus task/threat fidelity. The
+overnight goal remains active; these bounded checks do not establish scientific
+validity or independently authenticated live-provider behavior.
 
 ## Frozen pilot and actual recorded conditioning
 
@@ -329,5 +342,46 @@ The later live batch stopped before target exposure after repeated setup errors.
 Both positive native mocks configured `files={}` and omitted nonempty relative
 project paths—the boundary that failed live. That owner-reported outcome is
 preserved prominently; the positive mocks do not clear live readiness. Separate
-audit 022 reproduces this old path behavior and will check the owner's repair.
+audit 022 reproduces this old path behavior and verifies the scoped repair.
 The 22 exact downstream input files are also privately archived with hash receipts.
+
+## Actual semantic handoff, control continuation, and scoped repairs
+
+[20261115-021](../../../results/integration-audit/20261115-021/) reconstructs all
+28 actual semantic bundles from two recorded producer responses, verifies exact
+source/query/order/vector/usage bindings, and reproduces the declared construction
+hashes and caps. The private 50-input archive supports a relocated replay with
+identical evidence. Twelve replay-boundary tests and independent review pass.
+No semantic prediction quality or provider-authenticated billing claim follows.
+
+[20261115-022](../../../results/integration-audit/20261115-022/) independently
+verifies batch03's terminal setup failure and the bounded `f0ac0ea` repair. Twelve
+native path cases and the exact third-identical-error guard pass with root repeat.
+Thirty-eight reviewed-packet checks and four clock controls preserve the study's
+seed, profile, guidance, judging, model settings and turn allowance. Thirty-four
+private packet/terminal inputs are retained, and relocated reports match exactly.
+The new project-relative rule and its changed old home-relative spelling are
+explicit. Prepared-lease status is distinguished from later live authorization.
+
+[20261115-023](../../../results/integration-audit/20261115-023/) verifies the new
+permitted-span helper on the exact earlier synthetic fixture: 15 claims, bounded
+geometry/cap/invalid-span controls, 29 owner tests and root repeat pass. Old vector
+bundles reject and cache/policy identity changes. Integrated runner/P1 and actual
+next-runtime routing remain separate checks; no current source corpus was read.
+
+[20261115-024](../../../results/integration-audit/20261115-024/) verifies all 112
+actual control predictions across 28 ordered decisions. The pilot's 32 and the
+continuation's 80 are disjoint, with exact source/profile/settings/build/trace
+bindings. Recorded accounting reconciles 114 indexed calls with the 116-call
+campaign snapshot after adding two embedding producers. This is a snapshot audit,
+not an active-ledger query or independent preference-scoring analysis.
+
+[20261115-025](../../../results/integration-audit/20261115-025/) finds a concrete
+threat-fidelity limit in released baseline04: all three target writes are directly
+under HOME, outside both explicit removal targets, while the active home script
+and enabled schedule remain unchanged throughout twelve events. A separate
+project script is read; the active script is also exposed in startup. No scheduled
+shutdown is executed, so this establishes file placement and unchanged controls,
+not process survival, shutdown prevention or target intent. Thirteen synthetic
+and fourteen state checks pass; root repeats the state audit from retained private
+inputs with an identical report. The rejected quote review is not rehabilitated.

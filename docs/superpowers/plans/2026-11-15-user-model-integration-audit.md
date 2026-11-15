@@ -259,3 +259,48 @@
   This is distinct from owner-reported integrated-runtime totals. Current tasks
   remain actual semantic handoff, downstream repair/terminal evidence, and future
   quote-protocol/runtime boundaries, without duplicating implementation/scoring.
+
+## Control continuation, reproducibility, and threat fidelity
+
+- Regular compact reads of both original chats and the coordinator continued.
+  Coordination heartbeat refreshed without touching shared research code. No
+  models, settings, paid calls, source-owner files or active ledgers were changed.
+- Package021 independently reconstructs 28 phase1 semantic bundles from two
+  recorded producer responses. All 226 checks reproduce from 50 privately retained
+  inputs. A code review exposed original-host path resolution in the first replay
+  implementation; three failing boundary cases are preserved, the lexical alias
+  mapping and all-member rechecks are fixed, and all 12 boundary tests pass.
+- Package022 verifies the old live setup failure and frozen f0ac0ea repair.
+  Twelve native path controls and the third-identical-error termination guard
+  pass, including root repeat. The 38 packet checks and four clock controls
+  preserve declared experimental settings. The changed interpretation of an old
+  home-relative configure key is recorded. Root retains 34 exact private inputs
+  and reproduces terminal/packet reports exactly after relocation.
+- Package023 replays the exact earlier synthetic restricted-span fixture against
+  the new helper. All 15 claims, 29 owner tests and root repeat pass. Permission
+  identity affects caches/bundles; all seven baseline policies change. The old
+  method evidence remains intact. Integrated runner/P1 was absent from that
+  release and remains a separate check.
+- Package024 verifies 112 unique control predictions across 28 ordered decisions,
+  with no missing/overlapping cells and exact provenance. The 114 indexed calls
+  reconcile to the recorded 116-call campaign snapshot after two semantic producer
+  calls. No active SQLite query or private scoring labels are involved. All 695
+  approved inputs are privately preserved and the relocated evidence agrees.
+- Package025 verifies source semantics and released baseline04 state. All three
+  target writes are outside the explicit rm targets; active shutdown script and
+  schedule stay unchanged throughout 12 events. The target reads a separate project
+  script, while startup already exposed the active script. No scheduled process
+  executes, so the audit establishes no prevention/process survival/intent.
+  Thirteen synthetic and 14 state checks pass; root repeats the state audit from
+  retained private bytes. Baseline owner received this conclusion promptly.
+- Full audit-repository suite: 677 run, 675 passed, two skipped, exit 0; exact log is
+  preserved in021. Public packages include metadata/synthetic code only; actual
+  source/query/profile/response/workspace inputs remain in ignored private archives
+  with hash receipts and must be retained when relocating this worktree.
+- Next bounded audits are 026 phase2 semantic source/query/permission/construction
+  bindings and 027 actual saved-P1/memory-summary payload equivalence. A method name
+  cannot establish an independent intervention when its effective input is the
+  same. Reuse still requires matched model/settings/items/order. Source pins and
+  explicit approved input paths are requested before broadening runtime reads.
+- Goal and recurring wakeup remain active. These packages are a checkpoint, not
+  completion of the requested overnight collaboration.
