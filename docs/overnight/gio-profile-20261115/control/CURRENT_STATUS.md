@@ -1,3 +1,11 @@
+# Active checkpoint — 2026-11-15T14:25:57.490159+00:00
+
+Remaining56 is LIVE:54fixed jobs,3043call/$7.01ceilings,56.11grossreserved within58referenceallocation.1836planned cells include40prioraliases and254unavailable; firsttwo serial thenmax2, firstnewunknownstop/drain,16:29UTCadmissioncutoff and17:00UTCdeadline. Oldsevenreferenceunknowns stayreserved.
+
+Own-versus-swapped exploratorystudy COMPLETED28knowncalls/$0.005598,0holds, two completejobs. Exacttarget/donor provenance and diagnostics passed reviewedterminalverification6ecd1069.04scores the28newrows against targetcustody and reuses56savedown/genericaliases. Its1USDallocation remainsreserved; old80scalingledgerstill306known/$3.883810.98P7/P3predictions from7validprofiles are in boundedcontrolpreparation,112planned/14missing (Neel/AstraP3 is5bytes overfrozencap).
+
+PrimaryA/C reportpublished04ee1964c:14/14newNeel/Solcorrect, no accuracygain overmatchedsavedprofile/generic,70/84newdescendantunavailable due3mechanicalcapfailures. OfflineP8exporter complete downstream6695382f; newlocksclosed20773b2, paidlaneclosed, liveintegration/utility unproved. Finaltest unauthorized.
+
 # Latest completed queues — 2026-11-15T14:11:55.004488+00:00
 
 First8 v4 completed all8packets with364known wrapper attempts/$0.046002375 and zero new unknowns. All228planned cells remain:194attemptable,34predeclaredunavailable949/634hybrid cells. Role10 owns fixed user-macro/coverage analysis and the same frozen remaining56 preparation.49.10gross reference reserves and7historical unknowns remain.
