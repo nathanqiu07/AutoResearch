@@ -25,12 +25,11 @@ _spec.loader.exec_module(v4)
 v2 = v4.v2
 # pairs_v2's call wrapper resolves cache/ and calls.log through v2.HERE at call time: point it here.
 v2.HERE = HERE
-# Whole experiment: 2,500 sonnet minus the informal agent's 120. pairs_v2 counts every started call; calls the
-# CLI refused at the account's usage limit never reached a model, so they do not count against the cap.
-REFUSED = sum(1 for r in v2.read_jsonl(os.path.join(HERE, "calls.log"))
-              if r.get("status") == "error" and "hit your" in str(r.get("out")))
-v2.CAPS = {"sonnet": 2380 + REFUSED, "haiku": 1500}
-v2.WORKERS = 4
+# PROTOCOL.md "Amendment: budget": at most 700 sonnet and 600 haiku for the rest of the run, on top of the
+# 1,065 sonnet calls calls.log had started by then (589 answered, 476 refused at the account's usage limit).
+SPENT_BEFORE_AMENDMENT = {"sonnet": 1065, "haiku": 0}
+v2.CAPS = {"sonnet": SPENT_BEFORE_AMENDMENT["sonnet"] + 700, "haiku": 600}
+v2.WORKERS = 2  # the plan is shared (e2_climb runs up to 3 concurrent)
 call, read_jsonl, write_jsonl, one_line = v2.call, v2.read_jsonl, v2.write_jsonl, v4.one_line
 batches, item_block, firewall, form_rules = v4.batches, v4.item_block, v4.firewall, v4.form_rules
 
