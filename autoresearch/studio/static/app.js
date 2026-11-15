@@ -87,12 +87,13 @@ async function viewHome(seq) {
     <section class="hero">
       <div class="hero-doodles" aria-hidden="true">
         ${[["lightbulb", "ochre", 78, 4, 6, 70], ["flask", "sage", 74, 26, -8, 64], ["book", "sky", 86, 54, 5, 66],
-           ["telescope", "clay", 64, 70, -4, 70], ["sparkle", "ochre", 93, 20, 12, 40], ["coffee", "rose", 70, 46, 7, 52],
+           ["telescope", "clay", 70, 66, -4, 70], ["sparkle", "ochre", 93, 20, 12, 40], ["coffee", "rose", 70, 46, 7, 52],
            ["pencil", "clay", 96, 74, -14, 50]].map(([n, c, x, y, t, sz], i) =>
           `<span class="par" style="left:${x}%;top:${y}%;--d:${(0.4 + (i % 3) * 0.35).toFixed(2)}"><span class="bob pop" style="--i:${i + 2}">
             <button type="button" class="hero-doodle wobble" aria-label="${n} doodle">${doodle(n, { color: c, tilt: t, size: sz })}</button></span></span>`).join("")}
       </div>
       <h1 class="rise" style="--i:1">Whose research <span class="scribble">taste<svg viewBox="0 0 200 20" preserveAspectRatio="none"><path d="M4 12 C40 4 80 18 120 9 C150 3 175 12 196 7"/></svg></span> should the loop follow?</h1>
+      <div class="robot-wrap rise" style="--i:2">${robotScene()}</div>
     </section>
     <section class="mode-cards">
       <a class="choice rise" style="--i:3;--r:-1.1deg" href="#/new/personal" data-key="a">
@@ -112,6 +113,7 @@ async function viewHome(seq) {
       ${profiles.length ? `<div class="cards-grid">${cards}</div>`
         : `<div class="empty">${doodle("seedling", { size: 64, color: "sage" })}<span class="hand">Nothing here yet. Start with A or B.</span></div>`}
     </section>`;
+  startRobot(app);
   // doodles drift a little with the cursor (deeper ones more), and burst when clicked
   const heroEl = app.querySelector(".hero");
   heroEl.addEventListener("pointermove", e => {

@@ -56,3 +56,125 @@ function doodle(name, opts = {}) {
     `<path class="doodle-blob" d="${blob}" transform="translate(${(h % 7) - 3} ${(h % 5) - 1})"/>` +
     `<g class="doodle-ink" filter="url(#rough)">${ink}</g></svg></span>`;
 }
+
+/* A little robot climbing a hill, in the same rough-ink style. robotScene() draws it;
+   startRobot(root) animates it with a simple walking model driven by distance travelled:
+   the gait phase advances with the ground covered, so planted feet don't slide; the stance leg
+   stays straight and sets the hip height (the body dips at full stride and rises at mid-stance);
+   the swing leg bends its knee; arms swing against the legs; the robot leans into the slope and
+   slows where it is steep. At the summit it stops, cheers, plants the flag, then the loop restarts.
+   With reduced motion it is drawn once, standing at the summit with the flag. */
+const ROBOT_HILL = "M0 150 C80 148 110 134 170 112 C240 86 300 50 380 36 C440 26 500 28 560 64 C600 88 620 120 640 150";
+const ROBOT_CLIMB = "M14 149.4 C80 148 110 134 170 112 C240 86 300 50 380 36 C410 31 432 30 452 30.5";   // the hill line to the summit
+
+function robotScene() {
+  const ink = `fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"`;
+  const leg = (cls, op) => `<g class="${cls}" opacity="${op}"><path d="M0 0 L0 7.5" ${ink}/>
+      <g class="shin"><path d="M0 0 L0 7.5 L3 7.5" ${ink}/></g></g>`;
+  return `<svg class="robot-scene" viewBox="0 -60 640 220" role="img" aria-label="A little robot climbing a hill">
+    <path class="climb" d="${ROBOT_CLIMB}" fill="none" stroke="none"/>
+    <g filter="url(#rough)">
+      <path d="M0 150 L640 150" ${ink} opacity=".5"/>
+      <path class="hill" d="${ROBOT_HILL} Z" fill="var(--sage-soft)" stroke="none"/>
+      <path class="hill-line" d="${ROBOT_HILL}" ${ink}/>
+      <path d="M118 140 l4 -8 M124 140 l1 -9 M130 140 l-3 -7" ${ink} stroke-width="1.6"/>
+      <path d="M520 58 l3 -7 M526 60 l0 -8 M532 63 l-3 -7" ${ink} stroke-width="1.6"/>
+      <path d="M590 32 c-6 0 -10 -6 -6 -10 c0 -8 12 -10 15 -4 c6 -4 14 2 10 8 c4 2 2 7 -3 6 z" ${ink} stroke-width="1.6" opacity=".55"/>
+    </g>
+    <g class="flag" opacity="0" filter="url(#rough)">
+      <path d="M484 33 L484 -26" ${ink}/>
+      <path d="M484 -25 L514 -16 L484 -7 Z" fill="var(--clay)" stroke="var(--ink)" stroke-width="2" stroke-linejoin="round"/>
+    </g>
+    <g class="sparks" opacity="0" filter="url(#rough)" ${ink} stroke-width="1.8">
+      <path d="M470 -40 l0 -9 M465.5 -44.5 l9 0"/><path d="M524 -34 l0 -8 M520 -38 l8 0"/><path d="M526 -6 l7 -3"/><path d="M424 -30 l-7 -4"/><path d="M430 -8 l-7 1"/>
+    </g>
+    <g class="robot" opacity="0"><g transform="scale(1.4)"><g filter="url(#rough)">
+      <g class="hip-far">${leg("leg-far", ".45")}</g>
+      <g class="torso">
+        <g class="arm-far" opacity=".45"><path d="M0 0 L0 8" ${ink}/></g>
+        <rect x="-8" y="-19" width="16" height="19" rx="4" fill="var(--clay-soft)" stroke="var(--ink)" stroke-width="2.2"/>
+        <path d="M-3 -12 L3 -12 M-3 -8 L1 -8" ${ink} stroke-width="1.5"/>
+        <rect x="-7" y="-33" width="16" height="13" rx="3" fill="var(--card)" stroke="var(--ink)" stroke-width="2.2"/>
+        <circle class="eye" cx="5" cy="-27" r="1.8" fill="var(--ink)"/>
+        <path d="M8.5 -24 L10.5 -24" ${ink} stroke-width="1.6"/>
+        <path d="M0 -33 L-1.5 -39" ${ink}/>
+        <circle cx="-2" cy="-41" r="2.4" fill="var(--ochre)" stroke="var(--ink)" stroke-width="1.6"/>
+        <g class="arm-near"><path d="M0 0 L0 8" ${ink}/><circle cx="0" cy="9.2" r="1.3" fill="var(--ink)"/></g>
+      </g>
+      <g class="hip-near">${leg("leg-near", "1")}</g>
+    </g></g></g>
+  </svg>`;
+}
+
+function startRobot(root) {
+  const svg = root.querySelector(".robot-scene");
+  if (!svg) return;
+  const $ = sel => svg.querySelector(sel);
+  const path = $(".climb"), robot = $(".robot"), torso = $(".torso"), flag = $(".flag"), sparks = $(".sparks");
+  const near = { hip: $(".hip-near"), shin: $(".leg-near .shin") }, far = { hip: $(".hip-far"), shin: $(".leg-far .shin") };
+  const armNear = $(".arm-near"), armFar = $(".arm-far"), eye = $(".eye");
+  const L = path.getTotalLength();
+  const SCALE = 1.4, THIGH = 7.5, SHIN = 7.5, LEG = THIGH + SHIN;   // robot units; the origin is at the feet, hips one leg up
+  const SWING = 0.5;                                    // hip swing amplitude (rad)
+  const STRIDE = 2 * LEG * Math.sin(SWING) * SCALE;      // ground covered per step, so stance feet don't slip
+  const SPEED = 38;                                      // path units per second on the flat
+  const deg = r => (r * 180) / Math.PI;
+  const at = s => { const p = path.getPointAtLength(Math.max(0, Math.min(L, s))); return [p.x, p.y]; };
+
+  function pose(s, { cheer = 0, hop = 0, walking = true } = {}) {
+    const [x, y] = at(s), [x2, y2] = at(s + 2), [x0, y0] = at(s - 2);
+    const ang = Math.atan2(y2 - y0, x2 - x0);             // the ground's tilt here
+    const slope = Math.max(0, -Math.sin(ang));
+    const phi = walking ? (Math.PI * s) / STRIDE : 0;
+    // near leg: hip angle (+ = forward); far leg is half a cycle behind
+    const hipN = SWING * Math.sin(phi), hipF = -hipN;
+    const swingN = Math.cos(phi) > 0, kneeN = walking ? 1.1 * Math.max(0, Math.cos(phi)) : 0, kneeF = walking ? 1.1 * Math.max(0, -Math.cos(phi)) : 0;
+    const stance = swingN ? hipF : hipN;                  // the straight leg carries the body
+    const drop = LEG * (1 - Math.cos(stance));            // body lower at full stride
+    const lean = walking ? 6 + 22 * slope : 0;
+    const legT = (leg, h, k) => {
+      leg.hip.setAttribute("transform", `translate(0 ${-LEG + drop - hop}) rotate(${-deg(h)})`);
+      leg.shin.setAttribute("transform", `translate(0 ${THIGH}) rotate(${deg(k)})`);
+    };
+    legT(near, hipN, kneeN); legT(far, hipF, kneeF);
+    torso.setAttribute("transform", `translate(0 ${-LEG + drop - hop}) rotate(${lean})`);
+    const armSwing = deg(0.7 * hipF), up = cheer * 150;
+    armNear.setAttribute("transform", `translate(0 -16) rotate(${-armSwing - up})`);
+    armFar.setAttribute("transform", `translate(0 -16) rotate(${armSwing - up})`);
+    robot.setAttribute("transform", `translate(${x} ${y}) rotate(${deg(ang) * 0.5})`);   // stays fairly upright; the lean does the rest
+    return slope;
+  }
+
+  if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    robot.setAttribute("opacity", 1); flag.setAttribute("opacity", 1); pose(L, { cheer: 1, walking: false }); return;
+  }
+  let s = 0, t0 = null, last = null, phase = "walk", phaseStart = 0;
+  function frame(now) {
+    if (!svg.isConnected) return;                         // the page changed: stop
+    if (last === null) { last = now; t0 = now; }
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const t = (now - t0) / 1000;
+    eye.setAttribute("transform", (t % 3.7) < 0.12 ? "translate(0 -27) scale(1 .15) translate(0 27)" : "");
+    if (phase === "walk") {
+      robot.setAttribute("opacity", Math.min(1, t * 3));
+      const ramp = Math.min(1, t / 0.6, (L - s) / 18 + 0.15);   // ease in at the start, slow into the summit
+      const slope = pose(s);
+      s = Math.min(L, s + SPEED * ramp * (1 - 0.55 * slope) * dt);
+      if (s >= L) { phase = "cheer"; phaseStart = t; }
+    } else if (phase === "cheer") {
+      const u = t - phaseStart;
+      const cheer = Math.min(1, u / 0.35), hop = u < 1.2 ? 3 * Math.abs(Math.sin(u * Math.PI * 2.5)) : 0;
+      pose(L, { cheer, hop, walking: false });
+      flag.setAttribute("opacity", Math.min(1, Math.max(0, (u - 0.2) * 4)));
+      sparks.setAttribute("opacity", u < 1.4 ? Math.max(0, Math.sin(u * Math.PI / 1.4)) : 0);
+      if (u > 3.2) { phase = "fade"; phaseStart = t; }
+    } else {
+      const u = t - phaseStart, o = Math.max(0, 1 - u / 0.6);
+      robot.setAttribute("opacity", o); flag.setAttribute("opacity", o);
+      if (u > 1) { s = 0; t0 = now; phase = "walk"; flag.setAttribute("opacity", 0); }
+    }
+    requestAnimationFrame(frame);
+  }
+  pose(0);
+  requestAnimationFrame(frame);
+}
