@@ -624,3 +624,63 @@ class FirstEightAdmissionTests(unittest.TestCase):
                 backend.complete('different new request',max_tokens=2048)
         self.assertEqual(transport.call_count,0)
         self.assertEqual(backend.guard_denials[0]['request_sha256'],wire)
+
+
+class RemainingAdmissionTests(unittest.TestCase):
+    def setUp(self):
+        fixture=FirstEightAdmissionTests();fixture.setUp();self.addCleanup(fixture.doCleanups)
+        self.mod,self.root=fixture.mod,fixture.root
+        records=[r for r in fixture.records if r.choice.user_id=='prism:user949']
+        raw=self.root/'remaining-source.jsonl';raw.write_text(''.join(json.dumps(asdict(r))+'\n' for r in records))
+        manifest=self.root/'remaining-manifest.json';manifest.write_text(json.dumps(build_manifest(records,0)))
+        self.source=self.root/'remaining-baseline';self.prior=self.mod.prepare(raw,manifest,self.source,n_users=1)
+        (self.source/'cache').mkdir();(self.source/'cache'/('a'*64+'.json')).write_text('{"known":true}')
+        (self.source/'output').mkdir();report=self.source/'output/report.json';report.write_text('{"user_ids":["prism:user949"]}')
+        completion=self.source/'completion.json';completion.write_text(json.dumps({'report_sha256':self.mod.file_sha(report),'budgets':[{'reserved_usd':.001}]}))
+        terminal=self.root/'closed-terminal.json';terminal.write_text(json.dumps({'completion_sha256':self.mod.file_sha(completion),'report_sha256':self.mod.file_sha(report)}))
+        def ref(path):return {'path':str(path),'sha256':self.mod.file_sha(path)}
+        self.ref=ref
+        cohort=self.root/'remaining-cohort.json';cohort.write_text(json.dumps({'rows':[{'user_id':'prism:user949','canonical_position_1based':9},{'user_id':'prism:user666','canonical_position_1based':10}]}))
+        denied=self.root/'remaining-deny.json';denied.write_text(json.dumps({'schema_version':'provider-unknown-wire-denylist-v2','identity_denylists':{'body_compact_json_sha256':['1'*64],'endpoint_body_sorted_json_sha256':['2'*64]}}))
+        self.row={'user_id':'prism:user949','state':'frozen_new_work','canonical_position_1based':9,'baseline_plan':ref(self.prior),'baseline_report':ref(report),'baseline_completion':ref(completion),'baseline_terminal':ref(terminal),'baseline_cache':self.mod.cache_hashes(self.source/'cache'),'unavailable_methods':{'m5':'missing component cache','m6':'missing component cache','m7':self.mod.M7_UNAVAILABLE},'cached_component_replay':None,'planned_cells':4,'source_hold_usd':.001,'limits':{'max_usd':.08,'max_calls':30,'max_seconds':1800}}
+        self.policy={'cohort':ref(cohort),'typed_denylist':ref(denied),'additional_consumed_or_withheld_endpoint_hashes':['3'*64],'methods':self.mod.SUCCESSOR_METHODS,'method_config':self.mod.CONFIG,'rows':[self.row,{'user_id':'prism:user666','state':'completed_alias','canonical_position_1based':10}]}
+        self.path=self.root/'remaining-policy.json';self.path.write_text(json.dumps(self.policy))
+    def prepare(self,user='prism:user949'):
+        self.assertTrue(callable(getattr(self.mod,'prepare_remaining',None)),'remaining preparation is not implemented')
+        with patch.object(self.mod,'REMAINING_POLICY_SHA',self.mod.file_sha(self.path),create=True):
+            return self.mod.prepare_remaining(self.path,user,self.root/'remaining-packet')
+    def lease(self,path):
+        p=json.loads(path.read_text());claims=self.root/'remaining-claims';claims.mkdir(exist_ok=True)
+        lp=self.root/'remaining-lease.json';lp.write_text(json.dumps({'job_id':'synthetic-remaining','role':'10','state':'authorized','provider':'openai','model':'gpt-6-luna','final_authorized':False,'user_partition':'dev','methods':p['methods'],'protocol':p['protocol'],'plan_sha256':self.mod.file_sha(path),'claim_path':str(claims/'job.json'),'deadline':self.mod.DEADLINE,**p['limits']}));return lp
+    def test_exact_single_user_source_and_held_parent_are_preserved(self):
+        path=self.prepare()
+        with patch.object(self.mod,'REMAINING_POLICY_SHA',self.mod.file_sha(self.path),create=True):
+            plan,lease,records,deadline=self.mod.validate_execution(path,self.lease(path),now=1)
+        self.assertEqual(plan['n_predictions'],4);self.assertEqual(len(records),3)
+        self.assertEqual(json.loads((path.parent/'prior-completion.json').read_text())['budgets'][0]['reserved_usd'],.001)
+    def test_completed_alias_cannot_be_prepared_for_new_dispatch(self):
+        with self.assertRaisesRegex(ValueError,'alias'):self.prepare('prism:user666')
+        self.assertFalse((self.root/'remaining-packet').exists())
+    def test_unlisted_user_is_not_admitted(self):
+        with self.assertRaisesRegex(ValueError,'cohort|user'):self.prepare('prism:user123456')
+    def test_changed_source_cache_is_rejected_before_packet_creation(self):
+        (self.source/'cache'/('a'*64+'.json')).write_text('{"changed":true}')
+        with self.assertRaisesRegex(ValueError,'cache'):self.prepare()
+        self.assertFalse((self.root/'remaining-packet').exists())
+    def test_missing_declared_component_fit_cannot_reach_network(self):
+        self.row['unavailable_methods']={'m7':self.mod.M7_UNAVAILABLE};self.row['cached_component_replay']={'api_calls':0};self.path.write_text(json.dumps(self.policy))
+        with patch.object(self.mod.OpenAILLM,'complete',side_effect=AssertionError('no network')):
+            with self.assertRaisesRegex(RuntimeError,'component.*cache'):self.prepare()
+        self.assertFalse((self.root/'remaining-packet').exists())
+    def test_resigned_plan_cannot_enable_unavailable_hybrid(self):
+        path=self.prepare();plan=json.loads(path.read_text());plan['unavailable_methods'].pop('m5');path.write_text(json.dumps(plan))
+        with patch.object(self.mod,'REMAINING_POLICY_SHA',self.mod.file_sha(self.path),create=True),self.assertRaisesRegex(ValueError,'contract|unavailable'):
+            self.mod.validate_execution(path,self.lease(path),now=1)
+    def test_new_protocol_consumes_invalid_m4_request_and_retains_all_cells(self):
+        path=self.prepare()
+        with patch.object(self.mod,'REMAINING_POLICY_SHA',self.mod.file_sha(self.path),create=True),patch.dict(os.environ,{'OPENAI_API_KEY':'unit-test-only'}),patch.object(self.mod.OpenAILLM,'complete',return_value='invalid json') as transport:
+            self.mod.execute(path,self.lease(path))
+        self.assertEqual(transport.call_count,1)
+        rows=[json.loads(x) for x in (path.parent/'output/predictions.jsonl').read_text().splitlines()]
+        self.assertEqual(len(rows),4);self.assertTrue(all(x['prediction'] is None for x in rows))
+        self.assertIn('already consumed',next(x for x in rows if x['method']=='m4_matched5')['error'])

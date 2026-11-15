@@ -48,6 +48,8 @@ FORBIDDEN_WIRE_HASH = "970b0250ee8dabc2697b1f9238e9af8fc6b97529d448c40db1cefd9cb
 M7_UNAVAILABLE = "One validation conversation group; zero calibration rows; no calibrated treatment."
 HISTORY_POLICIES = {"m4_full": "all", "m4_matched5": "selected_five",
                     "m5": "selected_five", "m6": "selected_five"}
+REMAINING_PROTOCOL = "remaining56-v1"
+REMAINING_POLICY_SHA = "9baf4eded265ba814ca75fbe330ef07a006644fd98e4d234b203ea2fd8f16c65"
 FIRST8_PROTOCOL = "original-first8-v1"
 FIRST8_PROPOSAL_SHA = "d251373fe3da7e25ad44e590b2ff518d8ab72c193647d0181c0ab77f7c989d16"
 FIRST8_USERS = ["prism:user949", "prism:user903", "prism:user347", "prism:user681",
@@ -404,6 +406,137 @@ def prepare_first8(proposal_path, user_id, destination, recovery_terminal=None):
     return destination / "plan.json"
 
 
+def remaining_row(policy, cohort, user):
+    if (policy["methods"] != SUCCESSOR_METHODS or policy["method_config"] != CONFIG or
+            [(r["user_id"], r["canonical_position_1based"]) for r in policy["rows"]] !=
+            [(r["user_id"], r["canonical_position_1based"]) for r in cohort["rows"]]):
+        raise ValueError("remaining cohort or method contract differs")
+    rows = [r for r in policy["rows"] if r["user_id"] == user]
+    if len(rows) != 1:
+        raise ValueError("user is outside the frozen remaining cohort")
+    row, = rows
+    if row["state"] == "completed_alias":
+        raise ValueError("completed cells are aliases; new dispatch is forbidden")
+    if row["state"] != "frozen_new_work":
+        raise ValueError("unexpected remaining cohort state")
+    return row
+
+
+def load_remaining_policy(path, user):
+    if file_sha(path) != REMAINING_POLICY_SHA:
+        raise ValueError("remaining policy is not the frozen policy")
+    policy = json.loads(Path(path).read_text())
+    return policy, remaining_row(policy, read_ref(policy["cohort"]), user)
+
+
+def prepare_remaining(policy_path, user_id, destination):
+    policy_path, destination = Path(policy_path), Path(destination)
+    policy, row = load_remaining_policy(policy_path, user_id)
+    if destination.exists():
+        raise FileExistsError("private snapshot already exists")
+    if ROOT == destination.resolve() or ROOT in destination.resolve().parents:
+        raise ValueError("private snapshot must be outside the repository")
+    prior = read_ref(row["baseline_plan"])
+    source = Path(row["baseline_plan"]["path"]).parent
+    report, completion, terminal = (read_ref(row["baseline_" + name]) for name in ("report", "completion", "terminal"))
+    if (prior["user_ids"] != [user_id] or prior["methods"] != METHODS or prior["method_config"] != CONFIG or
+            prior["user_partition"] != "dev" or prior["final"] is not False or prior["seed"] != 0 or
+            completion["report_sha256"] != row["baseline_report"]["sha256"] or
+            terminal["completion_sha256"] != row["baseline_completion"]["sha256"] or
+            terminal["report_sha256"] != row["baseline_report"]["sha256"]):
+        raise ValueError("remaining baseline lineage differs")
+    for name, expected in prior["snapshots"].items():
+        if name not in ("records.jsonl", "manifest.json") or file_sha(source / name) != expected:
+            raise ValueError("remaining baseline input differs")
+    for name, expected in prior["runtime"]["files"].items():
+        if name.startswith("autoresearch/") and file_sha(ROOT / name) != expected:
+            raise ValueError("scientific method implementation differs from baseline")
+    records = load_records(source / "records.jsonl")
+    manifest = json.loads((source / "manifest.json").read_text())
+    if (any(r.user_split != "dev" for r in records) or build_manifest(records, 0) != manifest or
+            set(manifest["users"]) != {user_id} or 4 * len(manifest["users"][user_id]["test"]) != row["planned_cells"]):
+        raise ValueError("remaining source is not the exact development user")
+    verify_cache(source / "cache", row["baseline_cache"])
+    replay = None
+    if "m5" not in row["unavailable_methods"]:
+        with tempfile.TemporaryDirectory(prefix="remaining-fit-replay-") as tmp:
+            for name in row["baseline_cache"]:
+                copy_private(source / "cache" / name, Path(tmp) / name)
+            replay = replay_cached_components(records, manifest, tmp)
+            verify_cache(tmp, row["baseline_cache"])
+    if replay != row["cached_component_replay"]:
+        raise ValueError("remaining cache-only fit proof differs")
+    denied = read_ref(policy["typed_denylist"])
+    destination.mkdir(parents=True, mode=0o700)
+    os.chmod(destination, 0o700)
+    for name in ("records.jsonl", "manifest.json"):
+        copy_private(source / name, destination / name)
+    for name in ("plan", "report", "completion", "terminal"):
+        copy_private(row["baseline_" + name]["path"], destination / ("prior-" + name + ".json"))
+    copy_private(policy_path, destination / "approved-policy.json")
+    copy_private(policy["cohort"]["path"], destination / "approved-cohort.json")
+    copy_private(policy["typed_denylist"]["path"], destination / "typed-denylist.json")
+    write_private(destination / "initial-cache-manifest.json", row["baseline_cache"])
+    (destination / "cache").mkdir(mode=0o700)
+    for name in row["baseline_cache"]:
+        copy_private(source / "cache" / name, destination / "cache" / name)
+    verify_cache(destination / "cache", row["baseline_cache"])
+    plan = dict(prior, protocol=REMAINING_PROTOCOL, methods=SUCCESSOR_METHODS,
+                limits=row["limits"], runtime=runtime_identity(), policy_sha256=REMAINING_POLICY_SHA,
+                initial_cache=row["baseline_cache"], unavailable_methods=row["unavailable_methods"],
+                history_policies=HISTORY_POLICIES, component_fit_policy="cache_only", cached_component_replay=replay,
+                identity_denylists=denied["identity_denylists"],
+                forbidden_wire_hashes=sorted(set(denied["identity_denylists"]["endpoint_body_sorted_json_sha256"]) |
+                                             set(policy["additional_consumed_or_withheld_endpoint_hashes"])),
+                worst_case_backend_calls=row["limits"]["max_calls"], source_hold_usd=row["source_hold_usd"],
+                snapshots={p.name: file_sha(p) for p in destination.iterdir() if p.is_file()},
+                interpretation="Fixed remaining cohort; completed cells are separate aliases; unavailable cells remain planned.")
+    write_private(destination / "plan.json", plan)
+    return destination / "plan.json"
+
+
+def validate_remaining(plan_path, plan, records, manifest):
+    folder = plan_path.parent
+    if plan["snapshots"]["approved-policy.json"] != REMAINING_POLICY_SHA:
+        raise ValueError("remaining frozen policy differs")
+    policy = json.loads((folder / "approved-policy.json").read_text())
+    cohort = json.loads((folder / "approved-cohort.json").read_text())
+    user, = plan["user_ids"]
+    row = remaining_row(policy, cohort, user)
+    if (plan["snapshots"]["approved-cohort.json"] != policy["cohort"]["sha256"] or
+            plan.get("policy_sha256") != REMAINING_POLICY_SHA or plan.get("history_policies") != HISTORY_POLICIES or
+            plan.get("unavailable_methods") != row["unavailable_methods"] or plan.get("component_fit_policy") != "cache_only" or
+            plan.get("cached_component_replay") != row["cached_component_replay"]):
+        raise ValueError("remaining safety contract or unavailable methods differ")
+    for name in ("plan", "report", "completion", "terminal"):
+        if plan["snapshots"]["prior-" + name + ".json"] != row["baseline_" + name]["sha256"]:
+            raise ValueError("remaining prior source lineage differs")
+    prior = json.loads((folder / "prior-plan.json").read_text())
+    if any(plan["snapshots"][name] != prior["snapshots"][name] for name in ("records.jsonl", "manifest.json")):
+        raise ValueError("remaining inputs differ from frozen baseline")
+    for key in ("source_sha256", "parent_manifest_sha256", "parent_manifest_id", "counts", "n_records", "n_predictions"):
+        if plan[key] != prior[key]:
+            raise ValueError("remaining canonical lineage or denominator differs")
+    if plan["n_predictions"] != row["planned_cells"] or plan["n_predictions"] != 4 * len(manifest["users"][user]["test"]):
+        raise ValueError("remaining planned denominator differs")
+    hashes = json.loads((folder / "initial-cache-manifest.json").read_text())
+    if hashes != row["baseline_cache"] or hashes != plan["initial_cache"]:
+        raise ValueError("remaining imported cache differs from frozen policy")
+    verify_cache(folder / "cache", hashes)
+    denied = json.loads((folder / "typed-denylist.json").read_text())
+    if (plan["snapshots"]["typed-denylist.json"] != policy["typed_denylist"]["sha256"] or
+            plan["identity_denylists"] != denied["identity_denylists"] or
+            plan["forbidden_wire_hashes"] != sorted(set(denied["identity_denylists"]["endpoint_body_sorted_json_sha256"]) |
+                                                   set(policy["additional_consumed_or_withheld_endpoint_hashes"]))):
+        raise ValueError("remaining historical request exclusions differ")
+    completion = json.loads((folder / "prior-completion.json").read_text())
+    if plan["source_hold_usd"] != row["source_hold_usd"] or sum(b["reserved_usd"] for b in completion["budgets"]) != row["source_hold_usd"]:
+        raise ValueError("remaining source holds changed")
+    replay = None if "m5" in row["unavailable_methods"] else replay_cached_components(records, manifest, folder / "cache")
+    if replay != row["cached_component_replay"]:
+        raise ValueError("remaining cache-only fit replay differs")
+
+
 def replay_normalization(record, seed):
     c = record.choice
     row = {"user_id": c.user_id.split(":", 1)[1],
@@ -581,12 +714,18 @@ def validate_execution(plan_path, lease_path, now=None):
     plan = json.loads(plan_path.read_text())
     lease = json.loads(lease_path.read_text())
     protocol = plan.get("protocol", "m0-m3")
-    if protocol not in ("m0-m3", SUCCESSOR_PROTOCOL, FIRST8_PROTOCOL):
+    if protocol not in ("m0-m3", SUCCESSOR_PROTOCOL, FIRST8_PROTOCOL, REMAINING_PROTOCOL):
         raise ValueError("unknown reference protocol")
     successor = protocol == SUCCESSOR_PROTOCOL
     first8 = protocol == FIRST8_PROTOCOL
-    methods = SUCCESSOR_METHODS if successor or first8 else METHODS
-    if first8:
+    remaining = protocol == REMAINING_PROTOCOL
+    methods = SUCCESSOR_METHODS if successor or first8 or remaining else METHODS
+    if remaining:
+        if len(plan["user_ids"]) != 1:
+            raise ValueError("remaining packet requires one frozen user")
+        _, row = load_remaining_policy(plan_path.parent / "approved-policy.json", plan["user_ids"][0])
+        limits = row["limits"]
+    elif first8:
         if len(plan["user_ids"]) != 1:
             raise ValueError("original-eight packet requires exactly one user")
         limits = first8_limits(plan["user_ids"][0], plan.get("recovery903_enabled", False))
@@ -598,7 +737,7 @@ def validate_execution(plan_path, lease_path, now=None):
     expected = {"role": "10", "state": "authorized", "provider": "openai",
                 "model": "gpt-6-luna", "final_authorized": False,
                 "user_partition": "dev", "methods": methods, "plan_sha256": file_sha(plan_path)}
-    if successor or first8:
+    if successor or first8 or remaining:
         expected["protocol"] = protocol
     if any(lease.get(k) != value for k, value in expected.items()):
         raise ValueError("lease does not authorize this exact development panel")
@@ -643,6 +782,9 @@ def validate_execution(plan_path, lease_path, now=None):
             "recovery-diagnostics_verified.json", "recovery-completion.json", "recovery-report.json",
             "recovery-records.jsonl", "recovery-manifest.json", "recovery-envelope_claim.json",
             "recovery-envelope_terminal.json", "recovery-events.jsonl", "recovery-cache_manifest.json"})
+    if remaining:
+        expected_snapshots.update({"approved-policy.json", "approved-cohort.json", "prior-plan.json", "prior-report.json",
+            "prior-completion.json", "prior-terminal.json", "typed-denylist.json", "initial-cache-manifest.json"})
     if set(plan["snapshots"]) != expected_snapshots:
         raise ValueError("snapshot set differs")
     for name, expected_hash in plan["snapshots"].items():
@@ -672,6 +814,8 @@ def validate_execution(plan_path, lease_path, now=None):
         raise ValueError("snapshot is not the frozen development panel")
     if first8:
         validate_first8(plan_path, plan, records, manifest)
+    if remaining:
+        validate_remaining(plan_path, plan, records, manifest)
     return plan, lease, records, deadline
 
 
@@ -795,14 +939,15 @@ def execute(plan_path, lease_path):
                     max_seconds=min(lease["max_seconds"], deadline - time.time()))
     successor = plan.get("protocol") == SUCCESSOR_PROTOCOL
     first8 = plan.get("protocol") == FIRST8_PROTOCOL
+    remaining = plan.get("protocol") == REMAINING_PROTOCOL
     backend = ReferenceBackend(plan["model"], budget=budget, max_usd=lease["max_usd"],
                                forbidden_wire_hashes=plan.get("forbidden_wire_hashes", ()),
                                forbidden_body_hashes=plan.get("identity_denylists", {}).get("body_compact_json_sha256", ()),
-                               enforce_unique_requests=successor or first8)
+                               enforce_unique_requests=successor or first8 or remaining)
     cache = plan_path.parent / "cache"
     def factory(method):
         kwargs = dict(seed=0, cache_dir=cache, max_calls=lease["max_calls"], **CONFIG)
-        if first8:
+        if first8 or remaining:
             return first8_model(method, backend, plan["unavailable_methods"], **kwargs)
         if method == "m4_matched5":
             return MatchedHistoryM4(backend, **kwargs)
@@ -824,8 +969,8 @@ def execute(plan_path, lease_path):
                               "imported_cache_entries": len(plan.get("initial_cache", {})),
                               "component_fit_policy": plan.get("component_fit_policy"),
                               "recovery903_enabled": plan.get("recovery903_enabled", False)})
-        final_cache = cache_hashes(cache) if first8 else None
-        if first8:
+        final_cache = cache_hashes(cache) if first8 or remaining else None
+        if first8 or remaining:
             if any(final_cache.get(name) != expected for name, expected in plan["initial_cache"].items()):
                 raise ValueError("imported cache changed during execution")
             # Bind imported responses and successful new cache values separately.
@@ -843,7 +988,7 @@ def execute(plan_path, lease_path):
                 "initial_map_sha256": digest(plan["initial_cache"]),
                 "final_manifest_sha256": file_sha(plan_path.parent / "final-cache-manifest.json"),
                 "new_entries": len(set(final_cache) - set(plan["initial_cache"])),
-                "component_replay": plan["cached_component_replay"]} if first8 else None),
+                "component_replay": plan["cached_component_replay"]} if first8 or remaining else None),
             "failures": {method: result["failures"] for method, result in report["methods"].items()}})
     finally:
         os.umask(mask)
@@ -867,6 +1012,10 @@ def main():
     first8.add_argument("--user", required=True, choices=FIRST8_USERS)
     first8.add_argument("--destination", required=True)
     first8.add_argument("--recovery-evidence")
+    remaining = sub.add_parser("prepare-remaining")
+    remaining.add_argument("--policy", required=True)
+    remaining.add_argument("--user", required=True)
+    remaining.add_argument("--destination", required=True)
     run = sub.add_parser("run")
     run.add_argument("--plan", required=True)
     run.add_argument("--lease", required=True)
@@ -879,6 +1028,9 @@ def main():
         print(json.dumps({"plan": str(path), "sha256": file_sha(path)}))
     elif args.command == "prepare-first8":
         path = prepare_first8(args.proposal, args.user, args.destination, args.recovery_evidence)
+        print(json.dumps({"plan": str(path), "sha256": file_sha(path)}))
+    elif args.command == "prepare-remaining":
+        path = prepare_remaining(args.policy, args.user, args.destination)
         print(json.dumps({"plan": str(path), "sha256": file_sha(path)}))
     else:
         path = execute(args.plan, args.lease)
