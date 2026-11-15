@@ -306,5 +306,88 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(len(self.kept()), 1)
 
 
+class DistractorLLM(LLM):
+    """Answers the three distractor prompts; records every prompt."""
+
+    def __init__(self, future_index=0):
+        super().__init__()
+        self.prompts, self.future_index = [], future_index
+
+    def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+        self.prompts.append(prompt)
+        if prompt.startswith(timesplit.FUTURE_PROMPT):
+            return json.dumps({"index": self.future_index})
+        if prompt.startswith(timesplit.CONTEMP_PROMPT):
+            return json.dumps({"index": 0, "alternative": "OTHER_GROUP_ALTERNATIVE"})
+        return json.dumps({"alternative": "GENERATED_ALTERNATIVE"})
+
+
+class SearchRecorder:
+    def __init__(self, results):
+        self.results, self.calls = results, []
+
+    def search(self, query, **kw):
+        self.calls.append(kw)
+        return self.results
+
+
+class DistractorTest(unittest.TestCase):
+    CUTOFF = "2024-06-01"
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.researcher = Researcher("marius_test", self.root)
+        write_url_doc(self.root, "research__early.txt", "2023-01-01", "https://ex.org/early", "early")
+        write_url_doc(self.root, "research__mid.txt", "2024-03-01", "https://ex.org/mid", "mid")
+        write_url_doc(self.root, "research__late.txt", "2025-01-01", "https://ex.org/late", "late")
+        os.makedirs(os.path.join(self.root, "extraction"), exist_ok=True)
+        with open(os.path.join(self.root, timesplit.EXA_EXTRACT), "w") as f:
+            f.writelines(json.dumps({"doc": doc, "url": "u", "decisions": [], "exa_error": None,
+                                     "future_work": [{"idea": idea, "quote": "q"}]}) + "\n"
+                         for doc, idea in (("research__early.txt", "EARLY_IDEA"), ("research__late.txt", "LATE_IDEA")))
+        with open(os.path.join(self.root, timesplit.DECISIONS), "w") as f:
+            f.write(json.dumps(dict(decision("q" * 20, did="LATE_WORK"), doc="research__late.txt",
+                                    url="https://ex.org/late", date="2025-01-01", tag="exa_verified",
+                                    decision_id="late1")) + "\n")
+
+    def mid_decision(self, alternatives=()):
+        return dict(decision("q" * 20, did="MID_WORK"), alternatives_named=list(alternatives),
+                    doc="research__mid.txt", url="https://ex.org/mid", date="2024-03-01", decision_id="mid1")
+
+    def test_named_alternative_is_used_first(self):
+        out = timesplit.next_distractor(self.mid_decision(["NAMED_ALT"]), self.researcher, DistractorLLM(),
+                                        None, self.CUTOFF)
+        self.assertEqual((out["text"], out["source"]), ("NAMED_ALT", "named"))
+
+    def test_own_future_work_is_used_when_not_pursued(self):
+        out = timesplit.next_distractor(self.mid_decision(), self.researcher, DistractorLLM(), None, self.CUTOFF)
+        self.assertEqual((out["text"], out["source"]), ("EARLY_IDEA", "own_future_work"))
+
+    def test_own_future_work_is_skipped_when_he_pursued_it_later(self):
+        out = timesplit.next_distractor(self.mid_decision(), self.researcher, DistractorLLM(future_index=None),
+                                        None, self.CUTOFF)
+        self.assertEqual(out["source"], "generated")
+
+    def test_history_decision_never_sees_material_from_after_cutoff(self):
+        llm, exa = DistractorLLM(future_index=None), SearchRecorder([])
+        timesplit.next_distractor(self.mid_decision(), self.researcher, llm, exa, self.CUTOFF)
+        self.assertNotIn("LATE", "\n".join(llm.prompts))
+        self.assertLess(exa.calls[0]["end_date"], self.CUTOFF)
+
+    def test_contemporaneous_search_excludes_his_own_work(self):
+        exa = SearchRecorder([{"url": "https://ex.org/his", "author": "Marius Hobbhahn", "title": "his"},
+                              {"url": "https://ex.org/other", "author": "Jane Doe", "title": "other"}])
+        llm = DistractorLLM(future_index=None)
+        out = timesplit.next_distractor(self.mid_decision(), self.researcher, llm, exa, self.CUTOFF)
+        self.assertEqual(exa.calls[0]["exclude_text"], ["Hobbhahn"])
+        self.assertEqual((out["source"], out["evidence_url"]), ("contemporaneous", "https://ex.org/other"))
+        self.assertNotIn("ex.org/his", llm.prompts[-1])
+
+    def test_next_distractor_after_a_source_starts_at_the_following_one(self):
+        out = timesplit.next_distractor(self.mid_decision(["NAMED_ALT"]), self.researcher, DistractorLLM(),
+                                        None, self.CUTOFF, after="named")
+        self.assertEqual(out["source"], "own_future_work")
+
+
 if __name__ == "__main__":
     unittest.main()

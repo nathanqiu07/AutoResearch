@@ -60,6 +60,7 @@ EXA_EXTRACT = os.path.join("extraction", "exa.jsonl")
 DECISIONS = os.path.join("extraction", "decisions.jsonl")
 REJECTED = os.path.join("extraction", "rejected.jsonl")
 CHECKED = os.path.join("extraction", "checked.jsonl")
+DISTRACTORS = os.path.join("extraction", "distractors.jsonl")
 _DECISION = {"type": "object", "properties": {
     "point": {"type": "string", "enum": ["D1", "D2", "D3", "D4", "D5", "D6"]},
     "problem": {"type": "string"}, "did": {"type": "string"},
@@ -324,6 +325,104 @@ def check_decisions(researcher: Researcher, llm: LLM, chunk_chars: int = 150_000
         with open(os.path.join(root, CHECKED), "a") as f:
             f.write(json.dumps({"doc": row["doc"], "prompt": CHECK_PROMPT_VERSION}) + "\n")
         report["docs"] += 1
+    return report
+
+
+# ---- stage 4: distractors -------------------------------------------------------
+
+SOURCES = ("named", "own_future_work", "contemporaneous", "generated")
+FUTURE_PROMPT = (
+    "A researcher faced the problem below and made the decision shown. Earlier, they named the "
+    "candidate ideas listed as future work. Pick the candidate that is a plausible alternative answer "
+    "to the same problem and that none of their later work listed below pursued. Return JSON "
+    "{\"index\": <candidate index, or null if none fits>}.\n\n")
+CONTEMP_PROMPT = (
+    "A researcher faced the problem below. Here is work by other groups from around the same time. "
+    "Pick the result that took a different approach to the same problem, and state that approach "
+    "in one sentence of similar length and specificity to the decision, without naming anyone. "
+    "Return JSON {\"index\": <result index, or null if none fits>, \"alternative\": <sentence>}.\n\n")
+GENERATE_PROMPT = (
+    "A researcher faced the problem below and made the decision shown. Write one plausible "
+    "alternative decision a competent researcher could have made instead: same scope, similar length "
+    "and specificity, not obviously worse. Return JSON {\"alternative\": <sentence>}.\n\n")
+HALF_YEAR = datetime.timedelta(days=182)
+
+
+def _describe(d: dict) -> str:
+    return f"Problem: {d.get('problem', '')}\nDecision: {d.get('did', '')}\n"
+
+
+def _future_candidates(researcher: Researcher, before: datetime.date) -> List[str]:
+    out = []
+    for row in _read_jsonl(os.path.join(researcher.root, EXA_EXTRACT)):
+        date, _ = read_doc(os.path.join(researcher.root, "corpus", row["doc"]))
+        if date and date < before:
+            out += [w["idea"] for w in row.get("future_work") or [] if isinstance(w, dict) and w.get("idea")]
+    return out
+
+
+def next_distractor(decision: dict, researcher: Researcher, llm: LLM, client, cutoff: str,
+                    after: Optional[str] = None) -> Optional[dict]:
+    """The first distractor available from SOURCES, starting after `after`. A decision dated
+    before cutoff sees only material dated before cutoff."""
+    date, t = datetime.date.fromisoformat(decision["date"]), datetime.date.fromisoformat(cutoff)
+    horizon = t if date < t else None
+    for source in SOURCES[SOURCES.index(after) + 1 if after else 0:]:
+        if source == "named":
+            alts = [a for a in decision.get("alternatives_named") or [] if a and a != decision.get("did")]
+            if alts:
+                return {"text": alts[0], "source": source, "evidence_url": decision.get("url")}
+        elif source == "own_future_work":
+            ideas = _future_candidates(researcher, date)
+            if not ideas:
+                continue
+            later = [d["did"] for d in _read_jsonl(os.path.join(researcher.root, DECISIONS))
+                     if d.get("date") and (horizon is None or d["date"] < cutoff)]
+            out = extract_json(llm.complete(
+                FUTURE_PROMPT + _describe(decision) + "Candidates:\n" +
+                "".join(f"[{i}] {c}\n" for i, c in enumerate(ideas)) +
+                "Their work:\n" + "".join(f"- {w}\n" for w in later), temperature=0.0))
+            i = out.get("index") if isinstance(out, dict) else None
+            if isinstance(i, int) and 0 <= i < len(ideas):
+                return {"text": ideas[i], "source": source, "evidence_url": None}
+        elif source == "contemporaneous" and client is not None:
+            end = date + HALF_YEAR
+            if horizon:
+                end = min(end, horizon - datetime.timedelta(days=1))
+            results = [r for r in client.search(decision.get("problem") or decision["did"], num_results=8,
+                                                start_date=(date - HALF_YEAR).isoformat(), end_date=end.isoformat(),
+                                                exclude_text=["Hobbhahn"], exclude_domains=["apolloresearch.ai"])
+                       if "hobbhahn" not in (str(r.get("author") or "") + str(r.get("highlights") or "")).lower()]
+            if not results:
+                continue
+            out = extract_json(llm.complete(
+                CONTEMP_PROMPT + _describe(decision) + "Results:\n" +
+                "".join(f"[{i}] {r.get('title', '')}: {' '.join(r.get('highlights') or [])[:500]}\n"
+                        for i, r in enumerate(results)), temperature=0.0))
+            i = out.get("index") if isinstance(out, dict) else None
+            if isinstance(i, int) and 0 <= i < len(results) and out.get("alternative"):
+                return {"text": str(out["alternative"]), "source": source, "evidence_url": results[i]["url"]}
+        elif source == "generated":
+            out = extract_json(llm.complete(GENERATE_PROMPT + _describe(decision), temperature=0.0))
+            if isinstance(out, dict) and out.get("alternative"):
+                return {"text": str(out["alternative"]), "source": source, "evidence_url": None}
+    return None
+
+
+def find_distractors(researcher: Researcher, llm: LLM, client, cutoff: str) -> dict:
+    """One distractor per checked decision in extraction/distractors.jsonl; resumable."""
+    path = os.path.join(researcher.root, DISTRACTORS)
+    done = {r["decision_id"] for r in _read_jsonl(path)}
+    report = {s: 0 for s in SOURCES}
+    report.update(none=0, skipped_existing=len(done))
+    for d in _read_jsonl(os.path.join(researcher.root, DECISIONS)):
+        if d["decision_id"] in done or not d.get("date"):
+            continue
+        out = next_distractor(d, researcher, llm, client, cutoff)
+        report[out["source"] if out else "none"] += 1
+        if out:
+            with open(path, "a") as f:
+                f.write(json.dumps(dict(out, decision_id=d["decision_id"]), ensure_ascii=False) + "\n")
     return report
 
 
