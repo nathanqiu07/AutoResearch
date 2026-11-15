@@ -32,6 +32,41 @@ Canonical hashes use `json.dumps(value, sort_keys=True, separators=(',', ':'),
 ensure_ascii=False, allow_nan=False).encode('utf-8')`. ProfileArtifact stores this
 serialization internally; `to_dict()` and field access return fresh values.
 
+## Exact quote resolution
+
+`resolve_quote_sources(content, documents)` returns `(new_content, records)` for
+new quote-only extraction protocols. `QUOTE_RESOLVER_VERSION` identifies the
+deterministic helper. A source is any `sources` list entry or a mapping containing
+`document_id` or `quote`; it must have exactly those two keys. The helper adds
+`start` and `end` only for one exact, case-sensitive occurrence fully contained
+inside one permitted span. It never trims, normalizes, matches fuzzily or repairs
+offsets supplied by the model. Python Unicode character indices are used, not
+UTF-8 byte offsets. Overlapping ranges cannot double-count the same occurrence;
+different occurrences, including overlapping text matches, remain ambiguous.
+
+Document IDs and delivered content hashes are checked before matching. Present
+`permitted_spans` must be a list of valid integer start/end ranges; extra approved
+range metadata is retained in documents but not used for matching. Compatibility
+semantics remain: absent spans permit the whole document; explicit `[]` permits
+nothing. Adjacent or overlapping ranges are not merged to admit a quote that does
+not fit inside an individual approved range.
+
+Inputs are copied. Each success record has resolver_version, source_path (a list
+of keys/indices), document_id, quote_sha256, status=`resolved`, start and end.
+`QuoteResolutionError(ValueError)` exposes `.code` and `.resolution_records`;
+failure records have status=`invalid` and error_code. Diagnostics contain hashes,
+not quoted source text. No partially resolved content is returned on failure.
+Stable codes are quote_content_json, quote_source_document, quote_document_hash,
+quote_document_spans, quote_source_shape, quote_source_quote, quote_absent,
+quote_unpermitted and quote_ambiguous.
+
+Builders using this helper must declare a new prompt version, preserve the raw
+response hash and resolver records/version in fit_usage, and then run their
+existing strict source-span and schema validators. Old jobs remain invalid and
+are not rewritten. This contracts.py change alters the common renderer pin;
+profiles and runtime manifests must be rebuilt. The regenerated synthetic
+fixture-v6 records the new pin without changing historical fixtures.
+
 ## Consumer
 
 `predict_profile(profile, context, options, consumer, config)` returns the existing
