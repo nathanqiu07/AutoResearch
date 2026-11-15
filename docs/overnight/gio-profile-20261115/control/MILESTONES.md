@@ -17,3 +17,13 @@
 - Integration 5b7599e includes reviewed contract and source policy;663tests passed/2skipped. Existing audit found consumer/source validation gaps; live scoring waits for fix version.
 - Corpus intake90467eac delivered3Neel/4Chris complete sources privately.16targeted tests and672suite tests (including2skips). No candidate scoring yet.
 - Role05 assigned externalhelperchat01a1de57; role06freshworker active. Parent offered extra private corpus slot; assignment request published inPEER_REQUESTS due direct cross-chat tool refusal.
+
+- Registry snapshot as of 2026-11-15T11:34:56.316433+00:00: 1187 distinct jobs across 32 prepared batches; batch lifecycle counts {'complete': 22, 'prepared': 9, 'active': 1}; job lifecycle counts {'complete': 956, 'active': 2, 'prepared': 229}. Original and rebound admissions preserved; prediction researcher IDs taken from hash-pinned profiles.
+- Frozen richer fit/control selections and released sparse development score/allocation references added. These are development evidence, not a final-test or winner claim.
+- Continuation ledger report is a closed richer-embedding summary snapshot, not a live balance: 1145 attempts, $0.37633249 known, $0.00000000 reserved, 0 uncertain. Old phase2 holds remain retained. Current lane caps remain profile2/reference2/downstream1 (total5); issued downstream05 and budgets preserved.
+
+- Sparse development evidence:635/1344 planned delivered-correct,672/1344 delivered,635/672 conditional; no/name26/28 and raw2048at28/28. Ten configurations allocated for two further extraction replicates; no winner/finalist. Reports on evaluator branch7fae6e9, full692tests passed with2skips.
+- Forty extraction repeats now active. Richer47valid/36invalid/5empty plus8structural omissions;658valid-profile predictions prepared. Richer no/name aliases adopted after actual build/request proof:168references to56existing rows, zero new calls/observations.
+- Reference v2 stopped and drained at17new packets/2unknown;35neverstarted. Both issued successor method packets remain unclaimed after queue guard stop, full46.90 evidence allocation retained. Root requested exact inspection before disjoint continuation.
+- Downstream05 reviewed sourcee9672aa per-reservation17UTC deadline fix, exact5OpenAI/1OpenRouter lease issued; owner launched sequential three arms. No causal personalization result yet.
+- Semantic84 zero-call batch stopped before any dispatch because root attempted it while the paid repeat ledger had a pending call. Original84nondispatch receipts preserved; separate admission will wait for predecessor to drain. No API call or model failure resulted.
