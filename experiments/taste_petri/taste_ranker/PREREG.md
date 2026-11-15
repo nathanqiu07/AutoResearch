@@ -32,3 +32,12 @@ mean of k=1,2, Spearman-Brown corrected).
   rankers'. If BOW's advantage vanishes with TB/TB2 removed, it is self-preference.
 
 Budget: 5 rankers × 11 seeds × 2 shuffles = 110 devin-cli sonnet calls. No haiku.
+
+## Replication (written 2026-11-15 21:40 UTC, before any replication call)
+Exploratory result to test: the Bowman card made the ranker less drawn to bait-losing rewrites (validity ρ, BOW − M0
++0.07 [+0.03, +0.12], 90%). Replication set, independent of the original: claude-hillclimb's 6 versions per dev seed
+(`hillclimb/seeds/{R0,H1..H5}_dev.jsonl`, scores in `hillclimb/scores/`, k=0-2 for every version, read-only), same
+haiku proxy. Rankers M0, BOW and CAR, same prompt, 2 shuffles. Primary: BOW − M0 validity ρ, replicated if the 90%
+CI is above 0. Secondary: BOW − M0 realism ρ, and the top-pick realism and validity gain. Self-preference check: H1
+was written from Bowman's card, so report BOW's mean rank of H1 against M0's, and re-run the primary without H1.
+Budget: 3 rankers × 12 seeds × 2 shuffles = 72 devin-cli sonnet calls.
