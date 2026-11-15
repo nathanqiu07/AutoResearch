@@ -68,6 +68,11 @@ Still required for the full Track E acceptance criteria:
   requests the original shared versus isolated swarm comparison.
 * A real past.dev smoke and measured recall rate, using a user-provided key.
   Local JSONL recall verifies the script only.
+* Done since: the self-hosted dev target's GPU time is charged to `Budget`
+  (`OPENAI_COMPAT_USD_PER_HOUR`, `llm.GpuMeter`, a lower bound), so `--max-cost`
+  and E5's $ figures include it. `results/prereg/E5.json` now names the C2 lineup
+  and C1 paths; it stays a draft until C1's gate passes, the taste-arm decision is
+  made and the paid runs are approved.
 * A final, committed E5 preregistration and approved model budget, followed by
   the equal-budget arms, held-out evaluation, tables, and charts in `results/`.
 * Committed real versus simulated Petri tool runs and target reasoning from C2
