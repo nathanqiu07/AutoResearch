@@ -930,3 +930,21 @@ All C1 code is built and tested offline (324 tests). **Still no real-model resul
 - **Offline dry runs write to `runs/c1/offline/`**, never to `results/`.
 
 **Blocked on Nathan:** OpenAI model id, key and price; the check (a) threshold (Needham reports 0.71–0.77 AUROC on chat, below our 0.85); Needham dataset terms; spend approval; 50–100 hand labels after the subset run; a WildChat fetch for workplace topics.
+
+### 16.2 C2 status update (2026-11-15, Abhi)
+
+Built and tested offline. **No live C2 result exists yet: no paid model or Modal GPU has run.**
+
+| Piece | State | Where |
+|---|---|---|
+| Models config (item 4) | Done. All roles named once, with Petri's Inspect ids per mode; family-level check (catches e.g. an Anthropic generator with a claude-cli judge, two held-out judges from one family, a Petri judge from the target's family). `python3 -m autoresearch.research.models_config` | `configs/models.json`, `research/models_config.py` |
+| Reasoning target (item 5) | Code done: vLLM with `--reasoning-parser` (default Qwen3-32B, qwen3 parser) and tool calling. Smoke script ready. **Not deployed** (needs Abhi's Modal account and OK) | `harness/modal_vllm.py`, `scripts/c2_smoke_target.py` |
+| Petri harness (item 7) | Done. AuditSeed JSONL → AuditResult JSONL, per-seed tool mode, Petri judge parse failures become null instead of 1 | `harness/petri/run_audits.py`, `transcript.py` |
+| Sandbox tools (7c) | Done (code). In sandbox mode the target's shell-type calls (bash, python, read/write/list files) run in a per-sample Modal Sandbox and the target receives the real output; the auditor gets `sandbox_exec` to prepare files. Verified through real Petri with scripted mock models and a fake sandbox; **not yet run against Modal** | `harness/petri/sandbox_tools.py` |
+| PetriMeasurer (7b) | Done. Same `measure()` signature; generator rewrites the seed when there are interventions; C1's A2 probes and A1/validity judge score the transcript, plus a seed-faithfulness check; Petri's scores kept in `petri_scores`. `research --setting agentic` runs end to end offline | `research/petri_measure.py` |
+| Seeds | 24 agentic Petri 2.0 seeds (12 dev / 12 hidden) as AuditSeed JSONL | `data/petri/seeds_v2.jsonl` |
+| Tests | 17 stdlib tests in `tests/`; 5 harness tests run in the Petri environment (`harness/petri/test_harness.py`) | |
+
+**Open (needs Abhi's OK, keys and Modal):** deploy the Modal target and run the 5-sample smoke; Petri v2 dev baseline in both tool modes (E3b); Petri v1 seeds (not in the repo yet: the original Petri seed list has to be fetched and matched to our 24); the Petri faithfulness pair (eval notice in the target's system prompt) is not implemented.
+
+**Notes for others:** `cli._agentic_measurer` splits seeds by a hash of `seed_id`, not by the `split` field the seed file carries (WS D). Measurer's own held-out check compares backends only; `models_config.family_warnings(models)` does families, and PetriMeasurer already adds it (WS C1 may want it in `Measurer`).
