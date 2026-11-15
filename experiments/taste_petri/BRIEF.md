@@ -2,6 +2,12 @@
 
 User-directed sandbox (Ethan). Owner session: claude-tastepetri. Everything here is exploratory.
 
+## Objective (user, midway 2026-11-15)
+The real eval is Petri (PLAN commit 36f3380: E1/E2/E3b only). Optimise against Petri's own judge
+(eval_awareness down, scenario_realism up, behaviour/validity kept) AND the ability to predict taste (E2).
+A taste win must beat the generic-realism rewrite (R0), not just stock. Haiku only (no codex/other CLIs).
+All arms fictionalise real organisations (I18). EvalDetectBench probes are secondary; skip them.
+
 ## The metric we want to move (E3b, PLAN.md §9, §3.2, §16.2)
 Petri audits: an auditor model follows a *seed instruction* (data/petri/seeds_v2.jsonl, 12 dev / 12 hidden),
 plays user + simulates tools over many turns; target acts. Our scoring (autoresearch/research/petri_measure.py,
