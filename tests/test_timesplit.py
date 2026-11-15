@@ -170,10 +170,9 @@ def write_url_doc(root, name, published, url, body):
 
 
 class ExaExtractTest(unittest.TestCase):
-    DECISION = {"point": "D1", "problem": "p", "did": "ran a baseline", "alternatives_named": [],
-                "stated_reason": "r", "quote": "we first ran a baseline"}
-
     def setUp(self):
+        self.DECISION = {"point": "D1", "problem": "p", "did": "ran a baseline", "alternatives_named": [],
+                         "stated_reason": "r", "quote": "we first ran a baseline"}
         self.root = tempfile.mkdtemp()
         write_url_doc(self.root, "research__a.txt", "2024-02-01", "https://ex.org/a", "we first ran a baseline")
         write_url_doc(self.root, "research__b.txt", "2024-05-01", "https://ex.org/b", "body b")
@@ -205,6 +204,106 @@ class ExaExtractTest(unittest.TestCase):
         self.assertEqual(self.exa.calls, calls)
         self.assertEqual(report["skipped_existing"], 2)
         self.assertEqual(len(self.rows()), 2)
+
+
+class ScriptedLLM(LLM):
+    """Answers the check prompt with reply(decisions, excerpt) -> dict, and counts calls."""
+
+    def __init__(self, reply):
+        super().__init__()
+        self.reply, self.calls = reply, 0
+
+    def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+        self.calls += 1
+        head, excerpt = prompt.split(timesplit.EXCERPT_MARK, 1)
+        decisions = json.loads(head.split(timesplit.DECISIONS_MARK, 1)[1])
+        return json.dumps(self.reply(decisions, excerpt))
+
+
+def decision(quote, did="ran a baseline first"):
+    return {"point": "D1", "problem": "which experiment", "did": did, "alternatives_named": [],
+            "stated_reason": "cheap", "quote": quote}
+
+
+class CheckTest(unittest.TestCase):
+    TEXT = "Intro. We first ran a simple baseline before anything else. Then we wrote it up carefully."
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.researcher = Researcher("marius_test", self.root)
+
+    def setup_doc(self, text, exa_decisions, exa_error=None):
+        write_url_doc(self.root, "research__a.txt", "2024-02-01", "https://ex.org/a", text)
+        os.makedirs(os.path.join(self.root, "extraction"), exist_ok=True)
+        with open(os.path.join(self.root, timesplit.EXA_EXTRACT), "w") as f:
+            f.write(json.dumps({"doc": "research__a.txt", "url": "https://ex.org/a", "decisions": exa_decisions,
+                                "future_work": [], "exa_error": exa_error, "request_id": "r"}) + "\n")
+
+    def check(self, reply, **kw):
+        llm = ScriptedLLM(reply)
+        report = timesplit.check_decisions(self.researcher, llm, **kw)
+        return llm, report
+
+    def kept(self):
+        with open(os.path.join(self.root, timesplit.DECISIONS)) as f:
+            return [json.loads(line) for line in f]
+
+    def rejected(self):
+        with open(os.path.join(self.root, timesplit.REJECTED)) as f:
+            return [json.loads(line) for line in f]
+
+    def test_kept_decision_with_real_quote_is_exa_verified(self):
+        self.setup_doc(self.TEXT, [decision("We first ran a simple baseline")])
+        self.check(lambda ds, ex: {"verdicts": [{"index": 0, "action": "keep"}], "missed": []})
+        [row] = self.kept()
+        self.assertEqual(row["tag"], "exa_verified")
+        self.assertEqual(row["date"], "2024-02-01")
+
+    def test_corrected_decision_is_exa_corrected_and_uses_claudes_fields(self):
+        self.setup_doc(self.TEXT, [decision("We first ran a simple baseline", did="wrong summary")])
+        fixed = decision("We first ran a simple baseline", did="ran a simple baseline first")
+        self.check(lambda ds, ex: {"verdicts": [{"index": 0, "action": "correct", "decision": fixed}], "missed": []})
+        [row] = self.kept()
+        self.assertEqual((row["tag"], row["did"]), ("exa_corrected", "ran a simple baseline first"))
+
+    def test_decision_whose_quote_is_not_in_the_text_is_rejected(self):
+        self.setup_doc(self.TEXT, [decision("We trained a giant model from scratch")])
+        self.check(lambda ds, ex: {"verdicts": [{"index": 0, "action": "keep"}], "missed": []})
+        self.assertEqual(self.kept(), [])
+        self.assertEqual(self.rejected()[0]["reason"], "quote_not_found")
+
+    def test_missed_decision_is_added_as_claude_fallback(self):
+        self.setup_doc(self.TEXT, [])
+        self.check(lambda ds, ex: {"verdicts": [], "missed": [decision("Then we wrote it up carefully")]})
+        self.assertEqual([r["tag"] for r in self.kept()], ["claude_fallback"])
+
+    def test_document_where_exa_failed_is_fully_claude_fallback(self):
+        self.setup_doc(self.TEXT, [], exa_error="summary is not JSON")
+        self.check(lambda ds, ex: {"verdicts": [], "missed": [decision("We first ran a simple baseline")]})
+        self.assertEqual([r["tag"] for r in self.kept()], ["claude_fallback"])
+
+    def test_pdf_quote_with_ligature_curly_quotes_and_hyphen_break_matches(self):
+        self.assertTrue(timesplit.quote_in_text("we first ran a baseline model", "so we \ufb01rst ran a base-\nline model"))
+        self.assertTrue(timesplit.quote_in_text('"realistic" environments matter',
+                                                "\u201crealistic\u201d   environments\nmatter a lot"))
+
+    def test_decision_past_the_first_chunk_is_found(self):
+        quote = "we abandoned the probe approach entirely"
+        text = "x" * 250 + " " + quote + " " + "y" * 60
+        self.setup_doc(text, [], exa_error="summary is not JSON")
+        self.check(lambda ds, ex: {"verdicts": [], "missed": [decision(quote)] if quote in ex else []},
+                   chunk_chars=100, overlap=50)
+        [row] = self.kept()
+        self.assertEqual(row["quote"], quote)
+
+    def test_rerun_skips_checked_documents(self):
+        self.setup_doc(self.TEXT, [decision("We first ran a simple baseline")])
+        def reply(ds, ex):
+            return {"verdicts": [{"index": 0, "action": "keep"}], "missed": []}
+        self.check(reply)
+        llm, _ = self.check(reply)
+        self.assertEqual(llm.calls, 0)
+        self.assertEqual(len(self.kept()), 1)
 
 
 if __name__ == "__main__":

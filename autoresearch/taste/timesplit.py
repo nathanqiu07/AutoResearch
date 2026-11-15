@@ -37,6 +37,7 @@ import glob
 import json
 import os
 import re
+import unicodedata
 from dataclasses import asdict
 from typing import Callable, List, Optional, Tuple
 
@@ -56,6 +57,9 @@ EXTRACT_PROMPT = ("Read this research document. Return JSON {\"topic\": <a few n
 FRONT_MATTER = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 
 EXA_EXTRACT = os.path.join("extraction", "exa.jsonl")
+DECISIONS = os.path.join("extraction", "decisions.jsonl")
+REJECTED = os.path.join("extraction", "rejected.jsonl")
+CHECKED = os.path.join("extraction", "checked.jsonl")
 _DECISION = {"type": "object", "properties": {
     "point": {"type": "string", "enum": ["D1", "D2", "D3", "D4", "D5", "D6"]},
     "problem": {"type": "string"}, "did": {"type": "string"},
@@ -218,6 +222,108 @@ def exa_extract(researcher: Researcher, client, batch: int = 10) -> dict:
                 f.write(json.dumps({"doc": doc, "url": url, "decisions": out.get("decisions") or [],
                                     "future_work": out.get("future_work") or [], "exa_error": error,
                                     "request_id": r.get("id", "")}, ensure_ascii=False) + "\n")
+    return report
+
+
+# ---- stage 3: Claude check and fallback ------------------------------------------
+
+CHECK_PROMPT_VERSION = "check-v1"
+DECISIONS_MARK, EXCERPT_MARK = "\n\nDECISIONS (JSON):\n", "\n\nEXCERPT:\n"
+CHECK_PROMPT = (
+    "You check research decisions extracted from a document. Decision points: D1 which experiment "
+    "or hypothesis to pursue; D2 what evidence to collect; D3 whether to accept a result; D4 whether "
+    "to continue or drop a line of work; D5 how to interpret an ambiguous result; D6 how strongly to "
+    "state a claim.\n"
+    "Below are candidate decisions and an excerpt of the document. For each candidate whose quote "
+    "appears in this excerpt, give a verdict: keep (correct as written), correct (real decision, but "
+    "fix its fields), or drop (not a decision the authors made, or wrongly described). Say nothing "
+    "about candidates whose quote is not in this excerpt. Then list decisions in this excerpt that "
+    "the candidates missed. Every quote must be copied verbatim from the excerpt, 20-300 "
+    "characters. Return JSON {\"verdicts\": [{\"index\": int, \"action\": \"keep\"|\"correct\"|"
+    "\"drop\", \"decision\": {...only for correct...}}], \"missed\": [{\"point\", \"problem\", "
+    "\"did\", \"alternatives_named\", \"stated_reason\", \"quote\"}]}.")
+_FIELDS = ("point", "problem", "did", "alternatives_named", "stated_reason", "quote")
+_QUOTES = str.maketrans({"\u201c": '"', "\u201d": '"', "\u2018": "'", "\u2019": "'"})
+
+
+def normalize_for_quote(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text).translate(_QUOTES)
+    text = re.sub(r"-\s*\n\s*", "", text)
+    return " ".join(text.split()).lower()
+
+
+def quote_in_text(quote: str, text: str) -> bool:
+    q = normalize_for_quote(quote)
+    return len(q) >= 20 and q in normalize_for_quote(text)
+
+
+def _check_doc(text: str, exa_decisions: List[dict], llm: LLM, chunk_chars: int, overlap: int):
+    """(kept [(decision, tag)], rejected [(decision, reason)]) for one document."""
+    pending = dict(enumerate(exa_decisions))
+    kept, rejected, seen = [], [], set()
+
+    def add(d, tag):
+        d = {k: d.get(k) for k in _FIELDS}
+        key = normalize_for_quote(str(d.get("quote") or ""))
+        if key in seen:
+            return
+        seen.add(key)
+        if quote_in_text(str(d.get("quote") or ""), text):
+            kept.append((d, tag))
+        else:
+            rejected.append((d, "quote_not_found"))
+
+    step = max(1, chunk_chars - overlap)
+    for start in range(0, max(1, len(text) - overlap), step):
+        excerpt = text[start:start + chunk_chars]
+        shown = [dict(d, index=i) for i, d in pending.items()]
+        out = extract_json(llm.complete(CHECK_PROMPT + DECISIONS_MARK + json.dumps(shown, ensure_ascii=False)
+                                        + EXCERPT_MARK + excerpt, max_tokens=4000, temperature=0.0))
+        out = out if isinstance(out, dict) else {}
+        for v in out.get("verdicts") or []:
+            i = v.get("index") if isinstance(v, dict) else None
+            if i not in pending:
+                continue
+            d = pending.pop(i)
+            if v.get("action") == "keep":
+                add(d, "exa_verified")
+            elif v.get("action") == "correct" and isinstance(v.get("decision"), dict):
+                add(v["decision"], "exa_corrected")
+            else:
+                rejected.append((d, "claude_drop"))
+        for d in out.get("missed") or []:
+            if isinstance(d, dict):
+                add(d, "claude_fallback")
+    rejected += [(d, "unchecked") for d in pending.values()]
+    return kept, rejected
+
+
+def check_decisions(researcher: Researcher, llm: LLM, chunk_chars: int = 150_000, overlap: int = 2_000) -> dict:
+    """Claude keeps, corrects or drops each Exa decision and adds the ones Exa missed; code then
+    checks every quote against the document. Writes extraction/decisions.jsonl and rejected.jsonl;
+    resumable per document."""
+    root = researcher.root
+    done = {r["doc"] for r in _read_jsonl(os.path.join(root, CHECKED))}
+    report = {"docs": 0, "skipped_existing": len(done)}
+    for row in _read_jsonl(os.path.join(root, EXA_EXTRACT)):
+        if row["doc"] in done:
+            continue
+        date, text = read_doc(os.path.join(root, "corpus", row["doc"]))
+        kept, rejected = _check_doc(text, row["decisions"] if not row.get("exa_error") else [],
+                                    llm, chunk_chars, overlap)
+        with open(os.path.join(root, DECISIONS), "a") as f:
+            for d, tag in kept:
+                f.write(json.dumps(dict(d, doc=row["doc"], url=row["url"], date=date.isoformat() if date else None,
+                                        tag=tag, decision_id=digest([row["doc"], normalize_for_quote(d["quote"])])[:12]),
+                                   ensure_ascii=False) + "\n")
+                report[tag] = report.get(tag, 0) + 1
+        with open(os.path.join(root, REJECTED), "a") as f:
+            for d, reason in rejected:
+                f.write(json.dumps({"doc": row["doc"], "decision": d, "reason": reason}, ensure_ascii=False) + "\n")
+                report[reason] = report.get(reason, 0) + 1
+        with open(os.path.join(root, CHECKED), "a") as f:
+            f.write(json.dumps({"doc": row["doc"], "prompt": CHECK_PROMPT_VERSION}) + "\n")
+        report["docs"] += 1
     return report
 
 
