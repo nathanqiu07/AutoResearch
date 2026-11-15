@@ -225,7 +225,7 @@ The extraction tag and the distractor source go in a side file keyed by `example
 * WS A's selected method. If WS A hasn't selected one yet, choose among m2–m7 on a validation set made of
   the latest 20% of pre-T history pairs by date. The held-out set is used once.
 
-**Protocol.** Each held-out pair is asked in both orders (as `tastebench.py` does). A pair counts
+**Protocol.** Each held-out pair is asked in both orders. A pair counts
 as correct when both orders are right. Bootstrap over source documents (`group_id`) for 90% CIs.
 
 **Success** (PLAN §9, E2): the selected method beats **both** M1 baselines, with each CI excluding 0. The result

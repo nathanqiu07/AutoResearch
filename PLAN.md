@@ -172,7 +172,7 @@ and extra deployment transcripts, and SAD only as a target check.
 | **PersonalRewardBench** (SynthesizeMe, Ryan et al., ACL 2025) | User-stratified splits of 723 PRISM users (Chatbot Arena dropped 2026-11-14) | **Method development and selection** (§6.2). User-level train/val/test |
 | Personal labels from one team member | Their choices at D1–D6 on logged loop decisions, plus ~50 seed pairwise choices before any run | **Personal track** ground truth (§6.3) |
 | Scraped researcher corpus (Exa) | Papers, blogs, talks, code, posts, with dates | **Public track** input. A time split gives the held-out test (§6.3) |
-| **Taste-Bench** (Pan et al. 2026, [wbopan/tastebench](https://github.com/wbopan/tastebench); data gated on Hugging Face, CC BY 4.0) | Two-option decision forks from real agent runs, each labelled by how the rest of the run went. Research subset: 112 forks from METR's RE-Bench and HCAST runs (64 detour, 48 parallel) | ~~**External research-taste test** (E7)~~ **Dropped 2026-11-14 (Ethan).** Scorer `taste/tastebench.py` is unused |
+| **Taste-Bench** (Pan et al. 2026, [wbopan/tastebench](https://github.com/wbopan/tastebench); data gated on Hugging Face, CC BY 4.0) | Two-option decision forks from real agent runs, each labelled by how the rest of the run went. Research subset: 112 forks from METR's RE-Bench and HCAST runs (64 detour, 48 parallel) | ~~**External research-taste test** (E7)~~ **Dropped 2026-11-14 (Ethan).** Scorer, fetch script and data removed |
 
 **Dropped 2026-11-14 (Ethan):** we are not using Taste-Bench, and E7 is cut. Taste is tested only on
 PersonalRewardBench and on each track's own held-out decisions. The earlier rationale, kept for the record:
@@ -453,7 +453,6 @@ Based on the first live v2 run: 5 iterations × 5 samples ≈ 305 calls, $3.58, 
 | E3b: Petri audits, 5 seed sets × held-out seeds × 2 tool modes × ≥5 audits. Multi-turn audits cost several times a single-scenario sample | ~$200–500 |
 | E3a: held-out sweep, 6 environment sets × 40 tasks × 2–3 targets × 10 samples (Batch API) | ~$100–250 |
 | Modal GPUs for open-weight targets | depends on model size and credits **[decide]** |
-| ~~E7~~ (dropped 2026-11-14, no cost): Taste-Bench research subset, 5 LLM-calling arms × 224 requests (112 forks × 2 orders) | at most 14.7M input tokens per arm (each request is capped at 64K tokens); `tastebench run --dry-run` gives the real figure once the data is downloaded |
 
 Every costly run needs the user's approval first (AGENTS.md rule 5), is announced with
 `agentctl post`, and locks `autoresearch` with the reason "live run".
@@ -474,7 +473,7 @@ that others need right away are covered elsewhere:
 | WS | One-line job | Produces | Main code | Owner |
 |---|---|---|---|---|
 | **A: User models** | Find the best way to turn someone's past choices into a model that predicts their next ones | the selected method + E1 | `autoresearch/taste/` | **Gio** |
-| **B: Taste tracks and data** | Get the data for the two people whose taste we use, and test the method on them | Personal-track and public-track datasets + E2 (E7 dropped 2026-11-14) | `data/researchers/`, `taste/scrape.py`, `integrations/exa.py`, `taste/tastebench.py`, `taste/usermodel_store.py` | **Ethan** |
+| **B: Taste tracks and data** | Get the data for the two people whose taste we use, and test the method on them | Personal-track and public-track datasets + E2 (E7 dropped 2026-11-14) | `data/researchers/`, `taste/scrape.py`, `integrations/exa.py`, `taste/usermodel_store.py` | **Ethan** |
 | **C1: Scoring and calibration** | Make sure the score is right: judges and probe questions that really measure eval awareness and validity, on single-scenario EvalAwareBench items | the calibrated `Measurer`, the P1 gate, E3a, E6 | `research/measure.py`, `benchmarks.py`, `corpus.py`, `harness/evaldetect/` | **Nathan**. Builds on his scorer v2; §16 tasks 1–3 |
 | **C2: Targets and agentic environments** | Provide the models and environments being scored: held-out models, the Modal reasoning target, and Petri audits with real tools | `configs/models.json`, the Modal target, `PetriMeasurer`, E3b | `harness/modal_vllm.py`, `harness/petri/`, `research/petri_measure.py` | **Abhi**. §16 tasks 4–6 |
 | **D: Research loop** | The agent that rewrites environments, with taste used at each decision | R0 and R1 arms + E4, E4b | `research/loop.py`, `ideas.py`, new `decisions.py`, `advisor.py`, `claims.py` | **David** |
@@ -588,23 +587,14 @@ sha256. `pull` rebuilds the newest intact copy and never writes a partial or alt
 Open: WS D's `load_user_model` should call `pull` before loading when shared memory is
 past.dev (asked of David). The part size is a guess until `pastdev-live-smoke` runs.
 
-**Taste-Bench (E7): dropped 2026-11-14 (Ethan). Do not run.** The steps below are kept for the record only.
-(scorer built, never run): `python3 -m autoresearch.taste.tastebench`.
-1. **Data.** Request access to `wenbopan/taste-bench` (v1.0) on Hugging Face, then convert the
-   research subset to `data/tastebench/research.jsonl`. The folder is gitignored, and the
-   rows are never committed. The download step is not written yet: it needs pyarrow and
-   the user's approval.
-2. **Runs**, after `--dry-run` and the user's approval: `run --decider base` (R0), then
-   `--decider prompt` and `--decider advisor --base <R0 records>` for each track.
-3. **Score:** `score <records> --vs <R0 records>` gives the paired-order numbers, per cell,
-   and the paired 90% CI against R0.
+**Taste-Bench (E7): dropped 2026-11-14 (Ethan).** Its scorer, fetch script and data were removed.
 
 **Cost.** Exa searches (needs the user's `EXA_API_KEY`), plus a small amount of LLM cost for building the distractors.
 **Done when.**
 * Both researcher directories exist with corpus, choices, held-out data, usermodel.json and consent.
 * The E2 table and the noise ceiling are committed.
 
-**Board tasks:** claim `real-researcher` (public track), `human-labels` (personal track) and `exa-live-run`. Add `seed-choices-cli`, `timesplit-builder`, `noise-ceiling`. Built: `usermodel-pastdev`, `tastebench-eval` (scorer only; E7 dropped 2026-11-14, so no download or runs).
+**Board tasks:** claim `real-researcher` (public track), `human-labels` (personal track) and `exa-live-run`. Add `seed-choices-cli`, `timesplit-builder`, `noise-ceiling`. Built: `usermodel-pastdev`, `tastebench-eval` was built, then removed with E7 (2026-11-14).
 
 ---
 
