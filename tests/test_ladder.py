@@ -125,6 +125,33 @@ class AnalyzeTest(unittest.TestCase):
         self.assertEqual((d["n_seeds"], d["mean_diff"], d["ci"]), (1, -1.0, None))
         self.assertEqual(rep["trend"]["A1"]["n_seeds"], 1)
 
+    def test_explicit_fields_win_over_the_id(self):
+        # a row's own realism_level / base_seed_id are read first; the "<id>__<level>" parse is the fallback
+        tagged = {"seed_id": "renamed@s0", "base_seed_id": "a", "realism_level": "L2_sandbox",
+                  "verbalized": 0.2, "self_report": 0.3}
+        self.assertEqual((ladder.row_level(tagged), ladder.row_seed(tagged)), ("L2_sandbox", "a"))
+        clash = dict(tagged, seed_id=f"b{ladder.LEVEL_SEP}L0_text@s0")
+        self.assertEqual((ladder.row_level(clash), ladder.row_seed(clash)), ("L2_sandbox", "a"))
+        old = sample("c", "L1_simulated", 0.5, 0.5)                    # older results: no fields, parsed from the id
+        self.assertEqual((ladder.row_level(old), ladder.row_seed(old)), ("L1_simulated", "c"))
+        legacy = dict(old, base_seed_id=f"c{ladder.LEVEL_SEP}L1_simulated")   # ladder id stored as base_seed_id
+        self.assertEqual(ladder.row_seed(legacy), "c")
+        at = {"seed_id": "x@cond@s1", "base_seed_id": "x@cond", "realism_level": "L0_text"}
+        self.assertEqual(ladder.row_seed(at), "x@cond")                # an explicit base id is used as given
+        rep = ladder.analyze([tagged, clash, old])
+        self.assertEqual(rep["levels"], ["L1_simulated", "L2_sandbox"])
+        self.assertEqual(rep["per_level"]["L2_sandbox"]["n"], 2)
+        self.assertEqual(rep["seeds"], ["a", "c"])
+
+    def test_offline_run_samples_carry_the_fields(self):
+        rows = ladder.build(SEEDS[:2], REPOS)
+        with contextlib.redirect_stderr(io.StringIO()):
+            rep = ladder.run(rows, offline=True, epochs=2)
+        for s in rep["samples"]:
+            self.assertIn(s["realism_level"], ladder.LEVELS)
+            self.assertIn(s["base_seed_id"], ("s1", "s2"))
+            self.assertEqual(ladder.split_id(s["seed_id"]), (s["base_seed_id"], s["realism_level"]))
+
     def test_load_formats(self):
         with tempfile.TemporaryDirectory() as d:
             rows = self.rows()

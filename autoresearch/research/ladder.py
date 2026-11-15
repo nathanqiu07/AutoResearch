@@ -14,8 +14,9 @@ levels, and how eval awareness (A1, A2) changes from one level to the next.
     python3 -m autoresearch.research.ladder smoke --out-dir runs/ladder_smoke       # build + offline run + analyze
 
 `build` is deterministic: every seed at every level, seed-major, levels in order. A ladder row's seed_id is
-"<seed_id>__<level>"; it also carries `base_seed_id` and `realism_level`, so analysis pairs levels by seed
-even after PetriMeasurer appends "@s<n>" to the id. L3 repos come from any JSONL of repo dicts (e.g. the
+"<seed_id>__<level>"; it also carries `base_seed_id` and `realism_level`, which PetriMeasurer passes through to
+every sample it writes. Analysis reads those fields first and parses the id only for rows without them (older
+results), so it pairs levels by seed even after PetriMeasurer appends "@s<n>" to the id. L3 repos come from any JSONL of repo dicts (e.g. the
 output of `python3 -m autoresearch.research.real_repos`): a seed row's own "repo" wins (so seeds already
 given repos by `real_repos attach` keep them), then a repo whose "seed_id" names the seed, then the remaining
 repos in (url or local_path, ref) order, assigned round-robin. Repo fields are passed on as given.
@@ -152,14 +153,19 @@ def split_id(seed_id: str):
 
 
 def row_level(r: dict) -> Optional[str]:
+    """The row's realism level: its `realism_level` field, else parsed from its seed_id (older results)."""
     lvl = r.get("realism_level") or (r.get("env") or {}).get("realism_level")
     return lvl if lvl in LEVELS else split_id(r.get("seed_id", ""))[1]
 
 
 def row_seed(r: dict) -> str:
-    base = split_id(r.get("seed_id", ""))[0]
-    b2 = r.get("base_seed_id")
-    return split_id(b2)[0] if b2 else base
+    """The row's base seed: its `base_seed_id` field, else parsed from its seed_id (older results). A level
+    suffix on `base_seed_id` is dropped, for rows that stored the ladder id there."""
+    b = r.get("base_seed_id")
+    if not b:
+        return split_id(r.get("seed_id", ""))[0]
+    head, sep, tail = str(b).rpartition(LEVEL_SEP)
+    return head if sep and tail in LEVELS else str(b)
 
 
 def is_error(r: dict) -> bool:
@@ -394,10 +400,9 @@ def run(rows: List[dict], offline: bool, epochs: int = 1, workers: int = 4, mode
             pm.runner = HarnessRunner(mode=mode, max_turns=max_turns, target=pm.target.label, cache_dir=cache_dir)
         got = pm.measure([], list(range(len(seeds) * epochs)),
                          categories=OFFLINE_LEVEL_CATEGORIES[level] if offline else None)
-        for i, s in enumerate(got):
-            d = s.to_dict()
-            src = seeds[i % len(seeds)]
-            d.update(realism_level=level, base_seed_id=src["base_seed_id"], offline=offline)
+        for s in got:
+            d = s.to_dict()   # carries the row's realism_level and base_seed_id (PetriMeasurer passes them through)
+            d["offline"] = offline
             samples.append(d)
         warnings += [w for w in pm.warnings if w not in warnings]
         print(f"{level}: {len(got)} audits", file=sys.stderr)

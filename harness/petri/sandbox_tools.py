@@ -153,6 +153,15 @@ def bundle_local_repo(path: str, out_dir: str, max_bytes: int = MAX_BUNDLE_BYTES
     return out
 
 
+def repo_uploads(repo: Optional[Dict[str, Any]], out_dir: str, stage: str = STAGE_DIR) -> Dict[str, str]:
+    """The host files a repo's `repo_setup_commands` expect in the sandbox, as {sandbox path: host file}: a
+    `local_path` repo's bundle (made in `out_dir`, which must outlive the upload) at `bundle_path(stage)`;
+    nothing for a `url` repo or no repo."""
+    if not repo or not repo.get("local_path"):
+        return {}
+    return {bundle_path(stage): bundle_local_repo(repo["local_path"], out_dir)}
+
+
 def repo_name(repo: Dict[str, Any]) -> str:
     """The repo's directory name: the last segment of `url` or `local_path`, without `.git`."""
     if repo.get("url"):
@@ -481,9 +490,7 @@ def sandbox_auditor(pool: SandboxPool, resources_prompt: str = SANDBOX_NOTE, **a
             if repo:
                 setup = repo_setup_commands(repo)
                 with tempfile.TemporaryDirectory(prefix="autoresearch-bundle-") as tmp:
-                    uploads = {}
-                    if repo.get("local_path"):
-                        uploads[bundle_path()] = await asyncio.to_thread(bundle_local_repo, repo["local_path"], tmp)
+                    uploads = await asyncio.to_thread(repo_uploads, repo, tmp)
                     await pool.for_sample(setup=setup, uploads=uploads).prepare()   # uploads read before tmp goes
                 note += repo_note(repo)
             return await as_solver(auditor_agent(resources_prompt=note, **agent_kwargs))(state, generate)

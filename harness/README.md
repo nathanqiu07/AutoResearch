@@ -182,9 +182,17 @@ unmutated control replay, paired by decision point.
    * the auditor's `sandbox_exec` calls;
    * the target's routed tool calls, including any from rolled-back branches, because the sandbox does
      not roll back.
-2. **Base.** Run those commands in a fresh sandbox and snapshot its filesystem
-   (`Sandbox.snapshot_filesystem()` returns an Image). A failed clone fails the case. A failed audit
-   command is replayed as it happened.
+2. **Base.** In a fresh sandbox, first upload what the repo clone needs, then run those commands
+   and snapshot its filesystem (`Sandbox.snapshot_filesystem()` returns an Image). Every branch starts
+   from that snapshot, so they all share one clone. A failed upload or clone fails the case. A failed
+   audit command is replayed as it happened.
+   * A `local_path` repo goes through the audit harness's own path (`sandbox_tools.repo_uploads`):
+     it is bundled on the replay host with `git bundle create --all`, uploaded with a sha256 check
+     (`ModalSandbox._upload`; `FakeSnapshotSandbox.upload` in tests) and cloned by the case's
+     `repo_setup_commands`.
+   * The bundle is made at replay time, so the repo must be on the replay host with the commits the
+     audit used. Each row's `setup` log records the upload's sha256 and size, and the case's
+     `repo.ref` pins the checkout.
 3. **Branch.** For each (mutation, replicate):
    * start `Sandbox.create(image=snapshot)`;
    * apply the mutation, a text edit of the target-visible prefix and/or a shell edit of the sandbox
@@ -206,6 +214,9 @@ python harness/petri/counterfactual.py replay --cases cases.jsonl --out rows.jso
 # paid + Modal (needs approval):
 $AUTORESEARCH_PETRI_PYTHON harness/petri/counterfactual.py replay --cases cases.jsonl --out rows.jsonl \
     --target openai-api/modal/Qwen/Qwen3-30B-A3B --k 3 --replicates 3 --today 2026-11-15
+# a target that ran with run_audits.py --target-thinking: replay it the same way
+$AUTORESEARCH_PETRI_PYTHON harness/petri/counterfactual.py replay --cases cases.jsonl --out rows.jsonl \
+    --target anthropic/claude-sonnet-4-5 --target-thinking [--reasoning-tokens 8000]
 # score with C1's judges (A1 = Measurer.verbalized, A2 = Measurer.p_eval) and report per-cue effects
 python3 -m autoresearch.research.counterfactual score rows.jsonl --out scored.jsonl   # paid; --offline is free
 python3 -m autoresearch.research.counterfactual analyze scored.jsonl --out-dir runs/cf
@@ -228,6 +239,37 @@ inputs:
   or file names, so earlier commands still point at files that exist.
 * Add a mutation by adding a `Mutation` to `MUTATIONS`.
 
+**Target config.** `--target-thinking` (with `--reasoning-tokens`, default 8000) gives the replay target
+the same Inspect `GenerateConfig` as `run_audits.py --target-thinking`, from one shared function,
+`run_audits.target_thinking_config`. OpenAI models get `reasoning_effort="high"`; other models get a
+reasoning-token budget plus 8000 tokens for the reply. Replay a case with the setting its audit used.
+Each row records the config in `target_thinking` (null when it is off). As in `run_audits.py`, `--mock`
+ignores it.
+
+**`realistic_names` and PLAN I18.** I18 says environments use realistic but fictional entities: no
+real private individuals and no impersonation of a real company. The replacement table
+(`REALISTIC_NAMES` in `counterfactual.py`) was checked against that rule on 2026-11-15, and the
+check found two problems:
+* the company, Brightwell, shares its name with real companies;
+* its domain, `brightwell-freight.com`, is a registrable public domain, so the generated email
+  addresses could belong to, or reach, a real organisation.
+
+Brightwell is also a name that LLM-written environments in `results/` use often. The table now uses:
+* a coined company, `Kessrow Freight` (`FICTIONAL_COMPANY`);
+* the domain `kessrow-freight.internal`. ICANN reserved `.internal` for private use and will never
+  delegate it, so no address or URL in the table can reach a real host. It still looks like a
+  company intranet rather than a placeholder such as `example.com`;
+* invented first/last-name pairs (`FICTIONAL_PEOPLE`), taken from no scraped or Exa material.
+
+`test_counterfactual.NamesTest` keeps the check running:
+* every host in a replacement is under `.internal`;
+* no replacement is itself a placeholder: applying the table twice changes nothing;
+* no fictional person or company name appears in the repo's real-person data (`data/researchers/`).
+
+Whether a coined name matches some real business somewhere can't be ruled out offline. Re-check
+with a web search before any name change is published. `add_fake_git_history` deliberately uses
+`Test User <test@example.com>`, a reserved placeholder domain, because it is the less-realistic arm.
+
 **Injectable parts.** Sandboxes: `ModalSnapshotBackend` or `FakeSnapshotBackend`. Targets:
 `InspectTarget` (any Inspect model or model id) or `FakeTarget`. Only those two import third-party
 packages, lazily.
@@ -240,6 +282,5 @@ packages, lazily.
   and analyze.
 
 **Not supported yet:**
-* replaying `local_path` repos (their bundle upload would need replaying too);
 * audits that ran in simulated mode (they replay with no sandbox, every tool call gets the fixed
   error, and file mutations are skipped and recorded as such).
