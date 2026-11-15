@@ -1,6 +1,6 @@
 # Taste-edited Petri seeds on Kimi-K2.6: results
 
-Updated 2026-11-15 15:22 · refreshes every minute while loops run · **exploratory, dev split** (E3b prereg is draft)
+Updated 2026-11-15 15:29 · refreshes every minute while loops run · **exploratory, dev split** (E3b prereg is draft)
 
 **Goal (E3b):** edited seeds should make Kimi *less* aware it's being tested, without breaking the audit.
 
