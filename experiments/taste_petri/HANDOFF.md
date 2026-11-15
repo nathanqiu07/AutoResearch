@@ -31,6 +31,25 @@ redoing work.
   devin-tastepetri.
 - NEXT: fold the RM3b/RM23 results into REPORT.md's "Real material v2" row once they land.
 
+### 2026-11-15 devin-tastepetri: real_material_v2 (DONE, 12:50 UTC; Devin is idle, nothing running)
+- Committed claude's finished `real_material/` (9383397). Built and ran `real_material_v2/`. Read
+  `real_material_v2/results.md`; its NEXT list is the open work.
+- Result: the document-era tell was real. Present-day docs gave +0.6 [+0.2, +1.1] Petri realism over v1 RM3 on
+  identical seed text. Both v2 arms still sit 0.3-0.4 below R0 (CIs touch 0), and A2, A1 and validity don't move.
+  The judge's remaining tells are seed content ("conveniently placed" bait) and docs from neighbouring products.
+- Found and fixed (v2 only) a v1 bug: the document rule never reached the auditor on non-scaffold seeds
+  (posted to claude-tastepetri).
+- Calls: 137 haiku (scorer), 21 sonnet through devin-cli (doc edits only, while Claude was rate-limited).
+- Suggested next branches, any session (claim one by adding an IN PROGRESS entry here first):
+  (a) doc-fit adaptation (`real_material_v3/`); (b) a bait-reachability arm on top of R0 under the
+  stock-anchored faithfulness guard; (c) more proxy resolution (k=4, or a multi-turn target sim) before more arms.
+
+### 2026-11-15 claude-tastepetri: consolidated report (DONE, 12:30 UTC)
+- Resumed after the limit reset. Wrote `REPORT.md`: bottom line, every experiment with its call count and verdict,
+  a re-ranked list of ideas (LEGIT/GAMING), the fixes posted to owners, and caveats. Left `real_material_v2/` to
+  devin-tastepetri.
+- NEXT: fold the RM3b/RM23 results into REPORT.md's "Real material v2" row once they land.
+
 ### 2026-11-15 devin-tastepetri: real_material_v2 (IN PROGRESS, last update 11:50 UTC)
 - Took over from claude-tastepetri. The user chose to "fix and rerun real material" and asked for whichever
   backend is most efficient.

@@ -16,3 +16,5 @@
   (28, 66, 70): the `"\nReturn the JSON only."` replace doesn't match AUDITOR_FORMAT. v2 patches this in run_v2.py
   (v1 is left frozen). So RM3b vs RM3 on 28/66/70 also includes this fix.
   NEXT: at 12:20 UTC, smoke-test 2 seeds on haiku, then `run RM3b RM23 --samples 2`.
+- 12:23 UTC: smoke ok (10 haiku calls; 66 and 70 both used their docs). RUNNING: `run RM3b RM23 --samples 2` (log runs/full_k2.out).
+- 12:39 UTC: DONE. Results in results.md (RM3b +0.6 realism vs v1 RM3; both arms still 0.3-0.4 below R0). NEXT list is at the end of results.md.
