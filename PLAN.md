@@ -534,12 +534,13 @@ fair, and cache every call. ~8 methods × ~100 test users × 20 pairs ≈ 16k ju
 **Goal.** Build the two people's data and test transfer (§6.3, E2), keep the user models in
 past.dev, and run Taste-Bench (E7).
 
-**Track P: one team member** (**[decide]** who; not Ethan):
-1. **Seed choices.** `python3 -m autoresearch seed-choices --researcher <slug> --scenario <name> --n 50`.
+**Track P: one team member** (**[decide]** who; not Ethan). Built in `taste/trackp.py`
+(`python3 -m autoresearch.taste.trackp init|seed-pairs|answer|label|recheck|status|e2`); no answers collected yet.
+1. **Seed choices.** `trackp seed-pairs --researcher <slug> --n 50`, then `trackp answer --researcher <slug>`.
    * The command generates D1-style pairs: two candidate interventions for the same EvalAwareBench item, taken from `ideas.LIBRARY` plus LLM proposals.
    * The team member picks one and can add a sentence explaining why. Store their reasons, because they are extra signal for M2.
    * Each pair is stored as a text `Choice` with `decision_point="D1"`, with features filled in by A's featuriser.
-2. **Decision labels.** Extend the existing `label` command to read WS D's `decisions.jsonl` (§12.6) and cover all of D1–D6, not just D1. Labels go to `data/researchers/<slug>/labels.jsonl`, with a timestamp and run id.
+2. **Decision labels.** `trackp label --researcher <slug> runs/<run_id>/decisions.jsonl` reads WS D's `decisions.jsonl` (§12.6) and covers all of D1–D6. It hides the loop's choice, the arm and the option order. Labels go to `data/researchers/<slug>/labels.jsonl`, with a timestamp and run id.
 3. **Noise ceiling** (from `eval-awareness-plan.md`): re-ask ~20% of the items a few days later, without showing the earlier answers. The person's agreement with themselves is the upper bound on fidelity, and E2 is reported next to it.
 4. **Hold-out:** 20% of the seed choices, plus every label from runs after a cutoff date.
 
