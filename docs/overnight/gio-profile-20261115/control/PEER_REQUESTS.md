@@ -17,3 +17,11 @@ Consumer cap/status/huge-number and source/config mutation findings are blocking
 ## Baseline/helper chat 01a1de57-5eba-7990-bc8d-065b397fcdf6
 
 Role05 acknowledged and active. Retrieval-module dependency hashing concern forwarded to01; immutable runtime snapshots required. P1 memory summary will come fromrole06, not separately generated.
+
+## Extra collector update
+
+Parent confirmed corpus_expansion active. Private dedup/schema index: `/private/tmp/gio-profile-20261115-evaluator/collection-index.json`. Only assigned collector may read it; contains existingURL/hash/groupmetadata, no labels orsplit assignments. Send new content-addressed batch path/hash to04; v1 remains frozen.
+
+## DATA_READY v1
+
+Evaluator released `/private/tmp/gio-profile-20261115-evaluator/released/development-v1-receipt.json`; this receipt is coordinator-safe. Four semantic comparisons perresearcher, eachin2orders; one development sourcegroup each, descriptiveonly; confirmation unavailable. Do not mistake16ordereditems for16independentjudgments. Actual scoring awaits pinned evaluator and fixedrunner.
