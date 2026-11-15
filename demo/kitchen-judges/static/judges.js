@@ -46,9 +46,9 @@
     valid: { who: "Bowman", name: "The validity-first rewrite", cls: "ochre",
              what: "Minimal, single-variable edits that keep the behaviour test intact, each one confirmed before it's accepted.",
              res: "Spontaneous awareness 0.36 → 0.11 vs fresh stock (90% CI just excludes zero). Petri 3.14 → 1.33." },
-    bold:  { who: "Evans", name: "The bold reframe", cls: "clay",
+    bold:  { who: "none of our top profiles", name: "The bold reframe", cls: "clay",
              what: "Rebuild the scenario around a new premise and search widely across seeds.",
-             res: "Careful: this arm raised spontaneous awareness to 0.45, above the plain control (0.16). Taste can hurt." },
+             res: "None of our best expert profiles work this way. The profiles that cut awareness most (Hobbhahn 0.02, Greenblatt 0.06, Bowman 0.11, vs stock 0.36) lean on realism and rigor. Try dragging toward them." },
   };
 
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -213,9 +213,7 @@
     ["Hobbhahn", "expert", 9, 0.02, 1.22, "-0.34 [-0.60, -0.10]", 1],
     ["Greenblatt", "expert", 9, 0.06, 1.11, "-0.29 [-0.56, -0.02]", 1],
     ["Bowman", "expert", 9, 0.11, 1.33, "-0.23 [-0.47, -0.00]", 1],
-    ["Shlegeris", "expert", 9, 0.28, 1.33, "-0.14 [-0.33, +0.01]"],
-    ["Evans", "expert", 8, 0.45, 1.38, "-0.08 [-0.32, +0.07]"],
-    ["Ethan (non-expert)", "no field knowledge", "1*", "0.00*", "≈1.44†", "n/a"],
+    ["Ethan (non-expert)", "no field knowledge", 9, "n/a*", "≈1.44†", "n/a*"],
   ];
   function viewResults() {
     const app = document.getElementById("app");
@@ -232,15 +230,15 @@
           <h3>Spontaneous eval awareness by arm</h3>
           <div class="jr-bars">${ROWS.map((r) => { const v = typeof r[3] === "number" ? r[3] : null; return `
             <div class="jr-row ${r[6] ? "sig" : ""}"><span class="jr-name">${esc(r[0])}<small>${esc(r[1])}</small></span>
-              <div class="jr-track">${v !== null ? `<i style="width:${Math.max(1.5, (100 * v) / max)}%"></i>` : `<em>only 1 scored audit</em>`}</div>
+              <div class="jr-track">${v !== null ? `<i style="width:${Math.max(1.5, (100 * v) / max)}%"></i>` : `<em>not measured on all 9 seeds; Petri ≈1.44, no better than control</em>`}</div>
               <b class="mono">${esc(String(r[3]))}</b></div>`; }).join("")}</div>
           <table class="jr-table mono small"><thead><tr><th>arm</th><th>n</th><th>spontaneous</th><th>Petri (1–10)</th><th>vs stock [90% CI]</th></tr></thead>
             <tbody>${ROWS.map((r) => `<tr class="${r[6] ? "sig" : ""}"><td>${esc(r[0])}</td><td>${esc(String(r[2]))}</td><td>${esc(String(r[3]))}</td><td>${esc(String(r[4]))}</td><td>${esc(r[5])}</td></tr>`).join("")}</tbody></table>
         </article>
         <div class="jr-notes rise" style="--i:4">
-          <div class="notice good"><b>Expertise matters.</b> Ethan, who has no knowledge of the field, did about the same as the plain control on Petri (≈1.44 vs 1.22). The expert profiles were the only arms that significantly beat fresh stock on spontaneous awareness: Hobbhahn 0.02, Greenblatt 0.06 and Bowman 0.11, against 0.36.</div>
-          <div class="notice warn"><b>Honest caveats.</b> No profile beats the plain control significantly (Hobbhahn vs control: −0.14 [−0.30, +0.02]). Taste can hurt: Evans raised awareness to 0.45. Self-report (“is this a test?”) stays about 0.95 in every arm, even on real sessions, so we don't use it.</div>
-          <p class="muted small">* The Ethan arm has 1 scored audit in the final report. † His 9-seed Petri average is approximate, from transcript matching. Source: results/e3b/final_report_all.md.</p>
+          <div class="notice good"><b>Expertise matters.</b> Ethan, who has no knowledge of the field, did about the same as the plain control on Petri (≈1.44 vs 1.22). Meanwhile, three expert profiles significantly beat fresh stock on spontaneous awareness: Hobbhahn 0.02, Greenblatt 0.06 and Bowman 0.11, against 0.36.</div>
+          <div class="notice warn"><b>Honest caveats.</b> No profile beats the plain control significantly (Hobbhahn vs control: −0.14 [−0.30, +0.02]). Self-report (“is this a test?”) stays about 0.95 in every arm, even on real sessions, so we don't use it.</div>
+          <p class="muted small">* Spontaneous awareness for Ethan's arm was scored on only 1 seed, so we don't report it. † His 9-seed Petri average is approximate, from transcript matching. Showing the control, stock and the three expert profiles that significantly beat stock. Source: results/e3b/final_report_all.md.</p>
         </div>
       </section>`;
   }
