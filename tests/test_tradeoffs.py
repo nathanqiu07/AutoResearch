@@ -23,8 +23,8 @@ class StubLLM:
         return self.replies.pop(0)
 
 
-class StubModel:
-    """probabilities for [first, second] option given the two option texts."""
+class StubJudge:
+    """Gives probabilities for [first, second] option given the two option texts in shown order."""
     method_id = "stub"
 
     def __init__(self, fn):
@@ -32,13 +32,16 @@ class StubModel:
 
     def predict(self, context, options):
         p = self.fn(options)
-        return Prediction("a", max(p), probabilities=p)
+        return Prediction("a" if p[0] >= p[1] else "b", max(p), probabilities=p)
 
 
 class BankTest(unittest.TestCase):
-    def test_bank_has_thirteen_axes_covering_d1_to_d6(self):
-        self.assertEqual(len({r["axis"] for r in BANK}), 13)
+    def test_bank_has_fourteen_axes_covering_d1_to_d6(self):
+        self.assertEqual(len({r["axis"] for r in BANK}), 14)
         self.assertEqual({r["decision_point"] for r in BANK}, {f"D{i}" for i in range(1, 7)})
+
+    def test_scenarios_only_where_the_loop_lets_taste_act(self):
+        self.assertEqual({r["decision_point"] for r in BANK if tradeoffs.has_scenario(r)}, {"D1", "D3", "D4", "D5"})
 
     def test_bank_cites_no_hobbhahn_or_apollo_source(self):
         bad = re.compile("hobbhahn|apollo", re.I)
@@ -57,28 +60,20 @@ class BankTest(unittest.TestCase):
 
 
 class PairsTest(unittest.TestCase):
-    def test_default_fifty_is_thirteen_stance_and_thirty_seven_scenarios(self):
-        pairs = tradeoffs.build_seed_pairs(BANK, ITEMS, 50, seed=1)
-        stance = [p for p in pairs if p["form"] == "stance"]
+    def test_seed_set_is_every_stance_plus_one_scenario_per_scenario_axis(self):
+        pairs = tradeoffs.build_seed_pairs(BANK, ITEMS, seed=1)
         scen = [p for p in pairs if p["form"] == "scenario"]
-        self.assertEqual((len(stance), len(scen)), (13, 37))
-        self.assertEqual(len({p["pair_id"] for p in pairs}), 50)
-        counts = Counter(p["item"] for p in scen)
+        self.assertEqual(len(pairs) - len(scen), 14)
+        self.assertEqual(sorted(p["axis"] for p in scen), sorted(r["axis"] for r in BANK if tradeoffs.has_scenario(r)))
+        self.assertEqual(len({p["pair_id"] for p in pairs}), len(pairs))
+
+    def test_scenarios_rotate_over_environments_so_none_is_reused_until_all_are(self):
+        counts = Counter(p["item"] for p in tradeoffs.scenario_pairs(BANK, ITEMS, seed=1))
         self.assertEqual(set(counts), {sc.name for sc in ITEMS})
         self.assertLessEqual(max(counts.values()) - min(counts.values()), 1)
-        self.assertEqual({p["axis"] for p in scen}, set(BY_AXIS))
-
-    def test_not_enough_distinct_scenarios_raises(self):
-        with self.assertRaises(ValueError):
-            tradeoffs.scenario_pairs(BANK, ITEMS[:1], 14)
-
-    def test_n_below_thirteen_gives_only_stance_items(self):
-        pairs = tradeoffs.build_seed_pairs(BANK, ITEMS, 5, seed=1)
-        self.assertEqual([p["form"] for p in pairs], ["stance"] * 5)
-        self.assertEqual([p["axis"] for p in pairs], [r["axis"] for r in BANK[:5]])
 
     def test_poles_track_the_shuffled_option_order(self):
-        pairs = tradeoffs.build_seed_pairs(BANK, ITEMS, 50, seed=3)
+        pairs = tradeoffs.build_seed_pairs(BANK, ITEMS, seed=3)
         for p in pairs:
             self.assertEqual({p["a_pole"], p["b_pole"]}, {1, 2})
             row = BY_AXIS[p["axis"]]
@@ -88,21 +83,22 @@ class PairsTest(unittest.TestCase):
             self.assertEqual(text[2], row[key + "2"])
         self.assertGreater(len({p["a_pole"] for p in pairs}), 1)
 
-    def test_scenario_context_has_the_item_and_the_axis_question(self):
+    def test_scenario_context_has_the_item_and_explains_a_change_and_the_question_is_separate(self):
         sc = SCENARIOS["metric_inflation"]
-        scen = tradeoffs.scenario_pairs(BANK, [sc], 3, seed=1)
-        for p in scen:
+        for p in tradeoffs.scenario_pairs(BANK, [sc], seed=1):
             self.assertIn(sc.goal, p["context"])
-            self.assertIn(BY_AXIS[p["axis"]]["scenario_question"], p["context"])
+            self.assertIn("A 'change' is one such revision", p["context"])
+            self.assertEqual(p["question"], BY_AXIS[p["axis"]]["scenario_question"])
+            self.assertNotIn(p["question"], p["context"])
         for p in tradeoffs.stance_pairs(BANK):
             self.assertIsNone(p["item"])
-            self.assertIn(BY_AXIS[p["axis"]]["question"], p["context"])
+            self.assertEqual(p["question"], BY_AXIS[p["axis"]]["question"])
             for other in SCENARIOS.values():
                 self.assertNotIn(other.goal, p["context"])
 
     def test_same_seed_same_pairs(self):
-        self.assertEqual(tradeoffs.build_seed_pairs(BANK, ITEMS, 40, seed=2),
-                         tradeoffs.build_seed_pairs(BANK, ITEMS, 40, seed=2))
+        self.assertEqual(tradeoffs.build_seed_pairs(BANK, ITEMS, seed=2),
+                         tradeoffs.build_seed_pairs(BANK, ITEMS, seed=2))
 
 
 class LLMScenarioTest(unittest.TestCase):
@@ -133,27 +129,36 @@ class LLMScenarioTest(unittest.TestCase):
 
 
 class BalanceTest(unittest.TestCase):
+    """The public track's blind-judge rule: one-sided only if the judge picks the same pole
+    in both option orders."""
     def setUp(self):
         self.pair = tradeoffs.stance_pairs(BANK[:1], seed=1)[0]
         self.pole1 = {self.pair["a_pole"]: self.pair["a_text"], self.pair["b_pole"]: self.pair["b_text"]}[1]
 
-    def check(self, fn, **kw):
-        return tradeoffs.balance_check([self.pair], StubModel(fn), **kw)[0]
+    def check(self, fn):
+        return tradeoffs.balance_check([self.pair], StubJudge(fn))[0]
 
-    def test_balance_flags_a_pair_both_orders_favour_one_pole(self):
-        pole_one = lambda opts: [0.9, 0.1] if opts[0] == self.pole1 else [0.1, 0.9]
-        row = self.check(pole_one)
+    def test_a_judge_that_favours_pole_one_in_both_orders_flags_the_pair(self):
+        row = self.check(lambda opts: [0.8, 0.2] if opts[0] == self.pole1 else [0.2, 0.8])
         self.assertTrue(row["one_sided"])
-        self.assertEqual(row["pair_id"], self.pair["pair_id"])
-        self.assertEqual(row["p_pole1"], [0.9, 0.9])
+        self.assertEqual((row["pair_id"], row["picks"], row["p_pole1"]), (self.pair["pair_id"], [1, 1], [0.8, 0.8]))
 
-    def test_position_bias_alone_is_not_flagged(self):
-        self.assertFalse(self.check(lambda opts: [0.9, 0.1])["one_sided"])
+    def test_a_mild_lean_is_roughly_undecided_though_both_picks_agree(self):
+        row = self.check(lambda opts: [0.6, 0.4] if opts[0] == self.pole1 else [0.4, 0.6])
+        self.assertEqual(row["picks"], [1, 1])
+        self.assertFalse(row["one_sided"])
 
-    def test_threshold_is_respected(self):
-        pole_one = lambda opts: [0.7, 0.3] if opts[0] == self.pole1 else [0.3, 0.7]
-        self.assertFalse(self.check(pole_one)["one_sided"])
-        self.assertTrue(self.check(pole_one, threshold=0.6)["one_sided"])
+    def test_a_judge_that_always_favours_the_first_slot_is_undecided(self):
+        row = self.check(lambda opts: [0.9, 0.1])
+        self.assertFalse(row["one_sided"])
+        self.assertEqual(row["picks"], [1, 2])
+
+    def test_the_judge_sees_the_question(self):
+        seen = []
+        judge = StubJudge(lambda opts: [0.5, 0.5])
+        judge.predict = lambda context, options: seen.append(context) or Prediction("a", 0.5, probabilities=[0.5, 0.5])
+        tradeoffs.balance_check([self.pair], judge)
+        self.assertIn(self.pair["question"], seen[0])
 
 
 class ShownTest(unittest.TestCase):

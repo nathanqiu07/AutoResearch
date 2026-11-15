@@ -11,16 +11,21 @@ for an agent collecting them. All commands are
 
 ```bash
 python3 -m autoresearch.taste.trackp init --researcher <slug> --name "<full name>"
-python3 -m autoresearch.taste.trackp seed-pairs --n 50
+python3 -m autoresearch.taste.trackp seed-pairs
 ```
 
 * The user decides who the person is (not Ethan).
 * Before any answers are collected, the person ticks every box in
   `data/researchers/<slug>/CONSENT.md`, and `status` lists this step until they have.
-* `seed-pairs --n 50` makes no model calls. It writes 13 stance items and 37 scenario items.
+* `seed-pairs` makes no model calls. It writes 21 items: a stance item for each of the 14
+  trade-off axes, and one scenario item for each of the 7 axes where the loop lets taste act
+  (D1, D3 when inconclusive, D4, D5), each in a different environment.
   `--llm-scenarios K --llm <backend>` adds LLM-written scenario items. That is a paid call,
   so ask the user first.
-* Then run `balance --method m0 --backend <b> --model <m>` (paid, ask first) and `review`.
+* Then run `balance --backend <b> --model <m>` (paid, ask first) and `review`. `balance` is the
+  public track's blind judge: a model with no history answers in both orders, and an item where
+  it gives one option 0.7 or more both times is flagged one-sided. A taste item should leave it
+  roughly undecided.
   `review` lists the items awaiting a decision, and `review --id <pair_id> --decision
   approve|drop` settles one. Someone other than the person answering does both.
 
@@ -31,15 +36,17 @@ Only the person answers. Never pick an option for them, and never guess a reply.
 **In chat (agents):**
 
 ```bash
-python3 -m autoresearch.taste.trackp pending --kind seed --limit 5
+python3 -m autoresearch.taste.trackp status          # stop if consent is still pending
+python3 -m autoresearch.taste.trackp pending --kind seed --limit 50
 python3 -m autoresearch.taste.trackp record --id <id> --choice <n>
 ```
 
-1. Before the first item, tell the person once: it takes about 20 minutes, they can stop and
+1. Before the first item, tell the person once: it takes about 12 minutes, they can stop and
    resume at any point, there are no right answers, and each question asks what they would do.
 2. `pending` serves scenario items grouped by their `group` field, then the stance items.
-   Show a group's context once, then its questions one at a time, with the numbered `options`
-   exactly as printed. Stance items come last.
+   Show a group's `context` once, then each item's `question` and its `options` one at a time,
+   numbered 1 and 2 exactly as printed. Stance items come last. Fetch the whole list at once so
+   groups are not split; a skipped item stays pending, so keep track of the ids you skipped.
 3. Never name the axis, the poles or the decision point.
 4. Say nothing about the content: no opinion, hint, paraphrase or "good choice". If they ask
    what an option means, re-show it word for word.

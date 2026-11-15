@@ -58,21 +58,29 @@ One row per axis in a hand-written bank. Poles are written so neither is the "ri
 |---|---|---|---|---|
 | construct-scope | narrow operational definition, one sub-component | broad coverage of the phenomenon | D1 | Bean |
 | purpose | inform a concrete deployment decision | build scientific understanding | D1 | BetterBench |
-| control-vs-realism | controlled synthetic setup, one variable changed | messy realistic setup, many cues at once | D1 | Bean; Anthropic 2026 |
+| control-vs-realism | controlled synthetic setup, one variable changed | messy realistic setup, many cues at once | D1 | Bean |
 | scale-vs-craft | many generated items | a few hand-built environments | D2 | Ganguli 2023 |
 | elicitation | maximum effort (scaffold, best prompt) | default deployed behaviour | D2 | METR |
 | grading | LLM judge over many items | human or rule-based grading over fewer | D2 | Bean; Anthropic 2026 |
-| awareness-signal | ask the model directly whether it is in an eval | infer awareness from behaviour and reasoning only | D2 | PLAN §A1–A2 |
+| awareness-signal | ask the model directly whether it is in an eval | infer awareness from behaviour and reasoning only | D2 | EvalDetectBench (arXiv 2609.01611) |
 | items-vs-samples | more distinct items | more samples per item | D2 | Miller |
-| evidence-bar | accept on a modest, pre-registered effect | hold out for a large or replicated effect | D3 | Miller |
-| breadth-vs-depth | drop a mixed direction, try a new one | stay and find out why it is mixed | D4 | Bean (failure modes) |
+| evidence-bar | re-test a result just short of the bar | drop it and move on | D3 (inconclusive zone) | Miller |
+| breadth-vs-depth | drop a mixed direction, try a new one | stay and find out why it is mixed | D4 | none (from the loop's D4 choice) |
 | reading | read transcripts in depth | trust aggregate metrics, spot-check | D5 | Anthropic 2026; Bean |
+| explanation-prior | look for a setup artefact first | run a direct follow-up first | D5 | Bean; Ganguli 2023 |
 | claim-scope | a narrow claim tied to this setup | a broader claim the evidence suggests | D6 | Bean; BetterBench |
 | openness | private held-out data | public, reproducible data | D6 | Bean; BetterBench |
 
 Each bank row holds: `axis`, `decision_point`, `sources`, the stance `question` with
-`pole_1`/`pole_2`, and a scenario `template` (question plus two option texts that read
-against an item's context).
+`pole_1`/`pole_2`. Rows at D1, D3, D4 and D5 also hold a scenario (`scenario_question`,
+`scenario_1`, `scenario_2`) that reads against an item's context.
+
+**Where taste acts (after vetting, the user's call).** The loop consults the user model only
+where a choice is not decisive: D1 ranking, D3 in the inconclusive zone, D4 "abandon
+direction?" and D5 explanations (`research/loop.py`). D2 and D6 axes stay as stance items
+only; scenarios exist only for the other seven axes, worded to match the loop's choice there.
+**Rotation (the user's call):** each scenario is asked once, in one environment, rotated so
+no question text repeats; more environment variety comes from LLM-written items.
 
 ## Approaches considered
 
@@ -89,7 +97,9 @@ definitions (B). Both kinds of scenario go through the balance check.
 ## Generation, recording and the balance check
 
 * `trackp seed-pairs` writes stance items (one per axis, item-free context) and scenario
-  items (axis × EvalAwareBench dev items, round-robin as today) to `seed_pairs.jsonl`. Each
+  items (one per scenario axis, rotated over EvalAwareBench dev items) to `seed_pairs.jsonl`.
+  Each row carries `context` and a separate `question`; the scenario context ends by saying
+  what a "change" and a "direction" are. Each
   row gains `axis`, `form` (`stance` | `scenario`), `origin` (`bank` | `llm`),
   `decision_point`, and `a_pole`/`b_pole` (1 or 2) so stance-vs-scenario consistency can be
   computed later. The consistency report itself is out of scope for this build (my call). The
@@ -100,9 +110,14 @@ definitions (B). Both kinds of scenario go through the balance check.
 * **LLM scenarios (B).** The prompt gets the item context and the axis row and must return two
   options, one per pole, of similar length and specificity. Paid: off by default; the runbook
   already says to ask the user before paid calls.
-* **Balance check** (my calls). The checker is the no-history user model (`m0`, method
-  `base`), reusing `predict` and its probabilities on each pair in both orders; a pair it
-  gives the same pole ≥ 0.8 in both orders is flagged `one_sided`. Flags and review decisions
+* **Balance check** (the user's call: the same test as the public track). The checker is the
+  public track's blind judge (`track_eval.BlindJudge`, "which is the better research
+  decision?", default `claude-opus-5-5`), asked in both option orders as in
+  `track_eval.paired_correct`. Its picks are recorded as the public track scores them, but a
+  forced choice picks the same pole on almost any lean (48 of 54 probe pairs), so the gate uses
+  its probabilities: a pair it gives the same pole ≥ 0.7 in both orders is `one_sided`. Probe
+  run 2026-11-14 (every axis, every scenario in all four environments, Opus 5.5): after three
+  rewordings no pair flagged, mean p(pole 1) 0.31–0.69. Flags and review decisions
   go to a sidecar `balance.jsonl`, so `seed_pairs.jsonl` stays append-only. LLM-written pairs
   are not pending until checked and not flagged (or approved); bank pairs are pending without a
   check, because each was reviewed when written. Reviewing is `trackp review`, done by someone
@@ -112,18 +127,17 @@ definitions (B). Both kinds of scenario go through the balance check.
 
 ## Length and time
 
-The default `--n 50` is 13 stance items plus 37 scenario items, about 3 per axis. Time for a
-fast reader (about 400 words a minute) who decides quickly:
+The seed set is 14 stance items plus 7 scenario items. Time for a fast reader (about 400
+words a minute) who decides quickly:
 
 | Part | Each | Total |
 |---|---|---|
-| 13 stance items (~40 words) | ~15 s | ~3 min |
-| 10 item contexts, read once (~250 words) | ~40 s | ~7 min |
-| 37 scenario options (~60 words) and the choice | ~15 s | ~9 min |
+| 14 stance items (~40 words) | ~15 s | ~4 min |
+| 4 item contexts, read once (~250 words) | ~40 s | ~3 min |
+| 7 scenario questions (~60 words) and the choice | ~20 s | ~2.5 min |
 
-So about **20 minutes**. That
-assumes scenario items are grouped by item, so each context is read once; shown in random
-order, the context is re-read for every item and the session takes about 35–45 minutes.
+So about **10 minutes**, or about **12** with a few LLM-written items, assuming scenario
+items are grouped by item so each context is read once.
 
 ## Administering the test (agent instructions)
 
@@ -131,7 +145,7 @@ order, the context is re-read for every item and the session takes about 35–45
 extends it and drops its step 2 ("ask why in one sentence"), and `pending` serves items in the order below so the agent doesn't have to sort
 them:
 
-1. **Before the first item,** tell the person once: it takes about 20 minutes, they can stop and resume at any point, there are no right answers, and each
+1. **Before the first item,** tell the person once: it takes about 12 minutes, they can stop and resume at any point, there are no right answers, and each
    question asks what *they* would do.
 2. **Order:** scenario items first, grouped by item context; stance items last. Asking the
    general stance first would invite the person to answer the scenarios to match it, which

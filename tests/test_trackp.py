@@ -18,8 +18,11 @@ from autoresearch.taste.methods import create_method
 from autoresearch.taste.usermodel import Prediction, UserModel
 
 SLUG = "teammate"
-POLE_ONE = {r[k] for r in tradeoffs.load_bank() for k in ("pole_1", "scenario_1")}
-AXIS_NAMES = [r["axis"] for r in tradeoffs.load_bank()]
+BANK = tradeoffs.load_bank()
+POLE_ONE = {r[k] for r in BANK for k in ("pole_1", "scenario_1") if k in r}
+AXIS_NAMES = [r["axis"] for r in BANK]
+N_STANCE = len(BANK)
+N_SEED = N_STANCE + sum(tradeoffs.has_scenario(r) for r in BANK)
 
 
 def pole_one(text):
@@ -45,17 +48,18 @@ class TrackPTest(unittest.TestCase):
         text = out.getvalue()
         return json.loads(text) if text.lstrip().startswith("{") else text
 
-    def answer(self, kind, prefer, *extra, reason="because"):
+    def answer(self, kind, prefer, *extra, reason="because", limit=1000):
         """The agent loop: show each pending item, record the person's pick."""
-        items = self.cli("pending", "--kind", kind, "--limit", 1000, *extra)["items"]
+        items = self.cli("pending", "--kind", kind, "--limit", limit, *extra)["items"]
         for it in items:
             best = max(range(len(it["options"])), key=lambda j: prefer(it["options"][j]))
             self.cli("record", "--id", it["id"], "--choice", best + 1, "--reason", reason, *extra)
         return items
 
-    def seed(self, n=20, prefer=pole_one):
-        self.seed_pairs_only(n)
-        return self.answer("seed", prefer)
+    def seed(self, n=1000, prefer=pole_one, seed=1):
+        """Write the seed set and answer the first n items it serves."""
+        self.seed_pairs_only(seed)
+        return self.answer("seed", prefer, limit=n)
 
     def label_run(self, run_id, records):
         log = DecisionLog(run_id, "R0", root=os.path.join(self.root, "runs"), version="test")
@@ -76,15 +80,15 @@ class TrackPTest(unittest.TestCase):
         self.assertEqual(fresh["researcher"], SLUG)
         self.assertTrue(any("CONSENT.md" in s for s in fresh["next"]))
         self.assertTrue(any(s.startswith("seed-pairs") for s in fresh["next"]))
-        self.cli("seed-pairs", "--n", 4)
-        self.assertTrue(any(s.startswith("4 seed item(s) waiting") for s in self.cli("status", "--decisions")["next"]))
+        self.cli("seed-pairs")
+        self.assertTrue(any(s.startswith(f"{N_SEED} seed item(s) waiting") for s in self.cli("status", "--decisions")["next"]))
 
     def pairs(self):
         return read(os.path.join(self.dir, trackp.SEED_PAIRS))
 
     def add_llm_pair(self):
         row = {"pair_id": "llm000000001", "form": "scenario", "axis": "grading", "decision_point": "D2",
-               "origin": "llm", "item": "metric_inflation", "context": "ctx", "a_text": "judge all",
+               "origin": "llm", "item": "metric_inflation", "context": "ctx", "question": "Which?", "a_text": "judge all",
                "b_text": "grade sixty", "a_pole": 1, "b_pole": 2}
         trackp.write_seed_pairs(self.root, SLUG, [row])
         return "seed:" + row["pair_id"]
@@ -93,49 +97,51 @@ class TrackPTest(unittest.TestCase):
         with open(os.path.join(self.dir, tradeoffs.BALANCE), "a") as f:
             f.write(json.dumps(row) + "\n")
 
-    def test_seed_pairs_default_to_stance_and_scenario_items(self):
-        self.cli("seed-pairs", "--n", 20, "--scenarios", "metric_inflation", "fabrication")
+    def test_seed_pairs_are_every_stance_and_one_scenario_per_scenario_axis(self):
+        self.seed_pairs_only()
         forms = [p["form"] for p in self.pairs()]
-        self.assertEqual((forms.count("stance"), forms.count("scenario")), (13, 7))
+        self.assertEqual((forms.count("stance"), forms.count("scenario")), (N_STANCE, N_SEED - N_STANCE))
 
     def test_pending_groups_scenarios_by_item_and_puts_stance_last(self):
-        self.cli("seed-pairs", "--n", 30, "--scenarios", "metric_inflation", "fabrication")
+        self.seed_pairs_only()
         groups = [it["group"] for it in self.cli("pending", "--kind", "seed", "--limit", 1000)["items"]]
-        self.assertEqual(groups[-13:], ["stance"] * 13)
-        scenario_groups = groups[:-13]
+        self.assertEqual(groups[-N_STANCE:], ["stance"] * N_STANCE)
+        scenario_groups = groups[:-N_STANCE]
         self.assertEqual(len(set(scenario_groups)), 2)
         switches = sum(a != b for a, b in zip(scenario_groups, scenario_groups[1:]))
         self.assertEqual(switches, 1)
 
     def test_pending_never_shows_axis_poles_or_decision_point(self):
-        self.cli("seed-pairs", "--n", 30, "--scenarios", "metric_inflation", "fabrication")
+        self.seed_pairs_only()
         for it in self.cli("pending", "--kind", "seed", "--limit", 1000)["items"]:
             self.assertFalse({"axis", "a_pole", "b_pole", "decision_point", "form"} & set(it))
+            self.assertTrue(it["question"])
             for name in AXIS_NAMES:
-                self.assertNotIn(name, it["context"])
+                self.assertNotIn(name, it["context"] + it["question"])
 
-    def test_rerunning_seed_pairs_keeps_answers_and_appends_new_ids(self):
+    def test_rerunning_seed_pairs_keeps_answers_and_adds_no_duplicates(self):
         self.seed(n=15)
         first = read(os.path.join(self.dir, trackp.SEED_CHOICES))
-        self.seed_pairs_only(30)
+        self.seed_pairs_only()
+        self.assertEqual(len(self.pairs()), N_SEED)
         self.assertEqual(read(os.path.join(self.dir, trackp.SEED_CHOICES)), first)
-        self.assertEqual(self.cli("pending", "--kind", "seed", "--limit", 1000)["n_pending"], 15)
+        self.assertEqual(self.cli("pending", "--kind", "seed", "--limit", 1000)["n_pending"], N_SEED - 15)
 
-    def seed_pairs_only(self, n):
-        self.cli("seed-pairs", "--n", n, "--seed", 1, "--scenarios", "metric_inflation", "fabrication")
+    def seed_pairs_only(self, seed=1):
+        self.cli("seed-pairs", "--seed", seed, "--scenarios", "metric_inflation", "fabrication")
 
     def test_llm_pairs_are_not_pending_until_balanced(self):
         item_id = self.add_llm_pair()
         self.assertEqual(self.cli("pending", "--kind", "seed")["n_pending"], 0)
         with self.assertRaises(SystemExit):
             self.cli("record", "--id", item_id, "--choice", 1)
-        self.add_balance({"type": "check", "pair_id": "llm000000001", "p_pole1": [0.6, 0.5],
+        self.add_balance({"type": "check", "pair_id": "llm000000001", "picks": [1, 2],
                           "one_sided": False, "method": "m0", "timestamp": "t"})
         self.assertEqual(self.cli("pending", "--kind", "seed")["items"][0]["id"], item_id)
 
     def test_dropped_pair_never_returns_and_approved_pair_does(self):
         self.add_llm_pair()
-        self.add_balance({"type": "check", "pair_id": "llm000000001", "p_pole1": [0.9, 0.9],
+        self.add_balance({"type": "check", "pair_id": "llm000000001", "picks": [1, 1],
                           "one_sided": True, "method": "m0", "timestamp": "t"})
         self.assertEqual(self.cli("pending", "--kind", "seed")["n_pending"], 0)
         self.assertEqual(self.cli("review")["n_flagged"], 1)
@@ -148,16 +154,16 @@ class TrackPTest(unittest.TestCase):
     def test_status_asks_for_balance_then_review(self):
         self.add_llm_pair()
         self.assertTrue(any("need 'balance'" in s for s in self.cli("status", "--decisions")["next"]))
-        self.add_balance({"type": "check", "pair_id": "llm000000001", "p_pole1": [0.9, 0.9],
+        self.add_balance({"type": "check", "pair_id": "llm000000001", "picks": [1, 1],
                           "one_sided": True, "method": "m0", "timestamp": "t"})
         steps = self.cli("status", "--decisions")["next"]
         self.assertFalse(any("need 'balance'" in s for s in steps))
         self.assertTrue(any("need 'review'" in s for s in steps))
 
     def test_recorded_answers_are_choices_with_reasons_and_leave_nothing_pending(self):
-        shown = self.seed(n=6)
+        shown = self.seed()
         rows = read(os.path.join(self.dir, trackp.SEED_CHOICES))
-        self.assertEqual(len(rows), 6)
+        self.assertEqual(len(rows), N_SEED)
         for r in rows:
             winner = r["a_text"] if r["chosen"] == "a" else r["b_text"]
             self.assertEqual(winner, max(r["a_text"], r["b_text"], key=pole_one))
@@ -214,21 +220,23 @@ class TrackPTest(unittest.TestCase):
         self.assertEqual(trackp.noise_ceiling(self.root, SLUG)["seed"], {"n": 4, "agreement": 0.0, "ci90": [0.0, 0.0]})
 
     def test_terminal_loop_records_the_same_answer_as_record(self):
-        self.cli("seed-pairs", "--n", 3)
-        replies = iter(["2", "skip", "q"])
-        n = trackp.ask_items(self.root, SLUG, trackp.pending_items(self.root, SLUG, ("seed",)),
-                             ask=lambda _: next(replies), say=lambda _: None)
+        self.cli("seed-pairs")
+        replies, said = iter(["2", "skip", "q"]), []
+        items = trackp.pending_items(self.root, SLUG, ("seed",))
+        n = trackp.ask_items(self.root, SLUG, items, ask=lambda _: next(replies), say=said.append)
         self.assertEqual(n, 1)
+        self.assertIn(items[0]["question"], said)
         (row,) = read(os.path.join(self.dir, trackp.SEED_CHOICES))
         self.assertEqual((row["chosen"], row["reason"]), ("b", ""))
 
     def test_split_holds_out_stable_seed_pairs_and_late_runs(self):
-        self.seed(n=20)
+        self.seed()
         first_test = {c.example_id for c in trackp.split(self.root, SLUG)["test"]}
-        self.seed(n=35)
+        self.seed(seed=2)
         parts = trackp.split(self.root, SLUG)
         self.assertTrue(first_test <= {c.example_id for c in parts["test"]})
-        self.assertTrue(4 <= len(parts["test"]) <= 14)
+        n = len(parts["test"] + parts["history"] + parts["val"])
+        self.assertTrue(0.05 * n <= len(parts["test"]) <= 0.4 * n)
         path = self.label_run("late", [("D3", ["accept", "reject", "defer"], 0)])
         self.answer("label", lambda t: t == "defer", "--decisions", path)
         run_date = read(os.path.join(self.dir, trackp.LABELS))[0]["run_date"]
@@ -237,18 +245,18 @@ class TrackPTest(unittest.TestCase):
         self.assertEqual(sum(c.source == "label" for c in held["history"] + held["val"]), 0)
 
     def test_fit_writes_a_user_model_the_loop_loads_and_history_without_held_out_choices(self):
-        self.seed(n=30)
+        self.seed()
         trackp.fit_user_model(self.root, SLUG, lambda: create_method("m1", OfflineLLM()))
         model, source = load_user_model(self.dir, None, OfflineLLM())
         self.assertEqual(model.method_id, "m1")
         self.assertIn("usermodel.json", source)
         held = {c.example_id for c in trackp.split(self.root, SLUG)["test"]}
         exported = {r["example_id"] for r in read(os.path.join(self.dir, trackp.HISTORY))}
-        self.assertEqual(len(exported), 30 - len(held))
+        self.assertEqual(len(exported), N_SEED - len(held))
         self.assertFalse(exported & held)
 
     def test_e2_scores_held_out_choices_and_never_overwrites(self):
-        self.seed(n=30)
+        self.seed()
         held = trackp.split(self.root, SLUG)["test"]
 
         class PrefersLater(UserModel):   # the real fit() checks for history/val leakage

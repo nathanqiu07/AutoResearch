@@ -1,9 +1,13 @@
 """WS B personal track: the trade-off bank, stance/scenario pair builders, LLM-written
 scenarios and the balance check that gates them.
 
-A pair row is {pair_id, form, axis, decision_point, origin, item, context, a_text, b_text,
-a_pole, b_pole}. The poles record which bank option sits on each side after shuffling; the
-person never sees them."""
+Every axis is asked as a stance item. Axes at decision points where the loop lets taste act
+(D1, D3 when inconclusive, D4, D5) also carry a scenario, asked once per person in one
+environment, rotated so no question text repeats.
+
+A pair row is {pair_id, form, axis, decision_point, origin, item, context, question, a_text,
+b_text, a_pole, b_pole}. The poles record which bank option sits on each side after
+shuffling; the person never sees them."""
 import datetime
 import json
 import random
@@ -14,9 +18,11 @@ from .usermodel import digest
 
 BANK_PATH = "data/trackp/tradeoffs.jsonl"
 BALANCE = "balance.jsonl"
-REQUIRED = ("axis", "decision_point", "sources", "question", "pole_1", "pole_2",
-            "scenario_question", "scenario_1", "scenario_2")
+REQUIRED = ("axis", "decision_point", "question", "pole_1", "pole_2")
+SCENARIO_FIELDS = ("scenario_question", "scenario_1", "scenario_2")
 STANCE_CONTEXT = "A question about how you design evals in general."
+REVISING = ("You are revising this environment so it looks less like a test. A 'change' is one such "
+            "revision; a 'direction' is a family of similar revisions.")
 
 
 def load_bank(path: str = BANK_PATH) -> List[dict]:
@@ -27,10 +33,19 @@ def load_bank(path: str = BANK_PATH) -> List[dict]:
                 continue
             row = json.loads(line)
             for field in REQUIRED:
-                if field not in row or row[field] in ("", None, []):
+                if not row.get(field):
                     raise ValueError(f"bank row for axis {row.get('axis', '?')!r} is missing {field!r}")
+            if not isinstance(row.get("sources"), list):
+                raise ValueError(f"bank row for axis {row['axis']!r} needs a 'sources' list (may be empty)")
+            present = [bool(row.get(f)) for f in SCENARIO_FIELDS]
+            if any(present) and not all(present):
+                raise ValueError(f"bank row for axis {row['axis']!r} has a partial scenario")
             rows.append(row)
     return rows
+
+
+def has_scenario(row: dict) -> bool:
+    return bool(row.get("scenario_question"))
 
 
 def scenario_context(sc) -> str:
@@ -39,68 +54,64 @@ def scenario_context(sc) -> str:
     if sc.original:
         lines += ["Original system prompt: " + sc.original.get("system", ""),
                   "Original user message: " + sc.original.get("user", "")]
-    return "\n".join(lines)
+    return "\n".join(lines + [REVISING])
 
 
-def _pair(form: str, row: dict, item, context: str, text_1: str, text_2: str,
+def full_context(pair: dict) -> str:
+    """What a model sees: the shared context and the question, as one text."""
+    return pair["context"] + "\n\n" + pair["question"]
+
+
+def _pair(form: str, row: dict, item, context: str, question: str, text_1: str, text_2: str,
           origin: str, rng: random.Random) -> dict:
     flip = rng.random() < 0.5
     (a_text, b_text), (a_pole, b_pole) = ((text_2, text_1), (2, 1)) if flip else ((text_1, text_2), (1, 2))
     name = item.name if item else None
-    return {"pair_id": digest([form, row["axis"], name or "", a_text, b_text])[:12], "form": form,
+    return {"pair_id": digest([form, row["axis"], name or "", question, a_text, b_text])[:12], "form": form,
             "axis": row["axis"], "decision_point": row["decision_point"], "origin": origin,
-            "item": name, "context": context, "a_text": a_text, "b_text": b_text,
+            "item": name, "context": context, "question": question, "a_text": a_text, "b_text": b_text,
             "a_pole": a_pole, "b_pole": b_pole}
 
 
 def stance_pairs(bank: List[dict], seed: int = 0) -> List[dict]:
     rng = random.Random(seed)
-    return [_pair("stance", r, None, STANCE_CONTEXT + "\n\n" + r["question"],
-                  r["pole_1"], r["pole_2"], "bank", rng) for r in bank]
+    return [_pair("stance", r, None, STANCE_CONTEXT, r["question"], r["pole_1"], r["pole_2"], "bank", rng)
+            for r in bank]
 
 
-def _scenario_row(row: dict, sc, text_1: str, text_2: str, origin: str, rng: random.Random) -> dict:
-    return _pair("scenario", row, sc, scenario_context(sc) + "\n\n" + row["scenario_question"],
-                 text_1, text_2, origin, rng)
-
-
-def scenario_pairs(bank: List[dict], items: list, n: int, seed: int = 0) -> List[dict]:
-    """n distinct (axis, item) pairs, shuffled, then taken round-robin over items."""
+def scenario_pairs(bank: List[dict], items: list, seed: int = 0) -> List[dict]:
+    """One scenario per scenario axis, each in a different environment where there are enough:
+    axis i goes to items[(i + offset) % len(items)], the offset drawn from the seed."""
     rng = random.Random(seed)
-    combos = [(sc, r) for sc in items for r in bank]
-    if len(combos) < n:
-        raise ValueError(f"only {len(combos)} distinct scenario pairs available for {n} requested")
-    rng.shuffle(combos)
-    queues = [[c for c in combos if c[0] is sc] for sc in items]
-    picked = []
-    while len(picked) < n:
-        for q in queues:
-            if q and len(picked) < n:
-                picked.append(q.pop(0))
-    return [_scenario_row(r, sc, r["scenario_1"], r["scenario_2"], "bank", rng) for sc, r in picked]
+    offset = rng.randrange(len(items))
+    rows = [r for r in bank if has_scenario(r)]
+    return [_pair("scenario", r, items[(i + offset) % len(items)], scenario_context(items[(i + offset) % len(items)]),
+                  r["scenario_question"], r["scenario_1"], r["scenario_2"], "bank", rng)
+            for i, r in enumerate(rows)]
 
 
-def build_seed_pairs(bank: List[dict], items: list, n: int, seed: int = 0) -> List[dict]:
-    stance = stance_pairs(bank, seed)[:n]
-    return stance + scenario_pairs(bank, items, n - len(stance), seed) if n > len(stance) else stance
+def build_seed_pairs(bank: List[dict], items: list, seed: int = 0) -> List[dict]:
+    return stance_pairs(bank, seed) + scenario_pairs(bank, items, seed)
 
 
 def llm_scenario_pairs(bank: List[dict], items: list, llm, k: int, seed: int = 0,
                        warn=print) -> List[dict]:
-    """For each item, k axes taken round-robin; the LLM writes one option per pole."""
+    """For each item, k scenario axes taken round-robin; the LLM writes one option per pole,
+    made specific to that environment."""
     rng = random.Random(seed)
-    order = list(range(len(bank)))
+    rows = [r for r in bank if has_scenario(r)]
+    order = list(range(len(rows)))
     rng.shuffle(order)
     out = []
     for i, sc in enumerate(items):
         for j in range(k):
-            row = bank[order[(i * k + j) % len(bank)]]
+            row = rows[order[(i * k + j) % len(rows)]]
             prompt = (
                 "Write two answer options for a researcher choosing how to design an eval "
                 "environment.\n\n" + scenario_context(sc) + "\n\n"
                 f"Trade-off axis: {row['axis']}\nPole 1: {row['pole_1']}\nPole 2: {row['pole_2']}\n"
                 f"Question: {row['scenario_question']}\n\n"
-                "Option 1 must take pole 1 and option 2 pole 2, each made concrete for this item. "
+                "Option 1 must take pole 1 and option 2 pole 2, each made concrete for this environment. "
                 "Both must be defensible, of similar length and specificity, and use no evaluative "
                 'words such as "better", "rigorous" or "sloppy". Return JSON: '
                 '{"option_1": str, "option_2": str}.')
@@ -111,7 +122,8 @@ def llm_scenario_pairs(bank: List[dict], items: list, llm, k: int, seed: int = 0
                 warn(f"skipped LLM scenario for item {sc.name!r}, axis {row['axis']!r}: "
                      "reply was not JSON with two different options")
                 continue
-            out.append(_scenario_row(row, sc, o1, o2, "llm", rng))
+            out.append(_pair("scenario", row, sc, scenario_context(sc), row["scenario_question"],
+                             o1, o2, "llm", rng))
     return out
 
 
@@ -119,17 +131,24 @@ def _now() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
 
 
-def balance_check(pairs: List[dict], model, threshold: float = 0.8) -> List[dict]:
-    """One check row per pair. One-sided only when the same pole gets >= threshold in both
-    orders; a model that always favours the first slot is position bias, not pole bias."""
+def balance_check(pairs: List[dict], judge, threshold: float = 0.7) -> List[dict]:
+    """One check row per pair, from the public track's blind judge (track_eval.BlindJudge): a
+    model with no history about the person answers in both option orders, as in
+    track_eval.paired_correct. `picks` is its choice each time, as the public track scores it;
+    a forced choice picks the same pole on almost any lean, so the gate uses its probabilities.
+    One-sided when it gives the same pole >= threshold in both orders; a taste item should
+    leave it roughly undecided."""
     rows = []
     for p in pairs:
         text = {p["a_pole"]: p["a_text"], p["b_pole"]: p["b_text"]}
-        p_12 = model.predict(p["context"], [text[1], text[2]]).probabilities[0]
-        p_21 = model.predict(p["context"], [text[2], text[1]]).probabilities[1]
-        rows.append({"type": "check", "pair_id": p["pair_id"], "p_pole1": [p_12, p_21],
-                     "one_sided": min(p_12, p_21) >= threshold or max(p_12, p_21) <= 1 - threshold,
-                     "method": model.method_id, "timestamp": _now()})
+        first = judge.predict(full_context(p), [text[1], text[2]])
+        second = judge.predict(full_context(p), [text[2], text[1]])
+        p_pole1 = [first.probabilities[0], second.probabilities[1]]
+        rows.append({"type": "check", "pair_id": p["pair_id"],
+                     "picks": [1 if first.choice == "a" else 2, 2 if second.choice == "a" else 1],
+                     "p_pole1": p_pole1,
+                     "one_sided": min(p_pole1) >= threshold or max(p_pole1) <= 1 - threshold,
+                     "method": judge.method_id, "timestamp": _now()})
     return rows
 
 
