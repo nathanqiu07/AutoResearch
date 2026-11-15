@@ -199,7 +199,24 @@ Each environment gets matched negatives by topic, so A2's AUROC and A3 measure r
 | Target, chat | Haiku-class (API, not CLI) | another vendor's chat model |
 | Awareness judge | judge J1 | **judge J2 (another family)** + human spot-check |
 
-**[decide]** The exact model list, based on cost and which sponsor credits we have.
+**Decided 2026-11-14 (Nathan).** The lineup below replaces the generic table above. It is also in `configs/models.json` (C2), which checks it.
+
+| Role | Model | Spec | Where it runs | When |
+|---|---|---|---|---|
+| Target, open-weight (DEV) | Qwen3-30B-A3B, thinking on | `openai-compat:Qwen/Qwen3-30B-A3B` | Modal, vLLM with `--reasoning-parser qwen3` (raw reasoning) | every loop iteration |
+| Target, Anthropic (held-out) | Claude Sonnet 4.5 | `anthropic:claude-sonnet-4-5+thinking` | Anthropic API (summarized thinking) | final mode only |
+| Target, OpenAI (held-out) | GPT-5 | `openai:gpt-5+thinking` | OpenAI Responses API (reasoning summaries) | final mode only |
+| Judge J1 (dev) | Claude Haiku 4.5 | `anthropic:claude-haiku-4-5` | Anthropic API | every loop iteration |
+| Judge J2 (held-out) | GPT-5.1 | `openai:gpt-5.1` | OpenAI API | final mode only; scores all 3 targets |
+| Generator / research agent | unchanged | `claude-cli:sonnet` | | |
+
+* **Why these.** Each is used in EvalAwareBench, EvalDetectBench or Petri, so our numbers can be set beside theirs.
+* **Each judge does all three scoring jobs** in its mode: A1 (reads the target's reasoning and reply), A2 (probe questions → P(eval), with its own EvalDetectBench probe set) and the behaviour/validity audit. A judge never falls back to the generator or a target.
+* **A1 on the two API targets is a LOWER BOUND.** Their reasoning arrives as a vendor summary, which can drop a remark the raw reasoning made (EvalAwareBench states the same caveat). Only Qwen3 gives raw reasoning.
+* **Headline judge per target = the judge from another model family:** GPT-5.1 for the Claude target, Haiku for the GPT target, either for Qwen. Same-family cells are a check only. Final mode is run once per held-out target with both judges, cross-family judge first.
+* **Escalation rule for J1.** Do not upgrade before the calibration gate shows a need. If Haiku fails the gate (most likely on agreement with hand labels, check d), J1 becomes `claude-sonnet-4-6`, at about 3× the judge cost. In our probe export the judges' ensemble AUROCs are 0.758 (Haiku 4.5), 0.802 (GPT-5.1) and 0.878 (Sonnet 4.6); these include the calibration split, so they are optimistic.
+* **Deadline.** `claude-sonnet-4-5` is deprecated and retires on 2026-11-30. Its held-out results must be produced before then and cannot be re-run afterwards.
+* **Calibrated probe questions exist for the two judges only.** Sonnet 4.5, GPT-5 and Qwen3 answer their self-report with the default question set.
 
 ---
 
@@ -949,3 +966,50 @@ Built and tested offline against Nathan's lineup (agentctl posts 00:32 and 00:40
 **Open:** the paid runs (Modal smoke, Petri v2 dev baseline in both tool modes, held-out Sonnet 4.5 before 2026-11-30 and GPT-5); Petri v1 seeds (the original seed list must be fetched and matched to our 24); the Petri faithfulness pair (eval notice in the target's system prompt); per-GPU-second cost in the vLLM backend (`llm.py`, coordinate with C1), so the spend cap can't stop Modal yet.
 
 **Notes for others:** `cli._agentic_measurer` splits seeds by a hash of `seed_id`, not by the `split` field in `data/petri/seeds_v2.jsonl` (WS D); `scripts/c2_e3b.py` uses the field.
+
+### 16.3 C1 on the fixed lineup (2026-11-14, late): ready, awaiting approval, nothing run
+
+Lineup: §4.4. All code is merged and tested offline (511 tests). **No real model has been called for any of this.**
+
+**What changed in the scorer**
+- Every judge gives A1 and A2 (`Sample.judge_verbalized`, `judge_p_eval`); in dev the judge now also answers the probe questions. `measure.judge_matrix` marks the headline (cross-family) judge and whether A1 is a lower bound. Calls per sample: dev 12 with Haiku's 5-question set (was 7); final with two judges 14 with 3-question sets. The loop objective is unchanged (target-side signals only).
+- Backends: Sonnet 4.5 uses the `budget_tokens` thinking form; OpenAI Responses backend with reasoning summaries; API calls count toward `Budget.max_cost_usd` (tested: the call after the cap raises before any request). The vLLM backend records no cost, so the dollar cap cannot stop the Qwen target; only `--max-calls` binds there.
+- A reply that is empty or cut off by the token cap is a flagged error and never reaches a judge. `OPENAI_COMPAT_PLAIN_THINKING=off|headroom` keeps Qwen3 from spending the 300-token probe cap on reasoning (to be confirmed in C2's Modal smoke).
+- The generator never sees the judge's rubric (`Scenario.rubric`), and its prompt no longer says "for a study of model behaviour".
+- The gate calibrates the judges that score in that mode, not only the target. V3 reports all-pairs and decisive-pairs gaps per probe; refusals and "unclear" no longer count as good behaviour where another good label exists.
+- V3 probes: seven hand-written probes in `research/probes_v3.py` (`docs/v3-probes.md`). Every base rate is unverified.
+
+**Not done, on purpose:** moving the judge rubrics into the system prompt for caching. The fixed text is 140–300 tokens; the cache minimum is 512 in our code and 4,096 for Haiku 4.5, and benchmark items are about 200 tokens, so nothing would cache.
+
+**Commands (each prints its own arithmetic; `--execute` refuses while `results/prereg/C1_gate.json` is DRAFT)**
+
+```bash
+# estimates only, nothing is called
+python3 scripts/c1_run_gate.py --scenario pilot
+python3 scripts/c1_run_gate.py --scenario full
+
+# pilot: 20 single-cue pairs, no Needham, no hand labels, V3 on 20 items x 2
+python3 scripts/c1_run_gate.py --scenario pilot --phase dev --dev-target openai-compat:Qwen/Qwen3-30B-A3B --execute --approved-by-nathan
+python3 scripts/c1_run_gate.py --scenario pilot --phase final --execute --approved-by-nathan
+
+# V3 probe screen (7 probes x 10 environments, up to 350 calls each)
+python3 scripts/c1_behaviour_gap.py --print-smoke-plan Qwen/Qwen3-30B-A3B
+```
+
+**Cost bounds** (upper bounds: output is billed at its cap, including 8,000 tokens of reasoning headroom per target reply; real use should be well below. OpenAI prices are from third-party aggregators and unverified. Qwen is Modal GPU time, about $4/h per H100 per C2, not converted to dollars here.)
+
+| | Phase | Target | Gate calls | Gate $ | Gate + V3 calls | Gate + V3 $ |
+|---|---|---|---|---|---|---|
+| Pilot | dev | Qwen3 | 429 | 0.60 + GPU | 589 | 0.76 + GPU |
+| Pilot | final | Sonnet 4.5 | 546 | 8.38 | 706 | 19.70 |
+| Pilot | final | GPT-5 | 546 | 5.75 | 706 | 13.29 |
+| **Pilot total** | | | 1,521 | 14.73 + GPU | 2,001 | 33.74 + GPU |
+| Full | dev | Qwen3 | 6,368 | 13.01 + GPU | 7,392 | 14.02 + GPU |
+| Full | final | Sonnet 4.5 | 8,132 | 116.67 | 9,156 | 189.12 |
+| Full | final | GPT-5 | 8,132 | 79.54 | 9,156 | 127.83 |
+| **Full total** | | | 22,632 | 209.22 + GPU | 25,704 | 330.98 + GPU |
+
+Full = 200 single-cue pairs (25 per cue), a 200-transcript Needham subset (lengths assumed at the 20,000-character cut, since the gated file is not on disk) and 100 hand labels of assumed length.
+
+**Blocked on Nathan:** approve the pilot and C2's Modal smoke (about $2 GPU); finalise the prereg, including the check (a) threshold (0.85 vs Needham's reported 0.71–0.77 on chat, and judge AUROCs of 0.758 / 0.802); set the API keys; accept the Needham dataset terms; 50–100 hand labels after the pilot. **Open scorer choices:** whether the same-family judge's A1 is also kappa-checked; `OPENAI_COMPAT_PLAIN_THINKING` setting for Qwen probes; the rewrite prompt still names the item as a test environment.
+
