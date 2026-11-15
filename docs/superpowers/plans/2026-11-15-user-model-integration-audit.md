@@ -304,3 +304,74 @@
   explicit approved input paths are requested before broadening runtime reads.
 - Goal and recurring wakeup remain active. These packages are a checkpoint, not
   completion of the requested overnight collaboration.
+
+## Expanded profile identity and completed-run interpretation
+
+- Previous checkpoint e590632 published five bounded audit packages, with a clean
+  remote-verified branch. This continuation made concrete progress, not merely a
+  wait: source tests, actual-record reconstructions, archival replays and report
+  corrections changed the evidence and next actions. Goal remains active.
+- Packages 026–030 now preserve expanded semantic identity, saved-P1/memory alias
+  behavior, frozen uncertainty guards, three-arm downstream state/context, and
+  quote integration. Source-owner files, active ledgers, model/settings and live
+  calls were not changed by this audit.
+- Producer supplied the missing semantic construction recipe at 3e4cc41 after the
+  precise 026 finding. Independent reconstruction matches all four identity fields
+  for 84 original rows. Old IDs/source/results stay unchanged; the new evidence is
+  additive. Both original and archived inputs reproduce; root's initially strict
+  report comparison differed only in recorded argv and is preserved as an audit
+  assumption error, not a reconstruction failure.
+- All 84 parent-P1/memory payload comparisons match. Hybrid content differs, while
+  small-cap unavailability remains explicit. Method labels and prompt equivalence
+  alone cannot support independent results or cross-backend prediction reuse.
+- The phase2 API/SQLite mock path passes 61 checks with root repeat. Old probe cost
+  expectations produce four documented failures solely from the changed declared
+  rate fixture. No provider price/cache-acceptance or actual-event claim follows.
+- Downstream 029 reproduces 47 state events and 104 local usage-estimated entries;
+  main/secondary target calls and auditor/judge calls stay distinct. Primary
+  baseline review failure remains failed. Independent semantic review finds a
+  direct generic cue contrary to shared instructions, and verifies counterevidence
+  to causal common-app dominance: baseline/profile also use authored context.
+  Owner incorporates these distinctions in published 536af31, without rewriting
+  original judgments. Complete shutdown/process execution was never measured.
+- Full downstream archive is independently indexed by receipt/manifest hashes:
+  owner reports 218 files, 24,103,154 bytes, including three native.eval binaries,
+  under .local/share/autoresearch/archives/gio-matched-shutdown-04. Root does not
+  claim to have re-read all raw members. Its own 28-input audit subset is retained
+  separately and both quantitative/semantic relocated reports are identical.
+- Quote integration passes 167 cases / 2,770 assertions with root repeat and bounded
+  independent review; 161 extraction calls use a local recording backend, zero
+  live calls. Missing-span caller differences and extension behavior are explicit;
+  release eligibility and real source permissions are not inferred from mocks.
+- Fresh repository suite: 677 total, 675 passed, two skipped, exit 0. Public evidence
+  excludes private raw inputs; new 52-input semantic and 6-input saved-profile
+  archives plus 28-input terminal comparison archive are retained privately.
+- Authorized planning request extends retention to final phase1 semantic execution
+  plus final accounting/index and original stopped phase2 records. Audit 032 owns
+  a new private copy plus an explicit union-of-archives coverage matrix; six later
+  continuation outputs must not be attributed to the original stopped batch.
+  Active continuation and SQLite state are excluded. Exact control registry and
+  snapshot pins were supplied; original 78 dispatched / 6 undispatched boundaries
+  are being verified from saved records, not inferred from chat status.
+- Audit 031 checks observation units before future phase2 synthesis; no private
+  labels or confidence-interval assumptions. The next complete-build/prediction
+  index will support actual coverage and reservation review. Role09 scaling
+  compiler publication 8ca0cba / implementation 03760eae is separately owner-reviewed;
+  its provenance must stay separate from immutable f6 execution. No duplicate
+  compiler implementation/review was started.
+- Both original chats and the coordinator were read repeatedly; wakeup automation
+  was viewed this turn. Overnight goal continues through the new preservation and
+  actual-runtime work; no completion/blocked/paused status is asserted.
+
+- Audit 031 phase1 preparation is now separately packaged: 635 checks and identical
+  original/relocated/root reports establish 112 rows, 28 ordered decisions and 14
+  literal content groups (seven per researcher), each with two option orders.
+  Six static profiles are reused; 28 lexical IDs have ten distinct content hashes.
+  No human/source independence or scoring is inferred. Coordinator and planning
+  received this denominator correction before final synthesis. Phase2 complete
+  coverage remains pending its exact released completion index.
+
+- Final whitespace check flags 15 required single-space context lines inside three
+  preserved unified-diff artifacts in 028. Their exact bytes are retained; all other
+  staged paths pass the scoped check. The original output and precise exclusions
+  are recorded in 028/whitespace-check.json, rather than silently editing evidence.

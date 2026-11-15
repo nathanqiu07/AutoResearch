@@ -1,0 +1,11 @@
+# Phase2 semantic producer bindings
+
+[Findings](FINDINGS.md) and the root relocated replay verify the exact recorded phase2 handoff. All 28 bundles reconstruct from the two producer responses. All 84 content hashes/caps and 240 selected passage occurrences match, including source/query/order/permission identity. Seventeen synthetic tests and 456 record checks pass; these are not independent model experiments.
+
+Root privately retained all 52 exact inputs (42 Git objects and ten external files), verified every archive member and reproduced all report fields except execution metadata after relocation. The reader rechecks all 52 accessed members at finish. `private-preservation.json` identifies the ignored archive; retain it separately when moving/removing the worktree. Public files contain metadata and synthetic tests only.
+
+The initial release omitted the complete construction recipe, so the original reports correctly left full profile/config/prompt/selected-span identifiers recorded-only. The additive [recipe retest](recipe-retest/FINDINGS.md) consumes the subsequently published recipe at `3e4cc41` and independently reconstructs all four identifiers for all 84 original rows. Original-input mode passes 1,063 checks; private-archive mode and root repeat pass 1,097. Every evidence field in the two private replay reports is identical; recorded argv differs for the new output directory. The initially overstrict root comparison is preserved as an audit assumption error.
+
+This closes construction identity for the original `NoCalls` stub configuration. It does not authenticate a production backend, authorize prediction reuse, or establish prediction quality. Neither the owner replay nor project builder was invoked or imported by the independent reconstruction. Original construction records, IDs and the earlier recorded-only reader remain unchanged.
+
+Two unique receipts account once for 3,922 reported tokens and $0.00007844 at the recorded fixture rate. No active ledger or provider invoice was checked. The first reader's incorrect composite-renderer-hash assumption and exact failed script remain preserved. `SAFE_FILES_SHA256.json` is the agent's original 28-file subset; final `checksums.json` covers every other final package file.

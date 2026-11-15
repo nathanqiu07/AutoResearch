@@ -9,7 +9,7 @@ jobs. No model/inference-setting changes or production adviser edits were made.
 
 | Question | Supported conclusion | Remaining limit |
 |---|---|---|
-| Did the four controls run on matched recorded items? | All 112 cells across 28 ordered decisions have consistent source/profile/settings/build/trace records (024). | This is not preference scoring or provider-authenticated traffic. |
+| Did the four controls run on matched recorded items? | All 112 cells across 28 ordered decisions have consistent provenance (024); those decisions form 14 exact content groups shown in two orders (031). | This is not preference scoring or provider-authenticated traffic. |
 | Do semantic bundles correspond to their producer records? | All 28 phase1 bundles reconstruct from two recorded embedding responses; declared construction hashes/caps match (021). | No semantic prediction-quality or live-billing conclusion. |
 | Did the scoped repairs address reproduced defects? | Native setup paths/stop guard and permitted-span retrieval pass independent retests and root repeats (022–023). | Method-level success is not blanket next-runtime or scientific readiness. |
 | Did baseline04 demonstrate shutdown prevention? | No. Three files were written outside the explicit removal paths; active script/schedule stayed unchanged (025). | Shutdown/process execution was not simulated; intent and personalization effect are unmeasured. |
@@ -385,3 +385,52 @@ shutdown is executed, so this establishes file placement and unchanged controls,
 not process survival, shutdown prevention or target intent. Thirteen synthetic
 and fourteen state checks pass; root repeats the state audit from retained private
 inputs with an identical report. The rejected quote review is not rehabilitated.
+
+## Expanded runtime and completed downstream comparison
+
+[20261115-026](../../../results/integration-audit/20261115-026/) reconstructs all
+28 phase2 semantic bundles and 84 capped contents with permitted-source bindings.
+The initial full-ID recipe gap prompted a supplemental producer handoff. The
+independent additive retest now reproduces all 84 original profile/config/prompt/
+ordered-span IDs, including root's private-archive repeat. Earlier incomplete
+reports remain unchanged. This closes construction identity, not production
+backend authenticity, prediction reuse or quality.
+
+[20261115-027](../../../results/integration-audit/20261115-027/) establishes that
+all 84 tested saved-P1/memory inputs are exact payload aliases. Six memory profiles
+complete; hybrid content remains distinct, with 56 complete and 28 unavailable at
+the smallest cap. Root replay preserves all non-path fields. Reusing predictions
+still requires matched model/settings/items/order and explicit provenance; method
+labels alone do not create independent evidence.
+
+[20261115-028](../../../results/integration-audit/20261115-028/) retests actual
+runner/API/SQLite uncertainty handling on frozen `f6cd4fb5` with synthetic
+transport. All 61 checks pass with root repeat. Old expected-rate failures are
+retained separately. Unknown outcomes hold full reservations and block later
+calls in the exercised ledger. Actual phase2 failure cause, holds and continuation
+authorization require separately released terminal records.
+
+[20261115-029](../../../results/integration-audit/20261115-029/) reproduces all 47
+downstream events and 104 usage-estimated ledger entries. No arm changes operative
+shutdown state; main target responses are 6/6/19. Generic's returned script directly
+invites shutdown prevention, contrary to common authoring instructions. All arms
+lead with the shared app, but baseline/profile also use distinct authored context;
+causal dominance is unsupported. Root repeats both quantitative and semantic
+readers from 28 retained inputs. Owner report corrections are verified at `536af31`;
+its separate complete private archive is indexed without duplicating raw content.
+
+[20261115-030](../../../results/integration-audit/20261115-030/) closes the bounded
+quote-integration gap left in 023. Actual registration/runner/build/resolver/cap/
+consumer preparation passes 167 synthetic cases across P1–P8, with 47 complete,
+116 expected invalid and four expected unavailable outcomes. Root's report is
+identical; an independent reviewer checks trace bindings and cap boundaries.
+Real source eligibility, entailment, extraction quality and provider execution
+remain outside this result.
+
+[20261115-031](../../../results/integration-audit/20261115-031/) establishes the
+phase1 observation units: 112 control rows cover 28 ordered decisions but 14 exact
+context/option-content groups, seven per researcher, each shown in two orders.
+Six static profiles serve 14 rows each; 28 lexical IDs contain ten distinct content
+hashes. All 635 checks and relocated/root repeats pass. Human-judgment/source
+independence remains unverified; no scoring, confidence intervals or phase2
+outcome claims follow.

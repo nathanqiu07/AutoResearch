@@ -1,0 +1,66 @@
+--- 7bb1589127ba386d74dd00c029659f195ffe28b8/autoresearch/taste/overnight/backends.py
++++ f6cd4fb5a7c9bc2fdf1f154f6ad4fda18df174ca/autoresearch/taste/overnight/backends.py
+@@ -1,8 +1,9 @@
+ """Declared Responses API settings and a process-shared conservative USD ledger.
+ 
+ Rates verified by the coordinator against official model/pricing documentation
+-2026-11-15. All input is charged at uncached rates; this is a conservative list
+-price estimate, not a provider invoice. Output usage includes reasoning tokens.
++2026-11-15. All input is charged at the 1.25x 30-minute cache-write rate; this is
++a conservative upper estimate, not an invoice. Requests pin implicit caching
++with a 30-minute lifetime. Output usage includes reasoning tokens.
+ Unknown outcomes retain their entire reservation, add known usage, and hold new
+ requests. No code path releases an uncertain reservation or retries a request.
+ """
+@@ -23,9 +24,11 @@
+ 
+ 
+ NANOS_PER_USD = 1_000_000_000
+-RATES = {"gpt-6-luna": ("0.10", "0.50"), "gpt-6-sol": ("2", "10"), "gpt-6-astra": ("10", "50")}
+-PRICING_VERSION = "openai-standard-short-context-2026-11-15"
++RATES = {"gpt-6-luna": ("0.125", "0.50"), "gpt-6-sol": ("2.5", "10"), "gpt-6-astra": ("12.5", "50")}
++PRICING_VERSION = "openai-standard-short-context-30m-cache-write-1.25x-2026-11-15"
++COST_BASIS = "conservative_30m_cache_write_upper_bound_not_invoice"
+ PRICING_SOURCES = ["https://developers.openai.com/api/docs/pricing",
++                   "https://developers.openai.com/api/docs/guides/prompt-caching",
+                    "https://developers.openai.com/api/docs/models/gpt-6-luna",
+                    "https://developers.openai.com/api/docs/models/gpt-6-sol",
+                    "https://developers.openai.com/api/docs/models/gpt-6-astra"]
+@@ -131,8 +134,8 @@
+                 "remaining_usd": max(0, self.configuration["limit_nanos"] - state["spent_nanos"] - state["reserved_nanos"]) / NANOS_PER_USD,
+                 "inflight": state["inflight"], "uncertain": state["uncertain"], "attempts": state["attempts"],
+                 "held_after_uncertain": bool(state["uncertain"]), "deadline": self.configuration["deadline"],
+-                "max_inflight": self.configuration["max_inflight"], "pricing_version": PRICING_VERSION,
+-                "cost_basis": "conservative_uncached_list_price_estimate_not_invoice"}
++                "max_inflight": self.configuration["max_inflight"], "pricing_version": self.configuration["pricing_version"],
++                "cost_basis": COST_BASIS}
+ 
+ 
+ class OpenAIResponsesBackend(LLM):
+@@ -163,6 +166,7 @@
+         self._lock = threading.Lock()
+         self.enforced_settings = {"reasoning_effort": reasoning, "store": False, "tools": [],
+                                   "service_tier": "default", "temperature": "not_sent",
++                                  "prompt_cache_options": {"mode": "implicit", "ttl": "30m"},
+                                   "pricing_version": PRICING_VERSION,
+                                   "adapter_implementation_sha256": digest(Path(__file__).read_text())}
+ 
+@@ -178,7 +182,7 @@
+                      "unknown_input_usage_attempts": self._unknown_input_usage,
+                      "unknown_output_usage_attempts": self._unknown_output_usage,
+                      "reported_usage_complete": not (self._unknown_input_usage or self._unknown_output_usage),
+-                     "cost_basis": "conservative_uncached_list_price_estimate_not_invoice"}
++                     "cost_basis": COST_BASIS}
+         local["campaign"] = self.ledger.summary()
+         return local
+ 
+@@ -189,7 +193,8 @@
+             raise ValueError("max_tokens must be an integer in [1,65536]")
+         body = {"model": self.model, "instructions": system, "input": prompt,
+                 "max_output_tokens": max_tokens, "reasoning": {"effort": self.reasoning},
+-                "store": False, "service_tier": "default"}
++                "store": False, "service_tier": "default",
++                "prompt_cache_options": {"mode": "implicit", "ttl": "30m"}}
+         encoded = json.dumps(body, ensure_ascii=False, allow_nan=False).encode("utf-8")
+         input_bound = len(encoded) + 1024
+         if input_bound + max_tokens >= 272000:

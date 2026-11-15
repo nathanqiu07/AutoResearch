@@ -1,0 +1,25 @@
+--- audit014/reproduce.py
++++ audit028/reproduce-phase2.py
+@@ -152,7 +152,7 @@
+         expected_input = usage["input_tokens"] if inp_known else None
+         expected_output = usage["output_tokens"] if out_known else None
+         multiplier = 2 if success else 1
+-        expected_known_cost = multiplier * ((expected_input or 0) * 2 + (expected_output or 0) * 10) / 1_000_000
++        expected_known_cost = multiplier * ((expected_input or 0) * 2.5 + (expected_output or 0) * 10) / 1_000_000
+         identity = result["actual_backend"]
+         check(name + ":identity_and_request", identity == backend_identity(consumer) and
+               all(p["actual_consumer"] == identity for p in result["predictions"]) and
+@@ -161,6 +161,13 @@
+                   r["body"]["service_tier"] == "default" and "temperature" not in r["body"] and
+                   "tools" not in r["body"] and r["synthetic_authorization"] for r in requests),
+               {"actual_backend": identity, "physical_requests": len(requests)})
++        check(name + ":phase2_cache_and_pricing_identity",
++              identity["enforced_settings"].get("prompt_cache_options") == {"mode": "implicit", "ttl": "30m"} and
++              all(r["body"].get("prompt_cache_options") == {"mode": "implicit", "ttl": "30m"} for r in requests) and
++              initial_ledger["pricing_version"] == "openai-standard-short-context-30m-cache-write-1.25x-2026-11-15" and
++              initial_cost["cost_basis"] == initial_ledger["cost_basis"] == "conservative_30m_cache_write_upper_bound_not_invoice",
++              {"identity_cache_options": identity["enforced_settings"].get("prompt_cache_options"),
++               "recorded_pricing_version": initial_ledger["pricing_version"], "recorded_cost_basis": initial_cost["cost_basis"]})
+         check(name + ":durable_no_retry", duplicate == "FileExistsError" and physical_initial == multiplier and physical_final == multiplier,
+               {"duplicate_claim_error": duplicate, "physical_initial": physical_initial, "physical_final": physical_final})
+         check(name + ":counts", result["counts"] == {"attempted": 2, "complete": 2 if success else 0, "error": 0 if success else 2} and
