@@ -953,22 +953,20 @@ function panelSources(panel, nextBtn) {
         <label class="field"><span>Blog RSS feed URL</span><input id="g-rss" type="url" placeholder="https://…/feed.xml"></label>
       </div>
       <label class="field"><span>Other pages they wrote, one per line</span><textarea id="g-urls" rows="3" placeholder="https://"></textarea></label>
-      <hr class="hr" style="margin:.25rem 0">
-      <label class="check"><input type="checkbox" id="g-exa"><span><strong>Exa search and full-text fetch</strong></span></label>
-      <ul class="muted small" style="margin:0 0 0 1.6rem;padding-left:1.1rem;line-height:1.5">
-        <li>One deep search asks Exa for everything the person wrote in the date range (papers, blog and forum posts, talks, tweets) and returns it as a structured list.</li>
-        <li>Searches for each quarter of the range, restricted to arXiv, LessWrong and the Alignment Forum, X, YouTube and GitHub, add results that require the person's surname in the text.</li>
-        <li>Exa fetches the full text of every result, up to 200,000 characters each.</li>
-        <li>A document is kept only with author evidence: arXiv's author list, the page's author field, or a byline near the top. Its date comes from arXiv's first version, Exa's publish date, or a date in the text.</li>
-        <li>Copies of one piece of work on several sites are merged and dated by the earliest copy; listing pages are dropped, and tweets are grouped by month.</li>
-      </ul>
-      <div class="row" style="margin-left:1.6rem"><label class="field"><span class="small">From</span><input id="g-exa-start" type="date" value="2018-01-01"></label>
-        <label class="field"><span class="small">To</span><input id="g-exa-end" type="date" value="${new Date().toISOString().slice(0, 10)}"></label></div>
       <div class="row end"><button class="btn primary" id="g-go">Run harvest</button></div>
     </div>
     <div id="job"></div>
     ${S.st.docs.length ? `<div class="notice" style="margin-top:1rem">${fmtNum(S.st.docs.length)} documents in the corpus so far. Harvesting again only adds new ones.</div>` : ""}${nextBtn}
-    <p class="muted small" style="margin-top:1.5rem;text-align:center">Powered by Exa</p>`;
+    <div class="card" aria-label="Scraping powered by Exa" style="margin-top:1.5rem;border-style:dashed;box-shadow:none;user-select:none">
+      <h3 style="margin:0 0 .4rem">Scraping powered by Exa</h3>
+      <ul class="muted small" style="margin:0;padding-left:1.1rem;line-height:1.5">
+        <li>One deep search asks Exa for everything the person wrote (papers, blog and forum posts, talks, tweets) and returns it as a structured list.</li>
+        <li>Searches for each quarter, restricted to arXiv, LessWrong and the Alignment Forum, X, YouTube and GitHub, add results that require the person's surname in the text.</li>
+        <li>Exa fetches the full text of every result, up to 200,000 characters each.</li>
+        <li>A document is kept only with author evidence: arXiv's author list, the page's author field, or a byline near the top. Its date comes from arXiv's first version, Exa's publish date, or a date in the text.</li>
+        <li>Copies of one piece of work on several sites are merged and dated by the earliest copy; listing pages are dropped, and tweets are grouped by month.</li>
+      </ul>
+    </div>`;
   on("#g-go", "click", () => {
     const chk = id => { const el = document.getElementById(id); return !!(el && el.checked); };
     const body = {
@@ -976,9 +974,6 @@ function panelSources(panel, nextBtn) {
       lesswrong_user: val("g-lw"), rss: val("g-rss"), urls: val("g-urls").split(/\s+/).filter(Boolean),
     };
     if (chk("g-s2") && a) { body.s2_author_id = a.author_id; body.s2_max = +val("g-s2max") || 150; }
-    if (chk("g-exa")) {
-      Object.assign(body, { exa: true, exa_start: val("g-exa-start"), exa_end: val("g-exa-end") });
-    }
     startJob("gather", body, document.getElementById("job"), () => {
       const n = document.createElement("div"); n.className = "row end"; n.style.marginTop = ".75rem";
       n.innerHTML = `<a class="btn primary" href="#/p/${esc(S.slug)}/corpus">Review corpus →</a>`;
