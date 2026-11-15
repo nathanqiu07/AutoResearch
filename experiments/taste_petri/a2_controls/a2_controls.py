@@ -33,6 +33,7 @@ import argparse
 import hashlib
 import json
 import random
+import re
 import sys
 import threading
 from collections import defaultdict
@@ -48,18 +49,27 @@ for d in ("proxy", "arms", "real_material"):
 import proxy_eval as P  # noqa: E402
 import rm_proxy as RP  # noqa: E402
 
-from autoresearch.llm import Budget, extract_json  # noqa: E402
-from autoresearch.research.measure import _prob  # noqa: E402
+from autoresearch.llm import Budget, extract_json, get_llm  # noqa: E402
+from autoresearch.research.measure import DEFAULT_PROBE_QUESTIONS, _prob  # noqa: E402
 from autoresearch.research.petri_measure import cut  # noqa: E402
 from autoresearch.research.stats import auroc, bootstrap_ci, mean  # noqa: E402
 
 CACHE = HERE / "cache"
 
 
-def paths(tag: str = ""):
-    """(transcripts, answers, results) for a run tag; "" is the exploratory run, e.g. "rep" the replication."""
-    sfx = f"_{tag}" if tag else ""
-    return HERE / f"transcripts{sfx}.jsonl", HERE / f"answers{sfx}.jsonl", HERE / f"results{sfx}.json"
+DEFAULT_TARGET = "haiku"   # the claude CLI alias; anything else is an autoresearch "backend:model" spec
+
+
+def target_slug(target: str) -> str:
+    return "" if target == DEFAULT_TARGET else "_" + re.sub(r"[^A-Za-z0-9]+", "_", target.split(":")[-1].split("/")[-1])
+
+
+def paths(tag: str = "", target: str = DEFAULT_TARGET):
+    """(transcripts, answers, results) for a run tag ("" = exploratory run, "rep" = replication) and the model
+    answering the probes. Transcripts depend only on the tag."""
+    sfx = (f"_{tag}" if tag else "")
+    out = sfx + target_slug(target)
+    return HERE / f"transcripts{sfx}.jsonl", HERE / f"answers{out}.jsonl", HERE / f"results{out}.json"
 
 
 READ_CACHES = [TP / d / "cache" for d in ("hillclimb", "decoys", "petri_taste", "real_material", "proxy", "arms")]
@@ -109,6 +119,30 @@ class ProbeLLM(P.CachedCLI):
                     self.hits += 1
                 return json.loads(f.read_text())["out"]
         return super().complete(prompt, system=system, max_tokens=max_tokens, temperature=temperature)
+
+
+class SpecLLM:
+    """Any autoresearch "backend:model" spec (e.g. openai-compat:moonshotai/Kimi-K2.6) behind a per-call disk
+    cache in cache/<slug>/, so an interrupted or budget-capped run resumes without re-paying."""
+
+    def __init__(self, spec: str, max_calls: int):
+        self.spec, self.hits, self._lock = spec, 0, threading.Lock()
+        self.llm = get_llm(model=spec, budget=Budget(max_calls=max_calls, max_seconds=12 * 3600))
+        self.budget = self.llm.budget
+        self.cache_dir = CACHE / target_slug(spec).lstrip("_")
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+        f = self.cache_dir / f"{_key(self.spec, system, prompt)}.json"
+        if f.exists():
+            with self._lock:
+                self.hits += 1
+            return json.loads(f.read_text())["out"]
+        out = self.llm.complete(prompt, system=system, max_tokens=max_tokens, temperature=temperature)
+        tmp = f.with_suffix(f".{threading.get_ident()}.tmp")
+        tmp.write_text(json.dumps({"model": self.spec, "system": system, "prompt": prompt, "out": out}))
+        tmp.replace(f)
+        return out
 
 
 # ---------- collect ----------
@@ -238,6 +272,13 @@ def probe_one(llm, row, variant):
     if variant == "placeholder":
         p, per_q = P.a2_batched(llm, P.probe_questions("placeholder"), t)
         return {"p": p, "per_q": per_q}
+    if variant == "placeholder_exact":   # Measurer.p_eval as the E3b pilots ran it: one call per question, T=0
+        per_q = []
+        for q in DEFAULT_PROBE_QUESTIONS:
+            out = extract_json(llm.complete(q.replace("{transcript}", t), temperature=0.0, max_tokens=300))
+            per_q.append(_prob(out.get("p")) if isinstance(out, dict) else None)
+        got = [p for p in per_q if p is not None]
+        return {"p": mean(got) if got else None, "per_q": per_q}
     if variant == "evaldetect":
         p, per_q = P.a2_batched(llm, P.probe_questions("evaldetect"), t)
         return {"p": p, "per_q": per_q}
@@ -268,13 +309,14 @@ def pairwise_one(llm, a, b):
     return {"p_stock": mean(got) if got else None, "orders": ps}
 
 
-VARIANTS = ("placeholder", "evaldetect", "binary", "calibrated", "unprompted")
+VARIANTS = ("placeholder", "placeholder_exact", "evaldetect", "binary", "calibrated", "unprompted")
 
 
-def probe(tag: str, max_calls: int, variants, workers: int):
-    TRANSCRIPTS, ANSWERS, _ = paths(tag)
+def probe(tag: str, max_calls: int, variants, workers: int, target: str = DEFAULT_TARGET):
+    TRANSCRIPTS, ANSWERS, _ = paths(tag, target)
     rows = [json.loads(l) for l in TRANSCRIPTS.read_text().splitlines()]
-    llm, lock = ProbeLLM(max_calls), threading.Lock()
+    llm = ProbeLLM(max_calls) if target == DEFAULT_TARGET else SpecLLM(target, max_calls)
+    lock = threading.Lock()
     done = set()
     if ANSWERS.exists():
         done = {(a["id"], a["variant"]) for a in map(json.loads, ANSWERS.read_text().splitlines()) if not a.get("error")}
@@ -326,8 +368,8 @@ def clustered(by_seed: dict, level: float = 0.9, n: int = 4000, seed: int = 0) -
             "seeds_down": sum(m[s] < 0 for s in seeds)}
 
 
-def report(tag: str):
-    _, ANSWERS, RESULTS = paths(tag)
+def report(tag: str, target: str = DEFAULT_TARGET):
+    _, ANSWERS, RESULTS = paths(tag, target)
     latest = {}
     for a in map(json.loads, ANSWERS.read_text().splitlines()):
         if not a.get("error") and a.get("p", a.get("p_stock")) is not None:
@@ -415,13 +457,17 @@ def main(argv=None):
     pr = sub.add_parser("report")
     for p in (pc, pp, pr):
         p.add_argument("--tag", default="", help='run tag: "" = exploratory run, "rep" = pre-registered replication')
+    for p in (pp, pr):
+        p.add_argument("--target", default=DEFAULT_TARGET,
+                       help='model answering the probes: "haiku" (claude CLI) or a backend:model spec, e.g. '
+                            "openai-compat:moonshotai/Kimi-K2.6 (see run_kimi.sh)")
     a = ap.parse_args(argv)
     if a.cmd == "collect":
         collect(a.tag, a.ks, a.generate, not a.no_controls, a.max_calls)
-    elif a.cmd == "probe":
-        probe(a.tag, a.max_calls, a.variants, min(4, a.workers))
+    elif a.cmd == "probe":   # the claude CLI shares the user's plan with other agents: at most 4 at once
+        probe(a.tag, a.max_calls, a.variants, min(4 if a.target == DEFAULT_TARGET else 32, a.workers), a.target)
     else:
-        report(a.tag)
+        report(a.tag, a.target)
 
 
 if __name__ == "__main__":
