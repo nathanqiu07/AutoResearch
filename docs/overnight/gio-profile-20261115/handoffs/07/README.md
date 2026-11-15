@@ -66,3 +66,12 @@ Next dependency: an exact coordinator job lease and approved source bundle.
 Local tests and self-review are not an independent consumer audit or a fidelity
 result. Graph expansion, reflection and pruning remain unimplemented ablations
 that require a declared development hypothesis and parent artifact IDs.
+
+Settings correction: only `temperature` and `max_tokens` are supported in
+`extractor_settings`. Unknown keys, including `top_p`, `seed` and `reasoning`,
+are rejected before calling the extractor. Missing supported keys use explicit
+defaults (`0.0`, `2048`), pinned in the versioned prompt specification and
+recorded as `fit_usage.effective_extractor_settings`. Reasoning stays in the
+pinned backend identity. The builder does not mutate its config copy; shared
+runner normalization remains an infrastructure responsibility. Older fixtures
+retain their original implementation and prompt hashes.

@@ -49,6 +49,27 @@ class PrincipleTests(unittest.TestCase):
         response={'principles':[principle()],'rejected':[]} if response is None else response
         e=Extractor(response);out=getattr(self.m,'build_'+method.lower())(copy.deepcopy(DOCS),dict(self.config,method_id=method,**changes),e)
         return out,e
+    def test_unknown_extractor_settings_are_rejected_before_call(self):
+        for method in ('P4', 'P5', 'P6'):
+            for extra in ({'top_p':0.1}, {'top_p':0.9}, {'reasoning':'high'}, {'seed':1}):
+                with self.subTest(method=method,extra=extra):
+                    out,backend=self.build(method=method,extractor_settings=dict(self.config['extractor_settings'],**extra))
+                    self.assertEqual(out['status'],'invalid')
+                    self.assertEqual(backend.calls,[])
+                    self.assertEqual(out['fit_usage']['attempted_calls'],0)
+
+    def test_omitted_supported_settings_have_pinned_effective_defaults(self):
+        for supplied,expected in [({},{'temperature':0.0,'max_tokens':2048}),
+                                  ({'temperature':0.5},{'temperature':0.5,'max_tokens':2048}),
+                                  ({'max_tokens':100},{'temperature':0.0,'max_tokens':100})]:
+            with self.subTest(supplied=supplied):
+                out,backend=self.build(extractor_settings=supplied)
+                self.assertEqual(out['status'],'complete')
+                self.assertEqual(out['fit_usage']['effective_extractor_settings'],expected)
+                self.assertEqual({k:backend.calls[0][1][k] for k in expected},expected)
+                self.assertEqual(self.m.prompt_spec('P4')['extractor_settings_defaults'],
+                                 {'temperature':0.0,'max_tokens':2048})
+
     def test_p4_preserves_atomic_evidence_context_and_exceptions(self):
         p=principle();p['context']=claim('Evidence is unclear.','source_report');p['exceptions']=[claim('Abandon when the effect disappears.')]
         out,_=self.build({'principles':[p],'rejected':[]})
