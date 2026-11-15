@@ -68,3 +68,12 @@ Offline fixtures check plumbing only. One researcher does not support a meaningf
 user-bootstrap confidence interval; do not interpret the report's degenerate CI
 as certainty. The development set was already inspected in the old pilot, so this
 comparison is development evidence, not an untouched final evaluation.
+
+## Live format correction
+
+The first attempt at 29c1871 was stopped during raw-history predictions because
+multiple outputs contained extra text or multiple JSON objects. Failed traces
+are preserved. The rerun uses API strict JSON schemas for all four methods and a
+new backend identity/cache namespace. Earlier attempt spending and reservations
+are passed with `--prior-attempt-budget PATH/TO/final-budget.json` and included in
+the new run ledger. No prediction was salvaged by choosing a preferred JSON object.

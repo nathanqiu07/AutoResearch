@@ -7,7 +7,24 @@ from .backends import OpenAILLM
 
 
 class PaperOpenAILLM(OpenAILLM):
+    name='openai-responses-json'
     embedding_model='text-embedding-3-small'
+
+    def response_format(self,prompt):
+        payload=json.loads(prompt.split('INPUT_JSON:\n',1)[1])
+        string={'type':'string'}
+        if 'generation_style' in payload:
+            props={'principles':{'type':'array','items':string,'minItems':1,'maxItems':2}}
+        elif 'voting_round' in payload:
+            votes={str(i):{'type':'string','enum':['a','b','irrelevant']} for i in range(len(payload['principles']))}
+            props={'votes':{'type':'object','properties':votes,'required':list(votes),'additionalProperties':False}}
+        elif 'past_judgements' in payload:
+            props={'persona':string}
+        else:
+            n=len(payload['options'])
+            props={'probabilities':{'type':'array','items':{'type':'number','minimum':0,'maximum':1},'minItems':n,'maxItems':n},'rationale':string}
+        return {'type':'json_schema','name':'preference_response','strict':True,
+                'schema':{'type':'object','properties':props,'required':list(props),'additionalProperties':False}}
 
     def embed(self,texts):
         if not texts or len(texts)>2048 or any(not isinstance(t,str) or len(t.encode())>8000 for t in texts):

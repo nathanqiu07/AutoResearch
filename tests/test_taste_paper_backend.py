@@ -32,3 +32,12 @@ class PaperBackendTests(unittest.TestCase):
                 self.assertEqual(llm.spent_usd,0)
                 self.assertEqual(llm.budget.input_tokens,0)
                 self.assertGreater(llm.reserved_usd,0)
+    def test_predictions_require_strict_json_schema(self):
+        from tests.test_taste_backends import OpenAIBackendTests
+        with patch.dict('os.environ',{'OPENAI_API_KEY':'fixture'}), patch('urllib.request.urlopen',return_value=OpenAIBackendTests().response()) as network:
+            llm=PaperOpenAILLM(max_usd=.01)
+            llm.complete('Return JSON\nINPUT_JSON:\n{"options":["A","B"]}')
+            body=json.loads(network.call_args.args[0].data)
+            self.assertEqual(body['text']['format']['type'],'json_schema')
+            self.assertTrue(body['text']['format']['strict'])
+            self.assertEqual(body['text']['format']['schema']['properties']['probabilities']['maxItems'],2)

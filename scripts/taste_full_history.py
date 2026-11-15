@@ -67,14 +67,19 @@ def prepare(source,previous,out):
     print(json.dumps({'pairs':counts,'manifest':manifest['manifest_id'],'same_67_dev':True,'heldout_access':False}),flush=True)
 
 
-def run(root,live):
+def run(root,live,prior_attempts=()):
     output=root/('live' if live else 'offline')
     if output.exists():raise FileExistsError(output)
     records=load_records(root/'records.jsonl')
     if live and not os.environ.get('OPENAI_API_KEY'):
         os.environ['OPENAI_API_KEY']=getpass.getpass('OpenAI API key (hidden): ')
-    budget=Budget(max_calls=12000,max_seconds=14400,max_cost_usd=NEW_CAP)
-    llm=PaperOpenAILLM('gpt-6-luna',budget=budget,max_usd=NEW_CAP,timeout=120) if live else FixtureLLM(budget=budget)
+    prior=PRIOR_COMMITTED_USD
+    for path in prior_attempts:
+        ledger=json.loads(path.read_text());prior+=ledger['spent_usd']+ledger['reserved_usd']
+    cap=min(NEW_CAP,10-prior)
+    if not 0<cap<=NEW_CAP:raise ValueError('no authorized budget remaining')
+    budget=Budget(max_calls=12000,max_seconds=14400,max_cost_usd=cap)
+    llm=PaperOpenAILLM('gpt-6-luna',budget=budget,max_usd=cap,timeout=120) if live else FixtureLLM(budget=budget)
     factories={m:(lambda user,m=m:create_method(m,llm,seed=0,max_calls=12000,
                cache_dir=root/('cache-live' if live else 'cache-offline'),**CONFIG)) for m in ('m0','m1','m2','m3')}
     stop=threading.Event()
@@ -89,7 +94,7 @@ def run(root,live):
         report=run_fidelity(records,root/'manifest.json',factories,output,'hobbhahn_history_dev',run_config={
             'backend':'openai' if live else 'offline','model':llm.model,'settings':CONFIG,'heldout_access':False,
             'purpose':'agreement with AI-inferred labels, not verified researcher ground truth',
-            'prior_committed_usd':PRIOR_COMMITTED_USD,'new_cap_usd':NEW_CAP,'total_authorized_usd':10})
+            'prior_committed_usd':prior,'prior_attempt_ledgers':[str(p) for p in prior_attempts],'new_cap_usd':cap,'total_authorized_usd':10})
         for method in ('m2','m3'):
             try:
                 bundle=build_bundle(output,records,root/'manifest.json',method=method,export_dir=output/'exports'/method,max_examples_per_method=12)
@@ -104,8 +109,9 @@ def run(root,live):
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('mode',choices=['prepare','offline','live'])
     p.add_argument('--output',type=Path,required=True);p.add_argument('--source',type=Path);p.add_argument('--previous-manifest',type=Path)
+    p.add_argument('--prior-attempt-budget',type=Path,action='append',default=[])
     a=p.parse_args()
     if a.mode=='prepare':
         if not a.source or not a.previous_manifest:p.error('prepare requires source and previous-manifest')
         prepare(a.source,a.previous_manifest,a.output)
-    else:run(a.output,a.mode=='live')
+    else:run(a.output,a.mode=='live',a.prior_attempt_budget)

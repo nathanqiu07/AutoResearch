@@ -61,6 +61,8 @@ class OpenAILLM(LLM):
         body = {"model": self.model, "instructions": system, "input": prompt,
                 "max_output_tokens": max_tokens, "reasoning": {"effort": "none"},
                 "store": False, "service_tier": "default"}
+        if callable(getattr(self, "response_format", None)):
+            body["text"] = {"format": self.response_format(prompt)}
         encoded = json.dumps(body, ensure_ascii=False).encode("utf-8")
         # A byte bound plus overhead is deliberately much larger than ordinary
         # text tokenization. Including output keeps the entire request short.
