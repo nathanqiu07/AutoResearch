@@ -42,3 +42,11 @@ Semantic verification: 22 targeted tests passed; full repository suite 685 tests
 ## Semantic numerical correction
 
 The independent integration audit reported subnormal-vector ranking instability. Reproduced with query and aligned document [1,1], and another document [5e-324,1e-323]: the latter normalized to [.5,1] and incorrectly outranked the aligned document. A public semantic-ranking regression failed at the subnormal scale before the fix. Normalizing by the maximum absolute coordinate before the L2 norm preserves direction and avoids raw-norm underflow/overflow. Normal, subnormal and large-scale ranking checks pass. Independent static review found no further important issue; 23 targeted tests and 686 repository tests passed, two skipped. This does not establish any live embedding defect. The helper/policy hash changes, so new runtime artifacts must be rebuilt; historical fixtures remain pinned to their original code.
+
+## Producer receipt assembly
+
+- [x] Prepare two exact embedding requests over development-v2: 40 unique strings, 20,732 input-text UTF8 bytes, 28 decision mappings. Published proposal c234f81; no calls.
+- [x] Add the offline assembler in this handoff directory, preserving the frozen retrieval helper bytes. Producer execution remains owner01/coordinator scope.
+- [x] Nine synthetic assembler tests pass, including reordered/duplicate/missing indices, source/query mismatch, stale helper, incomplete producer provenance, and exclusive output writes. Root reran these and23 core tests; separate static review found no important issue.
+- [x] Exact approved Neel input compatibility passed with artificial vectors in memory:14 bundles,18 inputs,1536 dimensions; no live receipt or synthetic scientific result published.
+- [x] Repository suite ran686 tests, with2 skipped (684 passed). Live bundle construction remains pending actual completed producer receipts.

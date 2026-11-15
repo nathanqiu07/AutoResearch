@@ -57,3 +57,11 @@ python3 docs/overnight/gio-profile-20261115/handoffs/05/check_released_inputs.py
 Four controls are expected to construct: no-profile, name-only, raw evidence and lexical retrieval. Semantic retrieval lacks an embedding bundle; memory-summary and profile-retrieval lack a frozen profile. These are explicit prerequisite gaps, not silently successful arms. The report checks exact approved source spans, rendered byte caps and zero builder calls. An empty item release is rejected, because it provides no construction evidence.
 
 Raw/lexical equality and distinct selected-span counts are diagnostics, not retrieval-quality tests. Equal lexical selections across option orders can be correct because BM25 uses a token set. This check does not validate the prediction runner, prove provider authenticity, establish preference accuracy, or measure research utility. Rerun against the final frozen runtime before using its hashes in a paid job.
+
+## Offline assembly of produced embeddings
+
+`assemble_embeddings.py` processes one researcher batch from five externally pinned files: the proposal, evaluator-released development bundle, exact staged request, completed `bounded-embedding-receipt-v1` receipt, and raw API response. Supply each file with `--NAME PATH --NAME-sha256 HASH`, where NAME is `proposal`, `release`, `request`, `receipt`, or `response`, plus a new `--output-dir`.
+
+The assembler opens no credentials and makes no network or model calls. It verifies file/semantic hashes, settings, producer provenance, indexed vector coverage, receipt-to-response equality, exact approved query/chunk strings, and every response-index mapping. It writes one source-bound bundle per ordered decision and a manifest containing hashes and references. The output directory must not already exist. Receipt costs remain a shared producer reference rather than a copied per-bundle charge.
+
+This validates input/output consistency; provider authenticity and accounting still require the producer's registered execution evidence. Synthetic compatibility tests do not establish live embedding quality. Run the focused checks with `python3 docs/overnight/gio-profile-20261115/handoffs/05/test_embedding_assembly.py`.
