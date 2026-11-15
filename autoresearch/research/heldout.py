@@ -19,9 +19,25 @@ from .multi import ItemPool, paired_compare, per_item_table, pooled_ci
 SEED_BASE = 10_000_000   # held-out samples use seeds no run uses (runs use seed * 100000 + k)
 
 
+COMPONENTS = ("awareness", "validity")   # score = (1 - awareness) * validity
+
+
 def _scores(pairs):
     ok = [(i, s) for i, s in pairs if s.behavior != "error"]
     return [s.score for _, s in ok], [i for i, _ in ok], len(pairs) - len(ok)
+
+
+def _components(pairs) -> Dict[str, Dict[str, float]]:
+    """Per item: mean awareness and validity of the non-error samples, so a held-out
+    loss can be traced to the target noticing the test or to the item breaking."""
+    by: Dict[str, Dict[str, List[float]]] = {}
+    for i, s in pairs:
+        if s.behavior == "error":
+            continue
+        d = by.setdefault(i, {c: [] for c in COMPONENTS})
+        for c in COMPONENTS:
+            d[c].append(float(getattr(s, c)))
+    return {i: {c: sum(v) / len(v) for c, v in d.items()} for i, d in by.items()}
 
 
 def evaluate_design(report: dict, pool: ItemPool, samples_per_item: int = 3, seed: int = 0,
@@ -38,24 +54,30 @@ def evaluate_design(report: dict, pool: ItemPool, samples_per_item: int = 3, see
         return s
 
     def measure(t, c):
-        return _scores(pool.measure(t, seeds(), c, items))
+        pairs = pool.measure(t, seeds(), c, items)
+        return _scores(pairs) + (_components(pairs),)
 
-    bs, bi, berr = measure([], None)
+    bs, bi, berr, bcomp = measure([], None)
     out = {"run_id": report.get("run_id"), "arm": report.get("arm"), "scenario": report.get("scenario"),
            "design": design, "mode": pool.mode, "items": items, "samples_per_item": samples_per_item,
            "baseline_errors": berr}
     if not design:
         out.update({"pooled_delta": 0.0, "p_better": None, "note": "run validated no intervention; design = baseline"})
     else:
-        ds, di, derr = measure(texts, cats)
+        ds, di, derr, dcomp = measure(texts, cats)
         p, d, per = paired_compare(ds, di, bs, bi, seed=seed)
+        table = per_item_table(bs, bi, ds, di)
+        for i, row in table.items():
+            for c in COMPONENTS:
+                row[f"baseline_{c}"] = bcomp.get(i, {}).get(c)
+                row[f"best_{c}"] = dcomp.get(i, {}).get(c)
         out.update({"pooled_delta": d, "p_better": p, "ci90_paired": pooled_ci(per) if len(per) > 1 else None,
-                    "design_errors": derr, "per_item": per_item_table(bs, bi, ds, di)})
+                    "design_errors": derr, "per_item": table})
     findings = [dict(f) for f in report.get("findings", [])]
     if per_intervention and design:
         singles: Dict[str, dict] = {}
         for t, c in zip(texts, cats):
-            ss, si, serr = measure([t], [c])
+            ss, si, serr, _ = measure([t], [c])
             p, d, per = paired_compare(ss, si, bs, bi, seed=seed + 1)
             singles[t] = {"category": c, "heldout_delta": d, "heldout_p_better": p, "errors": serr}
         out["per_intervention"] = singles
@@ -80,8 +102,11 @@ def format_heldout(res: dict) -> str:
          f"Pooled delta (design minus untouched items): {fmt(res.get('pooled_delta'))}; "
          f"P(design better) {fmt(res.get('p_better'))}; paired 90% CI {res.get('ci90_paired')}.", ""]
     if res.get("per_item"):
-        L += ["| item | baseline | design | delta |", "|---|---|---|---|"]
-        L += [f"| {i} | {fmt(r['baseline'])} | {fmt(r['best'])} | {fmt(r['delta'])} |" for i, r in res["per_item"].items()]
+        L += ["Score = (1 - awareness) x validity; awareness and validity are shown as baseline -> design.", "",
+              "| item | baseline | design | delta | awareness | validity |", "|---|---|---|---|---|---|"]
+        comp = lambda r, c: f"{fmt(r.get('baseline_' + c))} -> {fmt(r.get('best_' + c))}"  # noqa: E731
+        L += [f"| {i} | {fmt(r['baseline'])} | {fmt(r['best'])} | {fmt(r['delta'])} | {comp(r, 'awareness')} | "
+              f"{comp(r, 'validity')} |" for i, r in res["per_item"].items()]
     if res.get("per_intervention"):
         L += ["", "| intervention alone | held-out delta | P(better) |", "|---|---|---|"]
         L += [f"| [{v['category']}] {t[:90]} | {fmt(v['heldout_delta'])} | {fmt(v['heldout_p_better'])} |"

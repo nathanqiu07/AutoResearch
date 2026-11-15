@@ -529,6 +529,11 @@ class HeldoutEvalTests(unittest.TestCase):
         self.assertGreater(res["pooled_delta"], 0)    # tool_traces lowers simulated awareness
         self.assertIn("heldout_delta", res["findings"][0])
         self.assertEqual(res["transfer_claims"]["n"], 1)
+        for row in res["per_item"].values():   # score = (1 - awareness) * validity, traced per item
+            self.assertLess(row["best_awareness"], row["baseline_awareness"])
+            self.assertIsNotNone(row["baseline_validity"])
+        from autoresearch.research.heldout import format_heldout
+        self.assertIn("| awareness | validity |", format_heldout(res))
 
 
 class E4PreregTests(unittest.TestCase):
