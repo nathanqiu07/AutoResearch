@@ -56,3 +56,14 @@ and sampling differ, and the cache key includes the arm.
   For pairs_v3, the band is gated on sonnet (taste share and realness share). The **primary predictor becomes
   sonnet**, with M0s as the baseline for all arms. Haiku arms are secondary. The decision rules are otherwise
   unchanged, with "M0" read as the sonnet no-profile arm.
+- 2026-11-15, E2 on pairs_v4 (blind-context firewall), registered before any predictor call on these pairs.
+  Pairs: all 246 in `pairs_v4/pairs.jsonl`, with up to 100 used, stratified over all 10 works. With the firewall,
+  sonnet's blind judges give his option a mean share of 0.17. So the question changes from "does a profile split
+  a tie" to "does a pre-T profile move sonnet toward his actual, less-default choice".
+  Arms (sonnet primary): M0s, NAME, P0 (consensus placebo, length-matched), P1, P4, MIS (shuffled P4), and
+  ANTI, a generic placebo of matched length ("this researcher often departs from the typical or most cautious
+  choice"). ANTI checks whether any push away from the default gets the gain. The "pragmatic and assertive"
+  pattern seen in pairs_v4's gating is post-T, so no arm may use it.
+  A profile "predicts taste" if it beats M0s, P0, MIS **and ANTI**, with the cluster-diff 90% CI over works
+  above 0 against each. Accuracy is paired, his option in both orders. Mean p(his) is secondary. Cap: 1,400
+  sonnet calls.
