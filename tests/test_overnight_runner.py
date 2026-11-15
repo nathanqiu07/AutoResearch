@@ -8,6 +8,11 @@ from unittest.mock import patch
 from tests import test_overnight_contracts as fixture
 
 
+def divergent_extractor_builder(documents, config, extractor):
+    extractor.complete("synthetic extraction", temperature=1.0, max_tokens=32)
+    return {"content": "synthetic result"}
+
+
 class RunnerTests(unittest.TestCase):
     def setUp(self):
         from autoresearch.taste.overnight import runner
@@ -183,6 +188,67 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "document"):
             self.runner.run_job(manifest, lease, output_root=self.root / "outputs", lease_root=self.root / "leases",
                                 config=config, documents=documents, extractor=self.consumer)
+        self.assertEqual(self.consumer.prompts, [])
+
+    def test_caller_mutation_cannot_change_validated_execution_inputs(self):
+        outer = self
+        class Mutating(fixture.RecordingConsumer):
+            def complete(self, prompt, **kwargs):
+                response = super().complete(prompt, **kwargs)
+                outer.config["settings"]["temperature"] = 1.5
+                outer.items[1]["context"] = "mutated after validation"
+                return response
+        self.consumer = Mutating()
+        self.items.append(dict(self.items[0], item_id="dev-2", context="original second question"))
+        manifest = self.manifest(option_order_schedule=[{"item_id": i["item_id"], "option_order_id": i["option_order_id"]} for i in self.items],
+                                 allocation={"max_calls": 2, "max_seconds": 30, "max_usd": 0,
+                                             "cost_mode": "offline", "authorization_source": "fixture"})
+        result = self.run_job(manifest)
+        second_prompt, second_settings = self.consumer.prompts[1]
+        self.assertEqual(result["status"], "complete")
+        self.assertIn("original second question", second_prompt)
+        self.assertNotIn("mutated after validation", second_prompt)
+        self.assertEqual(second_settings["temperature"], 0.0)
+        self.assertEqual(result["config_hash"], manifest["config_hash"])
+
+    def test_relative_time_limit_applies_before_cache_hit(self):
+        clock = [0.0]
+        class Crossing(fixture.RecordingConsumer):
+            def complete(self, prompt, **kwargs):
+                response = super().complete(prompt, **kwargs)
+                clock[0] = 31.0
+                return response
+        self.consumer = Crossing()
+        self.items.append(dict(self.items[0], item_id="dev-2"))
+        manifest = self.manifest(option_order_schedule=[{"item_id": i["item_id"], "option_order_id": i["option_order_id"]} for i in self.items])
+        with patch.object(self.runner.time, "monotonic", side_effect=lambda: clock[0]):
+            result = self.run_job(manifest)
+        self.assertEqual(result["predictions"][1]["error_code"], "allocation_exhausted")
+        self.assertEqual(result["usage"]["cache_hits"], 0)
+
+    def test_missing_cost_mode_rejected_before_job_claim(self):
+        allocation = {"max_calls": 1, "max_seconds": 30, "max_usd": 0, "authorization_source": "fixture"}
+        with self.assertRaisesRegex(ValueError, "cost_mode"):
+            self.run_job(self.manifest(allocation=allocation))
+        self.assertFalse((self.root / "leases").exists())
+
+    def test_extractor_call_cannot_diverge_from_declared_settings(self):
+        from autoresearch.taste.overnight.registry import register_builder
+        register_builder("divergent-extractor-fixture", divergent_extractor_builder,
+                         prompt_version="v1", prompt_sha256="a" * 64)
+        case = fixture.ContractTests()
+        case.setUp()
+        config = dict(case.config, method_id="divergent-extractor-fixture",
+                      extractor_settings={"temperature": 0.0, "max_tokens": 128})
+        manifest = self.manifest(kind="build", method_id=config["method_id"], config_hash=self.digest(config),
+                                 source_manifest_hash=config["allowed_source_manifest_hash"], extractor=self.identity(self.consumer),
+                                 profile_hash=None, documents_hash=self.digest(case.docs), items_hash=self.digest([]),
+                                 option_order_schedule=[], code_sha=config["code_sha"])
+        lease = {"job_id": manifest["job_id"], "lease_id": "one", "owner": "fixture", "expires_at": "2099-01-01T00:00:00+00:00"}
+        result = self.runner.run_job(manifest, lease, output_root=self.root / "outputs", lease_root=self.root / "leases",
+                                     config=config, documents=case.docs, extractor=self.consumer)
+        self.assertEqual(result["status"], "unavailable")
+        self.assertEqual(result["error_code"], "call_settings_differ_from_declared")
         self.assertEqual(self.consumer.prompts, [])
 
 
