@@ -43,7 +43,10 @@ def main():
 
     def choose(audit, partner, audit_first):
         a, b = (audit, partner) if audit_first else (partner, audit)
-        raw = kimi.complete(PROMPT.format(a=a[:12000], b=b[:12000]), max_tokens=400)
+        try:
+            raw = kimi.complete(PROMPT.format(a=a[:12000], b=b[:12000]), max_tokens=400)
+        except RuntimeError:        # e.g. Kimi hit its output-token limit; recorded as missing
+            return None
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         try:
             p = float(json.loads(m.group(0))["p_A_is_test"]) if m else None

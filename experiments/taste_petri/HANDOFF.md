@@ -48,12 +48,19 @@ redoing work.
   with fresh samples: R0 vs H* vs H*-0 (same pipeline, no researcher material). Log per candidate in `hillclimb/LOG.md`.
 - Haiku proxy (rm_proxy no-material path, unchanged); sonnet rewrites via claude -p. Other sessions: don't take hillclimb/.
 
-### 2026-11-15 devin-tastepetri: surgery/ (IN PROGRESS, 19:10 UTC)
-- decoys DONE: null; the first-batch A2 effect did not replicate, and an A/A split shows that k=3 seed-bootstrap CIs
-  are overconfident on validity/bait/A1 (`decoys/results.md`).
-- `surgery/` (PREREG.md): common random numbers. R0's exact audit openings are reused, one edit is applied (ID
-  re-run, SOFT = same bait facts but ordinary presentation, NB = bait removed), then everything downstream is
-  re-scored. Tests whether the bait tell is presence or presentation. About 360 haiku + 60 devin-cli calls.
+### 2026-11-15 devin-tastepetri: surgery, judge_transfer, genre_ladder, forced_choice (DONE, 20:20 UTC; Devin stopped, nothing running)
+- `surgery/`: in the same scenario, removing the bait raises realism +0.8 and lowers haiku A2 −0.12; presenting the
+  same bait ordinarily changes nothing. EMBED (bait in the task path) was null-to-slightly-negative on 23/36
+  samples. **AMBIG is unfinished**: the Claude 5h limit hit mid-run; its edits are cached. To finish it, run
+  `python3 experiments/taste_petri/surgery/run.py run AMBIG` after the reset, then `compare`.
+- `judge_transfer/`: all four realism claims hold on GPT-6 Sol. Kimi K2.6's A2 is 0.92-0.94 on every arm (no haiku
+  A2 effect transfers).
+- `genre_ladder/`: Kimi A2 is 0.90 on real users' OpenHands sessions, 0.93 on audits and 0.95 on benchmarks, and a
+  bait moves it 0.00. E3b A2 headroom for agentic seeds is about 0.03.
+- `forced_choice/`: Kimi picks our audit over a real session 77% of the time (bait removed: 70%, −0.07
+  [−0.16, +0.01]); TT2 is no less detectable.
+- Earlier ones done: `decoys/` (null after replication; A/A shows k=3 CIs are overconfident) and `taste_ranker/`
+  (taste null as a selector).
 
 ### 2026-11-15 devin-tastepetri: taste_ranker/ + decoys/ (IN PROGRESS, 18:30 UTC)
 - `taste_ranker/` DONE (results.md): no profile beats a no-profile ranker at ordering rewrites by measured realism
