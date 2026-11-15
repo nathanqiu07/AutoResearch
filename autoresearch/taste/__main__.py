@@ -60,7 +60,23 @@ def main(argv=None):
     predict.add_argument("--context", required=True)
     predict.add_argument("--options", nargs="+", required=True)
     model_args(predict)
+    label = commands.add_parser("label", help="label logged decisions in the order of an active_queries queue")
+    label.add_argument("--researcher", required=True)
+    label.add_argument("--queue", required=True, help="queue JSONL from `active_queries queue`")
+    label.add_argument("--root", default=None, help="researchers root (default: data/researchers)")
+    label.add_argument("--limit", type=int)
+    label.add_argument("--memory", default="runs/research_memory",
+                       help="local shared-memory dir for LABEL/DISAGREE facts when PAST_API_KEY is unset")
     args = parser.parse_args(argv)
+    if args.command == "label":
+        import os
+        from ..integrations.shared_memory import get_shared_memory
+        from .active_queries import label_from_queue
+        from .researcher import DEFAULT_ROOT
+        shared = get_shared_memory(os.path.join(args.memory, "shared.jsonl"))
+        print(json.dumps(label_from_queue(args.root or DEFAULT_ROOT, args.researcher, args.queue, shared,
+                                          limit=args.limit)))
+        return
     if args.command == "prepare":
         if len(set(args.datasets)) != len(args.datasets):
             raise ValueError("duplicate dataset selection")
