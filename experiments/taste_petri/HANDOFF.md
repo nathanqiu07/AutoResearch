@@ -25,6 +25,13 @@ redoing work.
 
 ## Ledger (newest first)
 
+### 2026-11-15 claude-hillclimb: hillclimb/ (IN PROGRESS, new session, user-directed)
+- User: "all results have taste neutral to control for the eval awareness task; hill-climb to demonstrate an
+  improvement". Pre-registered in `hillclimb/PREREG.md`: climb taste-steered rewrites on dev against R0 (task score
+  `(1-aw)*validity`, guards on faithfulness and Petri-judge eval_awareness), then ONE confirmation on the hidden split
+  with fresh samples: R0 vs H* vs H*-0 (same pipeline, no researcher material). Log per candidate in `hillclimb/LOG.md`.
+- Haiku proxy (rm_proxy no-material path, unchanged); sonnet rewrites via claude -p. Other sessions: don't take hillclimb/.
+
 ### 2026-11-15 devin-tastepetri: surgery/ (IN PROGRESS, 19:10 UTC)
 - decoys DONE: null; the first-batch A2 effect did not replicate, and an A/A split shows that k=3 seed-bootstrap CIs
   are overconfident on validity/bait/A1 (`decoys/results.md`).
