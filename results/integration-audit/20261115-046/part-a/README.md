@@ -1,0 +1,7 @@
+Part A reviews exactly proposal indices 0–13: fourteen Python source files. Each receives an allow-for-owner-copy assessment for its exact SHA-256 and size. No actual embedded credential, private scientific/profile/prompt/target-label/prediction/response/error body, or copied private control document was found in the inspected bytes.
+
+All source text was read. Regular-file and no-symlink path checks, exact hashes/sizes and final byte/state rechecks passed. AST parsing was used without importing or executing any submitted source. No dependency, credential file, database, model endpoint or embedded data path was followed. No original source text or excerpt is stored in this review package.
+
+Synthetic transport responses, credential markers, diagnostic records and test inspection fixtures are identified in the per-file reasons. Some tests and launchers would read real artifacts or credentials if executed; source-retention eligibility does not authorize that behavior. This is a bounded semantic review, not a comprehensive secret-detection proof, launch/correctness audit, scientific-validation claim or authority for new execution.
+
+Only the coordinator may perform any later exact source copy/publication. Changed bytes need a new review. Files 14–26 belong to the separate reviewer and were not opened here. Copy only the safe-manifest.json allowlist and the manifest itself; all files here are newly authored metadata or notes.

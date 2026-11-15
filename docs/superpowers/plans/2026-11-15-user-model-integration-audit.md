@@ -778,3 +778,27 @@
   links to portable repository paths, clarifies the byte-cap wording and keeps
   later 044 retention outside its historical source cut. No new empirical result
   or current legacy-adviser repair verdict is inferred from the synthesis.
+
+## Bounded follow-up source retention review
+
+- Published 044/045 at remote-verified `32fce8a31512049b3ee20b5fa0768e17816cfa1b`
+  and sent both original chats and the coordinator the private custody locations,
+  exact pins, publication boundary and compact findings index.
+- Planning relayed the coordinator's exact 27-file proposal
+  `e199fcc73a6aad1e188e8f6cf7e39c028a29a6466efff162c79eeaa7520764bc`.
+  Audit 046 inspects its 23 Python files and four review JSONs without importing,
+  executing, following embedded references or copying any original source body.
+- Two reviewers inspect disjoint parts (14 + 13 files, 175,124 bytes total).
+  All are assessed eligible for coordinator-owned retention at exact pins; none
+  is excluded or uncertain. Actual credentials/private scientific payloads were
+  not identified; synthetic fixtures and dynamic private references are recorded
+  distinctly. This is bounded publication review, not a secret-free proof,
+  source-behavior validation, launch authorization or scientific finding.
+- Root verifies each original path/hash/size/destination, full line coverage,
+  unchanged initial/final source state and exact 27-file union. The coordinator
+  retains source-copy/publication ownership and must verify hashes again then.
+- The required suite initially encounters a sandbox-denied loopback fixture
+  bind; unchanged rerun with local permission passes 675 tests with two skipped.
+  Both attempts are retained. No submitted proposal test was executed.
+- Other lanes now own the future-only P8 exporter, scaling and reference runs;
+  this audit does not duplicate their implementation, scoring or admission work.

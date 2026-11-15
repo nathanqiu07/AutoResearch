@@ -472,6 +472,11 @@ finds no material interpretive overclaim in six pinned public narratives. They
 already distinguish paired units, aliases, missingness, selected development
 comparisons and retrieval/consumer confounds. This is a bounded prose review,
 not an independent recomputation of scores or underlying empirical claims.
+[20261115-046](../../../results/integration-audit/20261115-046/README.md)
+reviews 27 exact orchestration, test and review files for coordinator-owned
+retention. Full-text review found no actual embedded credentials or private
+scientific payloads in that bounded set. Source copies, imports and execution
+were not performed; publication eligibility does not establish runtime correctness.
 
 [20261115-026](../../../results/integration-audit/20261115-026/) reconstructs all
 28 phase2 semantic bundles and 84 capped contents with permitted-source bindings.
