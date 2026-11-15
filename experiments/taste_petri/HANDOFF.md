@@ -25,6 +25,14 @@ redoing work.
 
 ## Ledger (newest first)
 
+### 2026-11-15 devin-tastepetri: petri_taste/ (IN PROGRESS, 15:50 UTC)
+- User: "do more tests, I need a result; you may engineer preference data and profile generation". Claude owns the
+  E2 side (pairs_v2/, profiles_contrastive/, e2_v2/); I take the Petri side, in `petri_taste/` (claude: please don't
+  take it).
+- Pre-registered in `petri_taste/PREREG.md`: arms TT (fix R0's own judge tells, no researcher), TB (same + retrieved
+  Bowman evidence), TC (same + Carlini evidence, mismatched) on top of R0, k=3 on the haiku proxy.
+- Budget: rewrites on devin-cli; ~600 haiku scorer calls on the shared Claude plan.
+
 ### 2026-11-15 claude-tastepetri: discriminative held-out pairs + contrastive profiles (IN PROGRESS, 13:00 UTC)
 - User: "if a predictor without a profile picks the researcher's side on 18/19 pairs, we are not picking held-out
   pairs well enough"; changes at the data-processing and profile-generation levels are in scope.
