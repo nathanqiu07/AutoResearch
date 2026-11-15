@@ -1,4 +1,4 @@
-"""Agreement filter, both tracks (Ethan, 2026-11-14). A pair leaves history, val and held-out
+"""Agreement filter, personal track only (Ethan, 2026-11-14). A pair leaves history, val and held-out
 when a blind judge (no history about the person) is asked which option is the better research
 decision 5 times with each option order, and more than 80% of those 10 votes (9 or 10) go to
 the option the person chose. Such a pair tests generic research sense, not this person's
@@ -9,7 +9,7 @@ Votes, not the model's stated probability: stated confidence is poorly calibrate
 share is a count anyone can check. Pooling both orders cancels position bias, since a judge that
 always picks the first option shown lands at 5 of 10.
 
-The judge is claude-sonnet-5-5 on both tracks. Each vote is recorded per pair in
+The judge is claude-sonnet-5-5. Each vote is recorded per pair in
 <person dir>/agreement.jsonl, so a new threshold needs no new calls and a judged pair is never
 judged again."""
 import concurrent.futures

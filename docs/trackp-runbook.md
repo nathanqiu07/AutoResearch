@@ -91,7 +91,7 @@ python3 -m autoresearch.taste.usermodel_store push --researcher <slug>
 ```
 
 * First run `agree --backend claude-cli` (paid, ask first; 10 calls per answer). It is the
-  agreement filter, the same rule and judge as the public track. The judge is `claude-sonnet-5-5` on both tracks, with no history about the person. It is asked which option is the better research decision 5 times with each option order (10 sampled votes), and a pair is dropped when more than 80% of the votes (9 or 10 of 10) go to the option the person chose.
+  agreement filter (personal track only; the public track is not filtered). The judge is `claude-sonnet-5-5`, with no history about the person. It is asked which option is the better research decision 5 times with each option order (10 sampled votes), and a pair is dropped when more than 80% of the votes (9 or 10 of 10) go to the option the person chose.
   `e2` and `fit` drop such an answer from every split (history, val and test): it tests
   generic sense, not their taste. Answers the judge decides against the person stay, with no
   manual re-check. Every vote is recorded in `agreement.jsonl`, so a new threshold needs no

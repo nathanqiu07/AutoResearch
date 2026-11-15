@@ -1,4 +1,4 @@
-"""Agreement filter, both tracks: a blind judge votes 5 times with each option order; a pair
+"""Agreement filter (personal track): a blind judge votes 5 times with each option order; a pair
 leaves every split when more than 80% of its 10 votes go to the person's option. Votes are
 recorded once and never re-asked."""
 import json

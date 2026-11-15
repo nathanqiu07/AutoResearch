@@ -34,6 +34,7 @@ The same layout for every person. Track: P = personal (`trackp`), S = public (`t
 | `recheck.jsonl` | Re-asked items, for the noise ceiling | raw (human) | `trackp recheck` | P |
 | `seed_pairs.jsonl` | Questionnaire items built from `trackp/tradeoffs.jsonl` | derived (append-only: answers point at its ids) | `trackp seed-pairs` | P |
 | `balance.jsonl` | Blind-judge checks of items, and human review decisions | checks derived (paid), reviews raw | `trackp balance` / `review` | P |
+| `agreement.jsonl` | Blind Sonnet 5.5 judge's 10 votes per answer (5 per option order); `e2` and `fit` drop answers with more than 80% of votes for the person's option | derived (paid) | `trackp agree` | P |
 | `history.jsonl` | Choices the user model was fitted on | derived | `trackp` fit | P |
 | `identity.json` | Who the person is, for the harvest | raw | `timesplit harvest` | S |
 | `harvest_manifest.jsonl` | Each harvested document with its source and date | raw (external) | `timesplit harvest` | S |
