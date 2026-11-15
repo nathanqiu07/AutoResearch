@@ -79,6 +79,8 @@ sleep 3; kill -0 "$PROXY_PID" || { echo "tinker proxy failed to start"; exit 1; 
 export OPENAI_COMPAT_ENDPOINTS="{\"moonshotai/\": {\"base_url\": \"http://127.0.0.1:8100/v1\", \"key_env\": \"TINKER_PROXY_KEY\"}}"
 export TINKER_PROXY_KEY=local OPENAI_COMPAT_PLAIN_THINKING="${OPENAI_COMPAT_PLAIN_THINKING:-headroom}"
 export OPENAI_COMPAT_BASE_URL=http://127.0.0.1:8100/v1 OPENAI_COMPAT_API_KEY=local
+# the Petri harness reaches the target as openai-api/modal/<model> (configs/models.json petri.dev.target)
+export MODAL_BASE_URL=http://127.0.0.1:8100/v1 MODAL_API_KEY=local
 T_SPEC="openai-compat:$T_MODEL"
 
 if [ -n "${AUDITOR_URL:-}" ] && curl -sf -m 15 -H "Authorization: Bearer $VLLM_KEY" "$AUDITOR_URL/models" >/dev/null 2>&1; then
