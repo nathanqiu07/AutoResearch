@@ -11,6 +11,7 @@ Questions come from three sources, most grounded first:
   decisions   records the loop logged on this task (runs/<run>/decisions.jsonl), asked as they were
   bank        trade-off items (data/trackp/tradeoffs.jsonl) ranked by lexical similarity to the task
   llm         task-specific questions and follow-ups written by an LLM (`--backend`, paid unless offline)
+  agent       questions an agent writes in chat with `add` (the grill-usermodel skill), e.g. follow-ups
 
 Everything for one task lives in data/researchers/<slug>/grill/<task>/:
   meta.json        the task and its text
@@ -39,6 +40,7 @@ patched model and its R1-prompt control differ by more than the user model metho
     python3 -m autoresearch.taste.grill next | status --researcher <slug> --task ...
     python3 -m autoresearch.taste.grill record --id <qid> --choice <n> [--reason "..."] --researcher <slug> --task ...
     python3 -m autoresearch.taste.grill skip --id <qid> | principle --text "..." | follow-up --id <qid>
+    python3 -m autoresearch.taste.grill add --point D3 --context "..." --option "..." --option "..." [--parent <qid>]
     python3 -m autoresearch.taste.grill apply | revert --researcher <slug>
 """
 from __future__ import annotations
@@ -193,6 +195,21 @@ def _valid_generated(row) -> bool:
     if any(not isinstance(o, str) or not o.strip() or len(o) > MAX_OPTION_CHARS for o in opts):
         return False
     return len({o.strip().casefold() for o in opts}) == len(opts)
+
+
+def agent_question(session: "Session", point: str, context: str, options: Sequence[str], why: str = "",
+                   parent: str = "", model=None, warn: Callable = print) -> dict:
+    """Queue one question written by an agent in chat, checked like a generated one."""
+    row = {"point": point, "context": context, "options": [str(o).strip() for o in options]}
+    if not _valid_generated(row):
+        raise ValueError(f"a question needs a point in {POINTS}, context of 1-{MAX_CONTEXT} characters and "
+                         f"2-{MAX_OPTIONS} distinct options of at most {MAX_OPTION_CHARS} characters")
+    depth = session.get(parent).get("depth", 0) + 1 if parent else 0
+    q = _question(session.task["task"], point, context, row["options"], "agent", why=why, parent=parent, depth=depth)
+    added = session.add(score([q], model, warn=warn))
+    if not added:
+        raise ValueError(f"{q['id']} is already queued")
+    return added[0]
 
 
 def llm_questions(llm, task: Dict[str, str], n: int, artifacts: Optional[dict] = None,
@@ -623,6 +640,12 @@ def main(argv=None):
     p = models(common(sub.add_parser("follow-up", help="LLM follow-ups to an answered question")))
     p.add_argument("--id", required=True)
     p.add_argument("--n", type=int, default=2)
+    p = models(common(sub.add_parser("add", help="queue a question written by an agent in chat")))
+    p.add_argument("--point", required=True, choices=POINTS)
+    p.add_argument("--context", required=True)
+    p.add_argument("--option", action="append", required=True, help="repeat for each option, in display order")
+    p.add_argument("--why", default="")
+    p.add_argument("--parent", default="", help="the answered question this follows up")
     p = common(sub.add_parser("apply", help="rebuild usermodel.json = base + grill patches"), task=False)
     p.add_argument("--tasks", nargs="*", help="task slugs to apply (default: all)")
     common(sub.add_parser("revert", help="restore the unpatched usermodel.json"), task=False)
@@ -630,7 +653,7 @@ def main(argv=None):
 
     root = args.root
     slug = _researcher(root, args.researcher)
-    say = lambda *a: print(*a, file=sys.stderr) if args.cmd in ("start", "next", "follow-up") else print(*a)
+    say = lambda *a: print(*a, file=sys.stderr) if args.cmd in ("start", "next", "follow-up", "add") else print(*a)
     try:
         if args.cmd == "apply":
             print(json.dumps(apply(root, slug, args.tasks), indent=2))
@@ -644,7 +667,7 @@ def main(argv=None):
             if not args.task:
                 raise ValueError("name the session with --task <task slug> (see grill/ under the researcher)")
             session = Session.open(root, slug, args.task)
-        if args.cmd in ("run", "start", "follow-up"):
+        if args.cmd in ("run", "start", "follow-up", "add"):
             writer, predictor = _llms(args)
             model = load_user_model(root, slug, predictor, _cache_dir(slug), warn=say) if predictor else None
         if args.cmd == "run":
@@ -678,6 +701,9 @@ def main(argv=None):
         elif args.cmd == "principle":
             session.principle(args.text)
             print(json.dumps({"principle": args.text}))
+        elif args.cmd == "add":
+            q = agent_question(session, args.point, args.context, args.option, args.why, args.parent, model, warn=say)
+            print(json.dumps(public(q), indent=2))
         elif args.cmd == "follow-up":
             if writer is None:
                 raise ValueError("follow-up needs --backend for the question writer")

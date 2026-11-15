@@ -217,8 +217,19 @@ class GrillTest(unittest.TestCase):
         self.assertEqual(json.loads(out)["recorded"], pending[0]["id"])
         code, out = run("next", "--task", "eval_awareness")
         self.assertEqual(json.loads(out)["id"], pending[1]["id"])
+        code, out = run("record", "--task", "eval_awareness", "--id", pending[1]["id"], "--choice", "2")
         code, out = run("status", "--task", "eval_awareness")
-        self.assertEqual(json.loads(out)["answered"], 1)
+        self.assertEqual(json.loads(out)["answered"], 2)
+        code, out = run("add", "--task", "eval_awareness", "--point", "D4", "--parent", pending[0]["id"],
+                        "--context", "Keep the narrow direction after two null results?",
+                        "--option", "Keep it", "--option", "Drop it")
+        added = json.loads(out)
+        self.assertEqual((added["depth"], added["source"]), (1, "agent"))
+        code, out = run("next", "--task", "eval_awareness")
+        self.assertEqual(json.loads(out)["id"], added["id"])        # the follow-up comes first
+        code, _ = run("add", "--task", "eval_awareness", "--point", "D4", "--context", "x", "--option", "same",
+                      "--option", "same")
+        self.assertEqual(code, 2)                                  # duplicate options are refused
         code, _ = run("apply")
         self.assertEqual(code, 2)                                  # no usermodel.json yet
 
