@@ -133,6 +133,7 @@ class ConsumerProbeTests(unittest.TestCase):
 
     def test_prepare_ignores_final_rows_and_full_execution_keeps_invalid_output(self):
         p = module()
+        p.DEADLINE = "2099-01-01T00:00:00Z"  # Synthetic transport fixtures must outlive this one-day run.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "source.jsonl"
