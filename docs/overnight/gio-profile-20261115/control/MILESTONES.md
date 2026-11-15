@@ -34,3 +34,7 @@
 - Three-replicate selection frozen unchanged at c8bf74ab: cap8192, P8 explicit primary plus P7 marked/P3 explicit. Root ranking and independent provenance checks passed; primary has zero pooled gain over raw evidence. Execution still pending provider readiness and compiler fixes.
 - Profile/reference lanes stopped and drained after correlated unknown outcomes near11:54UTC. Old holds retained; no retry. Richer full1344-slot outcome-blind coverage published.
 - Registry helper v3 fixes same-lease successor attribution using explicit original non-dispatch receipts;84blocked zero-call builds retain their original non-dispatch history. It also preserves coordinator policy/ownership bytes rather than replacing newer accounting with an old embedding snapshot. Eight focused regressions passed; rejected v1/v2 proposals were never applied.
+
+- Registry snapshot as of 2026-11-15T13:05:49.937781+00:00: 1476 distinct jobs across 46 prepared batches; batch lifecycle counts {'complete': 36, 'prepared': 10}; job lifecycle counts {'complete': 1413, 'prepared': 63}. Original and rebound admissions preserved; prediction researcher IDs taken from hash-pinned profiles.
+- Frozen richer fit/control selections and released sparse development score/allocation references added. These are development evidence, not a final-test or winner claim.
+- Coordinator policy, all historical holds and ownership are preserved byte-for-byte; this registry refresh reads no live ledger.
