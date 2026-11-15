@@ -19,7 +19,7 @@ from autoresearch.taste.viewer import build_viewer
 from autoresearch.taste.paper_backend import PaperOpenAILLM
 
 CONFIG=dict(full_history=True,k='all',max_candidates=80,max_principles=5,
-            num_search_candidates=10,max_bootstrapped_demos=64,workers=8)
+            num_search_candidates=10,max_bootstrapped_demos=64,workers=16,adaptive_workers=True)
 PRIOR_COMMITTED_USD=.361817 # known earlier runs + retained failed reservations, rounded upward
 NEW_CAP=8.5
 
@@ -86,7 +86,7 @@ def run(root,live,prior_attempts=()):
     stop=threading.Event()
     def progress():
         while not stop.wait(30):
-            state={'usage':budget.summary()}
+            state={'usage':budget.summary(),'concurrency':getattr(llm,'taste_workers',16)}
             if live:state['budget']=llm.cost_summary()
             (root/('live-progress.json' if live else 'offline-progress.json')).write_text(json.dumps(state,indent=2))
             print(json.dumps(state),flush=True)

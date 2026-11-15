@@ -66,3 +66,9 @@ class FullHistoryTests(unittest.TestCase):
         llm=RecordingLLM();m=create_method('m1',llm,full_history=True,k='all');m.fit(rows(236,'h'),rows(70,'v'));m.predict('new',['blue','red'])
         past=llm.payloads[-1]['past_choices'];self.assertEqual(len(past),236)
         self.assertNotIn('group_id',past[0])
+    def test_parallel_ramps_only_after_successful_requests(self):
+        from autoresearch.taste.methods.full_history import parallel
+        m=create_method('m2',RecordingLLM(),full_history=True,workers=16,adaptive_workers=True)
+        parallel(m,[lambda w:w._predict_with('q',['a','b']) for _ in range(70)])
+        self.assertEqual(m.llm.taste_workers,32)
+        self.assertEqual(m.artifacts().metadata['concurrency_trace'][0]['workers'],16)

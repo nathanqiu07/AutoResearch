@@ -20,3 +20,11 @@ class EnvelopeTests(unittest.TestCase):
         llm=PaperOpenAILLM()
         with patch('autoresearch.taste.backends.OpenAILLM.complete',return_value='{"principles":["a"]} {"principles":["b"]}'):
             with self.assertRaisesRegex(ValueError,'conflicting'):llm.complete('Return JSON\nINPUT_JSON:\n{"generation_style":"positive"}')
+    def test_partial_conflicting_answer_is_not_ignored(self):
+        raw='{"probabilities":[0.75,0.25],"rationale":"first"} {"probabilities":[0.1,0.9]}'
+        with patch('autoresearch.taste.backends.OpenAILLM.complete',return_value=raw):
+            with self.assertRaises(ValueError):PaperOpenAILLM().complete('JSON\nINPUT_JSON:\n{"options":["A","B"]}')
+    def test_nested_answer_in_malformed_wrapper_is_rejected(self):
+        raw='{"wrapper":[{"probabilities":[0.75,0.25],"rationale":"nested"}] BROKEN'
+        with patch('autoresearch.taste.backends.OpenAILLM.complete',return_value=raw):
+            with self.assertRaises(ValueError):PaperOpenAILLM().complete('JSON\nINPUT_JSON:\n{"options":["A","B"]}')

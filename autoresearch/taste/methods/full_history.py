@@ -7,6 +7,7 @@ three repeats, filtering and a validation comparison of five versus ten rules.
 import json
 import math
 import random
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from ..usermodel import UserModel
@@ -32,7 +33,10 @@ def parallel(model, jobs):
             return job(w), None, w
         except Exception as exc:
             return None, exc, w
-    workers = bounded_int(model.config,'workers',8,minimum=1,maximum=16)
+    workers = bounded_int(model.config,'workers',16,minimum=1,maximum=32)
+    if model.config.get('adaptive_workers'):
+        workers=getattr(model.llm,'taste_workers',workers)
+    started=time.monotonic()
     with ThreadPoolExecutor(max_workers=workers) as pool:
         outcomes = list(pool.map(work, jobs))
     after = model.llm.budget.summary()
@@ -45,6 +49,12 @@ def parallel(model, jobs):
         if model.trace_path and hasattr(w,'_trace_record'):
             with model.trace_path.open('a') as f:
                 f.write(json.dumps(w._trace_record,ensure_ascii=False)+'\n')
+    errors=sum(error is not None for _,error,_ in outcomes)
+    calls=sum(w.cost['calls'] for _,_,w in outcomes)
+    model._artifacts.metadata.setdefault('concurrency_trace',[]).append(
+        {'workers':workers,'requests':calls,'errors':errors,'seconds':time.monotonic()-started})
+    if model.config.get('adaptive_workers'):
+        model.llm.taste_workers=16 if errors else (32 if calls>=64 else workers)
     for _, error, _ in outcomes:
         if error: raise error
     return [value for value,_,_ in outcomes]

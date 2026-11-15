@@ -83,3 +83,10 @@ recovers complete objects only if all answer-bearing objects agree exactly
 (excluding rationale wording); conflicting answers still fail. The raw envelopes
 are retained in response-envelopes.jsonl. Valid cache entries from the strict-schema
 attempt are reused; its full ledger is charged before the new attempt.
+
+## Concurrency
+
+Start at 16 independent requests. After a complete stage with at least 64 fresh
+requests and no errors, increase to 32. Record elapsed time, request count, and
+errors per stage. An error resets concurrency to 16. This changes scheduling only;
+all data, prompts, candidate sets and trials remain fixed.

@@ -24,7 +24,7 @@ class PaperOpenAILLM(OpenAILLM):
             pass
         # Recover envelopes only when every decoded top-level answer agrees.
         # We never choose between competing probability distributions/votes.
-        decoder=json.JSONDecoder();objects=[];cursor=0
+        decoder=json.JSONDecoder();objects=[];cursor=0;malformed=False
         expected=set(self.response_format(prompt)['schema']['properties'])
         while cursor<len(raw):
             start=raw.find('{',cursor)
@@ -32,9 +32,11 @@ class PaperOpenAILLM(OpenAILLM):
             try:
                 obj,length=decoder.raw_decode(raw[start:]);cursor=start+length
                 if isinstance(obj,dict) and expected<=set(obj):objects.append(obj)
-            except json.JSONDecodeError:cursor=start+1
+                else:malformed=True;break
+            except json.JSONDecodeError:
+                malformed=True;break
         comparable=lambda obj:{k:v for k,v in obj.items() if k!='rationale'}
-        safe=bool(objects) and all(comparable(obj)==comparable(objects[0]) for obj in objects)
+        safe=not malformed and bool(objects) and all(comparable(obj)==comparable(objects[0]) for obj in objects)
         record={'status':'recovered_consensus' if safe else 'rejected_conflicting_or_missing',
                 'prompt_sha256':__import__('hashlib').sha256(prompt.encode()).hexdigest(),
                 'raw_response':raw,'objects':objects}
