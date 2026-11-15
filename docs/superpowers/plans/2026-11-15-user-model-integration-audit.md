@@ -536,3 +536,41 @@
   remain preserved, calls/costs are not deduplicated, and final personalized
   grouping still has 672 singleton groups. Independent review and private
   preservation proceed before root replay/publication.
+
+## Full sparse execution recovery
+
+- Audit 035 was published and remote-verified at
+  51a20999dc189c9671f3f08e6d3188c2b0441ede. Authorized planning, baseline and
+  coordinator chats received the scope and accounting limits.
+- Audit 037 reconstructs 672 personalized consumer requests and responses from
+  the exact released full sparse index. It reconciles 364 control/hybrid rows
+  against audit 034, giving 1,036 delivered rows, while retaining 672 absent
+  planned personalized rows. The 28 P1 rows from 033 are included in the 672;
+  84 memory aliases and 112 control aliases add no calls or observations.
+- Across 612 unique indexed jobs, saved result usage sums to 1,132 attempted
+  calls, $0.266053750 in known configured estimates and $0.019078625 in uncertain
+  holds. This is a study-job accounting scope, not authenticated network traffic,
+  an invoice or a campaign-wide total; side probes and embeddings stay separate.
+- Exactly 2,222 private inputs are retained in the new archive with SHA256
+  e5bff245a1dc5da80650fce47347876d9ad213e74ef3f53d305850ebaa23ec9d.
+  Root freshly extracted it, verified private file/directory permissions and
+  replayed all 6,336 checks with 92 source-file hashes verified. The inventory
+  is byte-identical. Every report field/array matches except argv and the order
+  of control/hybrid overlap assertions caused by set iteration. Root separately
+  verified equal assertion multisets with multiplicity and that all 364 moved
+  entries belong to that one assertion family. No frozen reader was rewritten.
+- Required repository suite at source 51a2099: 677 run, 675 passed, two skipped,
+  exit 0 in 26.617 seconds. Exact logs and replay records are retained in 037.
+- Independent review passed 1,980 metadata assertions, reading only the released
+  label-free index as a private input. The current publication note qualifies
+  one overbroad phrase in the frozen review: 035 verifies saved extraction
+  outcomes and bindings, not independent actual quote-policy correctness.
+- Audit 038 is identifying early source-byte recovery gaps before any narrow
+  additional retention. Commit references alone are not treated as retained
+  source bytes. Downstream05 has published terminal evidence at c80937c7, with
+  actual executed source e9672aa; independent trace review remains separate.
+- Initial downstream05 publication check verifies all 212 artifact-manifest
+  members and nine separate owner-review members against immutable c80937c7 Git
+  bytes. This is a 221-file publication hash check, not an independent replay of
+  the owner's trace conclusions or a comparison with every private archive file.
+  Metadata is staged for audit 039; the existing owner archive stays unchanged.

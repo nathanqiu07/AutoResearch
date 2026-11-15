@@ -16,13 +16,17 @@ jobs. No model/inference-setting changes or production adviser edits were made.
 | Are saved memory predictions additional observations? | No. All 84 references resolve consistently to 28 ordered P1 predictions in two canonical jobs; these cover 14 paired content groups (033). | This is explicit saved-result reuse, not execution under memory job IDs, automatic cache aliasing or a quality result. |
 | Did the expanded sparse controls and hybrids execute? | All 234 canonical jobs have 364 completed rows: 28 ordered items across 13 conditions. The 112 cap aliases reuse 56 included rows, with their cost counted once (034). | Richer alias proposals are outside this sparse execution evidence; parent production cost and prediction quality are separate. |
 | Does the extraction grid preserve failed and continued jobs? | All 96 planned cells are accounted for: 48 complete, 39 invalid, seven empty and two unavailable. Original dispatches and later continuations remain separate (035). | These are saved structural statuses. Unknown charges stay reserved, and exact unknown provider-request joins remain unverified. |
+| Does the full sparse index match actual personalized execution? | All 672 personalized predictions bind to reconstructed consumer inputs and responses; adding the 364 previously checked control/hybrid rows gives 1,036 delivered rows (037). | The 672 absent planned personalized rows remain explicit. Aliases and earlier P1 rows overlap these counts; this does not measure prediction quality or authenticate provider traffic. |
 | Are the terminal phase1 and stopped phase2 records recoverable? | All 2,252 required record references resolve from verified private archives, including 132 phase1 jobs and 78 dispatched results from 84 original phase2 admissions (032). | Later continuation outputs and active ledger state are outside this terminal snapshot. |
 | Can the evidence be reconstructed later? | Exact scripts, source pins, failures, hashes and verified private input archives are retained. Published packages through 033 also have a verified copy outside this worktree (036). | That checkpoint is on the same machine, excludes later packages and does not preserve the full provider/Python environment. |
 
 Expanded semantic construction and saved-P1/memory conditioning are covered in
-026–027; 033–034 add actual recorded execution and alias bindings, and 035 checks
-all 96 build outcomes. The next bounded audit reconciles the full sparse index
-and the remaining personalized predictions against their actual consumer traces.
+026–027; 033–034 add actual recorded execution and alias bindings, 035 checks
+all 96 build outcomes, and 037 reconciles the full sparse index with personalized
+consumer traces. Across its 612 unique indexed jobs, the saved usage fields sum
+to 1,132 attempted calls and $0.266053750 in known configured cost estimates,
+with $0.019078625 in uncertain holds kept separate. Probes, embedding production
+and other historical jobs are outside that study scope.
 Identical prompt bytes alone do not establish interchangeable execution or
 independent evidence; model/settings/item/order must also match.
 
@@ -38,6 +42,12 @@ records 213 payload files retained by that run's owner. This audit verified the
 receipt/manifest hashes and their internal counts, without rereading or duplicating
 the full raw archive. It is same-machine retention, separate from the checkpoint
 through 033.
+
+Audit 037's 2,222 private inputs have a verified recovery archive. Both agent and
+root replays pass all 6,336 checks with identical inventories. Reports match in
+every field except invocation paths and assertion order: the frozen reader
+iterates a set for control/hybrid overlap checks. The exact assertion multiset,
+including multiplicity, matches; all other arrays remain ordered and exact.
 
 ## First verified result
 
