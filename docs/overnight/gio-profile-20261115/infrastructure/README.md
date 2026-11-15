@@ -85,15 +85,20 @@ identities, option schedule, replicate/cap/code, allocation, retry policy, paren
 jobs and expected outputs. `runner.job_id(manifest)` hashes every field except
 job_id, lease, created_at and updated_at. A lease has job_id, lease_id, owner and
 timezone-aware expires_at. Only the coordinator supplies real leases.
+Build manifests also require documents_hash over the full approved document
+records, including permitted spans and version metadata. Artifacts preserve that
+hash. The coordinator separately verifies the released bundle file hash.
 
 Allocation requires finite max_calls, max_seconds, max_usd, cost_mode and an
 authorization_source. Modes are offline, unpriced_cli or priced_api. The runner
-admits only the existing bounded OpenAI adapter for priced API use; other API
+admits the existing and overnight bounded OpenAI adapters for priced API use; other API
 providers remain unsupported pending conservative cost reservation support.
-CLI costs remain unavailable rather than zero. A live backend's enforced timeout
+CLI costs remain unavailable rather than zero. Live manifests require an absolute
+timezone-aware deadline. The lease and deadline are checked before every call and
+cache access. A live backend's enforced timeout
 must fit the remaining wall time. Every attempted call gets a durable started
 trace before invocation and a complete/failed trace after it. No retries occur.
-Uncertain failures retain their attempt and lease. Existing backend budgets and
+Uncertain failures retain their attempt and lease and hold remaining job calls. Existing backend budgets and
 rate limits still apply. Instantiate a fresh backend for each job.
 
 Decision items use exactly item_id, researcher_id, context, options and
@@ -110,3 +115,38 @@ private. `public_handoff(result)` returns only hashes, counts, status and usage.
 The evaluator owns final identity reservation and concrete final-use authority.
 Capabilities/utility are explicitly unavailable in this runner; their owners keep
 their own harnesses. Offline plumbing tests establish no researcher fidelity.
+
+## Declared API adapter and campaign ledger
+
+`DollarLedger(path, *, max_usd, deadline, max_inflight=2)` uses SQLite transactions
+and integer nanodollars. Every worker/process must use the **same coordinator
+path**. Reopening refuses a changed limit, deadline, concurrency, or pricing
+version. Reservations count against the total before an HTTP request. Successful
+responses settle to conservatively estimated usage; failures keep the full hold
+plus any known usage. Uncertain outcomes block all later reservations. A crash
+leaves a pending hold and concurrency slot; nothing expires or resets it.
+
+`OpenAIResponsesBackend(model=..., reasoning=..., ledger=..., max_usd=...,
+budget=..., timeout=...)` additionally enforces the explicit per-job allocation.
+It supports the verified gpt-6-luna, gpt-6-sol and gpt-6-astra price table. Reasoning
+must be explicit: low/medium/high/xhigh/max; luna and sol also allow none. API ultra
+is unavailable. The request has store=false, no tools and default service tier.
+Temperature is not sent, and identity records that fact. Identity also records
+reasoning and the adapter implementation hash; manifests compare the complete
+identity before execution. Existing shared backends.py remains untouched.
+
+Requests stay below the conservative 272,000-token short-context boundary using
+UTF-8 bytes plus overhead and maximum output. Rates (USD per million tokens,
+input/output) are luna 0.10/0.50, sol 2/10, astra 10/50, verified by the coordinator
+on November 15 against [pricing](https://developers.openai.com/api/docs/pricing)
+and the linked model pages in backends.py. All input is charged at uncached rates;
+all reported output, including reasoning, is charged. These are conservative list
+price estimates, not invoices. One urllib request is made with no automatic retry.
+Invalid/incomplete output is visible and holds the lane. Keys are read only from
+the process environment and never included in logs, manifests, or errors.
+
+The coordinator must still reserve scaling funds and allocate total calls across
+jobs. CLI panels remain separately declared and require coordinator concurrency
+control. Adapter tests use mocked transport only; availability of each actual
+API model requires an assigned smoke job. The adapter does not select jobs, set
+a campaign budget itself, or authorize final-data use.

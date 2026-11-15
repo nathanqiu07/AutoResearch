@@ -120,6 +120,8 @@ def _validate(manifest, lease, config, profile, items, documents):
         if schedule != manifest["option_order_schedule"]:
             raise ValueError("option order schedule mismatch")
     elif manifest["kind"] == "build":
+        if manifest.get("documents_hash") != digest(documents):
+            raise ValueError("full approved document records hash mismatch")
         validate_documents(documents, config)
         if config["allowed_source_manifest_hash"] != manifest["source_manifest_hash"]:
             raise ValueError("build source hash mismatch")
@@ -154,7 +156,7 @@ class _CallGate:
             return self.name in ("codex-cli", "claude-cli", "devin-cli") and hasattr(self.backend, "timeout")
         if mode == "priced_api":
             # A shared Budget alone cannot conservatively reserve dollars.
-            return (self.name == "openai-responses" and hasattr(self.backend, "cost_summary") and
+            return (self.name in ("openai-responses", "openai-responses-overnight") and hasattr(self.backend, "cost_summary") and
                     0 < self.backend.max_usd <= self.allocation["max_usd"] and hasattr(self.backend, "timeout"))
         return False
 
@@ -206,7 +208,8 @@ class _CallGate:
                 "reported_api_usd": cost.get("spent_usd") if self.allocation["cost_mode"] == "priced_api" else None,
                 "reserved_api_usd": cost.get("reserved_usd") if self.allocation["cost_mode"] == "priced_api" else None,
                 "budget_detail": cost,
-                "cost_status": "offline" if self.manifest["stage"] == "offline" else "unavailable",
+                "cost_status": "offline" if self.manifest["stage"] == "offline" else
+                    ("conservative_estimate" if self.allocation["cost_mode"] == "priced_api" else "unavailable"),
                 "elapsed_seconds": time.monotonic() - self.started}
 
 
