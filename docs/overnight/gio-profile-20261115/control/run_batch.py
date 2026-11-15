@@ -23,6 +23,10 @@ match exactly. lease.job_id may be omitted. All research choices are explicit.
 Build packets may select no items; a decision-specific build selects exactly
 one item and supplies the corresponding config.decision. Predict packets must
 supply an existing profile and a nonempty explicit ordered item subset.
+The frozen exploratory P8 swap additionally requires manifest.profile_assignment
+and exact profile_source_release, assignment_binding, assignment_authority file
+refs. Only a complete two-target/28-slot batch is admitted; these bytes are
+snapshotted and independently revalidated by the runner before claims.
 
 Preparation snapshots exact source files and writes complete immutable packets.
 Execution revalidates those snapshots and the frozen runtime before dispatch.
@@ -53,6 +57,8 @@ from autoresearch.taste.overnight.backends import DollarLedger, OpenAIResponsesB
 from autoresearch.taste.overnight.contracts import (ProfileArtifact, backend_identity, canonical_json,
     digest, sha256_bytes, source_manifest, validate_documents)
 from autoresearch.taste.overnight.consumer import prepare_payload
+from autoresearch.taste.overnight.cross_subject_assignment import (ORIGIN_SHA, PACKET_REFS,
+    validate_assignment_batch)
 from autoresearch.taste.overnight.registry import get_builder
 from autoresearch.taste.overnight.runner import (ITEM_FIELDS, _validate, job_id, run_job, timestamp, write_new)
 
@@ -328,6 +334,12 @@ def _prepare_packet(packet, batch, ledger):
         raise ValueError('unsupported packet schema')
     packet = _json(canonical_json(packet))
     manifest, config, lease = packet['manifest'], packet['config'], packet['lease']
+    assigned = 'profile_assignment' in manifest
+    extra_refs = set(PACKET_REFS).intersection(packet)
+    if (assigned and extra_refs != set(PACKET_REFS)) or (not assigned and extra_refs):
+        raise ValueError('cross-subject declaration and all evidence references required together')
+    if assigned and not isinstance(manifest['profile_assignment'], dict):
+        raise ValueError('exact cross-subject declaration required')
     release_raw = _read(packet['release'])
     release = _json(release_raw)
     if release.get('scope') != batch['release_scope'] or release.get('schema_version') != batch['release_schema_version']:
@@ -361,6 +373,17 @@ def _prepare_packet(packet, batch, ledger):
             or len(ids) != len(set(ids))):
         raise ValueError('explicit unique released item IDs required')
     items = [index[i] for i in ids]
+    assignment_evidence = None
+    profile_researcher, profile_origin = release['researcher_id'], batch['code_sha']
+    if assigned:
+        assignment_evidence = {name: _read(packet[field]) for field, name in PACKET_REFS.items()}
+        assignment_evidence['target_release'] = release_raw
+        donor = _json(assignment_evidence['donor_release'])
+        documents = donor['sources']['documents']
+        sources = source_manifest(documents)
+        profile_researcher, profile_origin = donor['researcher_id'], ORIGIN_SHA
+        if packet['backend'].get('timeout') != 60:
+            raise ValueError('cross-subject assignment requires original timeout')
     if manifest.get('stage') != 'dev' or manifest.get('kind') not in ('build', 'predict'):
         raise ValueError('only explicit development build or predict jobs are permitted')
     if manifest.get('campaign_id') != batch['campaign_id']:
@@ -382,7 +405,7 @@ def _prepare_packet(packet, batch, ledger):
         _bound(manifest, field, value)
     if _deadline(lease['expires_at']) > _deadline(batch['deadline']):
         raise ValueError('lease exceeds batch deadline')
-    _nested_profiles(config, documents, release['researcher_id'], batch['code_sha'])
+    _nested_profiles(config, documents, profile_researcher, profile_origin)
     profile, profile_raw = None, None
     if manifest['kind'] == 'build':
         if packet.get('profile') is not None:
@@ -398,7 +421,9 @@ def _prepare_packet(packet, batch, ledger):
         if not items:
             raise ValueError('prediction requires explicit released items')
         profile_raw = _read(packet['profile'])
-        profile = _profile(_json(profile_raw), documents, release['researcher_id'], batch['code_sha'])
+        profile = _profile(_json(profile_raw), documents, profile_researcher, profile_origin)
+        if assignment_evidence is not None:
+            assignment_evidence['profile'] = profile_raw
         if peer_release:
             _peer_binding(profile.config, release)
         if profile.method_implementation_hash != builder.implementation_hash:
@@ -410,10 +435,11 @@ def _prepare_packet(packet, batch, ledger):
             prepare_payload(profile, item['context'], item['options'], config)
     _bound(manifest, 'job_id', job_id(manifest))
     _bound(lease, 'job_id', manifest['job_id'])
-    _validate(manifest, lease, config, profile, items, documents)
+    _validate(manifest, lease, config, profile, items, documents, assignment_evidence)
     return {'packet': packet, 'manifest': manifest, 'lease': lease, 'config': config,
             'documents': documents, 'items': items, 'profile': profile,
-            'release_raw': release_raw, 'profile_raw': profile_raw}
+            'release_raw': release_raw, 'profile_raw': profile_raw,
+            'assignment_evidence': assignment_evidence}
 
 
 def prepare_batch(path, expected_sha):
@@ -451,6 +477,7 @@ def prepare_batch(path, expected_sha):
         raise ValueError('summed job attempt ceilings exceed explicit batch ceiling')
     ledger = DollarLedger(ledger_spec['path'], max_usd=ledger_spec['max_usd'], deadline=batch['deadline'], max_inflight=2)
     jobs = [_prepare_packet(packet, batch, ledger) for packet in packets]
+    validate_assignment_batch(jobs, batch['max_total_attempts'])
     ids = [j['manifest']['job_id'] for j in jobs]
     if len(set(ids)) != len(ids):
         raise ValueError('duplicate semantic job in batch')
@@ -486,6 +513,9 @@ def publish_prepared(prepared):
         packet['release'] = _write_bytes(where / 'release.json', job['release_raw'])
         if job['profile_raw'] is not None:
             packet['profile'] = _write_bytes(where / 'profile.json', job['profile_raw'])
+        if job['assignment_evidence'] is not None:
+            for field, name in PACKET_REFS.items():
+                packet[field] = _write_bytes(where / (field + '.json'), job['assignment_evidence'][name])
         batch['jobs'].append(_write_bytes(where / 'packet.json', (canonical_json(packet) + '\n').encode()))
     batch.update(prepared=True, batch_id=prepared['batch_id'], original_batch_sha256=prepared['batch_sha256'])
     return _write_bytes(root / 'prepared.json', (canonical_json(batch) + '\n').encode())
@@ -511,7 +541,8 @@ def _execute_one(job, prepared):
     return run_job(job['manifest'], job['lease'], config=job['config'], documents=job['documents'],
         items=job['items'], profile=job['profile'], extractor=backend if job['manifest']['kind'] == 'build' else None,
         consumer=backend if job['manifest']['kind'] == 'predict' else None,
-        output_root=batch['roots']['output'], lease_root=batch['roots']['lease'], cache_root=batch['roots']['cache'])
+        output_root=batch['roots']['output'], lease_root=batch['roots']['lease'], cache_root=batch['roots']['cache'],
+        assignment_evidence=job['assignment_evidence'])
 
 
 def execute_batch(prepared):

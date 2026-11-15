@@ -15,6 +15,7 @@ from pathlib import Path
 from .contracts import (backend_identity, build_profile, canonical_json, digest,
                         ProfileArtifact, sha256_text, validate_documents)
 from .consumer import ProfileFailure, predict_profile, prepare_payload
+from .cross_subject_assignment import validate_assignment
 
 
 MUTABLE_FIELDS = {"job_id", "lease", "created_at", "updated_at"}
@@ -66,7 +67,7 @@ def require_private_path(path, private_root):
     return resolved
 
 
-def _validate(manifest, lease, config, profile, items, documents):
+def _validate(manifest, lease, config, profile, items, documents, assignment_evidence=None):
     if REQUIRED - set(manifest):
         raise ValueError("job manifest is missing required fields")
     if manifest["schema_version"] != "overnight-job-v1" or manifest["stage"] not in ("offline", "dev", "confirmation"):
@@ -98,6 +99,7 @@ def _validate(manifest, lease, config, profile, items, documents):
         raise ValueError("runner permits one attempt and no uncertain retries")
     if digest(config) != manifest["config_hash"]:
         raise ValueError("config hash mismatch")
+    assignment = validate_assignment(manifest, config, profile, items, documents, assignment_evidence)
     if manifest["kind"] == "predict":
         if not isinstance(profile, ProfileArtifact) or profile.profile_id != manifest["profile_hash"]:
             raise ValueError("profile hash mismatch")
@@ -116,7 +118,8 @@ def _validate(manifest, lease, config, profile, items, documents):
             if not isinstance(item["item_id"], str) or not item["item_id"] or item["item_id"] in seen:
                 raise ValueError("duplicate/invalid decision item ID")
             seen.add(item["item_id"])
-            if item["researcher_id"] != profile.researcher_id:
+            researcher = assignment['target_researcher_id'] if assignment else profile.researcher_id
+            if item["researcher_id"] != researcher:
                 raise ValueError("item/profile researcher mismatch")
         schedule = [{"item_id": i["item_id"], "option_order_id": i["option_order_id"]} for i in items]
         if schedule != manifest["option_order_schedule"]:
@@ -232,7 +235,7 @@ class _CallGate:
 
 def run_job(manifest, lease, *, output_root, lease_root, config, profile=None, items=None,
             documents=None, consumer=None, extractor=None, cache_root=None, private_root=None,
-            confirmation_receipt=None):
+            confirmation_receipt=None, assignment_evidence=None):
     """Execute one assigned build/predict job; return full result only to caller.
 
     Confirmation callers must be the evaluator. The full returned object is
@@ -246,11 +249,16 @@ def run_job(manifest, lease, *, output_root, lease_root, config, profile=None, i
     confirmation_receipt = json.loads(canonical_json(confirmation_receipt))
     if isinstance(profile, ProfileArtifact):
         profile = ProfileArtifact.from_dict(profile.to_dict())
-    _validate(manifest, lease, config, profile, items, documents)
+    if assignment_evidence is not None:
+        assignment_evidence = dict(assignment_evidence)
+    _validate(manifest, lease, config, profile, items, documents, assignment_evidence)
     backend = extractor if manifest["kind"] == "build" else consumer
     expected_backend = manifest["extractor"] if manifest["kind"] == "build" else manifest["consumer"]
     if backend is None or backend_identity(backend) != expected_backend:
         raise ValueError("executed backend identity differs from manifest")
+    assignment = manifest.get('profile_assignment')
+    if assignment and getattr(backend, 'timeout', None) != 60:
+        raise ValueError('cross-subject assignment requires original timeout')
     out = Path(output_root) / manifest["job_id"]
     if manifest["stage"] == "confirmation":
         require_private_path(out, private_root)
@@ -276,6 +284,8 @@ def run_job(manifest, lease, *, output_root, lease_root, config, profile=None, i
               "config_hash": manifest["config_hash"], "source_manifest_hash": manifest["source_manifest_hash"],
               "profile_hash": manifest["profile_hash"], "actual_backend": backend_identity(backend),
               "counts": {"attempted": 0, "complete": 0, "error": 0}, "predictions": [], "missing_arms": []}
+    if assignment:
+        result['profile_assignment'] = assignment
     if not gate.supported() or manifest["kind"] not in ("build", "predict"):
         result.update(status="unavailable", error_code="unsupported_backend_or_job_kind")
     elif manifest["kind"] == "build":
@@ -296,6 +306,10 @@ def run_job(manifest, lease, *, output_root, lease_root, config, profile=None, i
                    "item_sha256": digest(item), "items_sha256": manifest["items_hash"],
                    "job_id": manifest["job_id"], "manifest_sha256": digest(manifest),
                    "error_code": None, "confidence_status": "uncalibrated", "actual_consumer": backend_identity(backend)}
+            if assignment:
+                row.update(donor_researcher_id=assignment['donor_researcher_id'],
+                           target_researcher_id=assignment['target_researcher_id'],
+                           option_order_id=item['option_order_id'], profile_assignment_sha256=digest(assignment))
             result["counts"]["attempted"] += 1
             try:
                 prepared = prepare_payload(profile, item["context"], item["options"], config)
