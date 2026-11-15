@@ -220,17 +220,28 @@ def load_user_model(researcher_root: str, profile: Optional[TasteProfile], llm=N
 def history_text(researcher_root: str, max_chars: int = 8000) -> str:
     """Raw history for the prompt-baseline arms (R1-P-prompt / R1-S-prompt):
     the researcher's recorded choices and documents, pasted verbatim (truncated)
-    with no user model in between."""
+    with no user model in between. Choices come from `choices.jsonl` (labelled
+    pairs) and `history.jsonl` (the rows a personal-track user model was fitted
+    on, taste/trackp.py); a row present in both is listed once."""
     parts: List[str] = []
-    cp = os.path.join(researcher_root, "choices.jsonl")
-    if os.path.exists(cp):
+    lines, seen = [], set()
+    for name in ("history.jsonl", "choices.jsonl"):
+        cp = os.path.join(researcher_root, name)
+        if not os.path.exists(cp):
+            continue
         with open(cp) as f:
             rows = [json.loads(l) for l in f if l.strip()]
-        lines = []
         for r in rows:
             a, b = r.get("a_text") or r.get("a"), r.get("b_text") or r.get("b")
-            lines.append(f"- context: {r.get('context', '')}; option a: {json.dumps(a)}; option b: {json.dumps(b)}; "
-                         f"chose {r.get('chosen')}" + (f"; reason: {r['reason']}" if r.get("reason") else ""))
+            key = (r.get("context", ""), json.dumps(a), json.dumps(b), str(r.get("chosen")))
+            if key in seen:
+                continue
+            seen.add(key)
+            point = f"[{r['decision_point']}] " if r.get("decision_point") else ""
+            lines.append(f"- {point}context: {r.get('context', '')}; option a: {json.dumps(a)}; "
+                         f"option b: {json.dumps(b)}; chose {r.get('chosen')}"
+                         + (f"; reason: {r['reason']}" if r.get("reason") else ""))
+    if lines:
         parts.append("Past choices:\n" + "\n".join(lines))
     cdir = os.path.join(researcher_root, "corpus")
     if os.path.isdir(cdir):

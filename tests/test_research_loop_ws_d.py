@@ -199,6 +199,21 @@ class AdvisorTests(unittest.TestCase):
         self.assertIn("reason: r", h)
         self.assertIn("my paper", h)
 
+    def test_history_text_reads_personal_track_history(self):
+        """trackp writes the fitted rows to history.jsonl; the prompt arm must see them,
+        and a row also present in choices.jsonl is listed once."""
+        d = tempfile.mkdtemp()
+        row = {"user_id": "u", "context": "stance", "a_text": "ship now", "b_text": "wait for data",
+               "chosen": "b", "decision_point": "D3"}
+        with open(os.path.join(d, "history.jsonl"), "w") as f:
+            f.write(json.dumps(row) + "\n")
+        self.assertIn("wait for data", history_text(d))
+        self.assertIn("[D3]", history_text(d))
+        with open(os.path.join(d, "choices.jsonl"), "w") as f:
+            f.write(json.dumps(row) + "\n")
+        self.assertEqual(history_text(d).count("wait for data"), 1)
+        self.assertEqual(history_text(tempfile.mkdtemp()), "")
+
 
 class ArmTests(unittest.TestCase):
     def _args(self, *extra):
