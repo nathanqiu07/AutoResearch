@@ -91,10 +91,10 @@ if [ "$GPUS" -gt 0 ]; then
 fi
 
 deploy() {  # app model gpu parser maxlen -> base URL
-  local url
-  url=$(APP="$1" MODEL="$2" GPU="$3" PARSER="$4" MAX_MODEL_LEN="$5" "$MODAL" deploy harness/modal_vllm.py 2>&1 \
-        | grep -Eo 'https://[A-Za-z0-9.-]+\.modal\.run' | head -1)
-  [ -n "$url" ] || { echo "deploy of $1 failed: run the modal deploy line by hand to see why" >&2; exit 1; }
+  local out url
+  out=$(APP="$1" MODEL="$2" GPU="$3" PARSER="$4" MAX_MODEL_LEN="$5" "$MODAL" deploy harness/modal_vllm.py 2>&1 || true)
+  url=$(printf '%s\n' "$out" | grep -Eo 'https://[A-Za-z0-9.-]+\.modal\.run' | head -1)
+  [ -n "$url" ] || { echo "deploy of $1 failed. Modal said:" >&2; printf '%s\n' "$out" | tail -5 >&2; exit 1; }
   echo "$url/v1"
 }
 mkdir -p runs/petri
