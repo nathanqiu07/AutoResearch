@@ -169,3 +169,44 @@
 - No private evaluation inventory, final labels, real key/environment, network API
   or paid inference was used in these audits. All production fixes remain with
   their owners; this branch retains independent reproductions and evidence.
+
+## Runner closure and integrated API failure path
+
+- Packages 009–012 are published at `808c992`. This turn reread both original
+  chats and the coordinator's current PEER_REQUESTS/PILOT_PROTOCOL, checked the
+  coordination brief, and synced the isolated audit branch. No models/settings
+  were changed by the audit, and no additional live-call authorization was used.
+- Package 013 retests `2b965ee` / `9d4f4e5`: four remaining runner regressions
+  close, full-document identity stays fixed. Eleven cases and 16 owner tests pass;
+  root separately confirms them. Successful matched extraction and timely cache
+  reuse rule out invalid negative-test setup or indiscriminate rejection.
+- Package 016 independently retests follow-on `7bb1589` / `fd0c81f`: all prior
+  fixes remain passing, plus strict explicit build settings before claim. Twenty
+  cases and 18 owner tests pass twice; all 162 source hashes stay unchanged.
+- Package 014 exercises actual run_job in dev/priced_api mode with the real API
+  adapter and SQLite ledger, invented decisions and mocked transport. All 54
+  checks pass on `7bb1589` and in root confirmation. Six failure variants retain
+  reservations and block later requests; partial usage keeps valid components
+  and explicit unknown totals. Old `2b965ee` preserves 11 reporting assertion
+  failures about the same reporting issue, with zero execution-boundary failures.
+  Decision rows, gate invocations, reserved attempts and physical requests are
+  separately described. No blanket live-readiness or provider claim follows.
+- Package 015 verifies role05's semantic fix `462538b` / `b7c49c0`: exact old
+  failure replay, seven current claims, 216 scaling combinations, six signed
+  cases, 23 owner tests and root confirmation. Numerical hardening is separate
+  from any actual provider failure; no affected real run is established. The
+  archive excludes handoff003's real development readiness material.
+- Fresh full audit-repository suite: 677 total, 675 passed, two skipped, exit0.
+  README totals now correctly exclude skips; old logs and append-only correction
+  remain unchanged. All new packages include commands, pins, hashes, source
+  archives or exact cross-package archive references, failures and limits.
+- Coordinator was promptly told that no blocker remained in these tested paths.
+  The first pilot driver is now committed at `0dcd4b4`; a separate scoped review
+  is inspecting its actual control/P1 construction and paired schedule with
+  synthetic inputs. Actual released runtime packets remain a distinct check.
+- Baseline owner is repairing missing shutdown setup and preserving persona and
+  examples in its auditor-only adapter. Requested a frozen executable commit
+  and safe prepared/executed packets; no duplicate downstream implementation.
+- Roles08/09 method/scaling handoffs are queued for actual integrated conditioning
+  and declared-variable checks; their owners retain builder/scaling development.
+  The recurring wakeup and overnight goal remain active.

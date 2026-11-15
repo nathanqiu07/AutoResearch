@@ -238,15 +238,51 @@ decisions reach the recording backend; changed context/order is rejected first.
 Synthetic builders isolate routing; actual role 05 candidate rebuilding on the
 combined release remains a separate integration check.
 
+## Runner regression closure
+
+[20261115-013](../../../results/integration-audit/20261115-013/) retests release
+`2b965ee` / implementation `9d4f4e5`. All four remaining runner regressions are
+fixed, and full-document binding stays fixed. Eleven independent cases and 16
+owner tests pass; root separately repeated them. Successful matched extraction
+and ordinary cache reuse establish that the negative checks reject the intended
+invalid inputs without disabling those valid paths. All 161 source hashes remain
+unchanged. This closes the tested runner findings, not entire pilot readiness.
+
+The follow-on release `7bb1589` passes the separate
+[20261115-016](../../../results/integration-audit/20261115-016/) retest: 20 cases,
+18 owner tests, and root confirmation. Valid explicit extraction settings execute;
+eight missing, malformed, or unsupported variants reject before claim/output/call.
+All prior runner regressions remain fixed on this pin.
+
+[20261115-014](../../../results/integration-audit/20261115-014/) exercises actual
+`run_job` in dev/priced-API mode through the real adapter and SQLite ledger, using
+only synthetic transport. All 54 checks pass on `7bb1589`, including root's repeat.
+Missing/partial usage, incomplete status, malformed usage and transport failure
+retain the full reservation, block subsequent requests and keep uncertainty
+explicit. Known components of partial usage survive. The older `2b965ee` has 11
+reporting assertion failures about the earlier issue, with no execution-boundary
+failure. Decision-row counts, gate invocations and physical requests are distinct.
+
+[20261115-015](../../../results/integration-audit/20261115-015/) verifies the
+semantic normalization fix at `462538b`: the original defect is reproduced on
+old code and corrected on new code. Seven claims, 216 scale combinations, six
+signed cases and 23 owner tests pass, with root confirmation. This numerical
+robustness result establishes no affected live study. New policy hashes require
+regenerated artifacts when adopting the changed implementation.
+
 ## Verification and next work
 
-The full baseline suite passed 656 tests with two skips. With the new audit tests,
-677 tests passed with two skips; existing ResourceWarnings are retained in logs.
+The baseline suite ran 656 tests: 654 passed and two skipped. With the audit tests,
+the suite ran 677 tests: 675 passed and two skipped. Existing ResourceWarnings are
+retained in logs. These totals correct the earlier prose, which counted skips as
+passes; the original logs and append-only package 006 correction remain intact.
 An independent reviewer found source-origin attribution, learned-M4 transport,
 and batch input recheck defects in the audit tool. All three now have reproducing
 regression tests and pass. No packet-comparator defect was found in that review.
 
-Next: audit the profile-search candidates as their shared contract and artifacts
-arrive, check any baseline revision packet, and hand the adviser reproductions to
-the owning integration work. Keep every run and failed check. The overnight goal
-remains active; this first package does not establish broad integration coverage.
+Next: inspect the frozen first-pilot driver and actual released runtime packets,
+then the downstream adapter's full-profile versus no-profile conditioning. The
+downstream owner is repairing a baseline that never presented the intended
+shutdown decision; its result remains invalid for that comparison. Keep earlier
+failed releases and exact retests separate. The overnight goal remains active;
+these bounded checks do not establish scientific validity or live-provider behavior.
