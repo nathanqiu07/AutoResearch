@@ -1,198 +1,219 @@
-# User models: build, compare and hand off
+# Gio’s user-model first draft
 
-This is Gio's WS A implementation. It does not modify the research loop, scorer,
-agent orchestration, or the shared CLI. Run commands from the repository root.
+The supported path is **PRISM → M0/M1 baselines → bounded SynthesizeMe (M2) and
+ICAI (M3) → saved model → unseen-choice evaluation → team-adviser export**.
+M4–M7 remain in the repository but are deferred. No method is declared a winner.
+This work stays in Task A; it does not change teammates’ environment or orchestration code.
 
-## What is implemented
+Run the commands below from the repository root. Use a new output directory for
+each run: existing results are never silently overwritten.
 
-| ID | Method | Evidence used while fitting |
-|---|---|---|
-| m0 | Generic judge with no history | None |
-| m1 | Seeded raw history; k=5/10/20/all | History |
-| m2 | Hypotheses, validation selection, persona, greedy examples | History and validation |
-| m3 | Principles, TF-IDF clusters, history reconstruction ranking | History |
-| m4 | Label-blind text features and Bradley–Terry weights | History |
-| m5 | M2 persona + M3 principles + lexical example retrieval | History and validation |
-| m6 | M5 with iterative removal of harmful components | History and validation |
-| m7 | M6 plus binary Platt calibration on separate conversations | History, tuning and separate calibration |
+## 1. Setup and offline smoke
 
-M2/M3 are **bounded adaptations**, not paper reproductions. Defaults use up to five
-history pairs, five hypotheses/principles and three examples. M6 keeps tied components;
-survival does not establish independent usefulness. M4 uses fixed L2=0.5 because the
-existing fitter does not cross-validate without a text prior. M7 reports uncalibrated
-confidence when there are fewer than eight calibration choices, only one label class,
-or more than two target options. These settings are recorded in each artifact.
+Python 3.9+ is sufficient for inference, evaluation and the offline smoke. Only
+PRISM preparation requires the optional Parquet reader:
 
-Scripts and independent synthetic fixtures test behavior, not real-model accuracy.
-No test-set preference result has been established by the implementation checks.
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install pyarrow
+python -m autoresearch.taste smoke --output runs/taste-smoke-next
+```
 
-## Shared contract
+The smoke uses synthetic choices and deterministic scripted responses. It runs
+M0–M3, saves and reloads a model, predicts new choices, evaluates them, and calls
+the team’s actual `load_user_model` / `TasteAdvisor` interface. It writes:
+
+- `runs/taste-smoke-next/run/report.json`: results, errors and usage.
+- `runs/taste-smoke-next/bundle.json`: full inspection example and integration check.
+- `runs/taste-smoke-next/viewer.html`: self-contained, open locally in a browser.
+- `runs/taste-smoke-next/export/usermodel.json`: exported M3 model.
+
+**These scores test plumbing, not preference accuracy.** There are no API charges.
+
+## 2. Prepare the frozen PRISM data
+
+```bash
+python scripts/prepare_prism.py
+```
+
+This downloads the pinned canonical Parquet revision
+`a03cab5122c397f1307ed092423a05732cc2aa93` from
+[PRISM / PersonalRewardBench](https://huggingface.co/datasets/MichaelR207/prism_personalized_0125/tree/a03cab5122c397f1307ed092423a05732cc2aa93).
+It writes normalized records to `runs/prefdata/prism.jsonl` and the shared manifest
+to `data/prefdata/prism-splits.json`. Preparation can be repeated on identical data;
+it refuses a different snapshot at an existing destination.
+
+The snapshot has **16,693 unique pairs from 723 users**, after removing 12 agreeing
+repeats. The manifest records each removal, source URLs and SHA-256 hashes. It has
+345 development users and 378 final-test users. Released history, validation and
+target conversations remain separate within each user. The adapter excludes stored
+judge predictions, reasoning and scores, preserves context/response text, and gives
+A/B a deterministic order. Conflicting labels or duplicates crossing boundaries
+are errors. Canonical Parquet avoids the earlier row-service rate limit; no Arena
+fallback is needed.
+
+## 3. Exercise all four core methods on real PRISM inputs
+
+First inspect the selected development workload without calls:
+
+```bash
+python -m autoresearch.taste fidelity --dataset prism --users dev \
+  --methods m0 m1 m2 m3 --n-users 1 --seed 0 --dry-run
+```
+
+Then run the same path with scripted outputs:
+
+```bash
+python -m autoresearch.taste fidelity --dataset prism --users dev \
+  --methods m0 m1 m2 m3 --n-users 1 --seed 0 \
+  --backend offline --model fixture-v1 --max-calls 300 --max-seconds 300 \
+  --config '{"max_history":5,"max_hypotheses":2,"max_principles":2,"max_exemplars":1,"k":5}' \
+  --output runs/fidelity/prism-offline-next
+
+python -m autoresearch.taste export \
+  --run runs/fidelity/prism-offline-next --method m3 \
+  --output runs/prism-review-next --verify-integration \
+  --backend offline --model fixture-v1
+```
+
+Open `runs/prism-review-next/viewer.html`. Its **Recorded artifacts** tab shows the
+actual run history, saved persona/principles, held-out pair, predicted/observed
+choice, confidence, errors and comparison. The viewer labels scripted outputs as
+**OFFLINE** even when their inputs are real PRISM records. The other tabs contain
+teaching examples and an exploratory prompt editor; they do not change runtime
+prompts. You can also import `bundle.json` into `docs/user-models/workbench.html`.
+
+M3 is selected for this example because it exports readable principles, **not
+because it won a benchmark**. Exporting without `--verify-integration` packages the
+model without another inference call. Verification makes one additional prediction.
+
+## 4. Small live development comparison
+
+For live calls, set `OPENAI_API_KEY` in the process environment using a project
+key under the credited Personal organization. Skip key entry if already configured.
+See the handoff for executed live runs; the commands alone are not result evidence.
+Do not place keys in files, Git or chat. In macOS zsh, this reads it without echo:
+
+```zsh
+read -s "OPENAI_API_KEY?OpenAI API key (hidden): "
+export OPENAI_API_KEY
+printf '\n'
+```
+
+With credentials configured, this is a bounded four-method development run:
+
+```bash
+python -m autoresearch.taste fidelity --dataset prism --users dev \
+  --methods m0 m1 m2 m3 --n-users 1 --seed 0 \
+  --backend openai --model gpt-6-luna \
+  --max-usd 10 --max-calls 300 --max-seconds 300 \
+  --config '{"max_history":5,"max_hypotheses":2,"max_principles":2,"max_exemplars":1,"k":5}' \
+  --output runs/fidelity/prism-live-next
+
+python -m autoresearch.taste export \
+  --run runs/fidelity/prism-live-next --method m3 \
+  --output runs/prism-live-review-next
+```
+
+The direct OpenAI backend reserves conservative estimated cost before each call,
+uses no HTTP retries, and retains uncertain reservations after failures. The
+$10 limit is **per invocation**, not a provider billing guarantee or a global
+account cap. Repeated runs and optional integration calls count against the total
+approved budget. If a time/call/cost bound is reached, retained errors are part of
+the result; do not treat an incomplete comparison as method selection.
+
+M1, M2 and M3 receive the same seeded subset of up to five history pairs in this
+configuration. M2 additionally uses the user’s validation conversations for search;
+M3 does not. That difference is part of the methods, not a matched-information
+ablation. The development model may differ from a later evaluation model; refit
+with the latter rather than loading an artifact under a different backend.
+
+## 5. Load the exported object and predict
+
+For the offline export from step 3:
+
+```bash
+python -m autoresearch.taste predict \
+  --artifact runs/prism-review-next/usermodel.json \
+  --backend offline --model fixture-v1 \
+  --context 'How should I organize a short work session?' \
+  --options 'Choose one concrete task and work on it for 25 minutes.' \
+            'Build a detailed taxonomy of every possible productivity method.'
+```
+
+This last example has no human preference label; it demonstrates prediction, not
+an accuracy result. Use `--backend openai --model gpt-6-luna --max-usd 0.02` with a
+live artifact saved by that same backend/model. Backend identity is checked on load.
+
+The Python contract is unchanged:
 
 ```python
 from autoresearch.taste.methods import create_method
-from autoresearch.taste.usermodel import Choice, load_model
+from autoresearch.taste.usermodel import load_model
 
-model = create_method("m1", llm, seed=0, k="all", cache_dir="runs/taste-cache")
-model.fit(history, validation)        # each is a list[Choice] for one person
-prediction = model.predict(context, options)  # strings; no target answer supplied
-print(prediction.choice, prediction.index, prediction.confidence)
-model.save("runs/my-person/usermodel.json")
-restored = load_model("runs/my-person/usermodel.json", llm)
+model = create_method("m3", llm, seed=0, max_history=5, max_principles=2)
+model.fit(history, validation)              # one person's Choice records
+model.save("runs/person/usermodel.json")
+restored = load_model("runs/person/usermodel.json", llm)
+prediction = restored.predict(context, [response_a, response_b])
 artifacts = restored.artifacts()
-legacy_profile = artifacts.to_profile("person-name")
 ```
 
-`choice` uses a/b/c/... in option order; `index` is zero-based. Confidence is the
-predicted choice's probability, not experiment success. `probabilities` gives all
-options in order. Raw confidence is explicitly uncalibrated.
+`Prediction` includes choice, probabilities, rationale, confidence and `calibrated`.
+M0–M3 confidence is **uncalibrated**, not a measured probability of being right or
+of experimental success. Only M4 learns feature weights; zero weights elsewhere
+mean unavailable. Assumptions remain empty because response preferences do not
+establish causal facts. M2 exports a persona/examples and retained hypotheses as principles; M3 exports
+principles. The team adviser ranks through `predict()` and reads
+`artifacts().principles`. M2 ranking uses persona/examples, while its retained
+hypotheses can guide the proposer. The adviser does not enforce the calibration flag; confidence routing needs
+explicit downstream policy. The verification call tests compatibility, not whether
+research quality improves.
 
-`artifacts()` exports principles, persona, feature weights, assumptions, exemplars
-and method/source/split provenance. Only M4 learns feature weights; zeros elsewhere
-mean **unavailable**, not indifference. Assumptions remain empty: the methods do not
-turn preference labels into evidence of environmental causal claims. M2 retains
-hypotheses and support IDs in metadata. Consumers should use `predict`, not silently
-replace it with the legacy zero-weight adapter.
+## Methods and limits
 
-Saved artifacts must be reloaded on the same backend/model/endpoint. To evaluate on
-a different model, fit afresh using that backend and the same allowed history. This
-prevents invalid transfer of M4 feature weights and M7 calibration.
+| Method | Implemented stages | Important limit |
+|---|---|---|
+| M0 | Predict without user history | Generic preference baseline |
+| M1 | Seeded labeled history in predictor context | Raw-history baseline |
+| M2 | Per-pair hypotheses → greedy validation selection → persona → validation-selected examples | Bounded SynthesizeMe adaptation; no DSPy random search. Validation selection is not independent verification. |
+| M3 | Per-pair principles → TF-IDF complete-link clusters/medoids → history reconstruction ranking | ICAI-inspired bounded adaptation; lexical clustering and in-sample ranking, not a paper reproduction. |
 
-## Prepare data
+Source implementations: [SynthesizeMe](https://github.com/SALT-NLP/SynthesizeMe)
+and [ICAI](https://github.com/rdnfn/icai). Search caps, selection traces and source
+IDs are stored with each model. Empty selected artifacts and method failures are
+valid outcomes that should remain visible. M4–M7 are preserved but deferred; M7’s
+per-user calibration is not supported by the current PRISM validation structure.
+
+Each run writes `registration.json`, `split-manifest.json`, `predictions.jsonl`,
+`requests.jsonl`, `models/` and `report.json`. These capture code version/dirty state,
+source revision, prompt text and settings, raw replies/errors, outputs and usage.
+Do not publish traces from private researcher data without reviewing their contents.
+Reports use user-average accuracy, count failures as wrong, and report paired
+bootstrap differences versus M1. Brier scores cover only valid predictions.
+One-user confidence intervals are not meaningful uncertainty estimates.
+
+## Final users stay protected
+
+Development commands never consume the final-test marker. A final comparison needs
+explicit `--users test --final`, a pinned live model and frozen settings. The marker
+is `fidelity_TEST_USED` in Git’s common directory, shared across this repo’s
+worktrees; the legacy `results/fidelity/TEST_USED` marker is also checked. A crash
+still consumes the attempt. Do not delete or bypass markers. This cannot prevent
+someone from making a separate clone and deliberately rerunning the data.
+
+No final evaluation was run for this draft. After the development comparison and
+budget are agreed, prepare the final command as one invocation containing every
+method to compare; keep it separate from these runnable smoke instructions.
+
+## Checks and current evidence
 
 ```bash
-python3 -m autoresearch.taste prepare
+python -m unittest discover -s tests -t .
 ```
 
-The initial Arena snapshot has 1,338 rows from 131 users. The shared manifest is
-`data/prefdata/splits.json`; normalized records and cached download pages live under
-ignored `runs/prefdata/`. The command is idempotent for identical data and refuses
-to overwrite a different manifest or record snapshot. The manifest contains IDs
-and hashes, not response text. Re-run preparation to reconstruct local records.
-
-The outer train/validation user partitions are development users; outer test users
-stay held out. Within each person, preserve released history/validation/test
-conversation groups. Blank responses are valid data. Prior judges' reasoning,
-predictions and scores never enter normalized records. Target options are
-deterministically shuffled A/B; the seed and normalized source digest are pinned.
-
-To prepare PRISM separately, use distinct explicit paths so the existing shared
-Arena snapshot cannot change:
-
-```bash
-python3 -m autoresearch.taste prepare --datasets prism \
-  --output runs/prefdata/prism.jsonl --manifest data/prefdata/prism-splits.json
-```
-
-PRISM's row service hit HTTP 429. A later canonical Parquet download retrieved all
-16,705 rows (723 users), pinned to upstream revision
-`a03cab5122c397f1307ed092423a05732cc2aa93`, using an already installed external
-reader. All 6,969 cached API rows matched. Validation found 12 duplicate-content
-pairs, including nine duplicate IDs. Their labels agree and they stay within their
-partitions. The strict loader rejects this snapshot; no normalized PRISM records
-or manifest have been published. Gio's deduplication-policy decision is pending.
-The public rows service may return an error or truncated cells; the loader fails
-rather than score partial conversations. Source links:
-[Arena](https://huggingface.co/datasets/MichaelR207/chatbot_arena_personalized_0125),
-[official loader](https://github.com/SALT-NLP/SynthesizeMe/blob/main/synthesizeme/datasets/dataset.py).
-
-## Preview and compare
-
-```bash
-python3 -m autoresearch.taste fidelity --dataset arena \
-  --methods m0 m1 m2 m3 m4 m5 m6 m7 --n-users 3 --dry-run
-```
-
-Dry-run makes no model calls and does not consume the final-test marker. Its
-prediction count excludes fitting/search calls, which can dominate compute.
-
-Live development example (uses plan allowance through the authenticated Codex CLI):
-
-```bash
-python3 -m autoresearch.taste fidelity --dataset arena --methods m0 m1 \
-  --n-users 1 --backend codex-cli --max-calls 20 --max-seconds 180 \
-  --output runs/fidelity/codex-dev-01
-```
-
-Use `--backend openai-compat --model MODEL` for a configured OpenAI-compatible API
-endpoint, or `anthropic`/`claude-cli` for existing team backends. Do not paste keys
-into commands or commit them. API model names must be explicit. Backend selection
-does not change split policy. The shared budget counts attempted calls, including
-failed calls. Providers can have internal retries, so this is a cap on backend
-invocations, not a guarantee about provider-billed attempts or dollars.
-
-For the redeemed OpenAI credits, a direct Responses API pilot is available:
-
-```bash
-python3 -m autoresearch.taste fidelity --dataset arena --methods m0 m1 \
-  --n-users 1 --backend openai --model gpt-6-luna --max-usd 1 \
-  --max-calls 20 --max-seconds 180 --output runs/fidelity/openai-dev-01
-```
-
-Set `OPENAI_API_KEY` in the process environment using a project key under the
-organization that received the credits. Optional `OPENAI_ORG_ID` and
-`OPENAI_PROJECT_ID` select explicit headers. Never put the key in this repository
-or in chat. [Official key guidance](https://developers.openai.com/api/docs/guides/api-keys).
-
-This direct backend currently supports only the priced `gpt-6-luna` pilot. It uses
-reasoning effort `none`, no tools, standard service, and `store=false`. It reserves
-a conservative dollar amount before each request, retains uncertain reservations
-after failures, makes no HTTP retries, and rejects long-context requests. The cap
-and cost estimates use the [published rates](https://developers.openai.com/api/docs/pricing)
-checked November 14, 2026; they are not a provider billing statement. Adding a
-different evaluation model requires verifying its settings and rates first.
-
-Gio approved up to $1 for this ten-prediction development check on November 14.
-It still requires local credentials. Larger runs and the final evaluation need a
-separate concrete decision.
-
-Codex runs from an empty temporary directory, ignores user configuration, disables
-tools and rejects any tool event. It is a **CLI harness** comparison, not raw API
-inference. Temperature/output-token settings are not enforced like API parameters;
-record this when interpreting results. A synthetic smoke test succeeded in about
-4.2s with about 11,300 input tokens. No benchmark accuracy follows from that test.
-
-Each run creates a registration, prediction JSONL, per-user model artifacts and
-`report.json`. Outputs cannot be overwritten. Failures count as wrong in accuracy;
-Brier score covers valid predictions only and must be read alongside failure count.
-Accuracy averages users equally. Differences from m1 use a paired user bootstrap.
-Method artifact `cost` records fitting usage; report usage includes predictions.
-Unknown dollar costs remain marked unavailable, not asserted free.
-
-## Final evaluation: stop and review the concrete run
-
-Final use requires `--users test --final` and a pinned model. All methods being
-compared must be passed in **one invocation**. A single exclusive marker,
-`results/fidelity/TEST_USED`, is written before any fitting. A crash or another
-output path does not grant a second attempt. Never delete the marker to tune again.
-
-Current final registration supports **one dataset**. Before a final comparison,
-choose that dataset explicitly or extend the runner to register both together;
-do not run separate Arena and PRISM final commands. The final launch remains Gio's
-decision after model access, budget, dev results and method settings are frozen.
-
-## Bounded schema search
-
-Write a JSON list of up to eight explicit `{id, method, config}` objects (methods
-m5–m7), then run:
-
-```bash
-python3 -m scripts.schema_search --configs configs.json --dataset arena \
-  --n-users 3 --max-calls 100 --output runs/schema-search/01
-```
-
-This command always uses development users, shares one call budget across all
-configurations and logs every trial. It selects a configuration only when **all**
-declared trials finish without errors. An exhausted budget or failed trial leaves
-the search incomplete, with no winner. It has no final-test switch. A dev winner
-still needs the held-out comparison.
-
-## Verification and limits
-
-Run `python3 -m unittest discover -s tests -t .` before pushing. The suite covers
-label isolation, split integrity, cache separation, persistence, method selection,
-calibration isolation, call caps and final-use protection. Existing unrelated
-resource warnings may appear.
-
-Preference fidelity, research judgment and useful research outcomes remain separate
-claims. The environment and orchestration teams own the downstream test. No files
-in their implementation areas are changed by this track.
+See [handoff.md](handoff.md) for executed runs and remaining limits. Historical Arena
+pilot: one user, five targets each for M0/M1, zero failures; M0 got 4/5 and M1 3/5,
+with reported conservative spend $0.005369. This was a plumbing check, not evidence
+that M0 beats M1, and not a PRISM result.

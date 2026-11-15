@@ -1,75 +1,71 @@
-# WS A handoff — November 14, 2026
+# Task A handoff — November 14, 2026
 
-## Current state
+## Supported first-draft path
 
-All eight methods, the shared interface, Arena splits, the fidelity runner and
-bounded schema search are implemented. Foundation commit: `fd00fe6`. Method commit:
-`9c72e05`. Dataset/runner commit: `ee7a308`. See [the guide](README.md) for commands
-and [the design](design.md) for assumptions.
+PRISM preparation, a frozen split manifest, M0/M1 baselines, bounded SynthesizeMe
+(M2), bounded ICAI (M3), save/load, held-out prediction, evaluation, portable export
+and an artifact-backed HTML viewer. M4–M7 remain intact but are deferred per Gio’s
+updated scope. No method is a winner yet.
 
-The combined repository passed 166 tests after syncing teammates' work. A later
-review found an incomplete-search selection bug: an early trial could win after
-later trials exhausted the budget. A regression test reproduces that case; search
-now reports `incomplete` with no selected configuration whenever any trial fails.
+Use [README.md](README.md) for copy-paste setup, smoke, live-run, export and prediction
+commands. All output paths are relative to the repository root.
 
-Arena contains 1,338 choices from 131 people: 42 development users and 89 final
-test users. Development users have 260 history, 97 validation and 183 target
-choices. These counts describe the data; they are not model results.
+## Data and reproducibility
 
-PRISM's row service hit HTTP 429 after 6,969 cached rows. Canonical Parquet files
-at upstream revision `a03cab5122c397f1307ed092423a05732cc2aa93` then supplied all
-16,705 rows from 723 users. All cached rows matched. Validation found 12 duplicate
-content pairs (nine duplicate IDs), all agreeing in labels and staying within
-partitions. No PRISM manifest was accepted. Gio is choosing whether to deduplicate
-with an explicit removal record or keep Arena as the only dataset for now.
+PRISM revision `a03cab5122c397f1307ed092423a05732cc2aa93` yields 16,693 unique pairs
+from 723 users after 12 agreeing duplicate removals. There are 345 development users
+and 378 final users. The shared manifest is `data/prefdata/prism-splits.json`, ID
+`482e9c1cf1e723ff49527f17d4113c315fa71f2f088a813e2ea9aba5fc74b891`.
 
-## Choices and their reasons
+The manifest records removals, source file hashes and original partitions. User
+partitions and conversation boundaries are preserved. Stored judge predictions,
+reasoning and scores are excluded from model inputs. The canonical Parquet source
+avoids the earlier row-service rate limit; Arena is not needed as fallback.
 
-- Keep development and final users separate, and preserve conversation groups.
-  This prevents a repeated conversation from making accuracy look better.
-- Start with M0 and M1. More complex methods must show a gain over simply giving
-  the model the user's past choices.
-- M2 and M3 implement bounded core stages, with adaptations recorded. They are
-  not full paper reproductions. See the method table in the guide.
-- Reserve separate validation conversations for M7's confidence calibration.
-  Too little evidence yields explicitly uncalibrated confidence.
-- Export preference artifacts without inventing causal assumptions. Only M4
-  learns numeric feature weights. Other methods should be called via `predict`.
-- Keep the model/provider replaceable. Refitting is required when changing the
-  backend: learned feature weights and calibrated confidence need not transfer.
+The final-test marker is shared across Git worktrees via the Git common directory.
+Final use requires an explicit command and a pinned live model. Final users have
+not been evaluated for this draft.
 
-## Evidence and open work
+## Executed evidence
 
-Synthetic tests verify mechanics, label isolation, selection, persistence, budget
-handling and split protection. A tiny Codex CLI synthetic call succeeded; earlier
-failed attempts were retained locally. No real preference accuracy or winning
-method has been established. Final test users have not been evaluated.
+- `runs/taste-smoke-01/`: the deterministic synthetic fixture completed M0–M3,
+  two held-out predictions each, without failures. The bundle includes save/load
+  and a call through the team’s actual adviser interface. These outputs verify
+  plumbing only; the fixture’s accuracy is not preference evidence.
+- The local artifact viewer is `runs/taste-smoke-01/viewer.html`. Open it in a
+  browser or load `bundle.json` in `docs/user-models/workbench.html`.
+- The deterministic checks finished before a live PRISM comparison. A bounded
+  live pilot is planned next; record its actual output and limitations here after
+  completion. The guide includes the exact command and key setup if needed.
+- Historical Arena pilot, already completed by Gio: one user, five targets each
+  for M0 and M1, zero failures; 4/5 versus 3/5 correct; reported conservative cost
+  $0.005369. This establishes neither a winning method nor research transfer.
 
-Gio redeemed OpenAI credits in his Personal organization and approved up to $1
-for ten development predictions using `gpt-6-luna`. No API key was present in the
-checked process environment. The direct Responses adapter is pushed in `816d064`;
-the combined suite passed 175 tests after syncing teammates' changes. It makes no
-retries, reserves conservative cost before requests and preserves failed holds in
-the report. A pilot checkout is pinned to that commit under ignored
-`runs/taste-pilot-worktree`. The local `runs/taste-openai-pilot.command` prompts for
-the key without echo and writes `runs/fidelity/openai-dev-01/report.json`. No live
-API call has run. Do not infer the remaining credit balance from redemption alone.
+Run registration, full request/response traces, raw predictions, errors, saved
+models and reports remain inspectable. Failed or bounded-out runs must be retained.
+No live credits are consumed by the offline backend.
 
-The first proposed live check is ten development predictions, M0 versus M1, for
-one Arena user. Question: can both methods make valid, auditable predictions on
-real data within the cap? Expected result: valid saved outputs and usage. Errors,
-missing usage or inconsistent reload predictions count against readiness. Even
-a perfect result on this pilot does not establish preference quality.
+## Team handoff and limits
 
-Then compare methods on more development users, choose a configuration and model,
-and freeze them before the single final invocation. The current final command
-registers one dataset; choose Arena or extend registration for both datasets
-before opening the final test. Do not delete the final marker to rerun.
+The exported `usermodel.json` uses the existing shared contract. The export
+verification calls `research.advisor.load_user_model`, then
+`TasteAdvisor.consult()` and `principles()`. No teammate-owned implementation is
+changed. M3 is used in the runnable export example because it exposes readable
+principles, not because it was selected as best.
 
-## Integration handoff
+M2 exports persona/examples for prediction and retained hypotheses as principles
+for the proposer; M3 exports principles. Both use the existing adviser interface. M0–M3 confidence is
+uncalibrated; the adviser does not enforce `calibrated`. Its threshold is not a
+proved reliability guarantee. Numeric weights are unavailable for these methods,
+and causal assumptions are not invented from preference labels.
 
-The harness owner can use `create_method(...).fit(history, validation)`,
-`predict(context, options)`, `save(...)`, and `load_model(...)`. Predictions include
-choice, probability, rationale and calibration status. The team owns the test of
-whether this improves research outcomes; Arena preference accuracy alone cannot
-answer that question. No teammate implementation files were modified for WS A.
+M2 uses bounded hypotheses, greedy validation selection and selected examples;
+M3 uses bounded principles, lexical clusters and in-sample reconstruction. Both
+are adaptations, not full reproductions of their papers. A saved artifact must
+reload with the same backend/model identity. Changing evaluation models requires
+refitting on the same allowed data.
+
+The next useful evidence is a small live PRISM comparison of M0/M1/M2/M3, followed
+by error inspection and a larger development comparison if warranted. PRISM tests
+preference prediction. Research improvement still needs Task B’s researcher data,
+Task D’s controlled loop comparison and Task C’s validity measurement.
