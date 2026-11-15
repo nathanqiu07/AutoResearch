@@ -959,13 +959,7 @@ function panelSources(panel, nextBtn) {
     ${S.st.docs.length ? `<div class="notice" style="margin-top:1rem">${fmtNum(S.st.docs.length)} documents in the corpus so far. Harvesting again only adds new ones.</div>` : ""}${nextBtn}
     <div class="card" aria-label="Scraping powered by Exa" style="margin-top:1.5rem;border-style:dashed;box-shadow:none;user-select:none">
       <h3 style="margin:0 0 .4rem">Scraping powered by Exa</h3>
-      <ul class="muted small" style="margin:0;padding-left:1.1rem;line-height:1.5">
-        <li>One deep search asks Exa for everything the person wrote (papers, blog and forum posts, talks, tweets) and returns it as a structured list.</li>
-        <li>Searches for each quarter, restricted to arXiv, LessWrong and the Alignment Forum, X, YouTube and GitHub, add results that require the person's surname in the text.</li>
-        <li>Exa fetches the full text of every result, up to 200,000 characters each.</li>
-        <li>A document is kept only with author evidence: arXiv's author list, the page's author field, or a byline near the top. Its date comes from arXiv's first version, Exa's publish date, or a date in the text.</li>
-        <li>Copies of one piece of work on several sites are merged and dated by the earliest copy; listing pages are dropped, and tweets are grouped by month.</li>
-      </ul>
+      <p class="muted small" style="margin:0">Exa finds the person's papers, posts and talks across the web and fetches the full text of each one.</p>
     </div>`;
   on("#g-go", "click", () => {
     const chk = id => { const el = document.getElementById(id); return !!(el && el.checked); };
