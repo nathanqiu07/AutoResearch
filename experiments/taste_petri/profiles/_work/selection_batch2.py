@@ -1,4 +1,4 @@
-"""Batch 2 (Marks, Barnes, Steinhardt): append <=15 picks per researcher to selection.json without touching the
+"""Batch 2 (Marks, Barnes, Steinhardt, then Carlini): append <=15 picks per researcher to selection.json without touching the
 existing 98 entries, so map_one.sh indices and the first five profiles stay valid. Re-running is a no-op.
 Docs with Marius Hobbhahn in the authors line are dropped (he is a tester).
 (selection.py is not imported: it rewrites selection.json at import time.)"""
@@ -20,6 +20,11 @@ PICK = {
    "surfacing_pathological_behaviors", "oversight_assistants", "foundation_models_for_oversight",
    "building_technology_to_drive", "establishing_best_practices", "feedback_loops_with_language",
    "scalably_extracting_latent", "troubling_trends", "analyzing_long_agent_transcripts"],
+ "nicholas_carlini": ["my_benchmark_for_large_language", "advice_on_evaluating_adversarial", "on_evaluating_adversarial_robustness",
+   "lessons_from_10_years", "why_i_attack", "impossiblebench", "detecting_adversarial_fine_tuning_with_aud",
+   "are_aligned_neural_networks", "autoadvexbench", "the_adversarial_mind", "how_to_win_a_best_paper",
+   "position_adversarial_ml_for_llms", "increasing_confidence_in_adversarial", "llms_now_find_zero_days",
+   "the_attacker_moves_second"],
 }
 
 

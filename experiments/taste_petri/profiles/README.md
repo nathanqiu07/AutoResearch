@@ -161,19 +161,19 @@ success on its own.
 - Map coverage is partial: 98 of about 540 docs. Early-career NLU work (Bowman) and theory (Hubinger) reach (d) only
   through titles.
 
-## Batch 2: Samuel Marks, Beth Barnes, Jacob Steinhardt (2026-11-15)
+## Batch 2: Samuel Marks, Beth Barnes, Jacob Steinhardt, Nicholas Carlini (2026-11-15)
 
-Same pipeline and prompts as above, run on three corpora that landed later. Slugs: `samuel_marks`,
-`elizabeth_barnes`, `jacob_steinhardt`. Nicholas Carlini was skipped: `data/researchers/nicholas_carlini/` had no
-`corpus/` when this ran.
+Same pipeline and prompts as above, run on four corpora that landed later. Slugs: `samuel_marks`,
+`elizabeth_barnes`, `jacob_steinhardt`, `nicholas_carlini` (Carlini added in a second pass once his corpus landed).
 
 | researcher | docs mapped | quotes verified | quotes dropped | evidence items cited in the cards |
 |---|---|---|---|---|
 | Samuel Marks | 15 | 147 | 7 | 78 |
 | Beth Barnes | 15 | 147 | 3 | 78 |
 | Jacob Steinhardt | 15 | 150 | 2 | 84 |
+| Nicholas Carlini | 15 | 154 | 3 | 86 |
 
-**Selection** (`_work/selection_batch2.py`, appended to `selection.json` as indices 98-142, so the first 98 entries
+**Selection** (`_work/selection_batch2.py`, appended to `selection.json` as indices 98-157, so the first 98 entries
 and their map files are unchanged). Priority was eval awareness, realism of setups, auditing, model organisms and eval
 methodology, preferring solo and first-author writing:
 - Marks: Petri announcement, "Towards Alignment Auditing as a Numbers-Go-Up Science", hidden-objectives auditing
@@ -188,13 +188,19 @@ methodology, preferring solo and first-author writing:
   investigator agents (paper and jailbreaking blog), o3 truthfulness, surfacing pathological behaviours, latent user
   representations, three solo oversight/governance posts, agentic-benchmark best practices, in-context reward hacking,
   "Troubling Trends in ML Scholarship".
+- Carlini (indices 143-157): solo essays "My benchmark for large language models", "Advice on Evaluating Adversarial
+  Example Defenses", "Lessons from 10 Years of Adversarial ML", "Why I attack", "How to win a best paper award",
+  "LLMs Now Find Zero-Days Autonomously", the "Adversarial Mind" podcast; first-author "On Evaluating Adversarial
+  Robustness", "Are aligned neural networks adversarially aligned?", AutoAdvExBench; last-author ImpossibleBench,
+  auditing agents for adversarial fine-tuning, "Increasing Confidence in Adversarial Robustness Evaluations"; and two
+  middle-author LLM adversarial-eval papers (the position paper, "The Attacker Moves Second").
 
 **Script changes** (backward compatible; old outputs not regenerated): `verify.py` and `timeline.py` take optional
 slug arguments (`verify.py` merges into `verify_stats.json`); `timeline.py` now drops docs with Hobbhahn in the
 authors line; `reduce.py` knows the three new names.
 
-**CLI calls: 48** (45 sonnet map, 3 sonnet reduce; all logged in `_work/calls.log`, no failures). No hand edits to the
-batch-2 cards.
+**CLI calls: 64** (60 sonnet map, 4 sonnet reduce; 48 for Marks/Barnes/Steinhardt, 16 for Carlini; all logged in
+`_work/calls.log`, no failures). No hand edits to the batch-2 cards.
 
 **Hobbhahn exclusion.** No selected doc has him as an author (checked on the `authors:` line). His co-authored papers
 (CoT Monitorability and two Reflection Mechanisms posts in Barnes; "Log analysis is necessary..." in Steinhardt) are
@@ -202,7 +208,9 @@ also removed from the timelines. Some selected papers cite him in their referenc
 batch-2 cards and evidence files returns nothing.
 
 **Caveats.**
-- Barnes's two podcasts are filed as solo, but the hosts speak too; capped at 160k chars, so the end of #217 is unread.
+- Carlini's corpus is mostly adversarial-robustness and security work, so his (c) card transfers attack-evaluation
+  rigour (adaptive attacks, known-positive checks, manual verification) more than eval-awareness evidence.
+- Barnes's two podcasts and Carlini's "Adversarial Mind" podcast are filed as solo, but the hosts speak too; capped at 160k chars, so the end of #217 is unread.
 - Most Steinhardt evidence is from Transluce blogs/papers where he is last author; Marks's AuditBench, sandbagging and
   eval-aware-steering items are middle-author. Weight by the author position on each quote.
 - Steinhardt (c) move 2 ("use real, recognizable people and organizations") and Marks (c) move 3 ("realistic named
