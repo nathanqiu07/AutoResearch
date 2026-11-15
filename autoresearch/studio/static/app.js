@@ -91,7 +91,8 @@ async function viewHome(seq) {
         ${[["lightbulb", "ochre", 78, 4, 6, 70], ["flask", "sage", 74, 26, -8, 64], ["book", "sky", 86, 54, 5, 66],
            ["telescope", "clay", 64, 70, -4, 70], ["sparkle", "ochre", 93, 20, 12, 40], ["coffee", "rose", 70, 46, 7, 52],
            ["pencil", "clay", 96, 74, -14, 50]].map(([n, c, x, y, t, sz], i) =>
-          `<span class="bob pop" style="position:absolute;left:${x}%;top:${y}%;--i:${i + 2}">${doodle(n, { color: c, tilt: t, size: sz })}</span>`).join("")}
+          `<span class="par" style="left:${x}%;top:${y}%;--d:${(0.4 + (i % 3) * 0.35).toFixed(2)}"><span class="bob pop" style="--i:${i + 2}">
+            <button type="button" class="hero-doodle wobble" aria-label="${n} doodle">${doodle(n, { color: c, tilt: t, size: sz })}</button></span></span>`).join("")}
       </div>
       <div class="kicker rise" style="--i:0">${doodle("sparkle", { size: 18, color: "clay", tilt: 8 })} profile studio</div>
       <h1 class="rise" style="--i:1">Whose research <span class="scribble">taste<svg viewBox="0 0 200 20" preserveAspectRatio="none"><path d="M4 12 C40 4 80 18 120 9 C150 3 175 12 196 7"/></svg></span> should the loop follow?</h1>
@@ -132,6 +133,15 @@ async function viewHome(seq) {
       ${profiles.length ? `<div class="cards-grid">${cards}</div>`
         : `<div class="empty">${doodle("seedling", { size: 64, color: "sage" })}<span class="hand">Nothing here yet. Start with A or B.</span></div>`}
     </section>`;
+  // doodles drift a little with the cursor (deeper ones more), and burst when clicked
+  const heroEl = app.querySelector(".hero");
+  heroEl.addEventListener("pointermove", e => {
+    const r = heroEl.getBoundingClientRect();
+    heroEl.style.setProperty("--mx", ((e.clientX - r.left) / r.width - 0.5).toFixed(3));
+    heroEl.style.setProperty("--my", ((e.clientY - r.top) / r.height - 0.5).toFixed(3));
+  });
+  heroEl.addEventListener("pointerleave", () => { heroEl.style.setProperty("--mx", 0); heroEl.style.setProperty("--my", 0); });
+  app.querySelectorAll(".hero-doodle").forEach(b => b.addEventListener("click", () => burstAt(b)));
   setKeys(e => {
     const card = app.querySelector(`.choice[data-key="${e.key.toLowerCase()}"]`);
     if (card && !e.metaKey && !e.ctrlKey) { card.classList.add("pressed"); go(card.getAttribute("href")); return true; }
