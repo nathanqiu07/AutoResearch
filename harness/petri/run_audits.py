@@ -3,7 +3,10 @@
     AuditSeed JSONL  ->  Petri 2.0 (inspect_petri)  ->  AuditResult JSONL
 
 Input rows:  {"seed_id", "text", "variant": "v1|v2|ours", "tools": "simulated|sandbox",
-              "auditor_prompt": optional full auditor system prompt (else --auditor-prompt, else Petri's stock one)}
+              "auditor_prompt": optional full auditor system prompt (else --auditor-prompt, else Petri's stock one),
+              "repo": optional real repo to clone into the sandbox (sandbox mode only), as
+                      {"url" or "local_path", "ref", "depth", "licence", "source_url", "published",
+                       "path", "scrub", "remote_url"}}
 Output rows: {"seed_id", "variant", "tools", "epoch", "transcript", "reasoning",
               "petri_scores": {...}, "petri_judge_status", "n_target_turns", "error"}
 
@@ -18,7 +21,8 @@ itself would score it 1 = "not aware", which flatters whatever breaks the judge)
 Each row's `tools` picks the mode for that seed (the --tools flag is the
 default): "simulated" is stock Petri, where the auditor invents tool output;
 "sandbox" routes the target's shell-type tool calls to a real Modal Sandbox
-(sandbox_tools.py).
+(sandbox_tools.py). A sandbox row with `repo` gets that repo cloned into its
+sample's sandbox before the auditor starts, and the auditor is told where it is.
 
 Models come from configs/models.json (petri.<mode>.target/auditor/judge,
 Inspect model ids); --target/--auditor/--judge override. Needs Python 3.10+ and
@@ -38,6 +42,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+from sandbox_tools import local_repo_problems, repo_problems  # noqa: E402
 from transcript import KEEP_SCORES, record_from_sample  # noqa: E402
 
 REPO = HERE.parents[1]
@@ -65,7 +70,8 @@ def prompt_problems(text: str):
     return problems
 
 
-def load_seeds(path: str):
+def load_seeds(path: str, default_tools: str = "simulated"):
+    """Read and check AuditSeed rows; `default_tools` is the mode of rows without `tools`."""
     rows = [json.loads(l) for l in Path(path).read_text().splitlines() if l.strip()]
     for r in rows:
         if not r.get("seed_id") or not r.get("text"):
@@ -74,12 +80,21 @@ def load_seeds(path: str):
             raise SystemExit(f"{r['seed_id']}: tools must be simulated|sandbox")
         if r.get("auditor_prompt") and prompt_problems(r["auditor_prompt"]):
             raise SystemExit(f"{r['seed_id']}: auditor_prompt: {prompt_problems(r['auditor_prompt'])}")
+        if r.get("repo") is not None:
+            if (r.get("tools") or default_tools) != "sandbox":
+                raise SystemExit(f"{r['seed_id']}: repo needs tools=sandbox (a simulated audit has no filesystem)")
+            problems = repo_problems(r["repo"])
+            if not problems and r["repo"].get("local_path"):
+                problems = local_repo_problems(r["repo"]["local_path"])
+            if problems:
+                raise SystemExit(f"{r['seed_id']}: repo: {'; '.join(problems)}")
     return rows
 
 
 def build_task(seeds, tools: str, max_turns: int, auditor_prompt: str | None, transcript_dir: str,
                make_sandbox=None):
-    """One Inspect Task for a group of seeds that share a tool mode."""
+    """One Inspect Task for a group of seeds that share a tool mode. `make_sandbox(setup=[...])`
+    builds a sample's sandbox (default ModalSandbox)."""
     from inspect_ai import Task
     from inspect_ai.dataset import Sample
     from petri.cleanup.save_transcripts import save_transcripts
@@ -87,15 +102,24 @@ def build_task(seeds, tools: str, max_turns: int, auditor_prompt: str | None, tr
     from petri.solvers.auditor_agent import auditor_agent
     from petri.solvers.prompts import AUDITOR_SYSTEM_PROMPT
 
-    dataset = [Sample(input=s["text"], id=s["seed_id"],
-                      metadata={"seed_id": s["seed_id"], "variant": s.get("variant", "v2"), "tools": tools})
-               for s in seeds]
+    def metadata(s):
+        m = {"seed_id": s["seed_id"], "variant": s.get("variant", "v2"), "tools": tools}
+        if s.get("repo") is not None:   # per sample: each sample's sandbox clones its own repo
+            m["repo"] = s["repo"]
+        return m
+
+    dataset = [Sample(input=s["text"], id=s["seed_id"], metadata=metadata(s)) for s in seeds]
     kwargs = dict(max_turns=max_turns, auditor_system_message=auditor_prompt or AUDITOR_SYSTEM_PROMPT)
     if tools == "sandbox":
-        from sandbox_tools import SANDBOX_NOTE, ModalSandbox, sandbox_tools
-        auditor_tools, _ = sandbox_tools(make_sandbox or ModalSandbox)
-        kwargs.update(auditor_tools=auditor_tools, resources_prompt=SANDBOX_NOTE)
-    return Task(dataset=dataset, solver=auditor_agent(**kwargs), scorer=alignment_judge(),
+        from sandbox_tools import SANDBOX_NOTE, ModalSandbox, SandboxPool, sandbox_auditor, sandbox_tools
+        pool = SandboxPool(make_sandbox or ModalSandbox)
+        auditor_tools, _ = sandbox_tools(pool=pool)
+        solver = sandbox_auditor(pool, resources_prompt=SANDBOX_NOTE, auditor_tools=auditor_tools, **kwargs)
+    else:
+        if any(s.get("repo") is not None for s in seeds):
+            raise ValueError("repo needs tools=sandbox")
+        solver = auditor_agent(**kwargs)
+    return Task(dataset=dataset, solver=solver, scorer=alignment_judge(),
                 cleanup=save_transcripts(transcript_dir), metadata={"tools": tools})
 
 
@@ -127,7 +151,7 @@ def main(argv=None):
     need("inspect_ai"), need("petri")
     from inspect_ai import eval as inspect_eval
 
-    seeds = load_seeds(a.seeds)
+    seeds = load_seeds(a.seeds, default_tools=a.tools)
     cfg = json.loads(Path(a.models_config).read_text()) if Path(a.models_config).exists() else {}
     pcfg = cfg.get("petri", {})
     roles_cfg = pcfg.get(a.mode, {})
