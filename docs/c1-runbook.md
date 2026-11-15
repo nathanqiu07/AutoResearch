@@ -12,7 +12,7 @@ have decided to spend. The preregistration is `results/prereg/C1_gate.json`. Whi
 | Held-out targets | `anthropic:claude-sonnet-4-5+thinking`, `openai:gpt-5+thinking` | final phase only |
 | J1 | `anthropic:claude-haiku-4-5` | dev: A1 + A2; final: held-out judge |
 | J2 | `openai:gpt-5.1` | final: held-out judge |
-| Generator | claude-cli (unchanged) | never called by the gate |
+| Generator | `openai:gpt-6-luna` (was claude-cli:sonnet) | never called by the gate; writes environments in V3 scenarios mode and the loop. Shares a family with J2 and the GPT-5 target (I7 waiver, PLAN §4.4) |
 
 - **dev phase:** dev target with J1. The gate checks the A2 answers of the target and of J1, because J1 is the
   instrument the loop reads every iteration. J1 scores A1 and labels V3.

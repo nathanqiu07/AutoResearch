@@ -255,6 +255,7 @@ PRICES_PER_MTOK = {
     # OpenAI: list prices taken from third-party aggregators on 2026-11-14, not verified
     # against OpenAI's pricing page.
     "gpt-5": (1.25, 10.0), "gpt-5.1": (1.25, 10.0),
+    "gpt-6-luna": (0.10, 0.50),   # same caveat; aggregators also list batch 0.05/0.25 and cached input 0.01
 }
 
 

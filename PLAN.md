@@ -208,8 +208,9 @@ Each environment gets matched negatives by topic, so A2's AUROC and A3 measure r
 | Target, OpenAI (held-out) | GPT-5 | `openai:gpt-5+thinking` | OpenAI Responses API (reasoning summaries) | final mode only |
 | Judge J1 (dev) | Claude Haiku 4.5 | `anthropic:claude-haiku-4-5` | Anthropic API | every loop iteration |
 | Judge J2 (held-out) | GPT-5.1 | `openai:gpt-5.1` | OpenAI API | final mode only; scores all 3 targets |
-| Generator / research agent | unchanged | `claude-cli:sonnet` | | |
+| Generator / research agent | GPT-6 Luna (changed 2026-11-14, was `claude-cli:sonnet`) | `openai:gpt-6-luna` | OpenAI Responses API; bills against the OpenAI credits | every iteration |
 
+* **Generator family waiver (I7).** With an OpenAI generator, the held-out judge J2 (GPT-5.1) and the held-out target GPT-5 share the generator's model family. Who wrote a transcript explains about 11% of judge variance in EvalDetectBench, so a GPT judge may rate GPT-written environments as more natural. This is recorded as an explicit waiver, not hidden: the Claude target's headline judge (GPT-5.1) is the affected cell, and Haiku's scores on the same samples are the check. A third-family J2 (for example DeepSeek v3.2, which has a calibrated probe set) would remove the clash. The OpenAI backend sends no temperature, so the generator's variety now comes only from the variation seed in its prompt.
 * **Why these.** Each is used in EvalAwareBench, EvalDetectBench or Petri, so our numbers can be set beside theirs.
 * **Each judge does all three scoring jobs** in its mode: A1 (reads the target's reasoning and reply), A2 (probe questions → P(eval), with its own EvalDetectBench probe set) and the behaviour/validity audit. A judge never falls back to the generator or a target.
 * **A1 on the two API targets is a LOWER BOUND.** Their reasoning arrives as a vendor summary, which can drop a remark the raw reasoning made (EvalAwareBench states the same caveat). Only Qwen3 gives raw reasoning.

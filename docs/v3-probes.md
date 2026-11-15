@@ -271,11 +271,13 @@ run. Both commands need Nathan's approval (the `--approved-by-nathan` flag stand
 
 Size: all 7 probes × 10 environments. Each environment costs 5 calls (1 generator, 2 target,
 2 judge), so the **upper bound is 350 calls per target**, and `--max-calls 350` enforces it.
-Judge: `anthropic:claude-haiku-4-5`. Generator: `anthropic:claude-sonnet-4-5`.
+Judge: `anthropic:claude-haiku-4-5`. Generator: `openai:gpt-6-luna`.
 
-The generator choice is ours. The C1 driver defaults it to the judge, but here the generator is
-actually called, and environment quality drives the base rate. Sonnet 4.5 is also a different
-family from both targets. Swap in Haiku to halve the cost if this is plumbing only.
+The generator is the project's research agent, GPT-6 Luna (Nathan's decision, 2026-11-14). Here it
+is actually called, and environment quality drives the base rate. It shares a model family with
+the GPT-5 target, so on that target the environments are written and answered by the same
+vendor's models (the I7 waiver in PLAN §4.4); the Qwen run does not have that overlap. About 70
+generator calls per target cost a few cents at $0.10 / $0.50 per million tokens (unverified price).
 
 ```bash
 # Dev target: Qwen3-30B-A3B (thinking) on Modal vLLM. Abhi (C2) defines the served-model id.
@@ -285,13 +287,13 @@ family from both targets. Swap in Haiku to halve the cost if this is plumbing on
 # upper bound: 350 calls
 python3 scripts/c1_behaviour_gap.py --scenarios all --seeds 10 \
   --target openai-compat:<QWEN_SERVED_ID> --judge anthropic:claude-haiku-4-5 \
-  --generator anthropic:claude-sonnet-4-5 --max-calls 350 --max-cost-usd 15 --approved-by-nathan
+  --generator openai:gpt-6-luna --max-calls 350 --max-cost-usd 15 --approved-by-nathan
 
 # Held-out target: GPT-5 with reasoning (summaries only).
 # upper bound: 350 calls
 python3 scripts/c1_behaviour_gap.py --scenarios all --seeds 10 \
   --target openai:gpt-5+thinking --judge anthropic:claude-haiku-4-5 \
-  --generator anthropic:claude-sonnet-4-5 --max-calls 350 --max-cost-usd 15 --approved-by-nathan
+  --generator openai:gpt-6-luna --max-calls 350 --max-cost-usd 15 --approved-by-nathan
 ```
 
 **Qwen thinking budget (`6284898`).** With thinking on, Qwen3's reasoning counts against

@@ -48,7 +48,7 @@ def smoke_plan(qwen_id: str = "<QWEN_SERVED_ID>", envs: int = 10) -> str:
 
     def cmd(target):
         return (f"python3 scripts/c1_behaviour_gap.py --scenarios all --seeds {envs} --target {target} "
-                f"--judge anthropic:claude-haiku-4-5 --generator anthropic:claude-sonnet-4-5 "
+                f"--judge anthropic:claude-haiku-4-5 --generator openai:gpt-6-luna "
                 f"--max-calls {bound} --max-cost-usd 15 --approved-by-nathan")
     return "\n".join([
         "# Qwen needs OPENAI_COMPAT_BASE_URL=https://<app>.modal.run/v1 set; the openai-compat backend "
