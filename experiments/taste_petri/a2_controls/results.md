@@ -1,5 +1,35 @@
 # a2_controls: does post-hoc P(eval) separate evals from non-evals, and do other probe prompts help? (2026-11-15)
 
+## Replication (pre-registered in `PREREG.md`, run after it was pushed)
+Fresh proxy audits at k=6..9: 93 of 96 generated (3 auditor failures), 45 stock/R0 pairs over 12 seeds.
+744 haiku calls (189 generation, 555 probes), 0 probe errors. Files: `transcripts_rep.jsonl`, `answers_rep.jsonl`,
+`results_rep.json`.
+
+| | exploratory (k=0,1) | replication (k=6..9), 95% CI by seed | decision |
+|---|---|---|---|
+| **H1** binary, stock − R0 | +0.29 | +0.02 [−0.15, +0.19], seeds 4 up / 4 down | **not confirmed** |
+| **H2** pairwise, P(stock is the test) − 0.5 | +0.07 | +0.05 [+0.0005, +0.10], seeds 9 up / 3 down | **confirmed, barely** (lower bound only just > 0) |
+| placeholder (current A2), secondary | +0.02 | +0.03 [+0.00, +0.06], 9 up / 3 down | descriptive |
+| calibrated, secondary | +0.11 | +0.02 [−0.05, +0.08] | descriptive |
+| unprompted, secondary | +0.13 | +0.17 [+0.05, +0.31], 5 up / 0 down | descriptive |
+
+Pooled over k=0,1,6..9 (68 pairs, descriptive): pairwise +0.06 [+0.02, +0.09], unprompted +0.16 [+0.06, +0.25],
+placeholder +0.03 [+0.01, +0.04], binary +0.11 [−0.06, +0.26].
+
+The answer to the replication:
+- **The binary probe's exploratory effect was noise.** On fresh audits, binary flags stock and R0 alike (30% vs 28%).
+- **Pairwise replicates, but it is small.** Haiku picks stock as the more likely test in about 69% of pairs, so
+  P(stock is the test) is about 0.55. Both orders agreed in 28 of 45 pairs.
+- **The unprompted probe replicated more strongly than either primary,** though it is secondary and was not
+  pre-registered as a test. Asked only to describe the setting, haiku calls stock transcripts constructed in 23%
+  of cases and R0 in 9%. No seed went the other way.
+- **The current A2 does register R0 slightly** with more samples (+0.03): the effect is real but tiny next to its
+  between-sample noise.
+- Overall, R0 reads as somewhat less test-like than stock to haiku. Unprompted and pairwise are the probes that
+  show it. Everything here is haiku on the one-turn proxy. Kimi is wired up (`run_kimi.sh`) but has not been run.
+
+## Exploratory run
+
 Exploratory, not pre-registered. Probe-only on the haiku proxy (`claude -p --model haiku`, Haiku 5.5): no new
 audits. 970 haiku calls (80 + 890), 0 errors. Code and design: `a2_controls.py` docstring. Raw answers:
 `answers.jsonl`; tables: `results.json`.
