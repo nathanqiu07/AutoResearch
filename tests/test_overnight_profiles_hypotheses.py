@@ -276,6 +276,23 @@ class HypothesesBuilderTests(unittest.TestCase):
         self.assertEqual(blocked.status, 'invalid')
         self.assertEqual(backend.calls, [])
 
+    def test_unsupported_extractor_settings_never_call_backend(self):
+        for settings in ({'top_p': 0.1}, {'top_p': 0.9}, {'seed': 0}, {'reasoning_effort': 'high'}):
+            with self.subTest(settings=settings):
+                profile, backend = self.run_builder('P8', self.hypotheses(), [self.target],
+                                                    extractor_settings=settings)
+                self.assertEqual(profile.status, 'invalid')
+                self.assertEqual(profile.error_code, 'unsupported_extractor_settings')
+                self.assertEqual(backend.calls, [])
+
+    def test_resolved_default_settings_are_explicit_in_fit_usage(self):
+        profile, backend = self.run_builder('P8', self.hypotheses(), [self.target], extractor_settings={})
+        self.assertEqual(profile.status, 'complete')
+        self.assertEqual(profile.fit_usage.get('resolved_extractor_settings'),
+                         {'temperature': 0.0, 'max_tokens': 2048})
+        self.assertEqual(backend.calls[0][1]['max_tokens'], 2048)
+        self.assertEqual(backend.calls[0][1]['temperature'], 0.0)
+
 
 if __name__ == '__main__':
     unittest.main()
