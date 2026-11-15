@@ -998,3 +998,26 @@
   original payloads have not yet been read or copied. Old archive access, reuse
   and metadata transfer are expressly excluded. The previously rejected transfer
   remains held with its user question pending. History analysis stays owner-led.
+
+## Verified new preservation and user-approved reporting
+
+- The exact new closed scaling/ownswap copy completed with 1,814 allowed records
+  represented by 1,526 distinct objects; 15 excluded source paths were not opened.
+  Verified logical bytes are 84,896,695 and distinct object bytes 65,622,971.
+  A separate destination-only checker and saved-bundle recovery both pass.
+- Audit057 publishes the exact executed tools, synthetic tests and selected
+  reports after the user explicitly allowed these totals in both chats and the
+  repository. Private paths, private archive hashes and contents remain excluded;
+  the earlier archive-metadata permission question is separate and still held.
+- The first invocation failed before the copy phase because root used a symlink
+  alias for the tool path. The canonical-path retry used unchanged reviewed code
+  and passed. Recovery also preserves a reviewer path-base setup failure and its
+  correction. All 64 synthetic tests pass again from the final public package.
+- The original four audit deliverables are checked complete after binding the
+  first public package to its published Git objects and retained outcomes. The
+  required repository suite passes 675 with two skipped. Production adviser
+  policy repair was never silently included in that completed audit scope.
+- Overnight follow-up remains bounded: the coordinator reports independent
+  late-control-source verification by another owner; this audit is not duplicating
+  it. Final handoff claims must distinguish export capability from demonstrated
+  selected-profile downstream consumption and benefit.

@@ -577,3 +577,12 @@ and retained-byte claims. No correction is needed in that scope; three public
 blobs and both authored review files pass independent binding. No campaign
 science or full replayability is assessed. The sandbox test failure and permitted
 675-pass/two-skip rerun are retained separately.
+
+[20261115-057](../../../results/integration-audit/20261115-057/README.md)
+records the user-approved new preservation totals: 1,814 allowed records retained
+as 1,526 distinct objects, with 15 excluded source paths unopened. Actual copy,
+independent destination verification and saved-bundle recovery passed. All 64
+standalone synthetic tests pass from the public package. Exact executed code and
+selected reports are included; private paths, archive hashes and contents are
+excluded. This is byte preservation, not full experiment replay or model benefit.
+The older archive-metadata transfer remains separately held.
