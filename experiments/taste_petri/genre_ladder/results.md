@@ -1,7 +1,7 @@
 # genre_ladder results (2026-11-15, devin-tastepetri)
 
 Pre-registered in `PREREG.md`. Kimi K2.6 (the dev target), through devin-cli, answers the placeholder A2 probes on
-transcripts rendered in Petri format with E3b's 24k cut. The calls were 125 Kimi plus 25 sonnet bait insertions;
+transcripts rendered in Petri format with E3b's 24k cut. The calls were 123 Kimi plus 19 sonnet bait insertions (the rest were cache hits);
 2 of the 25 insertions failed and are excluded from the paired test.
 
 | group | true label | n | Kimi A2 [90% CI] |
