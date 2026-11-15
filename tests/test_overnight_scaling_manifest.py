@@ -872,3 +872,220 @@ class ReleasedPilotGroupingTests(unittest.TestCase):
                 self.scaling.group_released_pilot(raw_map, raw_report,
                     expected_mapping_sha256=hashlib.sha256(raw_map).hexdigest(),
                     expected_report_sha256=hashlib.sha256(raw_report).hexdigest())
+
+
+def peer_driver_fixture(root, ordinary_fixture=None, scaling_module=None, ledger=None):
+    """Fresh synthetic P7 build; unavailable non-P7 arms keep peer scope explicit."""
+    import hashlib
+    from unittest.mock import patch
+    from autoresearch.taste.overnight import backends, profiles_hypotheses, scaling
+    from autoresearch.taste.overnight.contracts import build_profile, canonical_json, source_manifest, sha256_text
+    from autoresearch.taste.overnight.registry import get_builder
+    scaling = scaling_module or scaling
+    if ordinary_fixture is None:
+        original, ordinary, runtime, ledger = driver_fixture(root)
+    else:
+        original, ordinary, runtime = copy.deepcopy((ordinary_fixture['manifest'], ordinary_fixture['bindings'], ordinary_fixture['runtime']))
+        ledger = ledger or backends.DollarLedger(root / 'synthetic-peer-ledger.sqlite', max_usd=1, deadline='2099-01-01T00:00:00Z')
+    spec = copy.deepcopy(original['design'])
+    target = copy.deepcopy(ordinary[0]['release'])
+    target['target_bundle_sha256'] = digest('synthetic-parent-target-bundle')
+    target.update(fit_source_hashes_unchanged=True, n_dev_source_groups=1, n_ordered_items=len(target['items']),
+                  n_semantic_targets=1, parent_version='synthetic-v3', tier='A')
+    target['sources'].update(schema_version='synthetic-sources-v1', heldout={'dev': {'count': 1}, 'confirmation': {'count': 1}})
+    text = 'Synthetic peer recommends broad exploration.'
+    peer_doc = {'document_id': 'synthetic-peer-fit', 'researcher_id': 'synthetic-peer', 'content': text,
+        'content_sha256': sha256_text(text), 'permitted_spans': [{'start': 0, 'end': len(text), 'speaker': 'synthetic-peer', 'text': text}]}
+    peer = copy.deepcopy(target)
+    peer.update(researcher_id='synthetic-peer', items=[], items_sha256=digest([]), target_bundle_sha256=digest('synthetic-peer-target-bundle'))
+    peer['sources'] = {'documents': [peer_doc], 'source_manifest': source_manifest([peer_doc]),
+                       'allowed_source_manifest_hash': digest(source_manifest([peer_doc]))}
+    def file_ref(body):
+        raw = (canonical_json(body) + '\n').encode()
+        sha = hashlib.sha256(raw).hexdigest()
+        path = root / (sha + '.json')
+        if path.exists():
+            assert path.read_bytes() == raw
+        else:
+            with path.open('xb') as stream:
+                stream.write(raw)
+        return {'path': str(path), 'sha256': sha}
+    parents = [{'researcher_id': body['researcher_id'], 'release': file_ref(body)} for body in (target, peer)]
+    parent_json = [{'researcher_id': body['researcher_id'], 'release_json': canonical_json(body) + '\n'} for body in (target, peer)]
+    documents = sorted(target['sources']['documents'] + [peer_doc], key=lambda d: d['document_id'])
+    release = copy.deepcopy(target)
+    release.update(schema_version='released-development-v2-p7-peers-v1', approved_peer_sources=True,
+        peer_policy={'allowed_method_id': 'P7', 'purpose': 'contrastive peer fitting',
+            'target_researcher_id': 'synthetic', 'peer_researcher_ids': ['synthetic-peer'], 'no_heldout_sources': True},
+        parent_releases=parents, sources={'documents': documents, 'source_manifest': source_manifest(documents),
+            'allowed_source_manifest_hash': digest(source_manifest(documents))})
+    runtime['release_schema_version'] = release['schema_version']
+    spec['common'].update(documents_hash=digest(documents), allowed_source_manifest_hash=digest(source_manifest(documents)))
+    spec.update(primary_method_id='P7', fixed_profile={'method_id': 'P7', 'extractor_level': 'S'})
+    profiles_hypotheses.register_hypotheses_builders()
+    builder = get_builder('P7')
+    method = {'method_id': 'P7', 'config_hashes': {}, 'method_implementation_hash': builder.implementation_hash,
+              'profile_prompt_version': builder.prompt_version, 'profile_prompt_sha256': builder.prompt_sha256}
+    def statement(doc):
+        source = {'document_id': doc['document_id'], 'quote': doc['content']}
+        if 'quote-only' not in builder.prompt_version:
+            source.update(start=0, end=len(doc['content']))
+        return {'text': doc['content'], 'kind': 'preference', 'evidence_status': 'explicit',
+                'conditions': None, 'date': None, 'sources': [source]}
+    response = canonical_json({'contrasts': [{'relation': 'different', 'target': statement(target['sources']['documents'][0]),
+                                            'peer': statement(peer_doc)}]})
+    profiles, by_id = [], {}
+    with patch('urllib.request.urlopen', side_effect=AssertionError('offline peer fixture forbids HTTP')) as http:
+        for model in spec['models']:
+            engine = backends.OpenAIResponsesBackend(model=model['identity']['model'], reasoning='medium', ledger=ledger, max_usd=.01, timeout=1)
+            config = {'method_id': 'P7', 'researcher_id': 'synthetic', 'replicate_id': 0, 'code_sha': spec['code_sha'],
+                'personalization_cap': spec['common']['personalization_cap'], 'extractor_settings': model['extractor_settings'],
+                'allowed_sources': release['sources']['source_manifest'], 'allowed_source_manifest_hash': release['sources']['allowed_source_manifest_hash'],
+                'evidence_policy': 'explicit-only', **{key: release[key] for key in ('approved_peer_sources', 'peer_policy', 'parent_releases')}}
+            with patch.object(engine, 'complete', return_value=response) as fake:
+                body = build_profile(documents, config, engine).to_dict()
+            assert fake.call_count == 1 and body['status'] == 'complete', body.get('error_code')
+            profiles.append({'method_id': 'P7', 'extractor_level': model['level'], 'profile': body})
+            by_id[body['profile_id']] = body
+            method['config_hashes'][model['level']] = body['config_id']
+            profiles.append({'method_id': 'P2', 'extractor_level': model['level'], 'status': 'planned-unavailable',
+                             'reason': 'synthetic peer release is P7 only', 'evidence_sha256': digest('synthetic-P7-only')})
+        assert http.call_count == 0 and ledger.summary()['attempts'] == 0
+    spec['methods'] = [method, spec['methods'][1]]
+    manifest = scaling.build_manifest(spec, profiles)
+    bindings = []
+    for cell in manifest['cells']:
+        condition = cell['conditioning']
+        if condition.get('method_id') != 'P7':
+            bindings.append({'cell_id': cell['cell_id'], 'status': 'unavailable', 'reason': 'peer release is P7-only; target-only control belongs to separate source condition'})
+            continue
+        body = by_id[condition['profile_id']]
+        bindings.append({'cell_id': cell['cell_id'], 'status': 'ready', 'release': release, 'release_ref': file_ref(release),
+            'peer_parent_releases': parent_json, 'jobs': [{'item_ids': [i['item_id'] for i in release['items']],
+                'profile': body, 'profile_ref': file_ref(body), 'origin_job_id': digest(['synthetic-peer-build', body['profile_id']]),
+                'registration': {'module': 'autoresearch.taste.overnight.profiles_hypotheses', 'function': 'register_hypotheses_builders'},
+                'limits': {'max_calls': len(release['items']), 'max_seconds': 30, 'max_usd': .01, 'timeout': 1}}]})
+    return manifest, bindings, runtime, ledger
+
+
+class ScalingPeerDriverTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from autoresearch.taste.overnight import scaling
+        self.scaling = scaling
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.manifest, self.bindings, self.runtime, self.ledger = peer_driver_fixture(Path(self.temp.name))
+
+    def compile(self, bindings=None):
+        bindings = self.bindings if bindings is None else bindings
+        return self.scaling.compile_driver_packets(self.manifest, bindings, runtime=self.runtime,
+            expected_manifest_hash=self.manifest['manifest_sha256'], expected_bindings_hash=digest(bindings),
+            expected_runtime_hash=digest(self.runtime))
+
+    def test_peer_profile_reuse_preserves_driver_declarations_and_absent_controls(self):
+        compiled = self.compile()
+        self.assertTrue(compiled['packets'])
+        for entry in compiled['packets']:
+            packet = entry['packet']
+            self.assertEqual(packet['manifest']['method_id'], 'P7')
+            binding = next(b for b in self.bindings if b['cell_id'] == entry['cell_id'])
+            for key in ('approved_peer_sources', 'peer_policy', 'parent_releases'):
+                self.assertEqual(packet['config'][key], binding['release'][key])
+                self.assertEqual(packet['config'][key], binding['jobs'][0]['profile']['config'][key])
+            self.assertIsNone(packet['lease'])
+            self.assertIsNone(packet['manifest']['allocation']['authorization_source'])
+            evidence = packet['manifest']['scaling_peer_evidence']
+            self.assertEqual({r['role'] for r in evidence['parents']}, {'target', 'peer'})
+            self.assertTrue(all(r['source_count'] == 1 and r['full_content_utf8_bytes'] > 0 for r in evidence['parents']))
+        self.assertTrue(any(cell['status'] == 'unavailable' for cell in compiled['cells']))
+        fixed = [a for a in self.manifest['arms'] if a['study'] == 'B']
+        self.assertEqual(len({next(c['conditioning']['profile_id'] for c in self.manifest['cells'] if c['cell_id'] == a['cell_id']) for a in fixed}), 1)
+        self.assertEqual(self.ledger.summary()['attempts'], 0)
+
+    def test_peer_parent_lineage_and_exact_target_schedule_fail_closed(self):
+        for change in ('missing', 'bytes', 'parent_hash', 'foreign', 'policy', 'target_items', 'union', 'duplicate_json', 'parent_identity', 'outcomes', 'heldout_outcomes'):
+            bindings = copy.deepcopy(self.bindings)
+            ready = next(b for b in bindings if b['status'] == 'ready')
+            if change == 'missing': ready.pop('peer_parent_releases')
+            if change == 'bytes': ready['peer_parent_releases'][0]['release_json'] += ' '
+            if change == 'parent_hash': ready['release']['parent_releases'][0]['release']['sha256'] = '0' * 64
+            if change == 'foreign': ready['release']['peer_policy']['peer_researcher_ids'] = ['unapproved-peer']
+            if change == 'policy': ready['release']['peer_policy']['no_heldout_sources'] = False
+            if change == 'target_items': ready['release']['target_bundle_sha256'] = '0' * 64
+            if change == 'union': ready['release']['sources']['documents'][0]['permitted_spans'][0]['end'] -= 1
+            if change == 'duplicate_json':
+                from autoresearch.taste.overnight.contracts import sha256_text
+                raw = ready['peer_parent_releases'][0]['release_json'].rstrip()
+                raw = raw[:-1] + ',"researcher_id":"synthetic"}'
+                ready['peer_parent_releases'][0]['release_json'] = raw
+                ready['release']['parent_releases'][0]['release']['sha256'] = sha256_text(raw)
+            if change in ('parent_identity', 'outcomes', 'heldout_outcomes'):
+                from autoresearch.taste.overnight.contracts import canonical_json, sha256_text
+                parent = json.loads(ready['peer_parent_releases'][0]['release_json'])
+                if change == 'parent_identity': parent['researcher_id'] = 'unapproved-peer'
+                if change == 'outcomes': parent['targets'] = [{'answer': 'synthetic-forbidden'}]
+                if change == 'heldout_outcomes': parent['sources']['heldout']['dev']['targets'] = []
+                raw = canonical_json(parent)
+                ready['peer_parent_releases'][0]['release_json'] = raw
+                ready['release']['parent_releases'][0]['release']['sha256'] = sha256_text(raw)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.compile(bindings)
+
+    def test_peer_profile_cannot_carry_different_policy_or_lineage(self):
+        for key in ('approved_peer_sources', 'peer_policy', 'parent_releases'):
+            bindings = copy.deepcopy(self.bindings)
+            ready = next(b for b in bindings if b['status'] == 'ready')
+            ready['release'].pop(key)
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                self.compile(bindings)
+
+    def test_derivative_metadata_cannot_embed_outcome_records(self):
+        for change in ('count_object', 'sources_targets', 'heldout_targets'):
+            bindings = copy.deepcopy(self.bindings)
+            release = next(b for b in bindings if b['status'] == 'ready')['release']
+            if change == 'count_object': release['n_semantic_targets'] = {'targets': [{'chosen': 'synthetic-answer'}]}
+            if change == 'sources_targets': release['sources']['targets'] = [{'chosen': 'synthetic-answer'}]
+            if change == 'heldout_targets': release['sources']['heldout'] = {'dev': {'count': 1, 'targets': []}, 'confirmation': {'count': 1}}
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.compile(bindings)
+
+    def test_peer_profile_metadata_mismatch_rejects_before_frozen_profile_comparison(self):
+        for key, value in (('approved_peer_sources', False), ('peer_policy', {}), ('parent_releases', [])):
+            bindings = copy.deepcopy(self.bindings)
+            body = next(b for b in bindings if b['status'] == 'ready')['jobs'][0]['profile']
+            body['config'][key] = value
+            body['config_id'] = digest(body['config'])
+            body.pop('profile_id')
+            body['profile_id'] = digest(body)
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'peer declarations'):
+                self.compile(bindings)
+
+    def test_ordinary_release_cannot_opt_into_peer_metadata(self):
+        manifest, bindings, runtime, _ = driver_fixture(Path(self.temp.name))
+        bindings[0]['release']['approved_peer_sources'] = True
+        with self.assertRaisesRegex(ValueError, 'peer'):
+            self.scaling.compile_driver_packets(manifest, bindings, runtime=runtime,
+                expected_manifest_hash=manifest['manifest_sha256'], expected_bindings_hash=digest(bindings),
+                expected_runtime_hash=digest(runtime))
+
+    def test_non_p7_profile_and_release_cannot_use_peer_condition(self):
+        manifest, bindings, runtime, _ = driver_fixture(Path(self.temp.name))
+        for mode in ('profile_config', 'peer_release'):
+            changed = copy.deepcopy(bindings)
+            body = changed[0]['jobs'][0]['profile']
+            if mode == 'profile_config':
+                body['config']['approved_peer_sources'] = True
+                body['config_id'] = digest(body['config'])
+                body.pop('profile_id')
+                body['profile_id'] = digest(body)
+            else:
+                peer = next(b for b in self.bindings if b['status'] == 'ready')
+                changed[0]['release'] = peer['release']
+                changed[0]['peer_parent_releases'] = peer['peer_parent_releases']
+                runtime = copy.deepcopy(runtime)
+                runtime['release_schema_version'] = self.runtime['release_schema_version']
+            with self.subTest(mode=mode), self.assertRaisesRegex(ValueError, 'peer|P7'):
+                self.scaling.compile_driver_packets(manifest, changed, runtime=runtime,
+                    expected_manifest_hash=manifest['manifest_sha256'], expected_bindings_hash=digest(changed),
+                    expected_runtime_hash=digest(runtime))

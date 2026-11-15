@@ -757,6 +757,124 @@ def grouped_paired_report(mapping, jobs, score_packets, comparisons, *, expected
                               'Two researchers do not define a researcher population; no population interval is reported.'}
 
 
+PEER_RELEASE_SCHEMA = 'released-development-v2-p7-peers-v1'
+PEER_BINDINGS = ('approved_peer_sources', 'peer_policy', 'parent_releases')
+
+
+def _peer_release_proof(release, parent_json, method):
+    """Validate exact fit-release bytes supplied by the coordinator, without I/O."""
+    from pathlib import Path
+    from .contracts import source_manifest, validate_documents, sha256_text
+    if method != 'P7' or release.get('approved_peer_sources') is not True:
+        raise ValueError('peer release is approved for P7 only')
+    policy = release.get('peer_policy')
+    _fields(policy, {'allowed_method_id', 'purpose', 'target_researcher_id', 'peer_researcher_ids',
+                     'no_heldout_sources'}, 'peer policy')
+    if (policy['allowed_method_id'] != 'P7' or policy['purpose'] != 'contrastive peer fitting'
+            or policy['target_researcher_id'] != release['researcher_id'] or policy['no_heldout_sources'] is not True):
+        raise ValueError('peer policy differs from approved fitting contract')
+    peers = policy['peer_researcher_ids']
+    if (not isinstance(peers, list) or not peers or any(not isinstance(p, str) or not p for p in peers)
+            or peers != sorted(set(peers)) or release['researcher_id'] in peers):
+        raise ValueError('exact distinct sorted peer researchers required')
+    expected = sorted([release['researcher_id']] + peers)
+    parents = release.get('parent_releases')
+    if (not isinstance(parents, list) or not isinstance(parent_json, list)
+            or [p.get('researcher_id') if isinstance(p, dict) else None for p in parents] != expected
+            or [p.get('researcher_id') if isinstance(p, dict) else None for p in parent_json] != expected):
+        raise ValueError('peer parent identities differ from approved policy')
+
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate field in peer parent JSON')
+            result[key] = value
+        return result
+
+    records, target, counts = {}, None, []
+    parent_fields = {'schema_version', 'scope', 'researcher_id', 'sources', 'items', 'items_sha256', 'target_bundle_sha256'}
+    # 04's approved v3 parents retain these label-free release summaries.
+    release_metadata = {'fit_source_hashes_unchanged', 'n_dev_source_groups', 'n_ordered_items',
+                        'n_semantic_targets', 'parent_version', 'tier'}
+    def validate_shapes(body, derivative=False):
+        if not isinstance(body, dict):
+            raise ValueError('peer release must be an object')
+        _fields(body, parent_fields | (set(PEER_BINDINGS) if derivative else set()) |
+                (set(body) & release_metadata), 'label-free peer release')
+        for key in release_metadata & set(body):
+            value = body[key]
+            if ((key.startswith('n_') and (type(value) is not int or value < 0))
+                    or (key == 'fit_source_hashes_unchanged' and type(value) is not bool)
+                    or (key in ('tier', 'parent_version') and type(value) not in (str, int))):
+                raise ValueError('peer release metadata has unsupported type')
+        sources = body['sources']
+        if not isinstance(sources, dict):
+            raise ValueError('peer sources must be an object')
+        sources_extra = set(sources) & {'schema_version', 'heldout'}
+        _fields(sources, {'documents', 'source_manifest', 'allowed_source_manifest_hash'} | sources_extra, 'peer sources')
+        if 'schema_version' in sources_extra:
+            _text(sources['schema_version'], 'peer source schema')
+        if 'heldout' in sources_extra:
+            _fields(sources['heldout'], {'confirmation', 'dev'}, 'heldout counts only')
+            for count in sources['heldout'].values():
+                _fields(count, {'count'}, 'heldout count only')
+                if type(count['count']) is not int or count['count'] < 0:
+                    raise ValueError('heldout source count must be nonnegative integer')
+
+    validate_shapes(release, derivative=True)
+    from .runner import ITEM_FIELDS
+    for parent, raw_parent in zip(parents, parent_json):
+        _fields(parent, {'researcher_id', 'release'}, 'peer parent reference')
+        _fields(parent['release'], {'path', 'sha256'}, 'peer parent file reference')
+        reference = parent['release']
+        if not isinstance(reference['path'], str) or not Path(reference['path']).is_absolute():
+            raise ValueError('absolute peer parent file reference required')
+        _hash(reference['sha256'], 'peer parent file')
+        _fields(raw_parent, {'researcher_id', 'release_json'}, 'peer parent byte proof')
+        raw = raw_parent['release_json']
+        if not isinstance(raw, str) or len(raw.encode('utf-8')) > 64_000_000 or sha256_text(raw) != reference['sha256']:
+            raise ValueError('peer parent release bytes differ from frozen file hash')
+        body = json.loads(raw, object_pairs_hook=unique_object)
+        validate_shapes(body)
+        if (body['schema_version'] != 'released-development-v2' or body['scope'] != release['scope']
+                or body['researcher_id'] != parent['researcher_id']):
+            raise ValueError('peer parent must be its declared original target-only fit release')
+        _hash(body['target_bundle_sha256'], 'opaque peer parent target bundle')
+        docs, sources = body['sources']['documents'], body['sources']['source_manifest']
+        validate_documents(docs, {'researcher_id': body['researcher_id'], 'allowed_sources': sources,
+                                 'allowed_source_manifest_hash': body['sources']['allowed_source_manifest_hash']})
+        if sources != source_manifest(docs):
+            raise ValueError('peer parent source manifest differs from its records')
+        if not isinstance(body['items'], list) or digest(body['items']) != body['items_sha256']:
+            raise ValueError('peer parent item digest mismatch')
+        seen_items = set()
+        for item in body['items']:
+            _fields(item, ITEM_FIELDS, 'label-free peer parent item')
+            if item['researcher_id'] != body['researcher_id'] or not isinstance(item['item_id'], str) or not item['item_id'] or item['item_id'] in seen_items:
+                raise ValueError('peer parent item identity mismatch')
+            seen_items.add(item['item_id'])
+        for doc in docs:
+            if doc.get('split_eligibility') in ('dev', 'confirmation', 'test', 'quarantine', 'heldout'):
+                raise ValueError('peer parent contains a known non-fit source')
+            identifier = doc['document_id']
+            if identifier in records and records[identifier] != doc:
+                raise ValueError('conflicting peer parent document records')
+            records[identifier] = doc
+        counts.append({'researcher_id': body['researcher_id'],
+                       'role': 'target' if body['researcher_id'] == release['researcher_id'] else 'peer',
+                       'source_count': len(docs), 'full_content_utf8_bytes': sum(len(d['content'].encode('utf-8')) for d in docs),
+                       'parent_file_sha256': reference['sha256']})
+        if body['researcher_id'] == release['researcher_id']:
+            target = body
+    if release['sources']['documents'] != [records[key] for key in sorted(records)]:
+        raise ValueError('peer derivative is not the exact sorted union of parent fit records')
+    if any(release.get(key) != target[key] for key in ('items', 'items_sha256', 'target_bundle_sha256')):
+        raise ValueError('peer derivative changed the target item schedule or opaque target bundle')
+    return {'source_condition': 'approved-target-plus-peer-fit-evidence', 'parents': counts,
+            'comparison_limit': 'cross-source-condition comparisons do not hold evidence constant'}
+
+
 def compile_driver_packets(manifest, bindings, *, runtime, expected_manifest_hash,
                            expected_bindings_hash, expected_runtime_hash):
     """Translate a frozen design to unleased driver packet drafts, without I/O.
@@ -828,7 +946,9 @@ def compile_driver_packets(manifest, bindings, *, runtime, expected_manifest_has
             _text(binding['reason'], 'unavailable dependency reason')
             cells.append({'cell_id': cell_id, 'status': 'unavailable', 'reason': binding['reason'], 'packet_ids': []})
             continue
-        _fields(binding, {'cell_id', 'status', 'release_ref', 'release', 'jobs'}, 'ready driver binding')
+        peer_release = isinstance(binding.get('release'), dict) and binding['release'].get('schema_version') == PEER_RELEASE_SCHEMA
+        _fields(binding, {'cell_id', 'status', 'release_ref', 'release', 'jobs'} |
+                ({'peer_parent_releases'} if peer_release else set()), 'ready driver binding')
         if binding['status'] != 'ready':
             raise ValueError('driver binding availability must be explicit')
         unsupported = ('downstream-utility-owner-required' if cell['common']['outcome_panel'] == 'utility' else
@@ -843,6 +963,11 @@ def compile_driver_packets(manifest, bindings, *, runtime, expected_manifest_has
         if (not isinstance(release, dict) or release.get('schema_version') != runtime['release_schema_version']
                 or release.get('scope') != runtime['release_scope'] or release.get('researcher_id') != common['researcher_id']):
             raise ValueError('release schema/scope/researcher differs from runtime or frozen cell')
+        peer_proof = None
+        if peer_release:
+            peer_proof = _peer_release_proof(release, binding['peer_parent_releases'], cell['conditioning'].get('method_id'))
+        elif any(key in release for key in PEER_BINDINGS):
+            raise ValueError('ordinary releases cannot carry peer metadata')
         documents = release['sources']['documents']
         if digest(documents) != common['documents_hash']:
             raise ValueError('release full source records differ from frozen common evidence scope')
@@ -852,7 +977,7 @@ def compile_driver_packets(manifest, bindings, *, runtime, expected_manifest_has
                 digest(sources) != common['allowed_source_manifest_hash']):
             raise ValueError('release source manifest differs from frozen cell')
         validate_documents(documents, {'researcher_id': common['researcher_id'], 'allowed_sources': sources,
-                                      'allowed_source_manifest_hash': digest(sources)})
+                                      'allowed_source_manifest_hash': digest(sources), 'approved_peer_sources': peer_release})
         all_items = release['items']
         if not isinstance(all_items, list) or digest(all_items) != release.get('items_sha256'):
             raise ValueError('release items hash mismatch')
@@ -891,6 +1016,11 @@ def compile_driver_packets(manifest, bindings, *, runtime, expected_manifest_has
             _hash(job['origin_job_id'], 'profile origin job')
             profile = ProfileArtifact.from_dict(job['profile'])
             body = profile.to_dict()
+            if peer_release:
+                if body['method_id'] != 'P7' or any(key not in body['config'] or body['config'][key] != release[key] for key in PEER_BINDINGS):
+                    raise ValueError('P7 profile peer declarations differ from approved release')
+            elif any(key in body['config'] for key in PEER_BINDINGS):
+                raise ValueError('ordinary profile cannot carry peer metadata')
             if (body.get('code_sha') != runtime['code_sha'] or body.get('documents_hash') != digest(documents)
                     or body['researcher_id'] != common['researcher_id'] or body['allowed_source_manifest_hash'] != digest(sources)
                     or body['personalization_cap'] != common['personalization_cap']):
@@ -952,6 +1082,8 @@ def compile_driver_packets(manifest, bindings, *, runtime, expected_manifest_has
                 'renderer_implementation_hash': runtime['renderer_implementation_hash'],
                 'profile_prompt_version': body['prompt_version'], 'consumer_prompt_version': runtime['consumer_prompt_version'],
                 'settings': settings}
+            if peer_release:
+                config.update({key: _copy(release[key]) for key in PEER_BINDINGS})
             payload_pins = []
             for item in selected:
                 prepared = prepare_payload(profile, item['context'], item['options'], config)
@@ -975,6 +1107,8 @@ def compile_driver_packets(manifest, bindings, *, runtime, expected_manifest_has
                 'scaling_context_cap': common['context_cap'], 'scaling_payload_pins': payload_pins,
                 'scaling_permitted_spans_sha256': digest([{'document_id': d['document_id'],
                     'permitted_spans': d.get('permitted_spans', [])} for d in documents])}
+            if peer_proof is not None:
+                plan['scaling_peer_evidence'] = peer_proof
             packet = {'schema_version': 'overnight-packet-v1', 'release': _copy(binding['release_ref']),
                 'item_ids': ids, 'profile': _copy(job['profile_ref']), 'config': config, 'manifest': plan,
                 'lease': None, 'backend': dict(limits, model=identity['model'], reasoning=identity['enforced_settings']['reasoning_effort']),
