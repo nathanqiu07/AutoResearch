@@ -279,3 +279,21 @@ class SelectAndE2Test(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LopsidedReportTest(unittest.TestCase):
+    def test_load_keeps_lopsided_pairs_and_reports_both_counts(self):
+        root = tempfile.mkdtemp()
+        path = os.path.join(root, timesplit.HELDOUT)
+        with open(path, "w") as f:
+            for k in range(3):
+                f.write(json.dumps(asdict(Choice("subject", "ctx", "A", "B", "a", example_id=f"p{k}"))) + "\n")
+        with open(os.path.join(root, track_eval.AGREEMENT), "w") as f:
+            f.write(json.dumps({"pair_id": "p0", "lopsided": True, "lopsided_his": True}) + "\n")
+            f.write(json.dumps({"pair_id": "p1", "lopsided": True, "lopsided_his": False}) + "\n")
+        with mock.patch("sys.stderr") as err:
+            choices = track_eval.load_choices(path)
+        note = "".join(c.args[0] for c in err.write.call_args_list)
+        self.assertEqual(len(choices), 3)
+        self.assertIn("2 of 3 pairs judged", note)
+        self.assertIn("2 lopsided either way, 1 lopsided toward his option", note)

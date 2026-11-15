@@ -25,6 +25,7 @@ import concurrent.futures
 import json
 import os
 import random
+import sys
 from typing import Callable, Dict, List, Optional, Tuple
 
 from ..llm import LLM
@@ -36,13 +37,30 @@ from .researcher import DEFAULT_ROOT, Researcher, load_researcher
 from .usermodel import Choice, UserModel
 
 GATE = "gate_timesplit.jsonl"
+AGREEMENT = "agreement.jsonl"  # experiments/lopsided_all/run.py writes it
 GATE_THRESHOLD = 0.75
 WORKERS = 16  # judge and user-model calls on separate pairs run in parallel; --workers overrides
 CACHE = os.path.join("runs", "track_s", "cache", "usermodel")
 
 
 def load_choices(path: str) -> List[Choice]:
-    return [Choice(**r) for r in timesplit._read_jsonl(path)]
+    choices = [Choice(**r) for r in timesplit._read_jsonl(path)]
+    _report_lopsided(path, choices)
+    return choices
+
+
+def _report_lopsided(path: str, choices: List[Choice]) -> None:
+    """Lopsided pairs stay in the files (Ethan, 2026-11-15): whoever runs on them decides whether
+    to drop them, so say how many there are every time they load."""
+    votes = os.path.join(os.path.dirname(path), AGREEMENT)
+    if not os.path.exists(votes):
+        return
+    rows = {r["pair_id"]: r for r in timesplit._read_jsonl(votes)}
+    judged = [rows[c.example_id] for c in choices if c.example_id in rows]
+    print(f"NOTE {os.path.basename(path)}: {len(judged)} of {len(choices)} pairs judged by the blind "
+          f"lopsidedness gate; {sum(r['lopsided'] for r in judged)} lopsided either way, "
+          f"{sum(r['lopsided_his'] for r in judged)} lopsided toward his option. Nothing is filtered: "
+          f"decide whether to drop them (fields lopsided / lopsided_his in {AGREEMENT}).", file=sys.stderr)
 
 
 def paired_correct(model, c: Choice) -> bool:
