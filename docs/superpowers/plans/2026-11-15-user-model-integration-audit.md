@@ -934,3 +934,13 @@
 - The old049 verifier has fixed046/snapshot/count/schema assumptions and cannot
   check052 unchanged. Preserve it and use the actual later published destination
   inventory for a bounded check; do not infer a copy from the eligibility decision.
+
+- Reference handoff 055 now supplies exact042/044 consumed schemas and layout
+  with 12 public source pins, independently bound by root to Git at `0dbcf053`.
+  It documents the four-field approved tuple, private controls/mappings, full
+  custody partition, bounded reuse and verification, and fixed profile204
+  assumptions requiring a named adaptation. It is a static workflow reference,
+  not a new source/scientific audit, inventory reconciliation or copying authority.
+  The exact guide was relayed to planning and coordinator for existing09/10;
+  no private input or archive was opened. The current required suite passes as
+  retained in053, separately from this static handoff.

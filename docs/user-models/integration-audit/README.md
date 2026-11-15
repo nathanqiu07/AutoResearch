@@ -14,6 +14,11 @@ overview. [Audit 053](../../../results/integration-audit/20261115-053/README.md)
 adds later verified developments through 052 while preserving the original index
 and its historical source cutoff.
 
+[Closed-retention schema and layout reference](../../../results/integration-audit/20261115-055/HANDOFF.md)
+documents the existing 042/044 workflow for the separately owned new inventories.
+It identifies fixed assumptions that need adaptation; it neither reconciles new
+private records nor authorizes copying.
+
 | Question | Supported conclusion | Remaining limit |
 |---|---|---|
 | Did the four controls run on matched recorded items? | All 112 cells across 28 ordered decisions have consistent provenance (024); those decisions form 14 exact content groups shown in two orders (031). | This is not preference scoring or provider-authenticated traffic. |
