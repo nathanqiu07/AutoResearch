@@ -400,6 +400,50 @@ def _one_line(text) -> str:
     return " ".join(str(text or "").split())
 
 
+def _corpus_meta(root: str) -> List[Tuple[Optional[datetime.date], str, dict]]:
+    out = []
+    for p in glob.glob(os.path.join(root, "corpus", "*.txt")):
+        date, _ = read_doc(p)
+        out.append((date, os.path.basename(p), front_matter(p)))
+    return out
+
+
+def render_pair(d: dict, alternative: str, llm: LLM, later_titles: List[str]) -> Tuple[Optional[dict], List[str]]:
+    """(context/a_text/b_text with a_text the decision taken, problems). One rewrite on failure."""
+    prompt = (PAIR_PROMPT + f"Problem: {_one_line(d.get('problem'))}\nDecision: {_one_line(d['did'])}\n"
+              f"Alternative: {_one_line(alternative)}\nReason they gave: {_one_line(d.get('stated_reason'))}\n")
+    pair, problems = None, ["no answer"]
+    for attempt in range(2):
+        out = extract_json(llm.complete(prompt + ("" if attempt == 0 else "Fix these problems: "
+                                                  + "; ".join(problems) + "\n"), temperature=0.0))
+        if not (isinstance(out, dict) and out.get("context") and out.get("did") and out.get("alternative")):
+            continue
+        pair = {"context": str(out["context"]), "a_text": str(out["did"]), "b_text": str(out["alternative"])}
+        problems = check_pair(pair, later_titles)
+        if not problems:
+            return pair, []
+    return None, problems
+
+
+def _later_titles(docs, date: str) -> List[str]:
+    return [fm.get("title", "") for d, _, fm in docs if d and d.isoformat() > date]
+
+
+def _pair_row(researcher: Researcher, d: dict, alt: dict, pair: dict, cutoff: str, seed: int, meta: dict) -> dict:
+    pair_id = digest([researcher.slug, d["decision_id"], alt["text"]])[:12]
+    did, other = pair["a_text"], pair["b_text"]
+    real_first = random.Random(f"{seed}:{pair_id}").random() < 0.5
+    return {"pair_id": pair_id, "decision_id": d["decision_id"],
+            "split": "history" if d["date"] < cutoff else "heldout",
+            "date": d["date"], "source_doc": d["doc"], "url": d["url"],
+            "decision_point": d.get("point") or "D1", "context": pair["context"],
+            "a_text": did if real_first else other, "b_text": other if real_first else did,
+            "chosen": "a" if real_first else "b", "reason": _one_line(d.get("stated_reason")),
+            "tag": d.get("tag"), "distractor_source": alt["source"],
+            "author_position": meta.get(d["doc"], {}).get("author_position"), "cutoff": cutoff,
+            "seed": seed, "prompt_versions": [CHECK_PROMPT_VERSION, PAIR_PROMPT_VERSION]}
+
+
 def write_pairs(researcher: Researcher, llm: LLM, cutoff: str, seed: int = 0) -> dict:
     """Write pairs_timesplit.jsonl from checked decisions and their distractors, then both Choice
     files. Never overwrites: the held-out set and its review must not shift under a rerun."""
@@ -407,48 +451,39 @@ def write_pairs(researcher: Researcher, llm: LLM, cutoff: str, seed: int = 0) ->
     if os.path.exists(os.path.join(root, PAIRS)):
         raise FileExistsError(f"{PAIRS} exists for {researcher.slug}; delete it to rebuild")
     distractors = {r["decision_id"]: r for r in _read_jsonl(os.path.join(root, DISTRACTORS))}
-    docs = []
-    for p in glob.glob(os.path.join(root, "corpus", "*.txt")):
-        date, _ = read_doc(p)
-        docs.append((date, os.path.basename(p), front_matter(p)))
+    docs = _corpus_meta(root)
     meta = {name: fm for _, name, fm in docs}
     pairs, failed = [], 0
     for d in _read_jsonl(os.path.join(root, DECISIONS)):
         alt = distractors.get(d["decision_id"])
         if not alt or not d.get("date"):
             continue
-        later = [fm.get("title", "") for date, _, fm in docs if date and date.isoformat() > d["date"]]
-        prompt = (PAIR_PROMPT + f"Problem: {_one_line(d.get('problem'))}\nDecision: {_one_line(d['did'])}\n"
-                  f"Alternative: {_one_line(alt['text'])}\nReason they gave: {_one_line(d.get('stated_reason'))}\n")
-        pair, problems = None, ["no answer"]
-        for attempt in range(2):
-            out = extract_json(llm.complete(prompt + ("" if attempt == 0 else "Fix these problems: "
-                                                      + "; ".join(problems) + "\n"), temperature=0.0))
-            if not (isinstance(out, dict) and out.get("context") and out.get("did") and out.get("alternative")):
-                continue
-            pair = {"context": str(out["context"]), "a_text": str(out["did"]), "b_text": str(out["alternative"])}
-            problems = check_pair(pair, later)
-            if not problems:
-                break
-        if problems:
+        pair, _ = render_pair(d, alt["text"], llm, _later_titles(docs, d["date"]))
+        if pair is None:
             failed += 1
             continue
-        pair_id = digest([researcher.slug, d["decision_id"], alt["text"]])[:12]
-        did, other = pair["a_text"], pair["b_text"]
-        real_first = random.Random(f"{seed}:{pair_id}").random() < 0.5
-        pairs.append({"pair_id": pair_id, "split": "history" if d["date"] < cutoff else "heldout",
-                      "date": d["date"], "source_doc": d["doc"], "url": d["url"],
-                      "decision_point": d.get("point") or "D1", "context": pair["context"],
-                      "a_text": did if real_first else other, "b_text": other if real_first else did,
-                      "chosen": "a" if real_first else "b", "reason": _one_line(d.get("stated_reason")),
-                      "tag": d.get("tag"), "distractor_source": alt["source"],
-                      "author_position": meta.get(d["doc"], {}).get("author_position"), "cutoff": cutoff,
-                      "prompt_versions": [CHECK_PROMPT_VERSION, PAIR_PROMPT_VERSION]})
+        pairs.append(_pair_row(researcher, d, alt, pair, cutoff, seed, meta))
     _write_jsonl(os.path.join(root, PAIRS), pairs)
     write_choice_files(researcher)
     return {"pairs": len(pairs), "failed_checks": failed, "cutoff": cutoff,
             "history": sum(p["split"] == "history" for p in pairs),
             "heldout": sum(p["split"] == "heldout" for p in pairs)}
+
+
+def regenerate_pair(researcher: Researcher, pair: dict, llm: LLM, client) -> Optional[dict]:
+    """The pair rebuilt with the next distractor source after its current one, or None."""
+    d = next(r for r in _read_jsonl(os.path.join(researcher.root, DECISIONS))
+             if r["decision_id"] == pair["decision_id"])
+    alt = next_distractor(d, researcher, llm, client, pair["cutoff"], after=pair["distractor_source"])
+    if alt is None:
+        return None
+    docs = _corpus_meta(researcher.root)
+    rendered, _ = render_pair(d, alt["text"], llm, _later_titles(docs, d["date"]))
+    if rendered is None:
+        return None
+    row = _pair_row(researcher, d, alt, rendered, pair["cutoff"], pair.get("seed", 0),
+                    {name: fm for _, name, fm in docs})
+    return dict(row, regenerated_from=pair["pair_id"])
 
 
 def write_choice_files(researcher: Researcher) -> None:
