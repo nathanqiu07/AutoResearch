@@ -14,6 +14,7 @@ Not here: `runs/` (gitignored run outputs, e.g. `runs/<run_id>/decisions.jsonl`)
 | Folder | Holds | Raw or derived | Written by | WS | Use and provenance |
 |---|---|---|---|---|---|
 | `researchers/` | One folder per person (layout below), plus `tracks.json` mapping the personal (P) and public (S) tracks to a slug, and `agreement.jsonl`, the personal-track item gate: a blind Sonnet 5.5 judge's 10 votes per trade-off item (5 per option order), keyed by question and pole texts, shared by every person (derived, paid; `trackp gate`). An item with more than 80% of votes for either option is never shown | mixed | `trackp`, `timesplit`, `track_eval`, `scripts/make_demo_data.py` | B | Consent per person in `<slug>/CONSENT.md`; no answers before it is ticked |
+| `taste_qa/` | `questions.jsonl`, the 24 free-text taste questions, each tagged with its section and checklist item in Bean et al. 2025 (arXiv 2511.04703) §3; one question per section is held out by hash | raw (hand-written) | by hand | B | No tester material (no Hobbhahn/Apollo); answers live in `researchers/<slug>/qa.jsonl` |
 | `trackp/` | `tradeoffs.jsonl`, the personal-track trade-off bank | raw (hand-written) | by hand | B | Sources must not include anything by a tester (no Hobbhahn/Apollo material) |
 | `prefdata/` | `prism-splits.json`, `prism-splits-removed.json` (split manifest; the data goes to `runs/prefdata/`) | derived | `python3 -m autoresearch.taste prepare` | A | PRISM dataset |
 | `benchmarks/` | EvalAwareBench split and convert report, EvalDetect probes and provenance | derived (downloads in gitignored `raw/`) | `scripts/convert_evalawarebench.py` | C1 | Downloads are untrusted; see its README |
@@ -33,6 +34,7 @@ The same layout for every person. Track: P = personal (`trackp`), S = public (`t
 | `seed_choices.jsonl` | The person's answers to the trade-off questionnaire | raw (human) | `trackp answer` / `record`, Profile Studio (through `trackp.record`) | P |
 | `labels.jsonl` | The person's choices at the loop's decisions D1–D6 | raw (human) | `trackp label` | P |
 | `recheck.jsonl` | Re-asked items, for the noise ceiling | raw (human) | `trackp recheck` | P |
+| `qa.jsonl` | The person's free-text answers to `taste_qa/questions.jsonl`, word for word | raw (human) | `qa fill` | P |
 | `seed_pairs.jsonl` | Questionnaire items built from `trackp/tradeoffs.jsonl` | derived (append-only: answers point at its ids) | `trackp seed-pairs` | P |
 | `history.jsonl` | Choices the user model was fitted on | derived | `trackp` fit | P |
 | `identity.json` | Who the person is, for the harvest | raw | `timesplit harvest` | S |
