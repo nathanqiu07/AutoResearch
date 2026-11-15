@@ -85,7 +85,11 @@ def validate_record(rec: dict) -> List[str]:
 
 
 def code_version(cwd: Optional[str] = None) -> str:
-    """Commit hash of the code on disk (with -dirty if modified), for every record."""
+    """Commit hash of the code on disk (with -dirty if modified), for every record.
+    AUTORESEARCH_CODE_VERSION overrides it where there is no git checkout (Modal
+    images pin it at build time, modal_app.py)."""
+    if os.environ.get("AUTORESEARCH_CODE_VERSION"):
+        return os.environ["AUTORESEARCH_CODE_VERSION"]
     try:
         out = subprocess.run(["git", "describe", "--always", "--dirty", "--abbrev=12"], capture_output=True,
                              text=True, timeout=10, cwd=cwd or os.path.dirname(os.path.abspath(__file__)))
