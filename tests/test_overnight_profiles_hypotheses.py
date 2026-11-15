@@ -348,6 +348,17 @@ class HypothesesBuilderTests(unittest.TestCase):
         citation = profile.content['hypotheses'][0]['statement']['sources'][0]
         self.assertEqual((citation['start'], citation['end']), (3, 5))
 
+    def test_partial_resolution_evidence_is_kept_without_partial_success(self):
+        response = self.hypotheses([self.target, self.target])
+        response['hypotheses'][1]['statement']['sources'][0]['quote'] = 'Absent exact quote.'
+        profile, _ = self.run_builder('P8', response, [self.target])
+        self.assertEqual(profile.status, 'invalid')
+        self.assertEqual(profile.error_code, 'quote_absent')
+        self.assertEqual([record['status'] for record in profile.fit_usage['quote_resolution']['records']],
+                         ['resolved', 'invalid'])
+        self.assertEqual(profile.content, response)
+        self.assertNotIn('start', profile.content['hypotheses'][0]['statement']['sources'][0])
+
 
 if __name__ == '__main__':
     unittest.main()
