@@ -558,3 +558,27 @@ class SpendCapTests(unittest.TestCase):
         rep = r.run()
         self.assertTrue(any(e.get("event") == "budget_exhausted" for e in rep["log"]))
         self.assertEqual(rep["findings"], [])
+
+
+class FailureTests(unittest.TestCase):
+    def test_llm_failures_end_the_search_but_not_the_report(self):
+        class Flaky(Proposer):
+            n = 0
+
+            def propose(self, *a, **k):
+                Flaky.n += 1
+                if Flaky.n >= 3:
+                    raise RuntimeError("claude CLI error: You've hit your 5-hour limit")
+                return super().propose(*a, **k)
+
+            def explain(self, finding, best):
+                raise RuntimeError("limit")
+
+            def draft_claims(self, findings, kinds):
+                raise RuntimeError("limit")
+        rep = researcher(ResearchConfig(iterations=6), proposer=Flaky(OfflineLLM(), None, random.Random(0))).run()
+        self.assertIn("5-hour limit", rep["aborted"])
+        self.assertEqual({f["iter"] for f in rep["findings"]}, {1, 2})
+        self.assertEqual(rep["claims"]["source"], "derived from findings")
+        self.assertTrue(any(e["event"] == "explain_error" for e in rep["log"]))
+        self.assertIn("Run aborted early", open(write_report(rep, tempfile.mkdtemp())).read())

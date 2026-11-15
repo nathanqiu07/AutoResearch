@@ -226,6 +226,7 @@ class OpenResearcher:
         self._d4_refuted_logged: set = set()
         self._taste_deferred: set = set()
         self.drift_events: List[dict] = []
+        self.aborted: Optional[str] = None
         if screen_measurer is not None and (cfg.items_per_iter or cfg.allocation == "uniform"):
             raise ValueError("a screening target needs allocation halving or market, and single-item mode")
         self.screen_ms = screen_measurer
@@ -504,7 +505,12 @@ class OpenResearcher:
             self.log.append({"event": "abandoned_direction", "iter": it, "category": cat})
 
     def _d5(self, it, finding, best_summary):
-        exps, ml = self.pr.explain(finding, best_summary)
+        try:
+            exps, ml = self.pr.explain(finding, best_summary)
+        except Exception as e:   # the reading is auxiliary: fall back to the rule-based one and say so
+            from .ideas import offline_explanations
+            self.log.append({"event": "explain_error", "iter": it, "error": str(e)[:200]})
+            exps, ml = offline_explanations(finding, best_summary)
         context = (f"Iteration {it}: how to read the result of {finding['move'].split(':')[0]} "
                    f"[{finding['category']}] {finding['text'][:120]}")
         chosen, adv = self._decide(context, exps, ml, decisive=False)
@@ -513,7 +519,11 @@ class OpenResearcher:
         finding["interpretation"] = exps[chosen]
 
     def _d6(self) -> dict:
-        drafted = self.pr.draft_claims(self.findings, CLAIM_KINDS) if self.cfg.claims else None
+        try:
+            drafted = self.pr.draft_claims(self.findings, CLAIM_KINDS) if self.cfg.claims else None
+        except Exception as e:
+            self.log.append({"event": "claims_error", "error": str(e)[:200]})
+            drafted = None
         source = "drafted"
         if not drafted:
             drafted, source = candidate_claims(self.findings), "derived from findings"
@@ -542,7 +552,11 @@ class OpenResearcher:
         env = next((s.env for s in ev.samples if s.behavior != "error" and s.env.get("user")), None)
         if not env:
             return None
-        keep, why = self.pr.env_setting_check(env, self.sc.setting)
+        try:
+            keep, why = self.pr.env_setting_check(env, self.sc.setting)
+        except Exception as e:
+            self.log.append({"event": "setting_check_error", "error": str(e)[:200]})
+            return None
         return None if keep else (why or "left the fixed setting")
 
     # ---------- main loop ----------
@@ -561,151 +575,155 @@ class OpenResearcher:
         self._anytime(0, best)
         tried = set()
         deferred: List[Intervention] = []   # strong runners-up, re-tested against the new best
-        for it in range(1, self.cfg.iterations + 1):
-            if self._exhausted():
-                self.log.append({"event": "budget_exhausted", "iter": it})
-                break
-            if it == 1 or it % 3 == 0:
-                self._discover()
-            cands = deferred + self.pr.propose(self.sc.goal, self.sc.probe, best.interventions, tried,
-                                               self.findings, self.web_ideas, self.cfg.proposals,
-                                               setting=self.sc.setting)
-            if self.contrarian:
-                seen = {c.id for c in cands}
-                cands += [c for c in self.contrarian.propose(self.sc.goal, self.sc.probe, best.interventions, tried,
-                                                             self.findings, self.web_ideas, self.cfg.contrarian,
-                                                             setting=self.sc.setting) if c.id not in seen]
-            cands = [c for c in cands if c.category not in self.abandoned]
-            deferred = []
-            # candidate designs: add one intervention; occasionally ablate one
-            designs = [(f"add:{c.id}", best.interventions + [c], c) for c in cands]
-            if len(best.interventions) >= 2 and self.rng.random() < 0.3:
-                drop = self.rng.choice(best.interventions)
-                designs.append((f"remove:{drop.id}", [i for i in best.interventions if i is not drop], drop))
-            batch = self._batch()
-            ref = best
-            if self.pool and designs:
-                # multi-item: the current best is re-measured on this iteration's items, so comparisons are paired
-                ref = self._measure(best.interventions, batch)
-                self.log.append({"event": "reference", "iter": it, **ref.summary()})
-            um_top_i = self._d1(it, designs, best)
-            tested_cats = {f["category"] for f in self.findings}
-            pri = {}
-            for d in designs:
-                pri[d[0]] = self.priority(d[0], d[2], d[2].category not in tested_cats)
-            ranked = sorted(designs, key=lambda d: -pri[d[0]]["total"])
-            gated = [d for d in ranked if not (d[0].startswith("add") and self._refuted(d[2]))]
-            for d in ranked:
-                if d not in gated:
-                    self.log.append({"event": "gated_refuted_category", "iter": it, "idea": d[2].text,
-                                     "category": d[2].category})
-                    self._record_d4_refuted(it, d[2])
-            alloc, funded = self._allocate(it, gated, batch)
-            chosen = [(m, ints, i) for m, ints, i, _ in alloc]
-            if not chosen:
-                self._settle(it, {}, deferred)
-                self._anytime(it, best)
-                continue
-            tried |= {r["move"][4:] for r in self.screened_out if r["iter"] == it and r["move"].startswith("add:")}
-            self._record_d1(it, funded if self.market else ranked, chosen, pri,
-                            designs[um_top_i] if um_top_i is not None else None)
-            self._record_d2(it, len(chosen), batch)
-            evals = []
-            for move, ints, idea, screen_ev in alloc:
-                tried.add(idea.id)
-                if screen_ev is not None:   # screening samples on the dev target count toward the full measurement
-                    ev = screen_ev.merged(self._measure(ints, batch, n=self.cfg.samples - self.cfg.screen_samples))
-                else:
-                    ev = self._measure(ints, batch)
-                p, delta, per_item = self._compare(ev, ref, seed=it)
-                summ = ev.summary()
-                drift = self._setting_drift(ev)
-                if drift:
-                    ev_log = {"event": "setting_drift", "iter": it, "idea": idea.text, "category": idea.category,
-                              "why": drift}
-                    self.log.append(ev_log)
-                    self.drift_events.append(ev_log)
-                evals.append((move, ev, idea, p, delta, summ, per_item, drift))
-                if self.advisor:
-                    self.cal.add(self._tscore.get(move, 0.0), delta)
-                self.log.append({"event": "evaluated", "iter": it, "move": move, "idea": idea.to_dict(),
-                                 "p_better": p, "delta": delta, **summ,
-                                 **({"per_item_delta": per_item} if per_item else {})})
-            top = max(evals, key=lambda e: e[3])
-            best_before = best.summary()
-            actions = {id(e): self._d3(it, e[0], e[2], e[3], e[4], e[5], e is top, e[7]) for e in evals}
-            status = None
-            if actions[id(top)] == ACCEPT:
-                move, ev, idea = top[0], top[1], top[2]
-                conf_batch = self._batch()
-                conf = self._measure(ev.interventions, conf_batch)   # fresh samples: held-out confirmation
-                conf_ref = best if self.pool is None else self._measure(best.interventions, conf_batch)
-                pc, _, _ = self._compare(conf, conf_ref, seed=it + 999)
-                self.log.append({"event": "confirmation", "iter": it, "idea": idea.text, "p_better": pc,
-                                 **conf.summary()})
-                if pc >= self.cfg.confirm_p:
-                    status = "validated"
-                    best = ev.merged(conf)
-                else:
-                    status = "unconfirmed"
-            top_finding = None
-            outcomes: Dict[str, bool] = {}   # market settlement: validated or not, per measured design
-            for e in evals:
-                mv, ev_, i, pp, dd, ss, per_item, drift = e
-                act = actions[id(e)]
-                if e is top and status is not None:
-                    st = status
-                elif act == DEFER:
-                    st = "deferred"              # re-test against the (possibly new) best next iteration
-                    deferred.append(i)
-                    tried.discard(i.id)
-                elif drift:
-                    st = "drifted"
-                elif pp >= self.cfg.accept_p and ss["validity"] < self.cfg.min_validity:
-                    st = "invalid"               # improved awareness but broke the probe: proxy gaming
-                else:
-                    st = "rejected"
-                # belief update about the category. add: validated -> helps,
-                # clearly worse or probe-breaking -> hurts. remove: removal
-                # validated -> the category hurt; removal clearly worse -> it helped.
-                # A drifted environment says nothing about the category.
-                verdict = None
-                if st != "drifted":
-                    if mv.startswith("add"):
-                        verdict = True if st == "validated" else (False if (pp <= 0.2 or st == "invalid") else None)
+        try:
+            for it in range(1, self.cfg.iterations + 1):
+                if self._exhausted():
+                    self.log.append({"event": "budget_exhausted", "iter": it})
+                    break
+                if it == 1 or it % 3 == 0:
+                    self._discover()
+                cands = deferred + self.pr.propose(self.sc.goal, self.sc.probe, best.interventions, tried,
+                                                   self.findings, self.web_ideas, self.cfg.proposals,
+                                                   setting=self.sc.setting)
+                if self.contrarian:
+                    seen = {c.id for c in cands}
+                    cands += [c for c in self.contrarian.propose(self.sc.goal, self.sc.probe, best.interventions, tried,
+                                                                 self.findings, self.web_ideas, self.cfg.contrarian,
+                                                                 setting=self.sc.setting) if c.id not in seen]
+                cands = [c for c in cands if c.category not in self.abandoned]
+                deferred = []
+                # candidate designs: add one intervention; occasionally ablate one
+                designs = [(f"add:{c.id}", best.interventions + [c], c) for c in cands]
+                if len(best.interventions) >= 2 and self.rng.random() < 0.3:
+                    drop = self.rng.choice(best.interventions)
+                    designs.append((f"remove:{drop.id}", [i for i in best.interventions if i is not drop], drop))
+                batch = self._batch()
+                ref = best
+                if self.pool and designs:
+                    # multi-item: the current best is re-measured on this iteration's items, so comparisons are paired
+                    ref = self._measure(best.interventions, batch)
+                    self.log.append({"event": "reference", "iter": it, **ref.summary()})
+                um_top_i = self._d1(it, designs, best)
+                tested_cats = {f["category"] for f in self.findings}
+                pri = {}
+                for d in designs:
+                    pri[d[0]] = self.priority(d[0], d[2], d[2].category not in tested_cats)
+                ranked = sorted(designs, key=lambda d: -pri[d[0]]["total"])
+                gated = [d for d in ranked if not (d[0].startswith("add") and self._refuted(d[2]))]
+                for d in ranked:
+                    if d not in gated:
+                        self.log.append({"event": "gated_refuted_category", "iter": it, "idea": d[2].text,
+                                         "category": d[2].category})
+                        self._record_d4_refuted(it, d[2])
+                alloc, funded = self._allocate(it, gated, batch)
+                chosen = [(m, ints, i) for m, ints, i, _ in alloc]
+                if not chosen:
+                    self._settle(it, {}, deferred)
+                    self._anytime(it, best)
+                    continue
+                tried |= {r["move"][4:] for r in self.screened_out if r["iter"] == it and r["move"].startswith("add:")}
+                self._record_d1(it, funded if self.market else ranked, chosen, pri,
+                                designs[um_top_i] if um_top_i is not None else None)
+                self._record_d2(it, len(chosen), batch)
+                evals = []
+                for move, ints, idea, screen_ev in alloc:
+                    tried.add(idea.id)
+                    if screen_ev is not None:   # screening samples on the dev target count toward the full measurement
+                        ev = screen_ev.merged(self._measure(ints, batch, n=self.cfg.samples - self.cfg.screen_samples))
                     else:
-                        verdict = False if st == "validated" else (True if pp <= 0.2 else None)
-                if verdict is not None:
-                    self.mem.update(self._key(i.category), verdict,
-                                    f"On {self.sc.name}, '{i.category}' interventions improve faithful unawareness")
-                finding = {"id": f"f{len(self.findings) + 1}", "iter": it, "move": mv, "text": i.text,
-                           "category": i.category, "origin": i.origin, "source_url": i.source_url, "status": st,
-                           "delta": dd, "p_better": pp, "ci90": ss["ci90"], "validity": ss["validity"],
-                           "awareness": ss["awareness"], "n": ss["n"], "taste": self._tscore.get(mv, 0.0)}
-                if per_item:
-                    finding["per_item_delta"] = per_item
-                    finding["ci90_paired"] = pooled_ci(per_item)
-                if drift:
-                    finding["drift"] = drift
-                self.findings.append(finding)
-                if e is top:
-                    top_finding = finding
-                if st != "deferred":
-                    outcomes[mv] = st == "validated"
-                # mixed = neither validated nor clearly worse: failed confirmation, or inconclusive
-                if mv.startswith("add") and (st == "unconfirmed" or (st == "rejected" and HURTS_P < pp < self.cfg.accept_p)):
-                    self._mixed[i.category] = self._mixed.get(i.category, 0) + 1
-                if self.shared:
-                    from ..integrations.shared_memory import format_fact
-                    self.shared.write("experimenter", format_fact(
-                        "OUTCOME", task=self.sc.name, change=i.category, delta=round(dd, 4),
-                        valid=ss["validity"] >= self.cfg.min_validity, status=st, run=self.run_id))
-            if self.cfg.explain and top_finding is not None:
-                self._d5(it, top_finding, best_before)
-            for cat in sorted({e[2].category for e in evals if e[0].startswith("add")}):
-                self._d4_mixed(it, cat)
-            self._settle(it, outcomes, deferred)
-            self._anytime(it, best)
+                        ev = self._measure(ints, batch)
+                    p, delta, per_item = self._compare(ev, ref, seed=it)
+                    summ = ev.summary()
+                    drift = self._setting_drift(ev)
+                    if drift:
+                        ev_log = {"event": "setting_drift", "iter": it, "idea": idea.text, "category": idea.category,
+                                  "why": drift}
+                        self.log.append(ev_log)
+                        self.drift_events.append(ev_log)
+                    evals.append((move, ev, idea, p, delta, summ, per_item, drift))
+                    if self.advisor:
+                        self.cal.add(self._tscore.get(move, 0.0), delta)
+                    self.log.append({"event": "evaluated", "iter": it, "move": move, "idea": idea.to_dict(),
+                                     "p_better": p, "delta": delta, **summ,
+                                     **({"per_item_delta": per_item} if per_item else {})})
+                top = max(evals, key=lambda e: e[3])
+                best_before = best.summary()
+                actions = {id(e): self._d3(it, e[0], e[2], e[3], e[4], e[5], e is top, e[7]) for e in evals}
+                status = None
+                if actions[id(top)] == ACCEPT:
+                    move, ev, idea = top[0], top[1], top[2]
+                    conf_batch = self._batch()
+                    conf = self._measure(ev.interventions, conf_batch)   # fresh samples: held-out confirmation
+                    conf_ref = best if self.pool is None else self._measure(best.interventions, conf_batch)
+                    pc, _, _ = self._compare(conf, conf_ref, seed=it + 999)
+                    self.log.append({"event": "confirmation", "iter": it, "idea": idea.text, "p_better": pc,
+                                     **conf.summary()})
+                    if pc >= self.cfg.confirm_p:
+                        status = "validated"
+                        best = ev.merged(conf)
+                    else:
+                        status = "unconfirmed"
+                top_finding = None
+                outcomes: Dict[str, bool] = {}   # market settlement: validated or not, per measured design
+                for e in evals:
+                    mv, ev_, i, pp, dd, ss, per_item, drift = e
+                    act = actions[id(e)]
+                    if e is top and status is not None:
+                        st = status
+                    elif act == DEFER:
+                        st = "deferred"              # re-test against the (possibly new) best next iteration
+                        deferred.append(i)
+                        tried.discard(i.id)
+                    elif drift:
+                        st = "drifted"
+                    elif pp >= self.cfg.accept_p and ss["validity"] < self.cfg.min_validity:
+                        st = "invalid"               # improved awareness but broke the probe: proxy gaming
+                    else:
+                        st = "rejected"
+                    # belief update about the category. add: validated -> helps,
+                    # clearly worse or probe-breaking -> hurts. remove: removal
+                    # validated -> the category hurt; removal clearly worse -> it helped.
+                    # A drifted environment says nothing about the category.
+                    verdict = None
+                    if st != "drifted":
+                        if mv.startswith("add"):
+                            verdict = True if st == "validated" else (False if (pp <= 0.2 or st == "invalid") else None)
+                        else:
+                            verdict = False if st == "validated" else (True if pp <= 0.2 else None)
+                    if verdict is not None:
+                        self.mem.update(self._key(i.category), verdict,
+                                        f"On {self.sc.name}, '{i.category}' interventions improve faithful unawareness")
+                    finding = {"id": f"f{len(self.findings) + 1}", "iter": it, "move": mv, "text": i.text,
+                               "category": i.category, "origin": i.origin, "source_url": i.source_url, "status": st,
+                               "delta": dd, "p_better": pp, "ci90": ss["ci90"], "validity": ss["validity"],
+                               "awareness": ss["awareness"], "n": ss["n"], "taste": self._tscore.get(mv, 0.0)}
+                    if per_item:
+                        finding["per_item_delta"] = per_item
+                        finding["ci90_paired"] = pooled_ci(per_item)
+                    if drift:
+                        finding["drift"] = drift
+                    self.findings.append(finding)
+                    if e is top:
+                        top_finding = finding
+                    if st != "deferred":
+                        outcomes[mv] = st == "validated"
+                    # mixed = neither validated nor clearly worse: failed confirmation, or inconclusive
+                    if mv.startswith("add") and (st == "unconfirmed" or (st == "rejected" and HURTS_P < pp < self.cfg.accept_p)):
+                        self._mixed[i.category] = self._mixed.get(i.category, 0) + 1
+                    if self.shared:
+                        from ..integrations.shared_memory import format_fact
+                        self.shared.write("experimenter", format_fact(
+                            "OUTCOME", task=self.sc.name, change=i.category, delta=round(dd, 4),
+                            valid=ss["validity"] >= self.cfg.min_validity, status=st, run=self.run_id))
+                if self.cfg.explain and top_finding is not None:
+                    self._d5(it, top_finding, best_before)
+                for cat in sorted({e[2].category for e in evals if e[0].startswith("add")}):
+                    self._d4_mixed(it, cat)
+                self._settle(it, outcomes, deferred)
+                self._anytime(it, best)
+        except Exception as e:   # an LLM/backend failure (e.g. a usage limit) ends the search, not the report
+            self.aborted = f"{type(e).__name__}: {str(e)[:300]}"
+            self.log.append({"event": "aborted", "error": self.aborted})
         if self.market:
             self.market.withdraw(it=None)   # bids still open at the end (deferred, or the budget ran out)
         self.mem.flush()
@@ -728,6 +746,7 @@ class OpenResearcher:
         rep["measurer_warnings"] = list(self.pool.warnings if self.pool else getattr(self.ms, "warnings", []))
         rep["setting_gate_refusals"] = getattr(self.pr, "gated", [])
         rep["setting_drift"] = self.drift_events
+        rep["aborted"] = self.aborted
         rep["allocation"] = {"mode": self.cfg.allocation, "samples": self.samples_used,
                              "screen_samples": self.screen_samples_used,
                              "screening_target": self.screen_ms is not None, "screened_out": self.screened_out}
@@ -896,6 +915,9 @@ def write_report(rep: dict, out_dir: str) -> str:
         for who in sorted(set(ra.get("baseline", {})) | set(ra.get("best", {}))):
             b0, b1 = ra.get("baseline", {}).get(who, {}), ra.get("best", {}).get(who, {})
             L.append(f"| {who} | {fmt(b0.get('auroc'))} | {fmt(b1.get('auroc'))} | {b1.get('n_env', '-')} | {b1.get('n_real', '-')} |")
+    if rep.get("aborted"):
+        L += ["", "## Run aborted early", "", f"The search stopped before its last iteration: {rep['aborted']}. "
+              "Everything above reflects only the iterations that completed."]
     if rep.get("measurer_warnings"):
         L += ["", f"## Measurement warnings (mode={rep.get('mode')})", ""] + [f"- {w}" for w in rep["measurer_warnings"]]
     if rep.get("setting_gate_refusals"):
