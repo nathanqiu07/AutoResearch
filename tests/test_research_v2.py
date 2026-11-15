@@ -232,3 +232,57 @@ class ScorerTests(unittest.TestCase):
             self.assertNotIn("thinking", sent[1])
             plain = L.AnthropicLLM("claude-sonnet-4-6", Budget())
             self.assertEqual(plain.complete_with_reasoning("q")[0], "")
+
+    def test_openai_target_requests_and_parses_reasoning_summary_and_counts_cost(self):
+        from unittest import mock
+        from autoresearch import llm as L
+        sent = []
+
+        class Resp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self):
+                return json.dumps({"status": "completed", "output": [
+                    {"type": "reasoning", "summary": [{"type": "summary_text", "text": "looks like an eval"}]},
+                    {"type": "message", "content": [{"type": "output_text", "text": "done"}]}],
+                    "usage": {"input_tokens": 1_000_000, "output_tokens": 1_000_000}}).encode()
+
+        def fake_urlopen(req, timeout=0):
+            sent.append(json.loads(req.data))
+            return Resp()
+        env = {"OPENAI_API_KEY": "test-key", "OPENAI_PRICE_PER_MTOK": "2,8"}
+        with mock.patch.dict(os.environ, env), mock.patch.object(L.urllib.request, "urlopen", fake_urlopen):
+            b = Budget()
+            m = L.get_llm("offline", "openai:some-model+thinking", b)     # the spec overrides --llm
+            self.assertEqual(m.label, "openai:some-model+thinking")
+            self.assertEqual(m.complete_with_reasoning("q", system="s"), ("looks like an eval", "done"))
+            self.assertEqual(sent[0]["reasoning"], {"effort": "medium", "summary": "auto"})
+            self.assertEqual((sent[0]["instructions"], "temperature" in sent[0]), ("s", False))
+            self.assertAlmostEqual(b.cost_usd, 10.0)
+            m.complete("probe")
+            self.assertNotIn("reasoning", sent[1])
+        with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+            os.environ.pop("OPENAI_PRICE_PER_MTOK", None)
+            with self.assertRaises(RuntimeError):                         # unknown price: refuse to start
+                L.get_llm("offline", "openai:some-model", Budget())
+
+    def test_openai_refusal_or_incomplete_reply_is_an_error(self):
+        from autoresearch.llm import parse_openai_responses
+        with self.assertRaises(RuntimeError):
+            parse_openai_responses({"status": "incomplete", "incomplete_details": {"reason": "max_output_tokens"}})
+        with self.assertRaises(RuntimeError):
+            parse_openai_responses({"status": "completed", "output": [
+                {"type": "message", "content": [{"type": "refusal", "refusal": "no"}]}]})
+
+    def test_anthropic_api_calls_count_toward_the_spend_cap(self):
+        from autoresearch.llm import list_price_usd
+        self.assertAlmostEqual(list_price_usd("claude-sonnet-4-6", 1_000_000, 1_000_000), 18.0)
+        self.assertEqual(list_price_usd("unknown-model", 10, 10), 0.0)
+
+    def test_probe_sets_resolve_across_backends_and_thinking_suffix(self):
+        from autoresearch.research.measure import probe_set_key
+        sets = {"default": ["d {transcript}"], "anthropic:claude-sonnet-4-6": ["a {transcript}"],
+                "openai-compat:openai/gpt-x": ["o {transcript}"]}
+        self.assertEqual(probe_set_key(sets, "anthropic:claude-sonnet-4-6+thinking"), "anthropic:claude-sonnet-4-6")
+        self.assertEqual(probe_set_key(sets, "openai:gpt-x+thinking"), "openai-compat:openai/gpt-x")
+        self.assertEqual(probe_set_key(sets, "openai:other"), "default")

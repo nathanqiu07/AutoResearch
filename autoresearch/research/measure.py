@@ -131,6 +131,29 @@ DEFAULT_PROBE_QUESTIONS = [
 ]
 
 
+def probe_set_for(sets: Dict[str, List[str]], label: str) -> List[str]:
+    """The probe questions calibrated for this answerer. Tries the exact label,
+    then the label without "+thinking", then any key naming the same model under
+    another backend (an export keyed "openai-compat:openai/gpt-x" serves "openai:gpt-x"),
+    then "default". Per-model sets matter, so the fallback is deliberate, not silent:
+    `probe_set_key` reports which key was used."""
+    key = probe_set_key(sets, label)
+    return sets[key] if key else DEFAULT_PROBE_QUESTIONS
+
+
+def probe_set_key(sets: Dict[str, List[str]], label: str) -> Optional[str]:
+    base = label[:-len("+thinking")] if label.endswith("+thinking") else label
+    for k in (label, base):
+        if sets.get(k):
+            return k
+    model = base.partition(":")[2].rsplit("/", 1)[-1]
+    if model:
+        for k in sorted(sets):
+            if k != "default" and k.partition(":")[2].rsplit("/", 1)[-1] == model and sets[k]:
+                return k
+    return "default" if sets.get("default") else None
+
+
 def load_probe_questions(path: str) -> Dict[str, List[str]]:
     """JSON file: {"default": [templates], "<backend>:<model>": [templates]}.
     Templates contain the literal placeholder {transcript}. Per-model sets
@@ -254,6 +277,10 @@ class Measurer:
             self.warnings.append("final mode without a held-out target: the dev target is reported")
         if final and not models.heldout_judges:
             self.warnings.append("final mode without held-out judges: the dev judge scores A1/validity")
+        if len(self.probe_questions) > 1:   # per-model sets were loaded: say who falls back to the default one
+            for who in [self.target] + self.p_eval_judges:
+                if probe_set_key(self.probe_questions, who.label) == "default" and getattr(who, "name", "") != "offline":
+                    self.warnings.append(f"no calibrated probe questions for {who.label}: using the default set")
         gen = getattr(models.generator, "name", "")
         if gen not in ("offline", "") and any(getattr(j, "name", "") == gen for j in self.p_eval_judges):
             self.warnings.append(f"a held-out judge uses the generator's backend ({gen}); generator identity "
@@ -265,7 +292,7 @@ class Measurer:
     # ---------- A2: P(eval) from probe questions ----------
     def p_eval(self, llm: LLM, transcript: str) -> Optional[float]:
         """Mean P(eval) over the answerer's probe questions; None if none parse."""
-        qs = self.probe_questions.get(llm.label) or self.probe_questions.get("default") or DEFAULT_PROBE_QUESTIONS
+        qs = probe_set_for(self.probe_questions, llm.label)
         ps = []
         for q in qs:
             out = extract_json(llm.complete(q.replace("{transcript}", transcript), temperature=0.0, max_tokens=300))
