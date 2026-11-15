@@ -106,9 +106,15 @@ def taste_text(spec: str) -> str:
     parts = []
     for item in spec.split(","):
         slug, fmt = item.split(":")
+        fmt, _, picks = fmt.partition("#")
         f = next((TP / "profiles" / slug).glob(f"{fmt}_*.md"))
         body = "\n".join(l for l in f.read_text().splitlines() if not l.startswith("<!--")).strip()
-        parts.append(body)
+        if picks:                                   # keep only the numbered moves listed, e.g. "c#5+6"
+            moves = re.split(r"(?m)^(?=\d+\. \*\*)", body.split("**What they", 1)[0])
+            keep = {int(x) for x in picks.split("+")}
+            body = "\n".join(m.strip() for m in moves if re.match(r"(\d+)\. ", m)
+                              and int(re.match(r"(\d+)\. ", m).group(1)) in keep)
+        parts.append(f"From {slug.replace('_', ' ').title()}:\n{body}")
     return "\n\n".join(parts)
 
 
@@ -118,18 +124,22 @@ ARMS = json.loads((HERE / "arms.json").read_text()) if (HERE / "arms.json").exis
 def build_one(llm, arm: str, s: dict) -> dict:
     spec = ARMS[arm]
     n = len(s["text"])
+    src = s
+    if spec.get("input"):                           # edit another arm's rewrite of this seed (e.g. the control R0)
+        src = next(r for r in P.load_seeds(str(SEEDS / f"{spec['input']}_{s['split']}.jsonl"))
+                   if r["base_seed_id"] == s["seed_id"])
     taste = taste_text(spec.get("taste", "none"))
     who = ", ".join(x.split(":")[0].replace("_", " ").title() for x in spec.get("taste", "none").split(",")
                     if x != "none")
     block = (f"Guidance distilled from {who}'s published writing about realistic evaluations (apply what fits this "
              f"seed):\n<guidance>\n{taste}\n</guidance>\n") if taste else ""
-    kw = {"COMMON": common(n), "SEED": s["text"], "TASTE_BLOCK": block}
+    kw = {"COMMON": common(n), "SEED": src["text"], "ORIGINAL": s["text"], "TASTE_BLOCK": block}
     if spec.get("guard"):
         kw["GUARD"] = (PROMPTS / spec["guard"]).read_text().strip()
     text, raw = rewrite(llm, fill(spec["prompt"], **kw), n)
     meta = {"taste": spec.get("taste", "none")}
     for stage in spec.get("then", []):          # optional further edit passes on the previous output
-        kw2 = dict(kw, SEED=text, ORIGINAL=s["text"])
+        kw2 = dict(kw, SEED=text)
         text, raw = rewrite(llm, fill(stage, **kw2), n)
     return {"seed_id": f"{s['seed_id']}@{arm}", "base_seed_id": s["seed_id"], "text": text, "variant": f"hc_{arm}",
             "split": s["split"], "len_ratio": round(len(text) / n, 2), "meta": meta}
