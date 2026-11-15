@@ -17,11 +17,11 @@ loop. Details, commands and step status: [docs/pipeline.md](docs/pipeline.md).
 
 **PRISM: pick the method**
 
-![PRISM pipeline: download and split 723 users, fit methods M0 to M7, and pick a method in E1.](docs/pipeline/prism.svg)
+![PRISM pipeline: download PRISM choices, fit methods M0 to M7, and pick a method in E1.](docs/pipeline/prism.svg)
 
 **Personal track: each team member**
 
-![Personal-track pipeline: register by name, make seed items, collect and recheck choices, hold out a test set, run E2, fit usermodel.json.](docs/pipeline/personal.svg)
+![Personal-track pipeline: register by name, make seed items, collect choices, hold out a test set, run E2, fit usermodel.json.](docs/pipeline/personal.svg)
 
 **Public track: published researchers**
 

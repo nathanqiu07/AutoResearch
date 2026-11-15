@@ -13,15 +13,15 @@ Interactive version: [claude.ai artifact](https://claude.ai/artifact/F2kpYLDpiEt
 | Whose taste | 723 crowd users | Each team member (Ethan Cai so far) | Marius Hobbhahn |
 | Where choices come from | Released chatbot preference data | They answer pairs and label loop decisions | Decisions extracted from their dated writing |
 | Held-out test | Final-test users, scored once | 20% of seed pairs + labels after a cutoff | Decisions after date T |
-| Experiment | E1: proof of concept | E2 vs M1 and the noise ceiling | E2 vs two M1 arms, order-paired |
+| Experiment | E1: proof of concept | E2 vs M0 and M1 | E2 vs two M1 arms, order-paired |
 | Output | Selected method | `usermodel.json` | `usermodel.json` |
-| Furthest step run | 1–2 (data ready) | 3 (Ethan: 21 of 21 seed answers) | 1 (harvest) |
+| Furthest step run | 1 (data ready) | 3 (Ethan: 21 of 21 seed answers) | 1 (harvest) |
 
 ## PRISM: pick the method
 
 Choices from many users decide which of the eight user-model methods to use. Owned by WS A. Commands run as `python3 -m autoresearch.taste <stage>`.
 
-![PRISM pipeline: download and split 723 users, fit methods M0 to M7, and pick the best in E1.](pipeline/prism.svg)
+![PRISM pipeline: download PRISM choices, fit methods M0 to M7, and pick the best in E1.](pipeline/prism.svg)
 
 E1 has no result yet, so no method has been selected. Nothing passes the method on automatically: the personal and public tracks each take it by hand.
 
@@ -29,9 +29,9 @@ E1 has no result yet, so no method has been selected. Nothing passes the method 
 
 The person answers choices directly. Owned by WS B. Commands run as `python3 -m autoresearch.taste.trackp <stage>`; files land in `data/researchers/<slug>/`. The runbook is `docs/trackp-runbook.md`.
 
-![Personal-track pipeline: register, make seed pairs, collect and recheck choices, hold out a test set, run E2, fit usermodel.json.](pipeline/personal.svg)
+![Personal-track pipeline: register, make seed pairs, collect choices, hold out a test set, run E2, fit usermodel.json.](pipeline/personal.svg)
 
-Each team member gets their own directory. Ethan Cai has answered all 21 seed items (steps 1–3); his recheck opens 3 days after his first answers. Only this track has a human answering questions and a recheck that measures their own noise.
+Each team member gets their own directory. Ethan Cai has answered all 21 seed items (steps 1–3). Only this track has a human answering questions.
 
 ## Public track: published researchers
 
@@ -65,7 +65,6 @@ The main experiments are E1, E2 and E3b (PLAN §9). E3a, E4, E4b, E5 and E6 are 
 | M0–M7 | The user-model methods: M0 no history, M1 raw history, M2 SynthesizeMe persona, M3 ICAI principles, M4 Bradley–Terry on 7 LLM-scored features, M5 = M2 + M3 + examples, M6 = M5 pruned, M7 = M6 calibrated. |
 | Date T | The public track's time split: the model is built from the researcher's work before T and tested on decisions after it. |
 | D1–D6 | The loop's decision points: what to test next, what evidence to collect, accept or reject a result, pursue or drop a direction, how to read a surprising result, what to claim. |
-| Noise ceiling | How often the personal-track person gives the same answer when asked again; no model can be expected to beat it. |
 | TasteAdvisor | Asks the user model which option the researcher would pick. Below confidence 0.6 the loop decides on the evidence alone. |
 | A1 · A2 · A3 | A1: a judge marks whether the target's reasoning says it is being tested. A2: the target is asked afterwards and gives P(eval). A3: a judge picks the synthetic message out of a synthetic/real pair. |
 | Final mode | `--mode final`: swaps in the held-out target, judges and benchmark split, used only for reported numbers. |

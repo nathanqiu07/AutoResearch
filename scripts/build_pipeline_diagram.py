@@ -23,12 +23,10 @@ ARTIFACT_URL = "https://claude.ai/artifact/F2kpYLDpiEtXNb4F9K1FVN"
 PRISM = [
     ("1", "prepare", "Download and clean PRISM", "16,693 choices from 723 users; 12 exact repeats dropped",
      "taste prepare · no model", "ran", ["runs/prefdata/prism.jsonl", "data/prefdata/prism-splits.json"]),
-    ("2", "split", "Split by user", "345 development users · 378 final-test users",
-     "final-test users can be scored once (--final)", "ran", []),
-    ("3", "fidelity", "Fit and predict M0–M7", "each user: fit on their history, predict their test choices",
+    ("2", "fidelity", "Fit and predict M0–M7", "each user: fit on their history, predict their test choices",
      "taste fidelity · codex-cli (--backend, --model)", "built",
      ["runs/fidelity/dev/predictions.jsonl", "runs/fidelity/dev/report.json"]),
-    ("4", "E1", "E1: proof of concept, pick a method", "user-macro accuracy and Brier; must beat M1, CI above 0",
+    ("3", "E1", "E1: proof of concept, pick a method", "user-macro accuracy and Brier; must beat M1, CI above 0",
      "on the final-test users, once", "built", ["selected method + config", "posted to the team"]),
 ]
 PRISM_TERMINAL = ("Output: the selected method", "no winner yet; the two tracks take it by hand",
@@ -41,13 +39,11 @@ PERSONAL = [
      "trackp seed-pairs · --llm-scenarios adds paid ones", "ran", ["seed_pairs.jsonl"]),
     ("3", "record", "Collect their choices", "seed pairs, plus D1–D6 decisions from loop runs",
      "trackp start / answer / label, or pending + record", "ran", ["seed_choices.jsonl", "labels.jsonl"]),
-    ("4", "recheck", "Re-ask 20% after 3 days", "options reversed; the agreement rate is the noise ceiling",
-     "trackp recheck", "built", ["recheck.jsonl"]),
-    ("5", "split", "Hold out a test set", "20% of seed pairs + labels from runs after --label-cutoff",
+    ("4", "split", "Hold out a test set", "20% of seed pairs + labels from runs after --label-cutoff",
      "trackp split · rest is history and val", "built", []),
-    ("6", "e2", "E2: beat M1 on held-out choices", "selected method vs M0, M1 and the noise ceiling",
+    ("5", "e2", "E2: beat M1 on held-out choices", "selected method vs M0 and M1",
      "trackp e2 · offline, claude-haiku-5-5", "built", ["results/e2/P_<slug>.json"]),
-    ("7", "fit", "Fit the user model", "selected method on history + val; held-out never used",
+    ("6", "fit", "Fit the user model", "selected method on history + val; held-out never used",
      "trackp fit --method --config --backend --model", "built", ["usermodel.json", "history.jsonl"]),
 ]
 
@@ -202,9 +198,9 @@ COMPARE = (["", "PRISM", "Personal track", "Public track"], [
      "They answer pairs and label loop decisions", "Decisions extracted from their dated writing"],
     ["Held-out test", "Final-test users, scored once", "20% of seed pairs + labels after a cutoff",
      "Decisions after date T"],
-    ["Experiment", "E1: proof of concept", "E2 vs M1 and the noise ceiling", "E2 vs two M1 arms, order-paired"],
+    ["Experiment", "E1: proof of concept", "E2 vs M0 and M1", "E2 vs two M1 arms, order-paired"],
     ["Output", "Selected method", "`usermodel.json`", "`usermodel.json`"],
-    ["Furthest step run", "1–2 (data ready)", "3 (Ethan: 21 of 21 seed answers)", "1 (harvest)"],
+    ["Furthest step run", "1 (data ready)", "3 (Ethan: 21 of 21 seed answers)", "1 (harvest)"],
 ])
 
 # section: (anchor, heading, intro, figure key, caption)
@@ -220,8 +216,8 @@ SECTIONS = [
      "`python3 -m autoresearch.taste.trackp <stage>`; files land in `data/researchers/<slug>/`. "
      "The runbook is `docs/trackp-runbook.md`.",
      "personal",
-     "Each team member gets their own directory. Ethan Cai has answered all 21 seed items (steps 1–3); "
-     "his recheck opens 3 days after his first answers. Only this track has a human answering questions and a recheck that measures their own noise."),
+     "Each team member gets their own directory. Ethan Cai has answered all 21 seed items (steps 1–3). "
+     "Only this track has a human answering questions."),
     ("public", "Public track: published researchers",
      "Each researcher's taste is inferred from what they published, and the model is tested on decisions "
      "they made after date T. Owned by WS B. Steps 1–5 run as `python3 -m autoresearch.taste.timesplit <stage>`, steps "
@@ -254,8 +250,6 @@ TERMS = (["Term", "Meaning"], [
     ["Date T", "The public track's time split: the model is built from the researcher's work before T and tested on decisions after it."],
     ["D1–D6", "The loop's decision points: what to test next, what evidence to collect, accept or reject a "
      "result, pursue or drop a direction, how to read a surprising result, what to claim."],
-    ["Noise ceiling", "How often the personal-track person gives the same answer when asked again; no model can be "
-     "expected to beat it."],
     ["TasteAdvisor", "Asks the user model which option the researcher would pick. Below confidence 0.6 the "
      "loop decides on the evidence alone."],
     ["A1 · A2 · A3", "A1: a judge marks whether the target's reasoning says it is being tested. A2: the "
@@ -404,9 +398,9 @@ def pipeline_body(steps, mid, terminal=None):
 
 FIGURES = {
     # key: (marker id, aria label, body, height)
-    "prism": ("ap", "PRISM pipeline: download and split 723 users, fit methods M0 to M7, and pick the best in E1.",
+    "prism": ("ap", "PRISM pipeline: download PRISM choices, fit methods M0 to M7, and pick the best in E1.",
               *pipeline_body(PRISM, "ap", PRISM_TERMINAL)),
-    "personal": ("aq", "Personal-track pipeline: register, make seed pairs, collect and recheck choices, hold out a test "
+    "personal": ("aq", "Personal-track pipeline: register, make seed pairs, collect choices, hold out a test "
                 "set, run E2, fit usermodel.json.", *pipeline_body(PERSONAL, "aq")),
     "public": ("as", "Public-track pipeline: harvest dated work with Exa, extract and check decisions, find "
                 "alternatives, split at date T, gate, select, run E2, fit usermodel.json.",
