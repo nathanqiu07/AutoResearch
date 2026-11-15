@@ -144,7 +144,7 @@ class BalanceTest(unittest.TestCase):
         self.assertEqual((row["pair_id"], row["picks"], row["p_pole1"]), (self.pair["pair_id"], [1, 1], [0.9, 0.9]))
 
     def test_a_mild_lean_is_roughly_undecided_though_both_picks_agree(self):
-        row = self.check(lambda opts: [0.8, 0.2] if opts[0] == self.pole1 else [0.2, 0.8])
+        row = self.check(lambda opts: [0.7, 0.3] if opts[0] == self.pole1 else [0.3, 0.7])
         self.assertEqual(row["picks"], [1, 1])
         self.assertFalse(row["one_sided"])
 

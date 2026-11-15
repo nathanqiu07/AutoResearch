@@ -504,7 +504,7 @@ def main(argv=None):
     b = cmd("balance", "flag pairs a blind judge (no history) answers the same way in both orders (paid)")
     b.add_argument("--backend", required=True, help="a real backend: offline models give no probabilities (paid, ask first)")
     b.add_argument("--model", default="claude-opus-5-5", help="the public track's blind-judge default")
-    b.add_argument("--threshold", type=float, default=0.85)
+    b.add_argument("--threshold", type=float, default=0.75)
     b.add_argument("--max-calls", type=int, default=500)
     b.add_argument("--cache", default="runs/taste-cache")
     rv = cmd("review", "list flagged pairs, or approve/drop one (not by the person answering)")
