@@ -586,11 +586,12 @@ past.dev. (Taste-Bench, E7, was dropped 2026-11-14 by Ethan.)
 
 **Both tracks:** run E2 with M0, M1 and the selected method on each track's held-out set.
 Before fitting or scoring, every split passes the **agreement filter** (Ethan, 2026-11-14): a pair
-is dropped from history, val and held-out when a blind judge (`claude-sonnet-5-5`, no history)
-gives the person's option more than 0.8 in both a/b orders. Such a pair tests generic research
-sense, not taste. Pairs the judge confidently decides against the person stay. The judge's
-probabilities are recorded per pair (`agreement.jsonl`), so the threshold can change without new
-calls (`autoresearch/taste/agreement.py`; commands in `docs/track-s-extraction.md` and
+is dropped from history, val and held-out when more than 80% of a blind judge's 10 votes (5 per
+a/b order, sampled) go to the person's option. The judge is `claude-sonnet-5-5`, no history, on
+both tracks. Votes replace the model's stated probability, which is poorly calibrated. Such a pair
+tests generic research sense, not taste. Pairs the judge decides against the person stay, with no
+manual re-check. Every vote is recorded per pair (`agreement.jsonl`), so the threshold can change
+without new calls (`autoresearch/taste/agreement.py`; commands in `docs/track-s-extraction.md` and
 `docs/trackp-runbook.md`).
 Then export `TasteArtifacts` to `data/researchers/<slug>/usermodel.json` for WS D.
 
