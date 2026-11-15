@@ -510,7 +510,7 @@ async function viewWorkspace(slug, step, seq) {
   const steps = STEPS[mode] || STEPS.external;
   if (!step || !steps.some(s => s[0] === step)) return go(`#/p/${slug}/${steps[0][0]}`);
   app.innerHTML = `
-    <p><a href="#/">← Profiles</a></p>
+    <p class="mono small"><a href="#/">← all profiles</a></p>
     <div class="workspace">
       <nav class="steps" aria-label="Steps">
         <div class="steps-head"><h2>${esc(S.st.meta.name)}</h2>
@@ -590,7 +590,7 @@ function panelMaterials(panel, nextBtn) {
     <div class="card">
       <h3>Upload files</h3>
       <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose files to upload">
-        <strong>Drop files here</strong> or click to choose<br><span class="small">PDF, Markdown, LaTeX, plain text, HTML, BibTeX. Text is extracted in your browser.</span>
+        ${doodle("upload", { size: 56, color: "ochre", tilt: -6 })}<strong>Drop files here</strong> or click to choose<br><span class="small">PDF, Markdown, LaTeX, plain text, HTML, BibTeX. Text is extracted in your browser.</span>
       </div>
       <input type="file" id="file-input" multiple hidden accept=".pdf,${TEXT_EXT.map(e => "." + e).join(",")}">
       <div class="file-queue" id="queue"></div>
