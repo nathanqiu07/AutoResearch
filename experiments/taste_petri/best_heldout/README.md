@@ -1,4 +1,12 @@
-# Best held-out preference results (Owain Evans)
+# Best held-out preference results
+
+![Best result per person](best.svg)
+
+`best.py` writes `best.svg`: each benchmarked person's best profile against no profile. Hobbhahn's row is the
+`m4_gated` fit from `experiments/lopsided_all/pref_results.json` on all 83 held-out pairs; Ethan's comes from
+commit 2aed15e6 (4 test questions).
+
+## Owain Evans in detail
 
 ![Mean probability given to his actual choice](figure.svg)
 
