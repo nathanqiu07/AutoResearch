@@ -24,6 +24,15 @@ def statement(doc, **extra):
                               end=len(doc['content']), quote=doc['content'])], **extra)
 
 
+def quote_statement(doc, **extra):
+    """v2 extraction supplies exact quotes; shared resolver owns all offsets."""
+    result = statement(doc, **extra)
+    for source in result['sources']:
+        source.pop('start')
+        source.pop('end')
+    return result
+
+
 class Extractor(LLM):
     name = 'offline-synthetic-hypotheses'
     model = 'fixture-v1'
@@ -68,12 +77,12 @@ class HypothesesBuilderTests(unittest.TestCase):
 
     def contrast(self, relation='different', target=None, peer=None):
         return {'contrasts': [{'relation': relation,
-                              'target': statement(self.target) if target is None else target,
-                              'peer': statement(self.peer) if peer is None else peer}]}
+                              'target': quote_statement(self.target) if target is None else target,
+                              'peer': quote_statement(self.peer) if peer is None else peer}]}
 
     def hypotheses(self, docs=None):
         docs = [self.target] if docs is None else docs
-        return {'hypotheses': [{'id': 'h' + str(i), 'statement': statement(doc), 'weight': None}
+        return {'hypotheses': [{'id': 'h' + str(i), 'statement': quote_statement(doc), 'weight': None}
                                for i, doc in enumerate(docs)], 'relations': []}
 
     def run_builder(self, method, result, docs=None, **extra):
@@ -123,7 +132,7 @@ class HypothesesBuilderTests(unittest.TestCase):
     def test_repeated_documents_do_not_inflate_support_count(self):
         duplicate = document('t-copy', 'target', self.target['content'])
         response = self.contrast()
-        response['contrasts'][0]['target']['sources'] += statement(duplicate)['sources']
+        response['contrasts'][0]['target']['sources'] += quote_statement(duplicate)['sources']
         profile, _ = self.run_builder('P7', response, self.docs + [duplicate])
         self.assertEqual(profile.status, 'complete')
         self.assertEqual(profile.fit_usage['independent_source_groups'], 2)
@@ -154,7 +163,7 @@ class HypothesesBuilderTests(unittest.TestCase):
             elif change == 'attribution':
                 docs[1]['permitted_spans'][0]['speaker'] = 'someone-else'
             else:
-                response['contrasts'][0]['peer'] = statement(self.target)
+                response['contrasts'][0]['peer'] = quote_statement(self.target)
             with self.subTest(change=change):
                 profile, _ = self.run_builder('P7', response, docs)
                 self.assertEqual(profile.status, 'invalid')
@@ -196,7 +205,7 @@ class HypothesesBuilderTests(unittest.TestCase):
         response['relations'] = [relation]
         bad, _ = self.run_builder('P8', response, [self.target, later])
         self.assertEqual(bad.status, 'invalid')
-        relation['statement'] = statement(later)
+        relation['statement'] = quote_statement(later)
         good, _ = self.run_builder('P8', response, [self.target, later])
         self.assertEqual(good.status, 'complete')
         self.assertEqual(good.content['relations'][0]['statement']['sources'][0]['quote'], later['content'])
@@ -218,7 +227,7 @@ class HypothesesBuilderTests(unittest.TestCase):
                 response['relations'] = [{'kind': 'extraction_uncertainty', 'hypothesis_ids': ['h0', 'absent'],
                                           'statement': None}]
             else:
-                response['hypotheses'][0]['statement'] = statement(self.peer)
+                response['hypotheses'][0]['statement'] = quote_statement(self.peer)
             with self.subTest(change=change):
                 profile, _ = self.run_builder('P8', response)
                 self.assertEqual(profile.status, 'invalid')
@@ -292,6 +301,52 @@ class HypothesesBuilderTests(unittest.TestCase):
                          {'temperature': 0.0, 'max_tokens': 2048})
         self.assertEqual(backend.calls[0][1]['max_tokens'], 2048)
         self.assertEqual(backend.calls[0][1]['temperature'], 0.0)
+
+    def test_quote_only_protocol_resolves_unicode_offsets_and_records_raw_hash(self):
+        source = document('t', 'target', '🌱 abc is useful.')
+        response = self.hypotheses([source])
+        value = response['hypotheses'][0]['statement']
+        value['text'] = 'abc is useful'
+        value['sources'][0]['quote'] = 'abc'
+        raw = json.dumps(response)
+        profile, backend = self.run_builder('P8', raw, [source])
+        self.assertEqual(profile.status, 'complete')
+        self.assertEqual(profile.content['hypotheses'][0]['statement']['sources'],
+                         [{'document_id': 't', 'start': 2, 'end': 5, 'quote': 'abc'}])
+        self.assertEqual(profile.fit_usage['raw_response_sha256'], sha256_text(raw))
+        resolution = profile.fit_usage['quote_resolution']
+        self.assertTrue(resolution['version'])
+        self.assertEqual(len(resolution['records']), 1)
+        self.assertEqual(profile.fit_usage['lineage']['supersedes_prompt_version'], 'hypotheses-profile-v1-p8')
+        self.assertEqual(len(backend.calls), 1)
+
+    def test_v2_rejects_model_supplied_offsets_instead_of_repairing_legacy_output(self):
+        response = self.hypotheses()
+        response['hypotheses'][0]['statement']['sources'][0].update(start=0, end=19)
+        profile, _ = self.run_builder('P8', response, [self.target])
+        self.assertEqual(profile.status, 'invalid')
+        self.assertEqual(profile.error_code, 'quote_source_shape')
+
+    def test_absent_and_ambiguous_exact_quotes_remain_invalid(self):
+        source = document('t', 'target', 'Prefer tests. Prefer tests.')
+        for quote in ('Prefer tests.', 'Prefer experiment.'):
+            response = self.hypotheses([source])
+            response['hypotheses'][0]['statement']['sources'][0]['quote'] = quote
+            with self.subTest(quote=quote):
+                profile, backend = self.run_builder('P8', response, [source])
+                self.assertEqual(profile.status, 'invalid')
+                self.assertEqual(profile.fit_usage['raw_response_sha256'], sha256_text(json.dumps(response)))
+                self.assertEqual(len(backend.calls), 1)
+
+    def test_resolver_only_matches_inside_permitted_attributed_spans(self):
+        source = document('t', 'target', 'X. X.')
+        source['permitted_spans'] = [{'start': 3, 'end': 5, 'text': 'X.', 'speaker': 'target'}]
+        response = self.hypotheses([source])
+        response['hypotheses'][0]['statement']['sources'][0]['quote'] = 'X.'
+        profile, _ = self.run_builder('P8', response, [source])
+        self.assertEqual(profile.status, 'complete')
+        citation = profile.content['hypotheses'][0]['statement']['sources'][0]
+        self.assertEqual((citation['start'], citation['end']), (3, 5))
 
 
 if __name__ == '__main__':
