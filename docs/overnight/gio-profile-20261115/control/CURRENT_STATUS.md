@@ -1,3 +1,9 @@
+# Latest completed queues — 2026-11-15T14:11:55.004488+00:00
+
+First8 v4 completed all8packets with364known wrapper attempts/$0.046002375 and zero new unknowns. All228planned cells remain:194attemptable,34predeclaredunavailable949/634hybrid cells. Role10 owns fixed user-macro/coverage analysis and the same frozen remaining56 preparation.49.10gross reference reserves and7historical unknowns remain.
+
+Remaining8 extraction completed8known calls/$0.538445:7valid profiles,1invalid Neel/AstraP3. Original112jointprediction slots yield98eligible/14missing, no repair or substitute. Scaling ledger306known/$3.883810 is closed and unchanged.09 prepares exact unleased descendants;04 scores the completed primary14 once its09index arrives. Own/swapped uses a separately named proposed≤1USD suballocation after wrapper/native review; no authority yet.
+
 # Current checkpoint — 2026-11-15T14:06:17.401025+00:00
 
 Primary14 completed at14:01:07UTC:14 known calls, $0.085065 incremental; cumulative scaling298 calls/$3.345365 and zero new holds. All70 unavailable P8 descendants remain missing.09 prepares provenance and04 alone scores new predictions. First8 v4 is live with the predeclared recovered903 branch:228 planned cells,194 attemptable,588-call/$2.20 ceilings,49.10 gross reference reservations. Both prior untouched jobs completed known with no new holds; seven older reference unknowns remain unresolved.

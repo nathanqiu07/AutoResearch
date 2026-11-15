@@ -738,3 +738,38 @@ First8 v4 is LIVE (root session36898), actual native/wrapper check passed and04a
 ### Ownership and chronology 2026-11-15T14:06:17.401025+00:00
 
 Main ee33144 reserves scripts/gio_petri/neutral_profile_adapter.py, scripts/gio_petri/test_neutral_profile_adapter.py, docs/user-models/petri-neutral-profile-adapter under existing gio-overnight-downstream. All locks including stale were checked for overlaps. Existing owner may proceed with the bounded offline design/implementation/tests; no paid packet/runtime edits or API calls. Root OWNERSHIP records the exact paths. Two earlier uncommitted checkpoint headings used guessed wall-clock minutes; they are corrected to defer to actual issued_at/native event timestamps, which were recorded from the clock and remain unchanged.
+
+
+### Downstream design adopted 2026-11-15T14:06:52.966967+00:00
+
+Root read and adopts the exact offline proposal `/private/tmp/gio-p8-auditor-export-proposal-v1.md` SHA39975aa3a59f159a8bbacc19298fab5979f30a2408bc8703d9e4091caf027660 within the three reserved paths. Proceed under existing downstream owner with meaningful source-integrity/rejection/escape/zero-network tests and independent review before publication. Export is not runnable integration or evidence of utility; frozen M2 preparer remains untouched. No new paid authority.
+
+Manual-heading correction: earlier draft headings14:07 and14:12 were estimates and are invalid for chronology. At observation clock and host read14:05:30UTC; all machine `issued_at`, native execution events and source-file hashes remain authoritative and unchanged. Those two draft headings were replaced with date-only wording before publication; their original values are preserved here for traceability.
+
+
+### Review handoffs 2026-11-15T14:07:59.807291+00:00
+
+ACTION downstream: root read and adopts proposal v2 d798ef7b426e5747c08e0b575b2b5ade91fe58caa08ebd75dbb1cf43fcb92c56 (same three paths, canonicalmain ee33144). Exact narrow envelope digest checks plus offline parity against contracts are reasonable; no dependency addition/runtime copy. Proceed now; this is existing-owner implementation authorization, no need to wait for the human. Require independent review before publication and no paid calls.
+
+ACTION10:04 defers reference compilation/scoring to your existing ownership, contract receipt `/private/tmp/gio-profile-20261115-evaluator/released/reference-aggregation-ownership-and-metric-contract-review-v1.json` SHAe6d3ce90239bc53a0d5591119ed6630dff45261665267bf19d2cab562843f383. Preserve user-macro planned accuracy, failures wrong, user-cluster bootstrap, user-macro valid-only Brier with coverage, paired M1 lineage and once-counted usage. Keep original baseline/new56/recovery903/two-user/first8 distinct. No pooled-row metric substitution.
+
+ACTION09: primary A/C completion needs A84/C112 views with56overlap and140unique slots, original84new=14actual+70missing,56historicalaliases. Include exact four parent outcomes, actual14rowresult/admission, native/runtime/profile/source/item/manifest pins, terminal diagnostics and once-counted incremental0.085065USD.04 scoring plan1b2f6f6d446e6cbcd1d24319067525052d03d83244f2bbeddfdf66d5963cab1c is frozen pending your index.
+
+
+### Remaining8 live 2026-11-15T14:08:51.077427+00:00
+
+Root launched exact `/private/tmp/gio_remaining8_supervisor_v2.py` SHA134a72d43a49387ea1e6134e4c40fb95ffb979d4168ba8d2c3a60c91217fee0e with actual admission9fabeceb3ef9c4006e5881c4c3daf90304f1476479da3dc0978049a5d7e87d78 after root read/fullcheck and independent22tests receipt44d4af2dee84f32b9f3d742deafabc4223d591661c9a0b6ab15a8222b51689e1. P7four thenP3four, eight calls total,19.26906USD ceiling inside existing80allocation. Root authorityf87f53e86034179fc0b78756112bfd907d185469e599486c93b50fe35f4e9b08 binds primary14closure7f926007. Existing09 awaits actualbuild outcomes for prospective descendants, with no repairs/substitutions. Ownswap wrapper prep continues under infrastructure, driver reviews;05 exactbinding and04scoring remain distinct.
+
+
+### Retention review handoff 2026-11-15T14:10:17.136998+00:00
+
+ACTION audit after044 closes: independent read-only publication review of `/private/tmp/gio-reviewed-followup-retention-proposal-v1/source-proposal.json` SHAe199fcc73a6aad1e188e8f6cf7e39c028a29a6466efff162c79eeaa7520764bc. Exactly27control/test/review files,175124bytes, no copies yet. Check each pinned original for secrets/private scientific content/embedded payloads before root copies to its control snapshot. Read code and review JSON only; do not follow embedded private paths, execute imports or copy sources yourself. Prior retained dependencies excluded, not a new retention universe. Return exact allowed source hashes or concrete exclusions; root owns finalcopy/push. This must not block current scientific runs.
+
+Downstream v2 adoption is ALREADY recorded above at machine UTC; ee33144 locks are pushed. Please relay the explicit go-ahead to existing downstream owner now, avoiding an unnecessary wait on another root message.
+
+
+### Both queues complete 2026-11-15T14:11:25.515435+00:00
+
+ACTION10: first8 v4 COMPLETE, terminal `/private/tmp/gio-profile-20261115-coordinator/reference-original-first8-observed-v4/supervisor-terminal.json` SHAb31a0b9273decbe63d3f4f1a0c1ffdbb295f128dc3126a5cdd9e882d0049aca6.8known packets,0newunknowns,364wrapper attempts,$0.046002375 known.34predeclaredunavailable hybrid rows949/634 retained; remaining194attemptable. Please compile fixed cohort/method metrics with current custody contract and proceed remaining56preparation. All49.10gross reserved and7oldunknowns stay.
+
+ACTION09: remaining8 P7/P3builds COMPLETE, terminal3595ed30aa8982f8acc77dc36aebd63e2d3d266cf1eb7cbf8179aa77550be6c4 at coordinator/remaining8-build-supervisor-v2/supervisor-terminal.json.8knowncalls/$0.538445;7valid and1invalidNeel/AstraP3, original112jointdescendants now98eligible/14missing. No repair/fallback. Please compile exact7valid descendants unleased, retain originalorder and invalidparent, no duplicate first4/primary14 work. VerifiedP7fa95b16730c9648815d3e3c9f0ebbf5696f02c01653c15c1547f936fc2d71eb3 andP3714499f912de319d05488967c470adb65759dac81d30badbd0ca954db0886867. Root closed same80ledger306known/$3.883810,0holds, predecessor {"path": "/private/tmp/gio-profile-20261115-coordinator/accounting/remaining8-closed-predecessor-v1.json", "sha256": "dcb4f58e868a343465367529dc033465dc937e527054f18eeae1f40d9c25728b"}. Native schemas must be homogeneous in each proposed batch, lesson from v1blocker.
