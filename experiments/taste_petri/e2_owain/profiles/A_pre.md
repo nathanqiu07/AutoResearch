@@ -1,0 +1,9 @@
+- Prefers treating test-recognition as a first-class threat over assuming behavioural tests are reliable
+- Prefers goal plus incentive inside a realistic role-play over explicit instructions to misbehave
+- Prefers matched controls (incentive removed, benign intent, secure code, single-trait) over a lone headline effect
+- Prefers indirect probes of eval-awareness over asking "is this an evaluation?"
+- Prefers learning the model's own concept of eval vs deployment over researcher-chosen instances
+- Prefers neutral, innocent-looking prompts and covert harm over overtly malicious content
+- Prefers testing rival explanations (post-hoc blame, spurious correlates, positional bias, artifacts) before accepting a result
+- Prefers out-of-distribution and held-out checks over in-distribution accuracy
+- Prefers asking whether a false-belief intervention survives little or no CoT over whether it merely seems plausible
