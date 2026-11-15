@@ -178,3 +178,44 @@ function startRobot(root) {
   pose(0);
   requestAnimationFrame(frame);
 }
+
+/* ---------- sketched boxes, underlines and circles ----------
+   sketchify(root) gives every `.sketch` element a hand-drawn border: four slightly bowed strokes
+   that overshoot at the corners, drawn twice (a firm line and a faint second pass) through the
+   rough filter, and drawing themselves in. The box stretches with its element; strokes keep
+   their width (non-scaling-stroke). Colour comes from --sk, so hover/selected states restyle it. */
+function seeded(seed) {   // small deterministic PRNG, so a box keeps its shape across re-renders
+  let a = seed >>> 0 || 1;
+  return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function sketchRect(seed, inset = 1.2) {
+  const r = seeded(seed), j = a => (r() - 0.5) * a;
+  const x0 = inset + j(1), y0 = inset + j(2), x1 = 100 - inset + j(1), y1 = 100 - inset + j(2);
+  const f = n => n.toFixed(2);
+  return `M${f(x0 - 1.2)} ${f(y0 + j(1.5))} Q${f(50 + j(20))} ${f(y0 + j(3))} ${f(x1 + 0.8)} ${f(y0 + j(1.5))}` +
+    ` M${f(x1 + j(0.6))} ${f(y0 - 2)} Q${f(x1 + j(1.2))} ${f(50 + j(20))} ${f(x1 + j(0.6))} ${f(y1 + 1.8)}` +
+    ` M${f(x1 + 1.2)} ${f(y1 + j(1.5))} Q${f(50 + j(20))} ${f(y1 + j(3))} ${f(x0 - 0.8)} ${f(y1 + j(1.5))}` +
+    ` M${f(x0 + j(0.6))} ${f(y1 + 2)} Q${f(x0 + j(1.2))} ${f(50 + j(20))} ${f(x0 + j(0.6))} ${f(y0 - 1.8)}`;
+}
+function sketchify(root) {
+  root.querySelectorAll(".sketch:not([data-sk])").forEach((el, k) => {
+    el.dataset.sk = "1";
+    const seed = hashStr((el.textContent || "").slice(0, 40) + k + (el.className || ""));
+    el.insertAdjacentHTML("afterbegin", `<svg class="sketch-box" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <g filter="url(#rough)"><path class="sk1" pathLength="1" d="${sketchRect(seed)}"/><path class="sk2" pathLength="1" d="${sketchRect(seed + 7, 2)}"/></g></svg>`);
+    el.style.setProperty("--skd", `${(k % 8) * 70}ms`);
+  });
+}
+/* a wavy underline that inks itself in clay while its field has focus */
+function sketchUnderline(seed = 1) {
+  const r = seeded(seed), j = a => (r() - 0.5) * a;
+  const d = `M1 ${6 + j(2)} C${60 + j(20)} ${4 + j(3)} ${120 + j(20)} ${8 + j(3)} ${180 + j(20)} ${6 + j(2)} S${270 + j(10)} ${5 + j(3)} 299 ${6 + j(2)}`;
+  return `<svg class="tf-underline" viewBox="0 0 300 12" preserveAspectRatio="none" aria-hidden="true"><g filter="url(#rough)">
+    <path class="base" d="${d}"/><path class="ink" pathLength="1" d="${d}"/></g></svg>`;
+}
+/* a scribbled loop drawn around something (e.g. a chosen option's letter) */
+function scribbleCircle(seed = 3) {
+  const r = seeded(seed), j = a => (r() - 0.5) * a;
+  return `<svg class="scribble-circle" viewBox="0 0 60 60" aria-hidden="true"><path pathLength="1" filter="url(#rough)"
+    d="M${44 + j(4)} ${10 + j(3)} C${30 + j(4)} 2 6 ${10 + j(4)} 6 ${30 + j(3)} C6 ${50 + j(4)} 28 ${57 + j(3)} 44 ${50 + j(3)} C58 ${43 + j(3)} 58 ${18 + j(4)} 40 ${8 + j(3)} C${33 + j(3)} 6 26 7 ${21 + j(3)} 10"/></svg>`;
+}

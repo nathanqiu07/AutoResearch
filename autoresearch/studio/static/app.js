@@ -140,10 +140,12 @@ const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 function flow(container, steps, opts = {}) {
   const state = opts.state || {};
   let i = (opts.start || 0) - 1, busy = false;
-  container.innerHTML = `<div class="tf"><div class="tf-progress"><div></div></div><div class="tf-stage"></div>
+  container.innerHTML = `<div class="tf">${flowBackdrop()}<div class="tf-progress" aria-hidden="true"><div class="tf-bar"></div>
+      <span class="tf-pencil">${doodle("pencil", { size: 34, color: "ochre", tilt: 8 })}</span></div><div class="tf-stage"></div>
     <div class="tf-nav"><button class="btn small" data-nav="back" aria-label="Previous question">↑</button>
     <button class="btn small" data-nav="next" aria-label="Next question">↓</button></div></div>`;
-  const stage = container.querySelector(".tf-stage"), bar = container.querySelector(".tf-progress > div");
+  const stage = container.querySelector(".tf-stage"), bar = container.querySelector(".tf-bar"), pencil = container.querySelector(".tf-pencil");
+  const setProgress = f => { bar.style.width = `${100 * f}%`; pencil.style.left = `${100 * f}%`; };
   container.querySelector('[data-nav="back"]').addEventListener("click", () => ctl.back());
   container.querySelector('[data-nav="next"]').addEventListener("click", () => ctl.next());
   const visible = () => steps.map((st, k) => k).filter(k => !(steps[k].skip && steps[k].skip(state)));
@@ -152,33 +154,43 @@ function flow(container, steps, opts = {}) {
     const c = st.choices, items = c.items(state), sel = state[c.key];
     const isOn = v => (c.multi ? (sel || []).includes(v) : sel === v);
     return `<div class="choices">${items.map((it, k) => `
-      <button type="button" class="option ${isOn(it.value) ? "chosen" : ""}" data-choice="${k}">
-        <span class="n">${LETTERS[k]}</span><span style="flex:1">${it.html}</span>
+      <button type="button" class="option sketch ${isOn(it.value) ? "chosen" : ""}" data-choice="${k}">
+        <span class="n">${LETTERS[k]}${scribbleCircle(k + 11)}</span><span style="flex:1">${it.html}</span>
         <span class="tick">${doodle("check", { size: 22, color: "sage", tilt: -6 })}</span></button>`).join("")}</div>`;
   }
   function draw(dir) {
     const st = steps[i], vis = visible(), pos = vis.indexOf(i);
-    bar.style.width = `${(100 * pos) / vis.length}%`;
+    setProgress(pos / vis.length);
     const old = stage.querySelector(".tf-screen");
-    if (old) { old.classList.add(dir < 0 ? "leave-back" : "leave"); setTimeout(() => old.remove(), 330); }
+    if (old) { old.classList.add(dir < 0 ? "leave-back" : "leave"); setTimeout(() => old.remove(), 420); }
     const screen = document.createElement("div");
     screen.className = `tf-screen ${dir < 0 ? "enter-back" : "enter"}`;
+    const tilt = [-0.8, 0.6, -0.4, 0.9, -0.6][pos % 5];
     screen.innerHTML = `
-      <div class="tf-deco" aria-hidden="true"><span class="bob">${doodle(st.icon || "sparkle", { size: 132, color: st.color, tilt: pos % 2 ? 8 : -7 })}</span>
-        <span class="bob">${doodle(["sparkle", "star", "heart", "lightbulb"][pos % 4], { size: 48, tilt: pos % 2 ? -12 : 10, seed: pos })}</span></div>
-      <div class="tf-num">${pos + 1} → ${doodle(st.icon || "sparkle", { size: 30, color: st.color, tilt: (pos % 2 ? 7 : -6) })}</div>
-      <h2 class="tf-q">${st.q(state)}</h2>
-      ${st.help ? `<p class="tf-help">${st.help(state)}</p>` : ""}
-      <div class="tf-body">${st.body ? st.body(state) : ""}${st.choices ? choicesHtml(st) : ""}</div>
-      <div class="tf-actions"><button type="button" class="btn primary" data-ok>${st.ok || "OK"} ${doodle("check", { size: 18, color: "clay", tilt: 0 })}</button>
-        ${st.skipLabel ? `<button type="button" class="btn ghost" data-skip>${st.skipLabel}</button>` : ""}
-        <span class="tf-error" role="alert"></span></div>`;
+      <div class="tf-card sketch" style="--card-tilt:${tilt}deg">
+        <span class="tf-corner a" aria-hidden="true"><span class="bob">${doodle(st.icon || "sparkle", { size: 78, color: st.color, tilt: pos % 2 ? 9 : -8 })}</span></span>
+        <span class="tf-corner b" aria-hidden="true"><span class="bob">${doodle(["sparkle", "star", "heart", "lightbulb", "coffee"][pos % 5], { size: 38, tilt: pos % 2 ? -14 : 12, seed: pos })}</span></span>
+        <div class="tf-num"><span class="num">${pos + 1}${scribbleCircle(pos + 1)}</span></div>
+        <h2 class="tf-q">${st.q(state)}</h2>
+        ${st.help ? `<p class="tf-help">${st.help(state)}</p>` : ""}
+        <div class="tf-body">${st.body ? st.body(state) : ""}${st.choices ? choicesHtml(st) : ""}</div>
+        <div class="tf-actions"><button type="button" class="btn primary" data-ok>${st.ok || "OK"} ${doodle("check", { size: 18, color: "clay", tilt: 0 })}</button>
+          ${st.skipLabel ? `<button type="button" class="btn ghost" data-skip>${st.skipLabel}</button>` : ""}
+          <span class="tf-error" role="alert"></span></div>
+      </div>`;
+    dressFields(screen);
+    staggerWords(screen.querySelector(".tf-q"));
     stage.appendChild(screen);
-    screen.querySelector("[data-ok]").addEventListener("click", () => ctl.next());
+    sketchify(screen);
+    const okBtn = screen.querySelector("[data-ok]");
+    okBtn.addEventListener("click", () => ctl.next());
+    screen.querySelectorAll("input.tf-input, textarea.tf-input").forEach(f => f.addEventListener("input", () => {
+      if (f.value.trim() && !okBtn.dataset.nudged) { okBtn.dataset.nudged = "1"; okBtn.classList.add("nudge"); }
+    }));
     const sk = screen.querySelector("[data-skip]"); if (sk) sk.addEventListener("click", () => ctl.advance());
     if (st.choices) screen.querySelectorAll("[data-choice]").forEach(b => b.addEventListener("click", () => pick(+b.dataset.choice)));
     screen.querySelectorAll("textarea.tf-input").forEach(t => {
-      const fit = () => { t.style.height = "auto"; t.style.height = Math.max(120, t.scrollHeight + 4) + "px"; };
+      const fit = () => { t.style.height = "auto"; t.style.height = Math.max(150, t.scrollHeight + 4) + "px"; };
       t.addEventListener("input", fit); setTimeout(fit, 0);
     });
     if (st.bind) st.bind(screen, state, ctl);
@@ -198,7 +210,10 @@ function flow(container, steps, opts = {}) {
     screen.querySelectorAll("[data-choice]").forEach((b, j) => {
       const on = c.multi ? state[c.key].includes(items[j].value) : j === k;
       b.classList.toggle("chosen", on);
-      if (j === k) { b.classList.remove("flash"); void b.offsetWidth; b.classList.add("flash"); }
+      if (j === k) {
+        b.classList.remove("picked"); void b.offsetWidth; b.classList.add("picked");
+        if (on) { const n = b.querySelector(".n").getBoundingClientRect(); burst(n.left + n.width / 2, n.top + n.height / 2, 7); }
+      }
     });
     if (!c.multi && c.autoNext !== false) setTimeout(() => ctl.next(), 420);
   }
@@ -215,7 +230,7 @@ function flow(container, steps, opts = {}) {
           busy = false;
           if (ok) { ok.disabled = false; ok.innerHTML = ok.dataset.label; }
           if (err) { err.textContent = e.message; err.style.color = "var(--bad)"; }
-          screen.classList.remove("shake"); void screen.offsetWidth; screen.classList.add("shake");
+          const card = screen.querySelector(".tf-card"); card.classList.remove("shake"); void card.offsetWidth; card.classList.add("shake");
           return;
         }
         busy = false;
@@ -225,7 +240,7 @@ function flow(container, steps, opts = {}) {
     advance() {
       if (busy) return;
       const vis = visible(), nxt = vis.find(k => k > i);
-      if (nxt === undefined) { bar.style.width = "100%"; if (opts.onDone) opts.onDone(state, container); return; }
+      if (nxt === undefined) { setProgress(1); if (opts.onDone) opts.onDone(state, container); return; }
       i = nxt; draw(1);
     },
     back() { const prev = visible().filter(k => k < i).pop(); if (prev !== undefined && !busy) { i = prev; draw(-1); } },
@@ -264,15 +279,61 @@ function burst(x, y, n = 12) {
 function burstAt(el) { const r = el.getBoundingClientRect(); burst(r.left + r.width / 2, r.top + r.height / 2); }
 
 function doneScreen(container, { title, text, actions, icon = "sparkle" }) {
-  container.querySelector(".tf-stage").innerHTML = `
-    <div class="tf-screen enter" style="text-align:center">
-      <div>${doodle(icon, { size: 96, color: "ochre", tilt: -8, cls: "pop" })}</div>
-      <h2 class="tf-q" style="margin-top:1rem"><span class="hand">${title}</span></h2>
+  const stage = container.querySelector(".tf-stage");
+  const old = stage.querySelector(".tf-screen");
+  if (old) { old.classList.add("leave"); setTimeout(() => old.remove(), 420); }
+  const screen = document.createElement("div");
+  screen.className = "tf-screen enter";
+  screen.innerHTML = `<div class="tf-card sketch done" style="--card-tilt:-.6deg">
+      <span class="tf-corner b" aria-hidden="true"><span class="bob">${doodle("star", { size: 40, color: "ochre", tilt: 12 })}</span></span>
+      <div class="done-icon">${doodle(icon, { size: 104, color: "ochre", tilt: -8, cls: "pop" })}</div>
+      <h2 class="tf-q"><span class="hand">${title}</span></h2>
       <p class="tf-help">${text}</p>
       <div class="row" style="justify-content:center">${actions}</div>
     </div>`;
-  container.querySelector(".tf-nav").remove();
-  const d = container.querySelector(".tf-screen .doodle"); if (d) setTimeout(() => burstAt(d), 250);
+  stage.appendChild(screen);
+  sketchify(screen);
+  const nav = container.querySelector(".tf-nav"); if (nav) nav.remove();
+  const d = screen.querySelector(".done-icon .doodle"); if (d) setTimeout(() => burstAt(d), 450);
+}
+
+/* faint doodles drifting behind every form, like the home page */
+function flowBackdrop() {
+  const spots = [["lightbulb", 4, 14, -8, 54], ["flask", 90, 22, 10, 50], ["book", 6, 72, 6, 50], ["sparkle", 93, 66, -12, 34], ["coffee", 88, 88, 7, 42], ["telescope", 3, 44, -5, 46]];
+  return `<div class="tf-bg" aria-hidden="true">${spots.map(([n, x, y, t, sz]) =>
+    `<span class="bob" style="left:${x}%;top:${y}%">${doodle(n, { size: sz, tilt: t })}</span>`).join("")}</div>`;
+}
+
+/* inputs get a wavy underline that inks itself on focus; long answers sit on ruled paper */
+function dressFields(root) {
+  root.querySelectorAll("input.tf-input").forEach((inp, k) => {
+    const wrap = document.createElement("span"); wrap.className = "tf-field";
+    inp.replaceWith(wrap); wrap.appendChild(inp); wrap.insertAdjacentHTML("beforeend", sketchUnderline(k + 5));
+  });
+  root.querySelectorAll("textarea.tf-input").forEach(t => {
+    const wrap = document.createElement("span"); wrap.className = "tf-field area sketch";
+    t.replaceWith(wrap); wrap.appendChild(t);
+  });
+}
+
+/* the question's words arrive one after another */
+function staggerWords(el) {
+  if (!el) return;
+  let n = 0;
+  const walk = node => {
+    [...node.childNodes].forEach(c => {
+      if (c.nodeType === 3) {
+        const frag = document.createDocumentFragment();
+        c.textContent.split(/(\s+)/).forEach(part => {
+          if (!part) return;
+          if (/^\s+$/.test(part)) { frag.appendChild(document.createTextNode(part)); return; }
+          const w = document.createElement("span"); w.className = "w"; w.style.setProperty("--w", n++); w.textContent = part; frag.appendChild(w);
+        });
+        c.replaceWith(frag);
+      } else if (c.nodeType === 1 && !c.matches("svg, .badge")) walk(c);
+    });
+  };
+  walk(el);
 }
 
 async function slugFree(slug) {
@@ -794,8 +855,8 @@ async function panelTradeoffs(panel, nextBtn, seq) {
     steps.push({
       icon: k % 2 ? "scale" : "lightbulb", color: ["sage", "ochre", "sky", "clay"][k % 4], noAutofocus: true,
       q: () => esc(it.question || "Which would you pick?"),
-      body: () => `${same ? `<details class="context-fold"><summary class="fold-toggle">show the situation again</summary><div class="context">${esc(it.context)}</div></details>`
-                        : `<div class="context">${esc(it.context)}</div>`}
+      body: () => `${same ? `<details class="context-fold"><summary class="fold-toggle">show the situation again</summary><div class="context sketch dashed">${esc(it.context)}</div></details>`
+                        : `<div class="context sketch dashed">${esc(it.context)}</div>`}
         ${Object.keys(it.evidence || {}).length ? `<pre class="context small">${esc(JSON.stringify(it.evidence, null, 1))}</pre>` : ""}
         <div style="height:1rem"></div>`,
       choices: { key, autoNext: false, items: () => it.options.map((o, j) => ({ value: j + 1, html: esc(o) })) },
