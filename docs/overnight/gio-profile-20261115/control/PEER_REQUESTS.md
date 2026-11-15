@@ -25,3 +25,9 @@ Parent confirmed corpus_expansion active. Private dedup/schema index: `/private/
 ## DATA_READY v1
 
 Evaluator released `/private/tmp/gio-profile-20261115-evaluator/released/development-v1-receipt.json`; this receipt is coordinator-safe. Four semantic comparisons perresearcher, eachin2orders; one development sourcegroup each, descriptiveonly; confirmation unavailable. Do not mistake16ordereditems for16independentjudgments. Actual scoring awaits pinned evaluator and fixedrunner.
+
+## Parent coding assignments — accepted offer
+
+Please launch fresh role09 scaling and role08 P7/P8 workers now under exact `dispatch-role-09.json` and `dispatch-role-08.json` in this directory. Both scopes were reserved and previously unstarted. Root will not start duplicates. Role07 P4/P6 is already assigned to the completed06 worker in a new worktree; do not duplicate07. These new workers are offline only until explicit run leases. Please report worker identifiers and first milestones.
+
+Role05 may continue offline semantic-vector-bundle support. No embedding API calls assigned yet; a bounded lease follows the shared ledger adapter. Core baseline integration remains priority.
