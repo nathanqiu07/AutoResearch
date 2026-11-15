@@ -557,7 +557,7 @@ past.dev. (Taste-Bench, E7, was dropped 2026-11-14 by Ethan.)
 **Personal track (P): one team member** (**[decide]** who; not Ethan). Built in `taste/trackp.py`
 (`python3 -m autoresearch.taste.trackp init|seed-pairs|answer|label|recheck|status|e2`); no answers collected yet.
 1. **Seed choices.** `trackp seed-pairs --researcher <slug>`, then `trackp answer --researcher <slug>`.
-   * The command makes 14 stance items and 7 scenario items (one per axis at D1, D3, D4 and D5, rotated over environments) from non-Hobbhahn eval-design primers. `trackp balance` gates items with the public track's blind-judge test. `--llm-scenarios K` adds paid LLM-written scenarios. Spec: `docs/superpowers/specs/2026-11-14-trackp-tradeoff-questionnaire-design.md`.
+   * The command makes 14 stance items and 7 scenario items (one per axis at D1, D3, D4 and D5, rotated over environments) from non-Hobbhahn eval-design primers. `trackp gate` runs the item gate on every pair before it is shown (below). `--llm-scenarios K` adds paid LLM-written scenarios. Spec: `docs/superpowers/specs/2026-11-14-trackp-tradeoff-questionnaire-design.md`.
    * The team member picks an option for each. No reason is asked for, since no user model (M0–M7) reads `Choice.reason`; a volunteered one is still stored.
    * Each item is stored as a text `Choice` with its `decision_point`, with features filled in by A's featuriser.
 2. **Decision labels.** `trackp label --researcher <slug> runs/<run_id>/decisions.jsonl` reads WS D's `decisions.jsonl` (§12.6) and covers all of D1–D6. It hides the loop's choice, the arm and the option order. Labels go to `data/researchers/<slug>/labels.jsonl`, with a timestamp and run id.
@@ -579,10 +579,12 @@ past.dev. (Taste-Bench, E7, was dropped 2026-11-14 by Ethan.)
 4. Leakage check: no document dated after T may enter the profile. Write a test for this.
 
 **Both tracks:** run E2 with M0, M1 and the selected method on each track's held-out set.
-Personal track only: before fitting or scoring, every split passes the **agreement filter** (Ethan, 2026-11-14).
-An answer is dropped from history, val and held-out when more than 80% of a blind judge's 10 votes (5 per a/b
-order, sampled; `claude-sonnet-5-5`, no history) go to the option the person chose. Votes are recorded in
-`agreement.jsonl` (`autoresearch/taste/agreement.py`, `docs/trackp-runbook.md`). The public track is not filtered.
+Personal track only: no item is shown until it passes the **item gate** (Ethan, 2026-11-14, moved from a
+post-answer filter to generation on 2026-11-15). A `claude-sonnet-5-5` judge with no history votes 10 times
+(5 per a/b order) on which option is the better research decision; an item where more than 80% go to either
+option is lopsided and `trackp gate` rewrites it until it passes or `--rounds` attempts run out. Votes are
+recorded once per item in `data/researchers/agreement.jsonl` (`autoresearch/taste/agreement.py`,
+`docs/trackp-runbook.md`). The public track is not gated.
 Then export `TasteArtifacts` to `data/researchers/<slug>/usermodel.json` for WS D.
 
 **User models in past.dev** (built): after each fit, run

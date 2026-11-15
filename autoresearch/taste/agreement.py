@@ -1,17 +1,17 @@
-"""Agreement filter, personal track only (Ethan, 2026-11-14). A pair leaves history, val and held-out
-when a blind judge (no history about the person) is asked which option is the better research
-decision 5 times with each option order, and more than 80% of those 10 votes (9 or 10) go to
-the option the person chose. Such a pair tests generic research sense, not this person's
-taste: every arm, m0 included, gets it right, so it only adds noise. Pairs the judge decides
-against the person stay; they are where taste shows.
+"""Item gate for the personal-track questionnaire (Ethan, 2026-11-14). Before a trade-off pair is
+shown to anyone, a blind judge (no history about any person) is asked which option is the better
+research decision 5 times with each option order. The pair is lopsided, and never shown, when
+more than 80% of those 10 votes (9 or 10) go to either option: whoever answers it, it tests
+generic research sense, not taste. `trackp gate` rewrites a lopsided pair's options, keeping
+their poles, and judges the rewrite. Nobody re-checks a pair by hand.
 
-Votes, not the model's stated probability: stated confidence is poorly calibrated, while a vote
+Votes, not the model's stated probability: stated confidence is poorly calibrated, and a vote
 share is a count anyone can check. Pooling both orders cancels position bias, since a judge that
 always picks the first option shown lands at 5 of 10.
 
-The judge is claude-sonnet-5-5. Each vote is recorded per pair in
-<person dir>/agreement.jsonl, so a new threshold needs no new calls and a judged pair is never
-judged again."""
+The judge is claude-sonnet-5-5. Votes are recorded per item in <root>/agreement.jsonl, keyed by
+the question and the two pole texts (not the a/b order), so an item is judged once for every
+person who gets it, and a new threshold needs no new calls."""
 import concurrent.futures
 import datetime
 import json
@@ -19,7 +19,8 @@ import os
 import threading
 from typing import Dict, List, Optional
 
-from .usermodel import Choice
+from . import tradeoffs
+from .usermodel import digest
 
 AGREEMENT = "agreement.jsonl"
 THRESHOLD = 0.8
@@ -29,14 +30,24 @@ WORKERS = 16
 PROMPT = ("A researcher had to make a decision. Which of these two options is the better research "
           "decision?\n\nContext: {context}\n\nOption 1: {first}\n\nOption 2: {second}\n\n"
           'Reply with only a JSON object: {{"choice": 1}} or {{"choice": 2}}.')
+_LOCK = threading.Lock()
 
 
-def rows(d: str) -> Dict[str, dict]:
-    path = os.path.join(d, AGREEMENT)
+def poles(pair: dict) -> List[str]:
+    """[pole 1 text, pole 2 text]."""
+    return [pair["a_text"], pair["b_text"]] if pair["a_pole"] == 1 else [pair["b_text"], pair["a_text"]]
+
+
+def key(pair: dict) -> str:
+    return digest([tradeoffs.full_context(pair), *poles(pair)])[:16]
+
+
+def rows(root: str) -> Dict[str, dict]:
+    path = os.path.join(root, AGREEMENT)
     if not os.path.exists(path):
         return {}
     with open(path) as f:
-        return {r["example_id"]: r for r in map(json.loads, filter(str.strip, f))}
+        return {r["key"]: r for r in map(json.loads, filter(str.strip, f))}
 
 
 def _vote(llm, context: str, first: str, second: str) -> Optional[int]:
@@ -49,48 +60,50 @@ def _vote(llm, context: str, first: str, second: str) -> Optional[int]:
     return choice if choice in (1, 2) else None
 
 
-def votes(llm, c: Choice, k: int = VOTES_PER_ORDER) -> List[List[Optional[bool]]]:
-    """[person's option shown first, shown second]: per sample, whether the judge picked the
-    person's option (None: no valid answer)."""
-    mine, other = (c.a_text, c.b_text) if c.chosen == "a" else (c.b_text, c.a_text)
-    first = [_vote(llm, c.context, mine, other) for _ in range(k)]
-    second = [_vote(llm, c.context, other, mine) for _ in range(k)]
+def votes(llm, context: str, pole_1: str, pole_2: str, k: int = VOTES_PER_ORDER) -> List[List[Optional[bool]]]:
+    """[pole 1 shown first, shown second]: per sample, whether the judge picked pole 1
+    (None: no valid answer)."""
+    first = [_vote(llm, context, pole_1, pole_2) for _ in range(k)]
+    second = [_vote(llm, context, pole_2, pole_1) for _ in range(k)]
     return [[None if v is None else v == 1 for v in first], [None if v is None else v == 2 for v in second]]
 
 
 def share(row: dict) -> float:
-    """Share of valid votes that went to the person's option."""
+    """Share of valid votes that went to pole 1."""
     valid = [v for order in row["votes"] for v in order if v is not None]
     if not valid:
-        raise ValueError(f"pair {row['example_id']} has no valid vote; delete its row and judge it again")
+        raise ValueError(f"item {row['key']} has no valid vote; delete its row and judge it again")
     return sum(valid) / len(valid)
 
 
-def judge(d: str, choices: List[Choice], llm, workers: int = WORKERS) -> List[dict]:
-    """Collect votes for every choice that has no row yet. Each pair's row is appended to
-    d/agreement.jsonl as soon as its votes are in, so a crash loses only the pairs in flight."""
-    have = rows(d)
-    todo = [c for c in choices if c.example_id not in have]
-    lock, new = threading.Lock(), []
+def lopsided(row: dict, threshold: float = THRESHOLD) -> bool:
+    s = share(row)
+    return max(s, 1 - s) > threshold
 
-    def one(c):
-        row = {"example_id": c.example_id, "votes": votes(llm, c), "judge": llm.label,
+
+def judge(root: str, pairs: List[dict], llm, workers: int = WORKERS) -> Dict[str, dict]:
+    """Votes for every pair, collecting them for items that have no row yet. Each item's row is
+    appended to root/agreement.jsonl as soon as its votes are in, so a crash loses only the items
+    in flight. Returns key -> row for the given pairs."""
+    have = rows(root)
+    todo = list({key(p): p for p in pairs if key(p) not in have}.items())
+
+    def one(item):
+        k, p = item
+        context, (p1, p2) = tradeoffs.full_context(p), poles(p)
+        row = {"key": k, "context": context, "pole_1": p1, "pole_2": p2, "votes": votes(llm, context, p1, p2),
+               "judge": llm.label,
                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}
-        with lock, open(os.path.join(d, AGREEMENT), "a") as f:
+        with _LOCK, open(os.path.join(root, AGREEMENT), "a") as f:
             f.write(json.dumps(row) + "\n")
-            new.append(row)
+        have[k] = row
 
     with concurrent.futures.ThreadPoolExecutor(workers) as pool:
         list(pool.map(one, todo))
-    return new
+    return {key(p): have[key(p)] for p in pairs}
 
 
-def keep(d: str, choices: List[Choice], threshold: float = THRESHOLD) -> List[Choice]:
-    """The choices the filter keeps. Refuses if any choice was never judged, so no split is
-    silently left unfiltered."""
-    have = rows(d)
-    missing = [c.example_id for c in choices if c.example_id not in have]
-    if missing:
-        raise ValueError(f"{len(missing)} pair(s) have no row in {os.path.join(d, AGREEMENT)}; "
-                         "run the 'agree' command first")
-    return [c for c in choices if share(have[c.example_id]) <= threshold]
+def passes(root: str, pair: dict, threshold: float = THRESHOLD) -> Optional[bool]:
+    """True when the pair may be shown, False when lopsided, None when never judged."""
+    row = rows(root).get(key(pair))
+    return None if row is None else not lopsided(row, threshold)

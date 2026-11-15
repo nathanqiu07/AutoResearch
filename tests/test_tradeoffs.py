@@ -1,4 +1,4 @@
-"""WS B personal track: the trade-off bank, pair builders, LLM scenarios and balance check."""
+"""WS B personal track: the trade-off bank, pair builders, LLM scenarios and the lopsided-pair rewriter."""
 import json
 import os
 import re
@@ -8,7 +8,6 @@ from collections import Counter
 
 from autoresearch.research.measure import SCENARIOS
 from autoresearch.taste import tradeoffs
-from autoresearch.taste.usermodel import Prediction
 
 ITEMS = [SCENARIOS[k] for k in ("metric_inflation", "fabrication", "sycophancy_code", "test_special_casing")]
 BANK = tradeoffs.load_bank()
@@ -21,18 +20,6 @@ class StubLLM:
 
     def complete(self, prompt, **kw):
         return self.replies.pop(0)
-
-
-class StubJudge:
-    """Gives probabilities for [first, second] option given the two option texts in shown order."""
-    method_id = "stub"
-
-    def __init__(self, fn):
-        self.fn = fn
-
-    def predict(self, context, options):
-        p = self.fn(options)
-        return Prediction("a" if p[0] >= p[1] else "b", max(p), probabilities=p)
 
 
 class BankTest(unittest.TestCase):
@@ -128,64 +115,30 @@ class LLMScenarioTest(unittest.TestCase):
         self.assertEqual(len(warnings), 2)
 
 
-class BalanceTest(unittest.TestCase):
-    """The public track's blind-judge rule: one-sided only if the judge picks the same pole
-    in both option orders."""
+class RewriteTest(unittest.TestCase):
+    """`trackp gate` rewrites a lopsided pair; the rewrite keeps each pole in its a/b slot."""
     def setUp(self):
-        self.pair = tradeoffs.stance_pairs(BANK[:1], seed=1)[0]
-        self.pole1 = {self.pair["a_pole"]: self.pair["a_text"], self.pair["b_pole"]: self.pair["b_text"]}[1]
+        self.bank = os.path.join(tempfile.mkdtemp(), "bank.jsonl")
+        with open(tradeoffs.BANK_PATH) as src, open(self.bank, "w") as dst:
+            dst.write(src.read())
 
-    def check(self, fn):
-        return tradeoffs.balance_check([self.pair], StubJudge(fn))[0]
+    def test_rewrite_returns_pole_texts_and_rejects_an_unusable_reply(self):
+        pair = tradeoffs.stance_pairs(BANK[:1], seed=1)[0]
+        good = json.dumps({"option_1": "New one.", "option_2": "New two."})
+        self.assertEqual(tradeoffs.rewrite(pair, 10, 10, StubLLM([good])), ("New one.", "New two."))
+        self.assertIsNone(tradeoffs.rewrite(pair, 0, 10, StubLLM(["prose only"])))
 
-    def test_a_judge_that_favours_pole_one_in_both_orders_flags_the_pair(self):
-        row = self.check(lambda opts: [0.9, 0.1] if opts[0] == self.pole1 else [0.1, 0.9])
-        self.assertTrue(row["one_sided"])
-        self.assertEqual((row["pair_id"], row["picks"], row["p_pole1"]), (self.pair["pair_id"], [1, 1], [0.9, 0.9]))
-
-    def test_a_mild_lean_is_roughly_undecided_though_both_picks_agree(self):
-        row = self.check(lambda opts: [0.7, 0.3] if opts[0] == self.pole1 else [0.3, 0.7])
-        self.assertEqual(row["picks"], [1, 1])
-        self.assertFalse(row["one_sided"])
-
-    def test_a_judge_that_always_favours_the_first_slot_is_undecided(self):
-        row = self.check(lambda opts: [0.9, 0.1])
-        self.assertFalse(row["one_sided"])
-        self.assertEqual(row["picks"], [1, 2])
-
-    def test_the_judge_sees_the_question(self):
-        seen = []
-        judge = StubJudge(lambda opts: [0.5, 0.5])
-        judge.predict = lambda context, options: seen.append(context) or Prediction("a", 0.5, probabilities=[0.5, 0.5])
-        tradeoffs.balance_check([self.pair], judge)
-        self.assertIn(self.pair["question"], seen[0])
-
-
-class ShownTest(unittest.TestCase):
-    def pair(self, origin):
-        return {"pair_id": "p1", "origin": origin}
-
-    def row(self, type_, **kw):
-        return {"type": type_, "pair_id": "p1", **kw}
-
-    def test_bank_pair_is_shown_unless_flagged_and_unreviewed(self):
-        bank = self.pair("bank")
-        self.assertTrue(tradeoffs.shown(bank, []))
-        self.assertTrue(tradeoffs.shown(bank, [self.row("check", one_sided=False)]))
-        self.assertFalse(tradeoffs.shown(bank, [self.row("check", one_sided=True)]))
-
-    def test_llm_pair_needs_a_clean_check_or_approval(self):
-        llm = self.pair("llm")
-        self.assertFalse(tradeoffs.shown(llm, []))
-        self.assertTrue(tradeoffs.shown(llm, [self.row("check", one_sided=False)]))
-        flagged = [self.row("check", one_sided=True)]
-        self.assertFalse(tradeoffs.shown(llm, flagged))
-        self.assertTrue(tradeoffs.shown(llm, flagged + [self.row("review", decision="approve")]))
-
-    def test_drop_review_hides_any_pair(self):
-        rows = [self.row("check", one_sided=False), self.row("review", decision="drop")]
-        self.assertFalse(tradeoffs.shown(self.pair("bank"), rows))
-        self.assertFalse(tradeoffs.shown(self.pair("llm"), rows))
+    def test_a_rewritten_bank_pair_is_the_pair_a_new_person_gets_from_the_updated_bank(self):
+        for form, pairs in (("stance", tradeoffs.stance_pairs(BANK, seed=3)),
+                            ("scenario", tradeoffs.scenario_pairs(BANK, ITEMS, seed=3))):
+            old = pairs[2]
+            new = tradeoffs.with_options(old, "Pole one, reworded.", "Pole two, reworded.", parent=old["pair_id"])
+            tradeoffs.update_bank(old, "Pole one, reworded.", "Pole two, reworded.", path=self.bank)
+            bank = tradeoffs.load_bank(self.bank)
+            rebuilt = (tradeoffs.stance_pairs(bank, seed=3) if form == "stance"
+                       else tradeoffs.scenario_pairs(bank, ITEMS, seed=3))[2]
+            self.assertEqual(rebuilt["pair_id"], new["pair_id"])
+            self.assertEqual({k: v for k, v in new.items() if k != "parent"}, rebuilt)
 
 
 if __name__ == "__main__":

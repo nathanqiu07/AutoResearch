@@ -3,20 +3,23 @@
 Everything lives in data/researchers/<slug>/:
 
   seed_pairs.jsonl     trade-off items from data/trackp/tradeoffs.jsonl: stance and scenario (D1-D6)
-  balance.jsonl        balance-check results and reviews of one-sided pairs
   seed_choices.jsonl   the person's answers, as text `Choice` rows (source "seed")
   labels.jsonl         the person's choice at logged loop decisions D1-D6
   recheck.jsonl        re-asked items, for the noise ceiling
-  agreement.jsonl      a blind judge's 10 votes on each answer, 5 per option order (agreement.py)
   usermodel.json       the fitted user model the loop loads (research/advisor.load_user_model)
   history.jsonl        the choices that model was fitted on, for the prompt arm (R1-P-prompt)
   CONSENT.md           who the person is and what they agreed to
 
+The item gate (agreement.py) runs before anyone answers: a seed pair is shown only after `gate`
+has recorded a blind Sonnet 5.5 judge's 10 votes on it (5 per option order, in the shared
+<root>/agreement.jsonl) and neither option got more than 80% of them. `gate` rewrites each
+lopsided pair with Sonnet 5.5, keeping its poles, and judges the rewrite; a bank pair's passing
+rewrite also goes back into the bank. Answers to a pair that fails the gate stay on disk but
+leave every split.
+
 Hold-out (fixed by hashing, so it never moves as answers arrive): 20% of seed
 pairs, plus every label from a run on or after --label-cutoff. The rest is
-split into history and val for `UserModel.fit`. E2 and fit use every split after the
-agreement filter: an answer is dropped when more than 80% of a blind Sonnet 5.5 judge's 10
-votes (5 per option order) go to the option the person chose.
+split into history and val for `UserModel.fit`.
 
 After `init`, --researcher defaults to the personal track (key P) in tracks.json. `status` says what to run
 next. The person answers in a terminal (answer / label / recheck), or an agent shows
@@ -25,10 +28,8 @@ them `pending` items in chat and saves each reply with `record` (docs/trackp-run
     python3 -m autoresearch.taste.trackp start [--name "<full name>"]   # set up, consent, answer: one sitting
     python3 -m autoresearch.taste.trackp init --researcher <slug> --name "<full name>"
     python3 -m autoresearch.taste.trackp seed-pairs [--llm-scenarios K --llm anthropic]
-    python3 -m autoresearch.taste.trackp balance --backend ... --model ...   # paid
-    python3 -m autoresearch.taste.trackp review [--id <pair_id> --decision approve|drop]
+    python3 -m autoresearch.taste.trackp gate --backend ...   # paid, before pairs are shown
     python3 -m autoresearch.taste.trackp status
-    python3 -m autoresearch.taste.trackp agree --backend ...   # paid, once answers exist
     python3 -m autoresearch.taste.trackp answer | label | recheck        # interactive
     python3 -m autoresearch.taste.trackp pending [--kind seed|label|recheck] [--limit N]   # JSON
     python3 -m autoresearch.taste.trackp record --id <id> --choice <n> [--reason "..."]
@@ -40,6 +41,7 @@ Labels read runs/*/decisions.jsonl unless --decisions names files.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import datetime
 import glob
 import json
@@ -144,13 +146,12 @@ def _display_order(key: str, k: int) -> List[int]:
     return order
 
 
-def _seed_items(d: str) -> List[dict]:
-    """Unanswered pairs that pass the balance gate: scenario items grouped by item (items in
+def _seed_items(root: str, d: str) -> List[dict]:
+    """Unanswered pairs that pass the item gate: scenario items grouped by item (items in
     file order), stance items last, so a general stance can't anchor the scenario answers."""
     done = {c["example_id"] for c in _read(os.path.join(d, SEED_CHOICES))}
-    checks = _read(os.path.join(d, tradeoffs.BALANCE))
     pairs = [p for p in _read(os.path.join(d, SEED_PAIRS))
-             if p["pair_id"] not in done and tradeoffs.shown(p, checks)]
+             if p["pair_id"] not in done and agreement.passes(root, p)]
     first = {}
     for p in pairs:
         first.setdefault(p["item"], len(first))
@@ -184,12 +185,13 @@ def _label_items(d: str, decision_paths: List[str], warn: Callable) -> List[dict
     return items
 
 
-def _recheck_items(d: str, frac: float, min_days: float, now: datetime.datetime) -> List[dict]:
+def _recheck_items(root: str, d: str, frac: float, min_days: float, now: datetime.datetime) -> List[dict]:
     done = {r["key"] for r in _read(os.path.join(d, RECHECK))}
+    failed = {"seed:" + p["pair_id"] for p in _read(os.path.join(d, SEED_PAIRS)) if not agreement.passes(root, p)}
     items = []
     for it in _answered_items(d):
         age = (now - datetime.datetime.fromisoformat(it["timestamp"])).total_seconds()
-        if it["key"] in done or _bucket("recheck:" + it["key"]) >= frac or age < min_days * 86400:
+        if it["key"] in done or it["key"] in failed or _bucket("recheck:" + it["key"]) >= frac or age < min_days * 86400:
             continue
         order = list(reversed(range(len(it["options"]))))   # reversed, and the earlier answer is not shown
         items.append({"id": "recheck:" + it["key"], "kind": "recheck", "context": it["context"], "evidence": {},
@@ -205,20 +207,12 @@ def pending_items(root: str, slug: str, kinds=("seed", "label", "recheck"), deci
     d = os.path.join(root, slug)
     items = []
     if "seed" in kinds:
-        items += _seed_items(d)
+        items += _seed_items(root, d)
     if "label" in kinds:
         items += _label_items(d, list(decision_paths), warn)
     if "recheck" in kinds:
-        items += _recheck_items(d, frac, min_days, now or datetime.datetime.now(datetime.timezone.utc))
+        items += _recheck_items(root, d, frac, min_days, now or datetime.datetime.now(datetime.timezone.utc))
     return items
-
-
-def flagged_pairs(d: str) -> List[dict]:
-    """Pairs the balance check called one-sided that nobody has reviewed yet."""
-    checks = _read(os.path.join(d, tradeoffs.BALANCE))
-    one_sided = {r["pair_id"] for r in checks if r["type"] == "check" and r["one_sided"]}
-    reviewed = {r["pair_id"] for r in checks if r["type"] == "review"}
-    return [p for p in _read(os.path.join(d, SEED_PAIRS)) if p["pair_id"] in one_sided - reviewed]
 
 
 def public(item: dict) -> dict:
@@ -373,9 +367,50 @@ def split(root: str, slug: str, label_cutoff: Optional[str] = None, test_frac: f
 
 
 def filtered_split(root: str, slug: str, label_cutoff: Optional[str] = None) -> Dict[str, List[Choice]]:
-    """split() after the agreement filter."""
-    d = os.path.join(root, slug)
-    return {k: agreement.keep(d, v) for k, v in split(root, slug, label_cutoff).items()}
+    """split() without answers to seed pairs that fail the item gate. Refuses if an answered
+    pair was never judged, so no split is silently left ungated."""
+    pairs = {p["pair_id"]: p for p in _read(os.path.join(root, slug, SEED_PAIRS))}
+    parts = split(root, slug, label_cutoff)
+    ok = {c.example_id: agreement.passes(root, pairs[c.example_id])
+          for part in parts.values() for c in part if c.source == "seed"}
+    missing = [k for k, v in ok.items() if v is None]
+    if missing:
+        raise ValueError(f"{len(missing)} answered pair(s) were never judged; run 'gate' first")
+    return {k: [c for c in v if c.source != "seed" or ok[c.example_id]] for k, v in parts.items()}
+
+
+def gate(root: str, slug: str, llm, rounds: int = 3, bank_path: str = tradeoffs.BANK_PATH,
+         workers: int = agreement.WORKERS) -> dict:
+    """Judge every seed pair, then rewrite each lopsided pair that has no passing rewrite yet, up
+    to `rounds` times, judging each version. The passing version is appended to the person's
+    pairs (and, for a bank pair, written back to the bank); earlier versions stay, never shown."""
+    pairs = _read(os.path.join(root, slug, SEED_PAIRS))
+    verdicts = agreement.judge(root, pairs, llm, workers)
+    fixed = {p.get("parent") for p in pairs}
+    todo = [p for p in pairs if agreement.lopsided(verdicts[agreement.key(p)]) and p["pair_id"] not in fixed
+            and not p.get("parent")]
+
+    def fix(p):
+        cur = p
+        for _ in range(rounds):
+            row = agreement.rows(root)[agreement.key(cur)]
+            valid = [v for order in row["votes"] for v in order if v is not None]
+            texts = tradeoffs.rewrite(cur, sum(valid), len(valid), llm)
+            if texts is None:
+                continue
+            cur = tradeoffs.with_options(cur, *texts, parent=p["pair_id"])
+            if not agreement.lopsided(agreement.judge(root, [cur], llm, 1)[agreement.key(cur)]):
+                return cur, texts
+        return None
+
+    with concurrent.futures.ThreadPoolExecutor(workers) as pool:
+        results = list(pool.map(fix, todo))
+    for p, res in zip(todo, results):
+        if res and p["origin"] == "bank":
+            tradeoffs.update_bank(p, *res[1], path=bank_path)
+    write_seed_pairs(root, slug, [res[0] for res in results if res])
+    return {"judged": len(pairs), "lopsided": len(todo), "rewritten": sum(bool(r) for r in results),
+            "still_lopsided": [p["pair_id"] for p, r in zip(todo, results) if not r]}
 
 
 def next_steps(root: str, slug: str, decision_paths: List[str] = ()) -> List[str]:
@@ -390,18 +425,9 @@ def next_steps(root: str, slug: str, decision_paths: List[str] = ()) -> List[str
             steps.append(f"the person ticks every box in {consent} (and someone signs 'Recorded by')")
     if not _read(os.path.join(d, SEED_PAIRS)):
         steps.append("seed-pairs")
-    pairs, checks = _read(os.path.join(d, SEED_PAIRS)), _read(os.path.join(d, tradeoffs.BALANCE))
-    checked = {r["pair_id"] for r in checks if r["type"] == "check"}
-    unchecked = sum(p["origin"] == "llm" and p["pair_id"] not in checked for p in pairs)
-    if unchecked:
-        steps.append(f"{unchecked} LLM pair(s) need 'balance' before they are shown (paid, ask first)")
-    answered = [c.example_id for part in split(root, slug).values() for c in part]
-    unjudged = len(set(answered) - set(agreement.rows(d)))
+    unjudged = sum(agreement.passes(root, p) is None for p in _read(os.path.join(d, SEED_PAIRS)))
     if unjudged:
-        steps.append(f"{unjudged} answer(s) need 'agree' before e2 or fit (paid, ask first)")
-    flagged = len(flagged_pairs(d))
-    if flagged:
-        steps.append(f"{flagged} flagged pair(s) need 'review' by someone other than the person answering")
+        steps.append(f"{unjudged} pair(s) need 'gate' before they are shown (paid, ask first)")
     for kind in ("seed", "label", "recheck"):
         n = len(pending_items(root, slug, (kind,), decision_paths, warn=lambda _: None))
         if n:
@@ -537,7 +563,7 @@ def main(argv=None):
     s.add_argument("--scenario", default="metric_inflation", help="base scenario for --benchmark-items")
     s.add_argument("--max-items", type=int, default=10)
     s.add_argument("--llm-scenarios", type=int, default=0,
-                   help="also ask an LLM for K scenario pairs per item (paid unless offline; shown only after 'balance')")
+                   help="also ask an LLM for K scenario pairs per item (paid unless offline; shown only after 'gate')")
     s.add_argument("--llm", default="offline")
     s.add_argument("--model", default="claude-sonnet-5-5")
     s.add_argument("--max-calls", type=int, default=50)
@@ -552,20 +578,12 @@ def main(argv=None):
     rc.add_argument("--id", required=True)
     rc.add_argument("--choice", type=int, required=True, help="option number as shown, from 1")
     rc.add_argument("--reason", default="")
-    b = cmd("balance", "flag pairs a blind judge (no history) answers the same way in both orders (paid)")
-    b.add_argument("--backend", required=True, help="a real backend: offline models give no probabilities (paid, ask first)")
-    b.add_argument("--model", default="claude-opus-5-5", help="the public track's blind-judge default")
-    b.add_argument("--threshold", type=float, default=0.75)
-    b.add_argument("--max-calls", type=int, default=500)
-    b.add_argument("--cache", default="runs/taste-cache")
-    ag = cmd("agree", "record a blind judge's 10 votes on each answer; e2 and fit drop the ones where more "
-                      "than 80%% go to the person's option (paid)")
-    ag.add_argument("--backend", required=True, help="a real backend (paid, ask first)")
-    ag.add_argument("--model", default=agreement.JUDGE_MODEL)
-    ag.add_argument("--max-calls", type=int, default=5000, help="10 calls per answer")
-    rv = cmd("review", "list flagged pairs, or approve/drop one (not by the person answering)")
-    rv.add_argument("--id", help="pair_id to decide")
-    rv.add_argument("--decision", choices=["approve", "drop"])
+    g = cmd("gate", "a blind judge votes 10 times on each seed pair; rewrite the ones where more than 80%% "
+                    "go to either option (paid)")
+    g.add_argument("--backend", required=True, help="a real backend (paid, ask first)")
+    g.add_argument("--model", default=agreement.JUDGE_MODEL, help="judge and rewriter")
+    g.add_argument("--rounds", type=int, default=3, help="rewrites per lopsided pair")
+    g.add_argument("--max-calls", type=int, default=2000, help="10 per judged pair, 1 per rewrite")
     st = with_decisions(cmd("status", "what to run next, counts, split sizes and noise ceiling"))
     st.add_argument("--label-cutoff", help="labels from runs on or after this date are held out")
     e = cmd("e2", "fit methods on history/val and score them on the held-out choices")
@@ -608,33 +626,10 @@ def main(argv=None):
             pairs += tradeoffs.llm_scenario_pairs(bank, items, _llm(args.llm, args.model, args.max_calls), args.llm_scenarios, args.seed)
         path = write_seed_pairs(args.root, slug, pairs)
         print(f"{len(_read(path))} pairs in {path}")
-    elif args.command == "balance":
-        from .track_eval import BlindJudge, JsonReply
-        d = os.path.join(args.root, slug)
-        done = {r["pair_id"] for r in _read(os.path.join(d, tradeoffs.BALANCE)) if r["type"] == "check"}
-        todo = [p for p in _read(os.path.join(d, SEED_PAIRS)) if p["pair_id"] not in done]
-        judge = BlindJudge(JsonReply(_llm(args.backend, args.model, args.max_calls)), cache_dir=args.cache)
-        rows = tradeoffs.balance_check(todo, judge, args.threshold)
-        for r in rows:
-            _append(os.path.join(d, tradeoffs.BALANCE), r)
-        print(f"checked {len(rows)} pairs, {sum(r['one_sided'] for r in rows)} flagged one-sided")
-    elif args.command == "agree":
+    elif args.command == "gate":
         from .track_eval import JsonReply
-        d = os.path.join(args.root, slug)
-        choices = [c for part in split(args.root, slug).values() for c in part]
-        rows = agreement.judge(d, choices, JsonReply(_llm(args.backend, args.model, args.max_calls)))
-        print(f"judged {len(rows)} answers; {len(choices) - len(agreement.keep(d, choices))} of {len(choices)} dropped")
-    elif args.command == "review":
-        d = os.path.join(args.root, slug)
-        flagged = flagged_pairs(d)
-        if not args.id:
-            print(json.dumps({"n_flagged": len(flagged), "pairs": flagged}, indent=2, ensure_ascii=False))
-            return
-        if not args.decision or args.id not in {p["pair_id"] for p in flagged}:
-            raise SystemExit("pass --decision approve|drop for a flagged, unreviewed pair_id")
-        _append(os.path.join(d, tradeoffs.BALANCE), {"type": "review", "pair_id": args.id,
-                                                     "decision": args.decision, "timestamp": _now()})
-        print(f"{args.id}: {args.decision}")
+        print(json.dumps(gate(args.root, slug, JsonReply(_llm(args.backend, args.model, args.max_calls)),
+                              args.rounds), indent=2))
     elif args.command in ("answer", "label", "recheck"):
         kind = {"answer": "seed", "label": "label", "recheck": "recheck"}[args.command]
         print(f"recorded {ask_items(args.root, slug, pending((kind,)), limit=args.limit)} answers")

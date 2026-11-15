@@ -4,7 +4,7 @@ import os
 import re
 import unittest
 
-from autoresearch.taste import timesplit, track_eval, trackp, tradeoffs
+from autoresearch.taste import timesplit, track_eval, trackp
 
 DATA = "data"
 
@@ -32,7 +32,7 @@ class DataCatalogTest(unittest.TestCase):
     def test_every_file_the_track_code_writes_has_a_row(self):
         rows = catalogued("## A researcher's folder")
         written = {trackp.SEED_PAIRS, trackp.SEED_CHOICES, trackp.LABELS, trackp.RECHECK, trackp.HISTORY,
-                   trackp.USERMODEL, tradeoffs.BALANCE, timesplit.PAIRS, timesplit.REVIEW, timesplit.HISTORY,
+                   trackp.USERMODEL, timesplit.PAIRS, timesplit.REVIEW, timesplit.HISTORY,
                    timesplit.HELDOUT, timesplit.IDENTITY, track_eval.GATE}
         written |= {p.split(os.sep)[0] + "/" for p in (timesplit.DECISIONS, timesplit.EXA_EXTRACT)}
         self.assertEqual(written - rows, set())

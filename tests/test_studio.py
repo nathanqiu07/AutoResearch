@@ -12,6 +12,7 @@ from unittest import mock
 from autoresearch.llm import LLM, OfflineLLM
 from autoresearch.research.advisor import ProfileUserModel, load_user_model
 from autoresearch.studio import server, sources, store
+from autoresearch.taste import agreement, tradeoffs
 from autoresearch.taste.researcher import load_researcher
 
 
@@ -20,6 +21,19 @@ def _personal(root, name="Ada Example"):
     store.write_consent(root, meta["slug"], [True] * len(store.consent_state(root, meta["slug"])))
     return meta["slug"]
 
+
+
+class FirstShown(LLM):
+    def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+        return json.dumps({"choice": 1})
+
+
+def gate_default_suite(root):
+    """Item-gate votes that pass every pair of the default questionnaire, as the shared
+    data/researchers/agreement.jsonl holds them (a judge picking the first option shown: 5 of 10)."""
+    from autoresearch.research.measure import SCENARIOS
+    pairs = tradeoffs.build_seed_pairs(tradeoffs.load_bank(), [SCENARIOS[n] for n in sorted(SCENARIOS)], 0)
+    agreement.judge(root, pairs, FirstShown(), workers=1)
 
 class StoreTest(unittest.TestCase):
     def setUp(self):
@@ -94,6 +108,7 @@ class StoreTest(unittest.TestCase):
         self.assertEqual(set(store.load_meta(self.root, slug)["questionnaire"]), set(ids))
 
     def test_tradeoff_items_need_consent_and_record_through_trackp(self):
+        gate_default_suite(self.root)
         slug = store.create_profile(self.root, "Ada Example", "personal")["slug"]
         with self.assertRaises(store.StudioError):
             store.ensure_seed_pairs(self.root, slug)
@@ -252,6 +267,7 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(cm.exception.code, 404)
 
     def test_personal_flow_over_http(self):
+        gate_default_suite(self.root)
         self.assertEqual(self.call("GET", "/api/config")[0], 200)
         code, meta = self.call("POST", "/api/profiles", {"name": "Grace Example", "mode": "personal"})
         self.assertEqual(code, 200)

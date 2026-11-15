@@ -36,12 +36,18 @@ python3 -m autoresearch.taste.trackp seed-pairs
   (D1, D3 when inconclusive, D4, D5), each in a different environment.
   `--llm-scenarios K --llm <backend>` adds LLM-written scenario items. That is a paid call,
   so ask the user first.
-* Then run `balance --backend <b> --model <m>` (paid, ask first) and `review`. `balance` is the
-  public track's blind judge: a model with no history answers in both orders, and an item where
-  it gives one option 0.75 or more both times is flagged one-sided. A taste item should leave it
-  roughly undecided.
-  `review` lists the items awaiting a decision, and `review --id <pair_id> --decision
-  approve|drop` settles one. Someone other than the person answering does both.
+* Then run `gate --backend claude-cli` (paid, ask first). It is the item gate
+  (`autoresearch/taste/agreement.py`): a `claude-sonnet-5-5` judge with no history about the
+  person is asked which option is the better research decision 5 times with each option order
+  (10 sampled votes). An item where more than 80% of the votes (9 or 10 of 10) go to either
+  option is lopsided: it tests generic research sense, not taste, and is never shown. `gate`
+  rewrites each lopsided item's options with Sonnet 5.5, keeping their poles, judges the rewrite
+  (up to `--rounds` attempts), and adds the passing version to the person's items; for a bank
+  item it also writes the rewrite back to `data/trackp/tradeoffs.jsonl`. Nobody re-checks a
+  failed item by hand. Every vote is recorded in `data/researchers/agreement.jsonl`, keyed by
+  the question and pole texts, so an item is judged once for every person and a new threshold
+  needs no new calls. This replaces the old `balance`/`review` check and the post-answer `agree`
+  filter (2026-11-14).
 
 ## 2. Collect answers
 
@@ -90,13 +96,10 @@ python3 -m autoresearch.taste.trackp fit --method <selected> --config '<WS A con
 python3 -m autoresearch.taste.usermodel_store push --researcher <slug>
 ```
 
-* First run `agree --backend claude-cli` (paid, ask first; 10 calls per answer). It is the
-  agreement filter (personal track only; the public track is not filtered). The judge is `claude-sonnet-5-5`, with no history about the person. It is asked which option is the better research decision 5 times with each option order (10 sampled votes), and a pair is dropped when more than 80% of the votes (9 or 10 of 10) go to the option the person chose.
-  `e2` and `fit` drop such an answer from every split (history, val and test): it tests
-  generic sense, not their taste. Answers the judge decides against the person stay, with no
-  manual re-check. Every vote is recorded in `agreement.jsonl`, so a new threshold needs no
-  new calls; `e2` and `fit` refuse answers that were never judged, and `status` says when to
-  run it. This is separate from `balance`, which checks items before anyone answers.
+* No post-answer filter: lopsided items were dropped or rewritten by `gate` before the person
+  ever saw them. `e2` and `fit` still skip answers to pairs that fail the gate (an answer given
+  before an item was judged, or a judge that got stricter), and refuse an answered pair that was
+  never judged. Labels to logged decisions are not gated.
 * `e2` writes `results/e2/P_<slug>.json` and refuses to overwrite it. Report the
   accuracies next to the `noise_ceiling` in the same file.
 * `fit` writes `usermodel.json` for the R1-P arm and `history.jsonl` for R1-P-prompt.
@@ -107,6 +110,7 @@ python3 -m autoresearch.taste.usermodel_store push --researcher <slug>
 
 ## Files (`data/researchers/<slug>/`)
 
-`seed_pairs.jsonl`, `seed_choices.jsonl`, `labels.jsonl`, `recheck.jsonl`, `agreement.jsonl`, `usermodel.json`,
-`history.jsonl`, `CONSENT.md`. All are append-only except the two that `fit` rewrites.
+`seed_pairs.jsonl`, `seed_choices.jsonl`, `labels.jsonl`, `recheck.jsonl`, `usermodel.json`,
+`history.jsonl`, `CONSENT.md`. All are append-only except the two that `fit` rewrites. The
+shared `data/researchers/agreement.jsonl` holds the item gate's votes, not per person.
 Commit the answer files after each session; stage them by name.

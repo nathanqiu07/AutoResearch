@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 from autoresearch.cli import resolve_arm
-from autoresearch.llm import OfflineLLM
+from autoresearch.llm import LLM, OfflineLLM
 from autoresearch.research.advisor import load_user_model
 from autoresearch.research.decisions import DecisionLog
 from autoresearch.taste import agreement, tradeoffs, trackp
@@ -28,6 +28,22 @@ N_SEED = N_STANCE + sum(tradeoffs.has_scenario(r) for r in BANK)
 def pole_one(text):
     """A consistent person: always prefers pole 1 of every trade-off."""
     return int(text in POLE_ONE)
+
+
+class FakeJudge(LLM):
+    """Votes for an option in `lopsided` whenever it is shown, else for the first option shown
+    (5 of 10, so the pair passes). Asked to rewrite, it prefixes both options with "Reworded: "."""
+
+    def __init__(self, lopsided=()):
+        super().__init__()
+        self.lopsided = set(lopsided)
+
+    def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+        o1 = prompt.split("Option 1: ", 1)[1].split("\n", 1)[0]
+        o2 = prompt.split("Option 2: ", 1)[1].split("\n", 1)[0]
+        if "Rewrite both options" in prompt:
+            return json.dumps({"option_1": "Reworded: " + o1, "option_2": "Reworded: " + o2})
+        return json.dumps({"choice": 2 if o2 in self.lopsided else 1})
 
 
 def read(path):
@@ -61,12 +77,9 @@ class TrackPTest(unittest.TestCase):
         self.seed_pairs_only(seed)
         return self.answer("seed", prefer, limit=n)
 
-    def agree(self, agreeing=()):
-        """Agreement rows for every answer, as 'agree' records them: `agreeing` ids get 10 of 10 votes, the rest 6."""
-        ids = [c.example_id for part in trackp.split(self.root, SLUG).values() for c in part]
-        with open(os.path.join(self.dir, agreement.AGREEMENT), "w") as f:
-            f.writelines(json.dumps({"example_id": k, "votes": [[True] * 5] * 2 if k in agreeing else [[True, False] * 2 + [True]] * 2,
-                                     "judge": "fake", "timestamp": "t"}) + "\n" for k in ids)
+    def judge(self, pairs=None, lopsided=()):
+        """Item-gate votes for the pairs (default: this person's), as 'gate' records them."""
+        agreement.judge(self.root, self.pairs() if pairs is None else pairs, FakeJudge(lopsided), workers=1)
 
     def label_run(self, run_id, records):
         log = DecisionLog(run_id, "R0", root=os.path.join(self.root, "runs"), version="test")
@@ -88,6 +101,8 @@ class TrackPTest(unittest.TestCase):
         self.assertTrue(any("CONSENT.md" in s for s in fresh["next"]))
         self.assertTrue(any(s.startswith("seed-pairs") for s in fresh["next"]))
         self.cli("seed-pairs")
+        self.assertTrue(any(s.startswith(f"{N_SEED} pair(s) need 'gate'") for s in self.cli("status", "--decisions")["next"]))
+        self.judge()
         self.assertTrue(any(s.startswith(f"{N_SEED} seed item(s) waiting") for s in self.cli("status", "--decisions")["next"]))
 
     def pairs(self):
@@ -99,10 +114,6 @@ class TrackPTest(unittest.TestCase):
                "b_text": "grade sixty", "a_pole": 1, "b_pole": 2}
         trackp.write_seed_pairs(self.root, SLUG, [row])
         return "seed:" + row["pair_id"]
-
-    def add_balance(self, row):
-        with open(os.path.join(self.dir, tradeoffs.BALANCE), "a") as f:
-            f.write(json.dumps(row) + "\n")
 
     def test_seed_pairs_are_every_stance_and_one_scenario_per_scenario_axis(self):
         self.seed_pairs_only()
@@ -136,36 +147,35 @@ class TrackPTest(unittest.TestCase):
 
     def seed_pairs_only(self, seed=1):
         self.cli("seed-pairs", "--seed", seed, "--scenarios", "metric_inflation", "fabrication")
+        self.judge()
 
-    def test_llm_pairs_are_not_pending_until_balanced(self):
+    def test_no_pair_is_pending_until_the_gate_has_judged_it(self):
         item_id = self.add_llm_pair()
         self.assertEqual(self.cli("pending", "--kind", "seed")["n_pending"], 0)
         with self.assertRaises(SystemExit):
             self.cli("record", "--id", item_id, "--choice", 1)
-        self.add_balance({"type": "check", "pair_id": "llm000000001", "picks": [1, 2],
-                          "one_sided": False, "method": "m0", "timestamp": "t"})
+        self.judge()
         self.assertEqual(self.cli("pending", "--kind", "seed")["items"][0]["id"], item_id)
 
-    def test_dropped_pair_never_returns_and_approved_pair_does(self):
-        self.add_llm_pair()
-        self.add_balance({"type": "check", "pair_id": "llm000000001", "picks": [1, 1],
-                          "one_sided": True, "method": "m0", "timestamp": "t"})
-        self.assertEqual(self.cli("pending", "--kind", "seed")["n_pending"], 0)
-        self.assertEqual(self.cli("review")["n_flagged"], 1)
-        self.cli("review", "--id", "llm000000001", "--decision", "approve")
-        self.assertEqual(self.cli("pending", "--kind", "seed")["n_pending"], 1)
-        self.assertEqual(self.cli("review")["n_flagged"], 0)
-        self.add_balance({"type": "review", "pair_id": "llm000000001", "decision": "drop", "timestamp": "t"})
-        self.assertEqual(self.cli("pending", "--kind", "seed")["n_pending"], 0)
-
-    def test_status_asks_for_balance_then_review(self):
-        self.add_llm_pair()
-        self.assertTrue(any("need 'balance'" in s for s in self.cli("status", "--decisions")["next"]))
-        self.add_balance({"type": "check", "pair_id": "llm000000001", "picks": [1, 1],
-                          "one_sided": True, "method": "m0", "timestamp": "t"})
-        steps = self.cli("status", "--decisions")["next"]
-        self.assertFalse(any("need 'balance'" in s for s in steps))
-        self.assertTrue(any("need 'review'" in s for s in steps))
+    def test_gate_hides_a_lopsided_pair_and_serves_its_rewrite_and_writes_it_to_the_bank(self):
+        bank = os.path.join(self.root, "bank.jsonl")
+        with open(tradeoffs.BANK_PATH) as src, open(bank, "w") as dst:
+            dst.write(src.read())
+        self.cli("seed-pairs", "--seed", 1, "--scenarios", "metric_inflation", "fabrication")
+        target = next(p for p in self.pairs() if p["form"] == "stance")
+        favoured = target["a_text"]
+        rep = trackp.gate(self.root, SLUG, FakeJudge([favoured]), bank_path=bank, workers=1)
+        self.assertEqual((rep["lopsided"], rep["rewritten"]), (1, 1))
+        ids = [it["id"] for it in self.cli("pending", "--kind", "seed", "--limit", 1000)["items"]]
+        self.assertEqual(len(ids), N_SEED)
+        self.assertNotIn("seed:" + target["pair_id"], ids)
+        (new,) = [p for p in self.pairs() if p.get("parent") == target["pair_id"]]
+        self.assertIn("seed:" + new["pair_id"], ids)
+        self.assertEqual(new["a_text"], "Reworded: " + favoured)
+        row = next(r for r in tradeoffs.load_bank(bank) if r["axis"] == target["axis"])
+        self.assertIn("Reworded: " + favoured, (row["pole_1"], row["pole_2"]))
+        again = trackp.gate(self.root, SLUG, FakeJudge([favoured]), bank_path=bank, workers=1)
+        self.assertEqual(again["lopsided"], 0)
 
     def test_recorded_answers_are_choices_with_reasons_and_leave_nothing_pending(self):
         shown = self.seed()
@@ -228,6 +238,7 @@ class TrackPTest(unittest.TestCase):
 
     def test_terminal_loop_records_the_same_answer_as_record(self):
         self.cli("seed-pairs")
+        self.judge()
         replies, said = iter(["2", "skip", "q"]), []
         items = trackp.pending_items(self.root, SLUG, ("seed",))
         n = trackp.ask_items(self.root, SLUG, items, ask=lambda _: next(replies), say=said.append)
@@ -237,6 +248,8 @@ class TrackPTest(unittest.TestCase):
         self.assertEqual((row["chosen"], row["reason"]), ("b", ""))
 
     def test_start_sets_up_by_name_takes_consent_and_resumes(self):
+        from autoresearch.research.measure import SCENARIOS
+        self.judge(tradeoffs.build_seed_pairs(BANK, [SCENARIOS[n] for n in sorted(SCENARIOS)], 0))
         said = []
         self.assertEqual(trackp.start(self.root, "Jane Q. Doe", ask=lambda _: "n", say=said.append), 0)
         d = os.path.join(self.root, "jane_q_doe")
@@ -269,7 +282,6 @@ class TrackPTest(unittest.TestCase):
 
     def test_fit_writes_a_user_model_the_loop_loads_and_history_without_held_out_choices(self):
         self.seed()
-        self.agree()
         trackp.fit_user_model(self.root, SLUG, lambda: create_method("m1", OfflineLLM()))
         model, source = load_user_model(self.dir, None, OfflineLLM())
         self.assertEqual(model.method_id, "m1")
@@ -281,7 +293,6 @@ class TrackPTest(unittest.TestCase):
 
     def test_e2_scores_held_out_choices_and_never_overwrites(self):
         self.seed()
-        self.agree()
         held = trackp.split(self.root, SLUG)["test"]
 
         class PrefersLater(UserModel):   # the real fit() checks for history/val leakage
@@ -296,24 +307,19 @@ class TrackPTest(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             trackp.run_e2(self.root, SLUG, {"later": lambda: PrefersLater(OfflineLLM())}, out)
 
-    def test_e2_and_fit_drop_answers_the_judge_decides_for_the_person_in_every_split(self):
-        self.seed()
+    def test_e2_and_fit_drop_answers_to_pairs_that_fail_the_gate_in_every_split(self):
+        self.seed()   # answered while the gate passed every pair; a stricter judge then fails two
         parts = trackp.split(self.root, SLUG)
         dropped = {parts["test"][0].example_id, parts["history"][0].example_id}
-        self.agree(agreeing=dropped)
+        os.remove(os.path.join(self.root, agreement.AGREEMENT))
+        self.judge(lopsided=[next(c.a_text for part in parts.values() for c in part if c.example_id == k)
+                             for k in dropped])
         rep = trackp.run_e2(self.root, SLUG, {"m1": lambda: create_method("m1", OfflineLLM())},
                             os.path.join(self.root, "e2.json"))
         self.assertEqual(rep["methods"]["m1"]["n"], len(parts["test"]) - 1)
         trackp.fit_user_model(self.root, SLUG, lambda: create_method("m1", OfflineLLM()))
         exported = {r["example_id"] for r in read(os.path.join(self.dir, trackp.HISTORY))}
         self.assertFalse(exported & dropped)
-
-    def test_status_asks_for_agree_once_answers_exist(self):
-        self.seed()
-        self.assertTrue(any("'agree'" in s for s in self.cli("status")["next"]))
-        self.agree()
-        self.assertFalse(any("'agree'" in s for s in self.cli("status")["next"]))
-
 
 if __name__ == "__main__":
     unittest.main()

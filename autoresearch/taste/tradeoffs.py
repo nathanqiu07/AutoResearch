@@ -1,5 +1,6 @@
 """WS B personal track: the trade-off bank, stance/scenario pair builders, LLM-written
-scenarios and the balance check that gates them.
+scenarios, and the rewriter that `trackp gate` uses on pairs the item gate calls lopsided
+(agreement.py).
 
 Every axis is asked as a stance item. Axes at decision points where the loop lets taste act
 (D1, D3 when inconclusive, D4, D5) also carry a scenario, asked once per person in one
@@ -8,16 +9,14 @@ environment, rotated so no question text repeats.
 A pair row is {pair_id, form, axis, decision_point, origin, item, context, question, a_text,
 b_text, a_pole, b_pole}. The poles record which bank option sits on each side after
 shuffling; the person never sees them."""
-import datetime
 import json
 import random
-from typing import List
+from typing import List, Optional, Tuple
 
 from ..llm import extract_json
 from .usermodel import digest
 
 BANK_PATH = "data/trackp/tradeoffs.jsonl"
-BALANCE = "balance.jsonl"
 REQUIRED = ("axis", "decision_point", "question", "pole_1", "pole_2")
 SCENARIO_FIELDS = ("scenario_question", "scenario_1", "scenario_2")
 STANCE_CONTEXT = "A question about how you design evals in general."
@@ -67,10 +66,14 @@ def _pair(form: str, row: dict, item, context: str, question: str, text_1: str, 
     flip = rng.random() < 0.5
     (a_text, b_text), (a_pole, b_pole) = ((text_2, text_1), (2, 1)) if flip else ((text_1, text_2), (1, 2))
     name = item.name if item else None
-    return {"pair_id": digest([form, row["axis"], name or "", question, a_text, b_text])[:12], "form": form,
-            "axis": row["axis"], "decision_point": row["decision_point"], "origin": origin,
+    pair = {"form": form, "axis": row["axis"], "decision_point": row["decision_point"], "origin": origin,
             "item": name, "context": context, "question": question, "a_text": a_text, "b_text": b_text,
             "a_pole": a_pole, "b_pole": b_pole}
+    return {"pair_id": _pair_id(pair), **pair}
+
+
+def _pair_id(p: dict) -> str:
+    return digest([p["form"], p["axis"], p["item"] or "", p["question"], p["a_text"], p["b_text"]])[:12]
 
 
 def stance_pairs(bank: List[dict], seed: int = 0) -> List[dict]:
@@ -127,39 +130,43 @@ def llm_scenario_pairs(bank: List[dict], items: list, llm, k: int, seed: int = 0
     return out
 
 
-def _now() -> str:
-    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+REWRITE = (
+    "A blind judge, who knows nothing about the researcher answering, was asked {n} times which of "
+    "these two options is the better research decision. It picked option {fav} {k} times, so the "
+    "question tests generic research sense rather than the researcher's taste.\n\n{context}\n\n"
+    "Option 1: {o1}\nOption 2: {o2}\n\n"
+    "Rewrite both options so that each is a choice a careful researcher could defend, and the judge "
+    "would be close to undecided. Option 1 must stay on the same side of the trade-off as before, and "
+    "option 2 on the other. Keep the two options of similar length and specificity, at the same level "
+    "of detail as the originals, and use no evaluative words such as \"better\", \"rigorous\" or "
+    "\"sloppy\". Return JSON: {{\"option_1\": str, \"option_2\": str}}.")
 
 
-def balance_check(pairs: List[dict], judge, threshold: float = 0.75) -> List[dict]:
-    """One check row per pair, from the public track's blind judge (track_eval.BlindJudge): a
-    model with no history about the person answers in both option orders, as in
-    track_eval.paired_correct. `picks` is its choice each time, as the public track scores it;
-    a forced choice picks the same pole on almost any lean, so the gate uses its probabilities.
-    One-sided when it gives the same pole >= threshold in both orders; a taste item should
-    leave it roughly undecided."""
-    rows = []
-    for p in pairs:
-        text = {p["a_pole"]: p["a_text"], p["b_pole"]: p["b_text"]}
-        first = judge.predict(full_context(p), [text[1], text[2]])
-        second = judge.predict(full_context(p), [text[2], text[1]])
-        p_pole1 = [first.probabilities[0], second.probabilities[1]]
-        rows.append({"type": "check", "pair_id": p["pair_id"],
-                     "picks": [1 if first.choice == "a" else 2, 2 if second.choice == "a" else 1],
-                     "p_pole1": p_pole1,
-                     "one_sided": min(p_pole1) >= threshold or max(p_pole1) <= 1 - threshold,
-                     "method": judge.method_id, "timestamp": _now()})
-    return rows
+def rewrite(pair: dict, pole_1_votes: int, n_votes: int, llm) -> Optional[Tuple[str, str]]:
+    """New (pole 1, pole 2) texts for a lopsided pair, or None when the reply is unusable."""
+    o1, o2 = (pair["a_text"], pair["b_text"]) if pair["a_pole"] == 1 else (pair["b_text"], pair["a_text"])
+    fav, k = (1, pole_1_votes) if 2 * pole_1_votes >= n_votes else (2, n_votes - pole_1_votes)
+    reply = extract_json(llm.complete(REWRITE.format(n=n_votes, fav=fav, k=k, context=full_context(pair),
+                                                     o1=o1, o2=o2), temperature=0.9, max_tokens=800))
+    t1 = str(reply.get("option_1", "")).strip() if isinstance(reply, dict) else ""
+    t2 = str(reply.get("option_2", "")).strip() if isinstance(reply, dict) else ""
+    return (t1, t2) if t1 and t2 and t1 != t2 else None
 
 
-def shown(pair: dict, balance_rows: List[dict]) -> bool:
-    mine = [r for r in balance_rows if r.get("pair_id") == pair["pair_id"]]
-    reviews = [r["decision"] for r in mine if r["type"] == "review"]
-    if "drop" in reviews:
-        return False
-    if "approve" in reviews:
-        return True
-    checks = [r for r in mine if r["type"] == "check"]
-    if checks:
-        return not checks[-1]["one_sided"]
-    return pair["origin"] == "bank"
+def with_options(pair: dict, text_1: str, text_2: str, parent: str) -> dict:
+    """The pair with new pole texts, each in its old a/b slot. For a bank pair this is the pair
+    the rotation builds from the updated bank, so a new person gets the same id."""
+    a_text, b_text = (text_1, text_2) if pair["a_pole"] == 1 else (text_2, text_1)
+    new = {**pair, "a_text": a_text, "b_text": b_text, "parent": parent}
+    return {**new, "pair_id": _pair_id(new)}
+
+
+def update_bank(pair: dict, text_1: str, text_2: str, path: str = BANK_PATH) -> None:
+    """Write a bank pair's rewritten options back to its bank row."""
+    fields = ("pole_1", "pole_2") if pair["form"] == "stance" else ("scenario_1", "scenario_2")
+    with open(path) as f:
+        rows = [json.loads(l) for l in f if l.strip()]
+    row = next(r for r in rows if r["axis"] == pair["axis"])
+    row[fields[0]], row[fields[1]] = text_1, text_2
+    with open(path, "w") as f:
+        f.writelines(json.dumps(r) + "\n" for r in rows)
