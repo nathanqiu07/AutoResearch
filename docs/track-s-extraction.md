@@ -26,6 +26,7 @@ calls under `runs/track_s/cache/usermodel`. Claude stages use the `claude-cli` b
 | pairs | `python3 -m autoresearch.taste.timesplit pairs --researcher <slug> --cutoff 2025-04-01 --max-usd 20` | `pairs_timesplit.jsonl`, `history_timesplit.jsonl`, `heldout_timesplit.jsonl` |
 | review (optional) | `python3 -m autoresearch.taste.timesplit review --researcher <slug>` | `review_timesplit.jsonl` |
 | gate | `python3 -m autoresearch.taste.track_eval gate --researcher <slug> --max-usd 10` | `gate_timesplit.jsonl`; may rewrite the pairs files |
+| agree | `python3 -m autoresearch.taste.track_eval agree --researcher <slug> --max-usd 15` | `agreement.jsonl` (run after the gate, since the gate can replace pairs) |
 | select | `python3 -m autoresearch.taste.track_eval select --researcher <slug> --max-usd 40` | prints the chosen method and scores |
 | e2 | `python3 -m autoresearch.taste.track_eval e2 --researcher <slug> --name "<Full Name>" --selected <m> --max-usd 40` | `results/track_s/E2_<slug>.json` |
 | final | `python3 -m autoresearch.taste.track_eval final --researcher <slug> --selected <m> --max-usd 10` | `usermodel.json` |
@@ -202,6 +203,7 @@ blanked when it matches a banned name. Pairs rejected in `review` are left out.
 | Check | What it guards against | Rule |
 |---|---|---|
 | Distractor gate (`track_eval gate`) | Guessable pairs: the distractor is just a worse idea | A blind judge on a different model (default `claude-opus-5-5`) is asked which option is better research, in both orders. If it picks his option on more than 75% of held-out pairs, each flagged pair is rebuilt once with the next distractor source and judged again. Runs once per pair set. E2 reports accuracy with and without pairs still flagged. |
+| Agreement filter (`track_eval agree`) | Pairs that test generic research sense, not his taste | A blind judge (`claude-sonnet-5-5`, no history) is asked which option is better research, in both orders. A pair is dropped from history **and** held-out when it gives his option more than 0.8 in both orders: every arm, m0 included, gets such a pair right, so it only adds noise. Pairs it confidently decides *against* him stay; they are where his taste shows. Its probability for his option in each order is recorded per pair in `agreement.jsonl`, so a new threshold needs no new calls. `select`, `e2` and `final` refuse a pair that was never judged. Same rule on the personal track (Ethan, 2026-11-14). |
 | Style-leak probe (in the gate) | Wording that marks the real option | The same judge is asked which option was paraphrased from a published paper, scored over both orders (chance 0.5). Flagged when the low end of the document-clustered 90% interval is above 0.5. Report only; no pair changes. |
 | Contamination (`m0_named` vs `m0`) | The predictor already knows his post-T work | E2 runs M0 twice, once told his name. The gap, with a document-resampled interval, is reported next to the result. |
 | Document-clustered CIs | Pairs from one document are not independent | All intervals resample source documents (`group_id`), 2,000 draws, 90%. A pair counts as right only if the model picks his option in both a/b orders. |

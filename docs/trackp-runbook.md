@@ -90,6 +90,14 @@ python3 -m autoresearch.taste.trackp fit --method <selected> --config '<WS A con
 python3 -m autoresearch.taste.usermodel_store push --researcher <slug>
 ```
 
+* First run `agree --backend <b>` (paid, ask first; default model `claude-sonnet-5-5`). It is
+  the public track's agreement filter: a blind judge with no history answers each *answered*
+  item in both orders, and `e2` and `fit` drop an answer from every split (history, val and
+  test) when the judge gives the option the person chose more than 0.8 both times. Such an
+  item tests generic sense, not their taste. Items the judge confidently decides against the
+  person stay. Probabilities are recorded in `agreement.jsonl`, so a new threshold needs no new
+  calls; `e2` and `fit` refuse answers that were never judged, and `status` says when to run it.
+  This is separate from `balance`, which checks items before anyone answers.
 * `e2` writes `results/e2/P_<slug>.json` and refuses to overwrite it. Report the
   accuracies next to the `noise_ceiling` in the same file.
 * `fit` writes `usermodel.json` for the R1-P arm and `history.jsonl` for R1-P-prompt.
@@ -100,6 +108,6 @@ python3 -m autoresearch.taste.usermodel_store push --researcher <slug>
 
 ## Files (`data/researchers/<slug>/`)
 
-`seed_pairs.jsonl`, `seed_choices.jsonl`, `labels.jsonl`, `recheck.jsonl`, `usermodel.json`,
+`seed_pairs.jsonl`, `seed_choices.jsonl`, `labels.jsonl`, `recheck.jsonl`, `agreement.jsonl`, `usermodel.json`,
 `history.jsonl`, `CONSENT.md`. All are append-only except the two that `fit` rewrites.
 Commit the answer files after each session; stage them by name.
