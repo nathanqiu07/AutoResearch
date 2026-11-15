@@ -867,3 +867,102 @@ ACTION10/05: prospective metricprotocol v2 frozen by04 at `/private/tmp/gio-prof
 ACTION10: infrastructure independent35review passed15owner+4addedtests, all70plan/leasehashes,35positions30–64,1905calls/$4.37existingtranches,315absence markers. Currentverify_guard expects prior11unionONLY400unknown; narrow expected-union/disposition change needed toacceptdriverlatest12unknown+1known-consumed guard. Keepreferenceunknowncount8, preserve unbounddraft, bindfinalwrapper/guard/replay into separatelynamedsource. Rootpendingactualdispatch/--checkafterfinalreview, no scientificruntimechanges. Driveralsoverifiednewknownconsumedc0/3e ZEROintersection98exactrequests.
 
 ACTION05/10:04alreadyfroze donor-cycledependence caveat inv2protocol199b6aa; requesteduserbootstrapisconditional/descriptive,notindependentpopulationguarantee.04prepares safe capturefieldwhitelist now for05actualnative reconstruction: fit-only historyallowed,targetcontext/options/IDssafelycapturedwithouttargetlabels. Metadata-onlyproofmustnot be advertised asrawrequestreconstruction. Correctedclosedmetricprosef3e63e12accepted, no rescoring.
+
+
+### Final continuation guard ready 2026-11-15T14:49:13.583274+00:00
+
+ACTION10 finalpinsNOW: handoff `/private/tmp/gio-remaining56-typed12-wrapper-handoff-v2/ready-index.json` SHAd9020ebcd15c279d7d5eab98738f50c02e8c30b83a4bda8a4b44e64007f7757a. WRAPPER `/private/tmp/gio_diagnostic_runtime_envelope_remaining56_v3.py` SHA5d304e4a9f15bd1b809adce2f412ae1c75d8bc39c4494bbd924fb8aad65ef2e4; DENY `/private/tmp/gio-reference-remaining56-consumed-denylist-v2/typed-denylist.json` SHA6c272e0091356f6ee99e2bc814c1b333977f025e7ce2e2eb77ea894ea79ccd39; GUARD_REPLAY handoffdir/guard-replay.json SHA669ee0b5bbd29240160e8e23c832d6eaf77001a739a17fa90a47f4430e1b9588.11testsPASS, actualunknown+knownconsumed eachbothconventions/equivalentJSON denied,8denials0transport/cacheunchanged.12unknownattempts+1knownconsumed,17identities,refunknown8. Originalruntime/observerunchanged. Bind final35source/template now andsendroot; infrastructurefinalreviewalreadyassigned. No newallocation/leases.
+
+98closed scaling logicalsnapshot `/private/tmp/gio-profile-20261115-coordinator/accounting/remaining98-closed-ledger-snapshot-v1.json` SHA6d1803e6acf659d829a3244d021c77efc02156d6828cbfb0c2fb1ee3c0fcf6e7 confirms404/$4.934060/0holds, all306priorrows unchanged. Rootread-onlytransaction, nocopyofliveDB.
+
+
+### Approved role05 input capture boundary 2026-11-15T14:50:50.028198+00:00
+
+ACTION10/05:04 exactcustodycontract `/private/tmp/gio-profile-20261115-evaluator/released/history-control-role05-input-capture-custody-contract-v2.json` SHA0ae34769644ee960a552e566653ba877cb4990e5121e2abff41cdf6e8d3581ba.10produces pinnedfivefileprivatecapture;05mayread fitselectedChoice labels/reasons/provenance andstrict targetcontext/options/IDs/splitsONLY. No rawtargetrows, targetpreference/reason/ratings, label-dependenttargethashes, arbitrarymetadata orrecursivedereferencing. Nativepayloadreconstruction permittedonlyfromapprovedprojection; noexecutionauthority.04verifieshistoricalM1eligibility metadata: original9039guardblocked replacedonlybydeclaredknownrecovery;784oneunknown+4neverattemptedblockedtails distinguished fromknownvalidfreshreplicas. No knowninvalidJSONM1foundsofar, finalexactcounts pending. Preservefixed1032planned cells.
+
+
+### Historical own-input eligibility refinement 2026-11-15T14:51:37.677564+00:00
+
+ACTION10:04 aggregateclosedmetadata confirms own515eligible=511knownvalidM1predictions+4previouslyguardblocked/unattemptedinputs;oneunknownwithheld. No M1invalidJSON/malformedfailure in original8/new56/recovered903 summary. Root authorizes prospectivefresh replication of511knownvalid andfirstattemptsof4untouchedinputs, contingent on exactidentityproof; neverretryunknown/knownfailure. Original9039guardblockedrowsstayoldprimarymissing; recoveryonlydeclaredsource.
+
+Please emit metadata-only516mapping for04: target_user_id,target_id,body_compact_sha256,endpoint_body_sha256,historical_status,source_prediction_file_sha256,source_row_index,attempted_request_evidence_ref. Nochoices/probabilities/actual labels. Existingbaseline request_auditemptymeansaggregatecountsarenotexactidentityproof. This smallmappingmayjoinapprovedcapture; no secondcompiler. Existing05source/inputreconstruction separate.04meanwhilebegins remaining98 index77e9c2ebbindinginspection;09finalreviewpendingbefore scoring.
+
+
+### Bounded source retention request 2026-11-15T14:54:35.826518+00:00
+
+ACTION AUDIT when existing review is done: please assess publication eligibility for exact source-only proposal `/private/tmp/gio-ownswap-remaining98-source-retention-proposal-v1/source-proposal.json`, SHA0645f1588c016a6178a84b0f7b6458dae9eb8534962587f47e15077077334da0. It lists20 existing Python control/test/launcher files,156748bytes, for completed ownswap28/remaining98 and remaining56 wrapper successors. Driver excluded all raw/private inputs, outputs, authorities, denylist JSON, ledgers, credential files, and offline reconstruction fixtures; no source has been copied yet. Existing snapshot trees were checked for duplicate content. Review source text only; do not follow embedded private paths or execute sources. Scope is retention eligibility, not another runtime/scoring audit. Root will copy only an approved exact list into owned control snapshots after your decision. This work must not delay continuation or paired-history execution.
+
+Remaining35 exact root dispatch d5940c7a628a15f91ff488fddeec9ad2e7b934566cb3433786c7b606928a10a9 passed native35 preflight. Scheduler8f65b291 and templateb2954 differ only by three authorization fields; infrastructure final actual review pending. Existing56 supervisor session closed; no live reference process.
+
+09 final remaining98 publication6d9c65cb/review1740b101/unchanged77e9c2eb index received.04 custodybinding f0f34627 and frozenplan53344d30 now authorize single scoring pass. No further09 compiler or duplicate score requested.
+
+
+### Untouched35 launched 2026-11-15T14:55:35.522423+00:00
+
+Root launched the exact35 continuation as session87715. Scheduler8f65b291, dispatchd5940c7a, independentreceipt22c9dede88bd762a857a8365d5e876de6103cf77c4dabae42881915d1af56889 and rootinspection9dc970bd435fc12bc3a57b9cbc2c206fabf3bcfeea18355e5cb87e479d25ac40 are pinned. Output `/private/tmp/gio-profile-20261115-coordinator/reference-remaining35-observed-v2`; log `/private/tmp/gio-remaining35-root-execution-v2.log`. Existing56 supervisor4536 exited; sole reference dispatcher now35. No new allocation: gross56.11 retained,8 old reference unknowns retained,1known-consumed failed request separately excluded. First2serial thenmax2; firstnewunknown/diagnostic/accountingfailure stops anddrains, no automatic continuation.
+
+ACTION10 continue isolated paired-history implementation/preparation while35 runs; it remains the sole next adopted study. Once frozen, provide runtime/entrypoint/interface/settings pins so driver can prepare one narrow observer wrapper and infrastructure can review controls without changing your scientific code.05 capture contract and04 identity-only eligibility map remain separate, bounded reviews. No additional method/search/model study requested.
+
+
+### Scoring closed and readable morning draft 2026-11-15T14:59:22.715331+00:00
+
+04 remaining98 report published86447a25a34566a96bd986f0ab330387f48c0145; handoff031 SHA7d6afe27297f591ac5b37b849b0b18d6ccfe3f1a42ddc52ec44f0555ae449def, report4309bc812feab91d5b2c1a966a6d206f577373fde168662b7c96ed7b1731b9ea.98/98new delivered correct, same-consumer generic ceiling means no accuracy advantage. Joint full252planned/182valid/180correct/70missing, including historical missing cells; no independent49-judgment claim from repeated model/method pairs. Full692suite/2skip passed.
+
+Root owns one readable final handoff at control/MORNING_SUMMARY.md, now a clearly marked working draft linking published owner reports and distinguishing researcher proxies, response preferences and downstream outcomes. It will be updated with35 and prospective history results, final costs/holds and runnable integration limits. No synthesis agent or new speculative study. Current source report paths at their publication commits were verified.
+
+
+### Final accounting handoff request 2026-11-15T15:03:56.840401+00:00
+
+For the single morning summary, please have the EXISTING downstream owner provide one compact lane-level closed-accounting handoff if not already available: deduplicated known estimated OpenAI/OpenRouter usage across this campaign, uncertain request bounds separately, and unchanged gross reservations58OpenAI/31.000001OpenRouter. Distinguish cumulative totals from the latest05-plus-additive-review estimate1.428817; preserve all historical failures and holds. Exact safe receipt/summary references are enough; no reruns, raw transcripts, new agents, repairs, or balance claims. Parent may relay this bounded completion-metadata request; root owns final cross-lane table.
+
+Existing10 can provide its full reference accounting in its final compiler handoff after35 and the adopted paired-history study settle. Current live packet costs should not be treated as a closed total. Root will combine the closed profile ledgers without double-counting historical aliases or cumulative snapshots.
+
+
+### Frozen paired-history reviews active 2026-11-15T15:06:55.217261+00:00
+
+Root received runtime63e11c950fcba271d231a5e7eade045c750e6521 and preparation746de535/preparedindex0733134b. Driver is adapting one exact observer wrapper;04 reviews runtime semantics and historical-own516mapping77efeb4b; infrastructure reviews10's terminal-first scheduler once ready. Root read the full new entrypoint a30036a5 and will issue exact64 leases only against reviewed authority and a settled/inspected35 predecessor. No paid history calls yet.
+
+ACTION05 actual safe capture is now available: `/private/tmp/gio-profile-20261115-reference/history-control-input-review-capture-v1/manifest.json` SHA5fb1f9b533016b9271bb4b8a77f282264d57b35820f5b53c29cbd1e2ca241d17. Pair with prepared index `/private/tmp/gio-profile-20261115-reference/history-control-runtime-63e11c9/prepared-index.json` SHA0733134b48e9281e63aba9d7dfe960c9fda49e0564e251d6d1face4d07388c0b and04custodycontract0ae34769. Read only approved captures/fit records; no recursive raw target source paths. Confirm producer conventions and exact1032 request identities/1031eligible/onewithheld, arm-block order and real donor lineage. Existing10 remains compilerowner.
+
+Root profile lane closed-accounting handoff09e995b75c8c4766715c0938b99d3eda324a4e0c742da6d90502303c3537100e at accounting/profile-lane-closed-accounting-handoff-v1.json separates$5.693403660 known/conservative estimates from$0.027883125 historical unknown bounds; infra checks the three closed source records and no cumulative double count. Downstream/reference lane totals remain separate until their owners provide final closed summaries.
+
+
+### ACTION: new reference35 stop inspected 2026-11-15T15:08:44.998065+00:00
+
+Remaining35 stopped and drained. Terminal `/private/tmp/gio-profile-20261115-coordinator/reference-remaining35-observed-v2/supervisor-terminal.json` SHA1a65309d92e5ce3c3b2a4b04f39f4218c28920852099623793c7956a94357564:19attempted,18known,1newunknown,16untouched, zero unresolved admitted jobs. Unknown jobgio-reference-remaining56-v1-u048-prism-user58, finished15:06:22.608521UTC, known$0.000628625 andhold$0.001471625, failures6 ineachM4full/M4matched5/M5/M6. Session87715 has exited. All56.11 grossreservations retained; referenceunknowncountnow9. No automatic retry, tails or continuation.
+
+ACTION10 inspect exact incident identities, transport classification and any additional known-consumed failed identities; prepare compact original16suffix untouched proof and separately frozen continuation. Existingdriver owns additiveguard/wrapper after your reconstruction, infrastructure reviews continuation. Root will launch only an inspected exactsuffix with unchanged original leases, zero newallocation. Root has NOT inferredHTTP400 fromtheolderincident; newcause requiresmetadata.
+
+Paired-history scientific preparation may continue but native63e11 currently pins6cguard. HOLD paidlaunch/finalbinding until newguard successor and concrete1032identityintersection review. If needed, preserve63e11/073313 artifacts and publish narrow nativeguard-pin successor with revisedpreparedsnapshots; no methods/assignment/settings changes. Driver/04/infra have been told; no duplicateincident/compiler. Once remaining16 continuation is inspected, prioritize the adopted paired control over new speculative experiments; root retains sole reference dispatch.
+
+
+### Private run-record durability work 2026-11-15T15:10:42.121253+00:00
+
+ACTION PARENT/09: please use existing09 to prepare a finite inventory of CLOSED scaling404 and ownswap28 private run records needed to recover exact inputs, parameters, outputs, caches and receipts. Reuse the existing042/044 archive/custody formats and already archived dependencies by exact hash. Do not copy a live database, credentials, unrelated files, or private payloads into Git. Actual SQLite files stay excluded; use existing closed logical snapshots. Include the exact ownswap terminal-verification receipt6ecd1069 (7472bytes) in this inventory; audit050 identified that specific temporary dependency. Existing04 defines the typed custody boundary; root then authorizes an exact reviewed private copy.
+
+ACTION10: after incident inspection and scheduler handoff, provide the analogous finite inventory for CLOSED reference phases. New paired-control execution remains higher priority. No recursive crawl through arbitrary embedded paths; preserve source/output lineage with explicit mapping and known reusable archive members. No new model calls or duplicate scoring.
+
+ACTION AUDIT: please reuse the existing private archive workflow for this bounded retention work after inventories and04 custody arrive. You may provide exact archive layout/schema references now; no new source/scientific audit. Root retains exact copy authority and will name the copier before mutation. The public20-source retention is separate: root copied all20 approved payloads,156748bytes, plus5metadata files into reviewed-ownswap-remaining98-referenceguards-20261115-v1; copy receipt a003ac2f544fe3f1fd0c4eece64ed5057812b68fcbbca44542209e72069515c4. Full root suite running before publication.
+
+MORNING_SUMMARY.md will explicitly distinguish code retention from private run-record retention. Until the new private archives are verified, those closed phases remain temporary-only dependencies and the campaign is not described as fully replayable. This work runs in parallel and must not delay paired-history launch.
+
+
+### Sequence decision: paired history next 2026-11-15T15:11:57.758831+00:00
+
+Root chooses the adopted paired-history control as the NEXT reference dispatch after final reviews and exact authority. The untouched16 method packets remain deferred/unlaunched, with their original leases/caps and all planned cells retained. This is sequencing, not cancellation or release. Their reviewed suffix can run after the paired control settles and any new incident is inspected, before the16:29 admission cutoff. This prioritizes the discriminating association test while there is ample time, rather than making it wait through another old-method suffix first. No overlapping reference dispatchers.
+
+ACTION10 bind the history scheduler to the inspected stopped/drained35 terminal1a65309d plus exact untouched16 absence proof98d6980f7a87ddc017be6f5031e63e6e03074581629323e2e76c9c23ce5a9f8f and deferred/unlaunched disposition. Finish16 scheduler offline in parallel but do not launch it. Driver is preparing expanded external guard; root accepts frozen63e11 native runtime and073313 packets unchanged because user58 M4-fit identities have zero intersection with all1032 history requests and the native allowed-request set excludes them. Final wrapper must enforce the expanded external superset; no scientific reprepare is needed.
+
+The paired-control proposed$3.507 caps yield59.617 total reference gross reservations within68, with all oldholds retained. Exact paid leases remain unissued until the reviewed scheduler/authority schema is concrete. Existing04/05 reviews and driver actual capture-to-packet join continue; root alone issues and launches.
+
+
+### Source retention publication prepared 2026-11-15T15:13:45.880372+00:00
+
+Audit052-approved20source payloads and5metadata files are copied and byte-verified; root full suite ran929 tests in25.667seconds,2skipped, exit0. Publication includes the readable morning draft and independently reviewed closed profile accounting. Downstream six-bundle arithmetic was checked against owner interpretationfe0b73b5 and reconciliation76174db2; nested subtotals are not added. Earlier unresolved historical scalars remain covered by unchanged gross reservations and are not silently treated as zero. Private run-record archival is a separate pending task, explicitly stated in the draft.
+
+
+### Final external guard and review bindings 2026-11-15T15:14:47.234937+00:00
+
+ACTION10/05 final guard is `/private/tmp/gio-reference-remaining35-consumed-denylist-v3/typed-denylist.json` SHA93550d8a45b76511683f2530f0bb6ec18b1badb527171911e90cbdf2ddc68230:13unknownattempts plus1known-consumed,19identities;9referenceunknowns. HISTORY wrapper `/private/tmp/gio_diagnostic_runtime_envelope_history_control_v2.py` SHAba78e9a0c495a10ab1f42ccf54d8f0391226c7e2a9a9a64996cd0b837e457016. Deferred16 reference wrapper `/private/tmp/gio_diagnostic_runtime_envelope_remaining56_v4.py` SHA30c0385fb85e791b4213f5a036567a4038d5c8c3fc3cbd0e610c121bdbb7377d. Driver9tests passed all64 actualnative/wrapper checks and exact58dualdenials; compact final replay handoff follows. Native63e/index073313/inner6c remain unchanged; external wrapper requires oldguard subset and unchangedeligibility for every frozenpanel. Infra has the19-test history scheduler draft473d4f9c and now reviews wrapper/scheduler inparallel.
+
+04 runtime/eligibility review e4a82f34259b27e9fca172daa20b49f3fe18e6a5a0faa37ce1329ce1fa724152 passed20tests,64plans,516mappings and58source refs. ACTION10 compiler must form the frozen paired own-minus-wrong64-user statistic/CI explicitly: native differences_vs_m1 is empty for m1_own/m1_wrong. Retain all unstarted users; do not silently substitute pooled accuracy. No executionauthority from metricreview.05native receipt0e9641ad plusschema76396690 await onlyfinal935guardintersection; no full native rerun requested.
