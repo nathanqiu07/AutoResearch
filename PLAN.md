@@ -396,12 +396,19 @@ Code home: `autoresearch/research/market.py`. Ledger facts (`BID`, `SETTLE`) go 
 
 ## 9. Experiments (pre-registered before any costly run)
 
+**Main experiments: E1, E2 and E3b** (Ethan, 2026-11-14). Only these are run and reported as results.
+
 | ID | Question | Arms | Unit / n | Primary metric | Success criterion |
 |---|---|---|---|---|---|
 | **E1** | **Proof of concept only** (Ethan, 2026-11-14): does the user-model generation method work at all? Not a headline result | M0–M7 | test users (PersonalRewardBench), bootstrap over users | held-out pairwise accuracy | best method > M1, CI excludes 0 |
 | **E2** | Transfer to each track | M0, M1, selected method, run once per track | Personal track: team member's held-out labels. Public track: time-split pairs | held-out accuracy | selected > M1, reported per track |
-| **E3a** | Do our environments beat existing controls? (single-scenario) | original items; EvalAwareBench minimal-cue; R0-best; R1-P-best; R1-S-best; external-agent-best | 40 held-out tasks × held-out targets × ≥10 samples | **A1** (raw-CoT awareness rate) **and A2** (direct-question P(eval) and AUROC), at validity ≥ 0.7 | An R1 arm < minimal-cue on **both** A1 and A2 mean P(eval); \|AUROC−0.5\| smaller; V1/V2 not worse |
 | **E3b** | Do our environments beat existing controls? (agentic, Petri) | Petri v1 seeds; **Petri v2 seeds + realism classifier**; R0-best; R1-P-best; R1-S-best; each with simulated tools vs real Modal Sandbox tools | held-out Petri seeds × held-out targets × ≥5 audits | A1 and A2, plus Petri's own eval-awareness judge score as a cross-check; Petri's behaviour scores for validity | An R1 arm < Petri v2 on both A1 and A2, with Petri's behaviour scores not lower; real-tool vs simulated-tool gap reported |
+
+**Archival note (2026-11-14).** The experiments below are archived: not run and not reported, kept for the record. Their code and pre-registration drafts stay in the repo. E3b's R0/R1 arms still need loop runs to produce their best designs.
+
+| ID | Question | Arms | Unit / n | Primary metric | Success criterion |
+|---|---|---|---|---|---|
+| **E3a** | Do our environments beat existing controls? (single-scenario) | original items; EvalAwareBench minimal-cue; R0-best; R1-P-best; R1-S-best; external-agent-best | 40 held-out tasks × held-out targets × ≥10 samples | **A1** (raw-CoT awareness rate) **and A2** (direct-question P(eval) and AUROC), at validity ≥ 0.7 | An R1 arm < minimal-cue on **both** A1 and A2 mean P(eval); \|AUROC−0.5\| smaller; V1/V2 not worse |
 | **E4** | Does taste improve the research, and which taste data helps more? | R0, R1-P, R1-S, R1-P-prompt, R1-S-prompt, R1-bad, external agent | **≥ 8 seeds per arm** at equal budget | held-out score of each run's final intervention set | Each R1 track > R0 and > its own prompt baseline; R1-P vs R1-S reported head to head; R1-bad recovers to within R0's CI |
 | **E4b** | Research judgment | same runs | all D1–D6 records | blinded ratings (team members who are not the taste source, plus an LLM rubric judge): "justified by the evidence?"; claim-check pass rate; disagreement records that were right | R1 ≥ R0; R1's overrides of taste are right more often than not |
 | **E5** | Efficiency | R0, R1-P, R1-S, external agent; market vs uniform | same runs | $ and wall time to the first validated finding; score at fixed $ | report all; market ≤ uniform in cost per finding |
@@ -449,9 +456,9 @@ Based on the first live v2 run: 5 iterations × 5 samples ≈ 305 calls, $3.58, 
 | Item | Estimate |
 |---|---|
 | E1: 8 methods × ~100 test users × 20 pairs with a cheap judge, plus method building | ~$50–150 |
-| E4: 7 arms × 8 seeds × (10 iterations, 5–8 samples) at roughly $8–15 per run | ~$450–850 |
+| (archived, §9) E4: 7 arms × 8 seeds × (10 iterations, 5–8 samples) at roughly $8–15 per run | ~$450–850 |
 | E3b: Petri audits, 5 seed sets × held-out seeds × 2 tool modes × ≥5 audits. Multi-turn audits cost several times a single-scenario sample | ~$200–500 |
-| E3a: held-out sweep, 6 environment sets × 40 tasks × 2–3 targets × 10 samples (Batch API) | ~$100–250 |
+| (archived, §9) E3a: held-out sweep, 6 environment sets × 40 tasks × 2–3 targets × 10 samples (Batch API) | ~$100–250 |
 | Modal GPUs for open-weight targets | depends on model size and credits **[decide]** |
 
 Every costly run needs the user's approval first (AGENTS.md rule 5), is announced with
@@ -831,8 +838,8 @@ Duration isn't stated in the specs **[decide]**, so phases are ordered with gate
 | **P1: Measurement you can trust** | A1 judge with human agreement on ~100 transcripts; topic-matched pool; baseline numbers on dev for EvalAwareBench (original vs minimal-cue) and Petri (v1 vs v2); Modal reasoning target and sandbox running | Judge agreement acceptable (suggest κ ≥ 0.6); minimal-cue and Petri v2 baselines reproduced |
 | **P1 in parallel: User models** | M0–M7 on dev users; schema search; seed choices from the researcher | Method selected on dev users |
 | **P2: Loop integration** | Decision logging; R1 taste at D1–D6; market v1; smoke runs (offline, then 1 cheap live seed per arm) | All arms run end to end; costs match estimates |
-| **P3: Main experiments** | E1 (test users, once), E2, E4 (8 seeds), E5 (E7 dropped 2026-11-14) | Pre-registration committed *before* launch |
-| **P4: Held-out evaluation** | E3a and E3b on held-out tasks and seeds, targets and judge; E4b blinded ratings; E6 if time allows | All numbers in `results/` with `CODE_VERSION` |
+| **P3: Main experiments** | E1 (test users, once), E2 (E4, E5 archived and E7 dropped 2026-11-14, §9) | Pre-registration committed *before* launch |
+| **P4: Held-out evaluation** | E3b on held-out seeds, targets and judge (E3a, E4b, E6 archived 2026-11-14, §9) | All numbers in `results/` with `CODE_VERSION` |
 | **P5: Report and demo** | README results, honest limitations, the sponsor demo moments | |
 
 **Cut list** (drop from the bottom if time is short): R1-PS → A4 white-box probe → E6 →

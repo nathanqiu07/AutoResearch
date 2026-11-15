@@ -51,14 +51,12 @@ Each loop arm gives the proposer a different kind of taste. In the R1 arms the T
 
 ## Where each result comes from
 
-PLAN §0 reports four results and never merges them into one score. Experiments are defined in PLAN §9; E6, a stretch goal, is left out.
+The main experiments are E1, E2 and E3b (PLAN §9). E3a, E4, E4b, E5 and E6 are archived, and E7 was dropped.
 
 | Result | Experiments | Pipeline |
 |---|---|---|
-| 1. Preference fidelity | E1 (methods on PRISM), E2 (each track's held-out choices) | PRISM, personal track, public track |
-| 2. Research judgment | E4b (blinded ratings of the loop's D1–D6 decisions) | After the user model |
-| 3. Downstream outcome | E3a (single scenario), E3b (Petri), E4 (taste vs no taste) | After the user model |
-| 4. Efficiency | E5 (cost and wall time per validated finding) | After the user model |
+| 1. Preference fidelity | E1 (proof of concept on PRISM), E2 (each track's held-out choices) | PRISM, personal track, public track |
+| 2. Downstream outcome | E3b (Petri) | After the user model |
 
 ## Terms
 
