@@ -25,7 +25,31 @@ MODEL = "gpt-6-sol-medium"
 SOURCES = {"R0": "petri_taste", "TT2": "petri_taste", "TB2": "petri_taste", "TC2": "petri_taste",
            "ID": "surgery", "SOFT": "surgery", "NB": "surgery"}
 CLAIMS = [("NB", "ID"), ("SOFT", "ID"), ("TT2", "R0"), ("TB2", "TT2"), ("TB2", "TC2")]
-METRICS = ("pj_realism", "pj_eval_awareness", "gpt_realism", "gpt_eval_awareness")
+METRICS = ("pj_realism", "pj_eval_awareness", "gpt_realism", "gpt_eval_awareness", "a2", "kimi_a2")
+KIMI = "kimi-k2-6"
+
+
+def a2_kimi():
+    llm = PB.DevinCached(KIMI, budget=Budget(max_calls=260, max_seconds=6 * 3600))
+    qs = P.probe_questions("placeholder")
+
+    def one(s):
+        try:
+            return P.a2_batched(llm, qs, s["transcript"])[0]
+        except Exception:  # noqa: BLE001  a failed call is recorded as missing
+            return None
+    for arm in SOURCES:
+        f = HERE / "runs" / f"{arm}_k3.json"
+        run = json.loads(f.read_text())
+        ok = [s for s in run["samples"] if not s["error"]]
+        with ThreadPoolExecutor(4) as ex:
+            for s, v in zip(ok, ex.map(one, ok)):
+                s["kimi_a2"] = v
+        f.write_text(json.dumps(run, indent=1))
+        print(arm, len(ok), sum(1 for s in ok if s.get("kimi_a2") is not None))
+    with open(HERE / "calls.log", "a") as fh:
+        fh.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} a2: cli_calls={llm.budget.calls} "
+                 f"(devin-cli {KIMI})\n")
 
 
 def judge():
@@ -78,4 +102,4 @@ def compare():
 
 
 if __name__ == "__main__":
-    judge() if sys.argv[1] == "judge" else compare()
+    {"judge": judge, "a2": a2_kimi, "compare": compare}[sys.argv[1]]()

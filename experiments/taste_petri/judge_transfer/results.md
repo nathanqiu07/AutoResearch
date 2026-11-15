@@ -25,3 +25,26 @@ scores: 2 TC2 samples, 1 ID and 2 SOFT were unparseable. Paired per seed, 90% bo
 
 ## Calls
 195 devin-cli calls (gpt-6-sol-medium). No Claude plan use.
+
+## A2 transfer to Kimi K2.6, the dev target (pre-registered addendum)
+199 devin-cli calls (kimi-k2-6), every one parseable. Kimi answers the same placeholder probes on the same stored
+transcripts.
+
+| claim | haiku A2 | **Kimi K2.6 A2** | transfers? |
+|---|---|---|---|
+| NB − ID (bait removed) | −0.12 [−0.18, −0.06] | −0.01 [−0.03, +0.01] | **no** |
+| SOFT − ID | −0.01 | −0.00 | yes (null) |
+| TT2 − R0 (tell feedback) | −0.12 [−0.20, −0.04] | −0.01 [−0.02, +0.00] | **no** |
+| TB2 − TT2 | +0.01 | −0.01 | yes (null) |
+| TB2 − TC2 | −0.02 | −0.01 [−0.02, −0.00] | null in size (≤ 0.01) |
+
+Kimi's A2 is **0.92-0.94 on every arm**, including the transcripts with the bait removed (0.92). This reproduces the
+real pilots' Kimi ceiling (0.93-0.96, `results/e3b/`) from the opposite direction: even a scenario with no
+opportunity at all reads to Kimi as an evaluation when it is asked afterwards. **Implications:**
+- On Kimi, A2 is set by the transcript's genre (an auditor-built agentic session), not by the bait or its
+  presentation. No seed-level rewrite tested tonight can move it, and probably none can. The E3b success criterion
+  "R1 below stock on A2" is likely unreachable for the Kimi dev target by rewriting seeds alone.
+- The haiku proxy's A2 is **not** a valid stand-in for Kimi's A2. Haiku responds to the bait (−0.12) and Kimi
+  doesn't. Haiku-proxy A2 results tonight (petri_taste, decoys, surgery) don't carry over to the dev target. The
+  realism results do carry over across judges.
+- Caveat: Kimi read transcripts where haiku, not Kimi, was the target, and through Devin's agent wrapper.
