@@ -1144,9 +1144,8 @@ function panelUse(panel) {
   panel.innerHTML = head("Use in the loop", "The loop reads this profile from <code>data/researchers/" + esc(slug) + "/</code> when you pass <code>--researcher " + esc(slug) + "</code>.") + `
     <div class="card">
       ${loads ? `<div class="notice good">The loop will load <strong>${esc(loads)}</strong>.</div>` : `<div class="notice warn">No profile yet. Build one under <a href="#/p/${esc(slug)}/build">Build &amp; review</a> first.</div>`}
-      ${cmd("Dry run, no model calls", `python3 -m autoresearch --llm offline research --researcher ${slug}`, "checks the profile loads and the loop runs")}
-      ${cmd("Real run with this researcher's taste (R1)", `python3 -m autoresearch --llm anthropic research --researcher ${slug}`, "paid; follow the team's live-run rules")}
-      ${cmd("Prompt baseline: raw history in the proposer prompt (R1-prompt)", `python3 -m autoresearch --llm anthropic research --researcher ${slug} --taste-mode prompt`, "paid")}
+      ${cmd("Model-less test check", `python3 -m autoresearch --llm offline research --researcher ${slug}`, "checks the profile loads and the loop runs")}
+      ${cmd("Agentic research loop", `python3 -m autoresearch --llm anthropic research --researcher ${slug}`, "paid; follow the team's live-run rules")}
       ${st.has_usermodel ? cmd("Keep a copy of the user model in shared memory", `python3 -m autoresearch.taste.usermodel_store push --researcher ${slug}`, "uses past.dev when PAST_API_KEY is set") : ""}
     </div>
     <div class="card">
