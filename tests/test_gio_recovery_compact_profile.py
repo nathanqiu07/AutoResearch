@@ -142,6 +142,19 @@ class CompactProfileTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'source bundle'):
                 export_auditor_context(result, source_bundle_path=source, condition_id='compact_researcher')
 
+    def test_shared_lane02_bundle_maps_exact_fit_text_and_permissions(self):
+        source = {'source_id': 'doc-1', 'researcher_id': 'researcher', 'author': 'researcher',
+                  'text': self.text, 'url': 'https://example.com/source',
+                  'provenance': {'role': 'fit', 'text_sha256': sha256_text(self.text),
+                                 'permitted_spans': self.document['permitted_spans']}}
+        bundle = {'schema_version': 'gio-source-bundle-v1', 'sources': [source]}
+        result = self.build(bundle=bundle)
+        self.assertEqual(result['profile']['status'], 'complete')
+        self.assertEqual(result['provenance']['source_bundle_digest'], digest(bundle))
+        bundle['sources'][0]['provenance']['role'] = 'final'
+        with self.assertRaisesRegex(ValueError, 'fit'):
+            self.build(bundle=bundle)
+
     def test_missing_or_empty_permissions_fail_closed(self):
         for spans in [None, []]:
             bundle = copy.deepcopy(self.bundle)

@@ -88,3 +88,10 @@ the fixed auditor-only preface plus the complete compact JSON; the preparer must
 escape this once. The already escaped suffix file is a convenience for direct
 template use, not the text to escape again. `context.json` pins both source file
 and neutral structured artifact paths/checksums for copying into the frozen packet.
+
+Common lane02 source schema is also accepted: `gio-source-bundle-v1` with
+`sources[{source_id,researcher_id,author,text,provenance}]`. The adapter requires
+`provenance.role=fit`, verifies `provenance.text_sha256`, and preserves exact
+`provenance.permitted_spans`. No source text is normalized or truncated. The same
+full common source file digest can therefore be compared across lanes, while the
+neutral profile's source manifest identifies the researcher's own fitting records.

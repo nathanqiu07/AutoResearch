@@ -59,6 +59,21 @@ class _NoCalls:
 def _documents(bundle, researcher_id):
     """Read source records only; released development items are never consumed."""
     sources = bundle.get('sources', bundle)
+    if bundle.get('schema_version') == 'gio-source-bundle-v1':
+        if not isinstance(sources, list):
+            raise ValueError('common source bundle needs a source list')
+        docs = []
+        for source in sources:
+            provenance = source.get('provenance', {})
+            if provenance.get('role') != 'fit':
+                raise ValueError('common source bundle must contain fit-only records')
+            docs.append({'document_id': source['source_id'],
+                         'researcher_id': source['researcher_id'], 'author': source['author'],
+                         'content': source['text'], 'content_sha256': provenance['text_sha256'],
+                         'permitted_spans': provenance.get('permitted_spans')})
+        sources = {'documents': docs}
+    if not isinstance(sources, dict):
+        raise ValueError('invalid source bundle shape')
     docs = sources.get('documents')
     if not isinstance(docs, list) or not docs:
         raise ValueError('source bundle needs documents')
