@@ -1,7 +1,8 @@
 """In-memory retrieval from exact approved sources; no network or disk cache.
 
-Windows are nonoverlapping character slices, whitespace-trimmed with exact
-offsets. Exact duplicate text keeps the lexicographically first source span.
+Windows use a fixed character grid, clipped to individual permitted spans and
+whitespace-trimmed with exact offsets. Overlap is emitted once; exact duplicate
+text keeps the lexicographically first source span.
 BM25 uses Unicode word tokens, k1=1.5, b=0.75; ties use document ID and offset.
 Packing includes JSON overhead in the shared conservative UTF-8 byte cap.
 """
@@ -13,7 +14,7 @@ from pathlib import Path
 from .contracts import canonical_json, digest, sha256_bytes, validate_documents
 
 
-VERSION = "approved-bm25-v1"
+VERSION = "approved-bm25-v2"
 
 
 def implementation_hash():
@@ -36,21 +37,52 @@ def decision_query(decision):
     return canonical_json(decision)
 
 
+def _permitted_ranges(doc):
+    if "permitted_spans" not in doc:
+        return [(0, len(doc["content"]))]
+    spans = doc["permitted_spans"]
+    if not isinstance(spans, list):
+        raise ValueError("permitted_spans must be a list")
+    ranges = set()
+    for span in spans:
+        if (not isinstance(span, dict)
+                or type(span.get("start")) is not int
+                or type(span.get("end")) is not int
+                or not 0 <= span["start"] < span["end"] <= len(doc["content"])):
+            raise ValueError("permitted_spans contains an invalid range")
+        ranges.add((span["start"], span["end"]))
+    return sorted(ranges, key=lambda pair: (pair[0], -pair[1]))
+
+
+def _permission_hash(documents):
+    return digest([{"document_id": doc["document_id"], "ranges": _permitted_ranges(doc)}
+                   for doc in sorted(documents, key=lambda d: d["document_id"])])
+
+
 def chunk_documents(documents, config):
     validate_documents(documents, config)
     width = positive_int(config.get("chunk_chars", 1200), "chunk_chars")
     seen, chunks = set(), []
     for doc in sorted(documents, key=lambda d: d["document_id"]):
         text = doc["content"]
+        ranges = _permitted_ranges(doc)
         for offset in range(0, len(text), width):
-            window = text[offset:offset + width]
-            value = window.strip()
-            if not value or value in seen:
-                continue
-            seen.add(value)
-            start = offset + len(window) - len(window.lstrip())
-            chunks.append({"document_id": doc["document_id"], "start": start,
-                           "end": start + len(value), "text": value})
+            covered_end = offset
+            for allowed_start, allowed_end in ranges:
+                start = max(offset, allowed_start, covered_end)
+                end = min(offset + width, allowed_end)
+                if start >= end:
+                    continue
+                # Partition overlaps without joining distinct permission ranges.
+                covered_end = end
+                window = text[start:end]
+                value = window.strip()
+                if not value or value in seen:
+                    continue
+                seen.add(value)
+                start += len(window) - len(window.lstrip())
+                chunks.append({"document_id": doc["document_id"], "start": start,
+                               "end": start + len(value), "text": value})
     return chunks
 
 
@@ -118,7 +150,8 @@ def retrieval_cache_key(documents, config, decision, consumer_identity):
     if not isinstance(consumer_identity, dict) or not consumer_identity.get("model"):
         raise ValueError("explicit consumer identity with model is required")
     return digest({"version": VERSION, "implementation_hash": implementation_hash(),
-                   "sources": sources, "query": decision_query(decision),
+                   "sources": sources, "permission_hash": _permission_hash(documents),
+                   "query": decision_query(decision),
                    "consumer": consumer_identity, "config": config})
 
 
@@ -132,6 +165,7 @@ def _embedding_request(documents, config, decision):
     chunks = chunk_documents(documents, config)
     inputs = [decision_query(decision)] + [chunk["text"] for chunk in chunks]
     return {"source_manifest_hash": config["allowed_source_manifest_hash"],
+            "permission_hash": _permission_hash(documents),
             "researcher_id": config["researcher_id"], "chunk_chars": config.get("chunk_chars", 1200),
             "implementation_hash": implementation_hash(), "query_sha256": digest(decision),
             "chunk_hashes": [digest(chunk) for chunk in chunks],

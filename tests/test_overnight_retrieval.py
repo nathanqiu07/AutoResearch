@@ -51,6 +51,64 @@ class RetrievalTests(unittest.TestCase):
             self.assertEqual(part["text"], text[part["start"]:part["end"]])
             self.assertTrue(part["text"])
 
+    def test_chunks_and_embedding_inputs_exclude_unpermitted_text_and_gaps(self):
+        text = "private αβ allowed hidden second safe private"
+        spans = [{"start": text.index(value), "end": text.index(value) + len(value)}
+                 for value in ["αβ allowed", "second safe"]]
+        docs = [{"document_id": "restricted", "researcher_id": "fixture", "content": text,
+                 "content_sha256": sha256_text(text), "permitted_spans": list(reversed(spans))}]
+        cfg = dict(config(docs), chunk_chars=100)
+        chunks = self.r.chunk_documents(docs, cfg)
+        self.assertEqual([part["text"] for part in chunks], ["αβ allowed", "second safe"])
+        for part in chunks:
+            self.assertEqual(part["text"], text[part["start"]:part["end"]])
+            self.assertTrue(any(span["start"] <= part["start"] < part["end"] <= span["end"] for span in spans))
+        self.assertEqual(self.r.embedding_inputs(docs, cfg, self.decision)[1:], ["αβ allowed", "second safe"])
+
+    def test_explicit_empty_or_malformed_permissions_never_allow_full_document(self):
+        self.docs[0]["permitted_spans"] = []
+        self.assertEqual({c["document_id"] for c in self.r.chunk_documents(self.docs, self.cfg)}, {"d1"})
+        for spans in [None, "all", {}, [None], [{"start": True, "end": 3}],
+                      [{"start": 0, "end": False}], [{"start": 0.0, "end": 3}],
+                      [{"start": -1, "end": 3}], [{"start": 3, "end": 3}],
+                      [{"start": 0, "end": 1000}]]:
+            with self.subTest(spans=spans), self.assertRaisesRegex(ValueError, "permitted"):
+                self.docs[0]["permitted_spans"] = spans
+                self.r.chunk_documents(self.docs, self.cfg)
+
+    def test_permission_clipping_preserves_grid_and_deduplicates_identical_ranges(self):
+        text = " abcd efgh ijkl "
+        docs = [{"document_id": "d", "researcher_id": "fixture", "content": text,
+                 "content_sha256": sha256_text(text)}]
+        cfg = dict(config(docs), chunk_chars=5)
+        original = self.r.chunk_documents(docs, cfg)
+        docs[0]["permitted_spans"] = [{"start": 1, "end": len(text) - 1}] * 2
+        self.assertEqual(self.r.chunk_documents(docs, cfg), original)
+
+    def test_overlapping_permissions_do_not_duplicate_or_merge_across_ranges(self):
+        text = "abcdefghijklmnop"
+        docs = [{"document_id": "d", "researcher_id": "fixture", "content": text,
+                 "content_sha256": sha256_text(text),
+                 "permitted_spans": [{"start": 4, "end": 12}, {"start": 0, "end": 8}, {"start": 0, "end": 4}]}]
+        chunks = self.r.chunk_documents(docs, config(docs))
+        self.assertEqual([(c["start"], c["end"]) for c in chunks], [(0, 8), (8, 12)])
+
+    def test_permission_identity_changes_even_when_trimmed_chunks_do_not(self):
+        text = " allowed "
+        docs = [{"document_id": "d", "researcher_id": "fixture", "content": text,
+                 "content_sha256": sha256_text(text)}]
+        cfg = config(docs)
+        key = self.r.retrieval_cache_key(docs, cfg, self.decision, {"model": "fixture"})
+        original = self.r.chunk_documents(docs, cfg)
+        bundle = self.r.make_embedding_bundle(docs, cfg, self.decision, model="fixture-embedding",
+                                              vectors=[[1, 0], [1, 0]], usage={"mode": "offline_fixture"})
+        docs[0]["permitted_spans"] = [{"start": 1, "end": 8}]
+        self.assertEqual(self.r.chunk_documents(docs, cfg), original)
+        self.assertNotEqual(key, self.r.retrieval_cache_key(docs, cfg, self.decision, {"model": "fixture"}))
+        with self.assertRaisesRegex(ValueError, "embedding"):
+            self.r.rank_semantic(docs, dict(cfg, embedding_model="fixture-embedding", embedding_dimensions=2,
+                                            embedding_bundle_sha256=bundle["bundle_sha256"]), self.decision, bundle)
+
     def test_packing_counts_json_and_unicode_and_retains_exact_prefix(self):
         text = "é中🙂" * 90
         chunk = {"document_id": "d", "start": 3, "end": 3 + len(text), "text": text}
