@@ -28,7 +28,10 @@ def implementation_hash():
 def prepare_payload(profile, context, options, config):
     if not isinstance(profile, ProfileArtifact):
         raise ProfileFailure("unavailable", "legacy_profile_not_accepted")
-    profile = ProfileArtifact.from_dict(profile.to_dict())
+    try:
+        profile = ProfileArtifact.from_dict(profile.to_dict())
+    except (TypeError, ValueError):
+        raise ProfileFailure("invalid", "invalid_serialized_profile") from None
     expected = {"method_implementation_hash": profile.method_implementation_hash,
                 "renderer_implementation_hash": implementation_hash(),
                 "profile_prompt_version": profile.prompt_version,
@@ -62,12 +65,15 @@ def parse_prediction(raw, option_count):
         raise ProfileFailure("invalid", "malformed_consumer_json") from None
     if not isinstance(result, dict):
         raise ProfileFailure("invalid", "consumer_response_not_object")
-    if result.get("status") == "abstained":
-        raise ProfileFailure("abstained", "consumer_abstained")
+    status = result.get("status", "complete")
+    if status != "complete":
+        if status not in ("invalid", "unavailable", "unsupported", "empty", "abstained"):
+            raise ProfileFailure("invalid", "unknown_consumer_status")
+        raise ProfileFailure(status, "consumer_" + status)
     probabilities = result.get("probabilities")
     if (not isinstance(probabilities, list) or len(probabilities) != option_count or
             any(isinstance(x, bool) or not isinstance(x, (int, float)) or
-                not math.isfinite(x) or not 0 <= x <= 1 for x in probabilities) or
+                not 0 <= x <= 1 or not math.isfinite(x) for x in probabilities) or
             not math.isclose(sum(probabilities), 1.0, abs_tol=1e-6)):
         raise ProfileFailure("invalid", "invalid_probability_distribution")
     if not isinstance(result.get("rationale", ""), str):
@@ -82,7 +88,7 @@ def predict_profile(profile, context, options, consumer, config):
     if not isinstance(settings, dict) or set(settings) != {"temperature", "max_tokens"}:
         raise ProfileFailure("unavailable", "explicit_supported_consumer_settings_required")
     if (isinstance(settings["temperature"], bool) or not isinstance(settings["temperature"], (int, float)) or
-            not math.isfinite(settings["temperature"]) or not 0 <= settings["temperature"] <= 2 or
+            not 0 <= settings["temperature"] <= 2 or not math.isfinite(settings["temperature"]) or
             isinstance(settings["max_tokens"], bool) or not isinstance(settings["max_tokens"], int) or settings["max_tokens"] <= 0):
         raise ProfileFailure("invalid", "invalid_consumer_settings")
     try:

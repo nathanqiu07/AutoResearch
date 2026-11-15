@@ -30,6 +30,11 @@ def empty_builder(documents, config, extractor):
     return {"content": {}}
 
 
+def mutating_builder(documents, config, extractor):
+    config.update(researcher_id="wrong", allowed_sources=[], allowed_source_manifest_hash="f" * 64)
+    return {"content": "synthetic output"}
+
+
 class ContractTests(unittest.TestCase):
     def setUp(self):
         from autoresearch.taste.overnight import contracts, registry
@@ -122,6 +127,59 @@ class ContractTests(unittest.TestCase):
             with self.subTest(probabilities=probabilities), self.assertRaises(ProfileFailure) as raised:
                 predict_profile(profile, "q", ["a", "b"], backend, self.prediction_config(profile))
             self.assertEqual(raised.exception.status, "invalid")
+
+    def test_rehashed_serialized_profile_cannot_bypass_cap_or_count(self):
+        profile = self.build()
+        for change in ("cap", "count"):
+            body = profile.to_dict()
+            if change == "cap":
+                body["personalization_cap"] = 1
+                body["config"]["personalization_cap"] = 1
+                body["config_id"] = self.c.digest(body["config"])
+            else:
+                body["token_count"] = 1
+            body.pop("profile_id")
+            body["profile_id"] = self.c.digest(body)
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, "cap|count"):
+                self.c.ProfileArtifact.from_dict(body)
+
+    def test_explicit_consumer_failure_status_never_becomes_prediction(self):
+        from autoresearch.taste.overnight.consumer import predict_profile, ProfileFailure
+        profile = self.build()
+        for status in ("invalid", "unavailable", "unsupported", "empty", "abstained", "unknown"):
+            backend = RecordingConsumer({"status": status, "probabilities": [0.25, 0.75]})
+            with self.subTest(status=status), self.assertRaises(ProfileFailure) as raised:
+                predict_profile(profile, "q", ["a", "b"], backend, self.prediction_config(profile))
+            self.assertEqual(raised.exception.status, status if status != "unknown" else "invalid")
+
+    def test_huge_probability_is_typed_invalid_instead_of_overflow(self):
+        from autoresearch.taste.overnight.consumer import predict_profile, ProfileFailure
+        profile = self.build()
+        backend = RecordingConsumer({"probabilities": [10 ** 400, 0]})
+        with self.assertRaises(ProfileFailure) as raised:
+            predict_profile(profile, "q", ["a", "b"], backend, self.prediction_config(profile))
+        self.assertEqual(raised.exception.status, "invalid")
+
+    def test_builder_cannot_rewrite_authoritative_provenance(self):
+        self.r.register_builder("mutating-fixture", mutating_builder, prompt_version="v1", prompt_sha256="a" * 64)
+        profile = self.build(method_id="mutating-fixture")
+        self.assertEqual(profile.researcher_id, "synthetic")
+        self.assertEqual(profile.allowed_source_manifest_hash, self.config["allowed_source_manifest_hash"])
+        self.assertEqual(profile.config["allowed_sources"], self.config["allowed_sources"])
+
+    def test_rehashed_profile_rejects_conflicting_source_provenance(self):
+        body = self.build().to_dict()
+        body["allowed_source_manifest_hash"] = "f" * 64
+        body.pop("profile_id")
+        body["profile_id"] = self.c.digest(body)
+        with self.assertRaisesRegex(ValueError, "config|source"):
+            self.c.ProfileArtifact.from_dict(body)
+
+    def test_peer_source_permission_requires_literal_true(self):
+        self.docs[0]["researcher_id"] = "peer"
+        for invalid_flag in ("false", 1, [], None):
+            with self.subTest(flag=invalid_flag), self.assertRaisesRegex(ValueError, "peer"):
+                self.build(approved_peer_sources=invalid_flag)
 
 
 if __name__ == "__main__":
