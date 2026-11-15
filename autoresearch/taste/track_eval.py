@@ -75,6 +75,8 @@ def _bounds(stats: List[float], level: float) -> Tuple[float, float]:
 def cluster_ci(by_group: Dict[str, List[float]], level=0.9, n=2000, seed=0) -> Tuple[float, float, float]:
     """(mean score, low, high), resampling groups with replacement. Scores are bools or floats."""
     groups = sorted(by_group)
+    if not groups:
+        raise ValueError("no pairs to score")
     acc = sum(sum(v) for v in by_group.values()) / sum(len(v) for v in by_group.values())
     rng = random.Random(seed)
     stats = []
@@ -88,6 +90,8 @@ def cluster_diff_ci(a: Dict[str, List[bool]], b: Dict[str, List[bool]], level=0.
                     seed=0) -> Tuple[float, float, float]:
     """Accuracy of a minus b on the same pairs, with a group-resampled interval."""
     groups = sorted(set(a) & set(b))
+    if not groups:
+        raise ValueError("no pairs to score in both arms")
 
     def diff(gs):
         return sum(sum(a[g]) - sum(b[g]) for g in gs) / sum(len(a[g]) for g in gs)
@@ -179,7 +183,10 @@ def distractor_gate(researcher: Researcher, judge_llm: LLM, regenerate: Callable
     root = researcher.root
     if os.path.exists(os.path.join(root, GATE)):
         raise FileExistsError(f"{GATE} exists; the gate runs once per pair set")
-    before = blind_judge(load_choices(os.path.join(root, timesplit.HELDOUT)), judge_llm, cache_dir)
+    heldout = load_choices(os.path.join(root, timesplit.HELDOUT))
+    if not heldout:
+        raise ValueError(f"no held-out pairs in {timesplit.HELDOUT}; run pairs with an earlier cutoff")
+    before = blind_judge(heldout, judge_llm, cache_dir)
     flagged = [k for k, v in before.items() if v]
     pairs = timesplit._read_jsonl(os.path.join(root, timesplit.PAIRS))
     replaced = {}
@@ -200,10 +207,12 @@ def distractor_gate(researcher: Researcher, judge_llm: LLM, regenerate: Callable
     rows = [{"pair_id": k, "flagged_before": v, "regenerated_to": replaced[k]["pair_id"] if k in replaced else None,
              "flagged_after": after[replaced[k]["pair_id"]] if k in replaced else v,
              "style_leak": style[replaced[k]["pair_id"] if k in replaced else k]} for k, v in before.items()]
+    leak = style_leak(heldout, style)
+    # Written last: the file marks the gate as run, so a crash before here must leave it rerunnable.
     timesplit._write_jsonl(os.path.join(root, GATE), rows)
     return {"heldout": len(before), "flagged_before": len(flagged), "regenerated": len(replaced),
             "flagged_after": sum(r["flagged_after"] for r in rows), "threshold": threshold,
-            "judge": judge_llm.label, "style_leak": style_leak(heldout, style)}
+            "judge": judge_llm.label, "style_leak": leak}
 
 
 def split_by_document(choices: List[Choice], share: float = 0.8) -> Tuple[List[Choice], List[Choice]]:
@@ -235,10 +244,12 @@ def select_method(history: List[Choice], llm: LLM, candidates=("m2", "m3", "m4",
                   cache_dir: Optional[str] = None):
     """Fit each candidate on the earliest 80% of history's documents and score it on the rest."""
     train, val = split_by_document(history)
+    if not val:
+        raise ValueError("selection needs history pairs from at least two documents")
     scores = {}
     for m in candidates:
         model = _fit(m, llm, train, cache_dir)
-        scores[m] = sum(_each(lambda c, model=model: paired_correct(model, c), val)) / max(1, len(val))
+        scores[m] = sum(_each(lambda c, model=model: paired_correct(model, c), val)) / len(val)
     best = max(candidates, key=lambda m: scores[m])
     return best, scores
 
@@ -257,6 +268,8 @@ def run_e2(researcher: Researcher, llm: LLM, name: str, selected: str,
     cutoff = cutoffs.pop()
     history = load_choices(os.path.join(root, timesplit.HISTORY))
     heldout = load_choices(os.path.join(root, timesplit.HELDOUT))
+    if not heldout:
+        raise ValueError(f"no held-out pairs in {timesplit.HELDOUT}; run pairs with an earlier cutoff")
     arms = {"m0": NamedNoHistory(llm, None, cache_dir=cache_dir),
             "m0_named": NamedNoHistory(llm, name, cache_dir=cache_dir),
             "m1_pairs": _fit("m1", llm, history, cache_dir), "m1_docs": docs_arm(researcher, llm, cutoff, cache_dir),

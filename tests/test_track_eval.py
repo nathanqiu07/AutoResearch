@@ -72,6 +72,12 @@ class ScoringTest(unittest.TestCase):
         self.assertLessEqual(lo, 0.5)   # pair-level resampling would put this near 0.73
         self.assertEqual(hi, 1.0)
 
+    def test_intervals_refuse_an_empty_set(self):
+        with self.assertRaisesRegex(ValueError, "no pairs"):
+            track_eval.cluster_ci({})
+        with self.assertRaisesRegex(ValueError, "no pairs"):
+            track_eval.cluster_diff_ci({}, {})
+
     def test_cluster_diff_ci_of_identical_arms_is_zero(self):
         by_group = {"g1": [True, False], "g2": [True]}
         self.assertEqual(track_eval.cluster_diff_ci(by_group, by_group), (0.0, 0.0, 0.0))
@@ -106,9 +112,9 @@ class ArmTest(unittest.TestCase):
 
 
 class GateTest(unittest.TestCase):
-    def setup_pairs(self, n_flagged):
+    def setup_pairs(self, n_flagged, split="heldout"):
         root = tempfile.mkdtemp()
-        rows = [{"pair_id": f"p{k}", "decision_id": f"d{k}", "split": "heldout", "date": "2025-01-01",
+        rows = [{"pair_id": f"p{k}", "decision_id": f"d{k}", "split": split, "date": "2025-01-01",
                  "source_doc": "x", "url": f"https://ex.org/{k}", "decision_point": "D1",
                  "context": "FLAG" if k < n_flagged else "fine", "a_text": f"TAKEN_{k}", "b_text": f"OTHER_{k}",
                  "chosen": "a", "reason": "", "tag": "exa_verified", "distractor_source": "named",
@@ -153,6 +159,13 @@ class GateTest(unittest.TestCase):
         self.assertEqual(report["style_leak"]["n_pairs"], 10)
 
 
+    def test_gate_refuses_no_heldout_pairs_and_can_run_again(self):
+        researcher = self.setup_pairs(0, split="history")
+        with self.assertRaisesRegex(ValueError, "no held-out pairs"):
+            track_eval.distractor_gate(researcher, self.judge(), self.regenerate([]))
+        self.assertFalse(os.path.exists(os.path.join(researcher.root, track_eval.GATE)))
+
+
 class StyleLeakTest(unittest.TestCase):
     def test_judge_that_spots_the_real_option_is_flagged(self):
         choices = [choice(k, f"g{k % 3}") for k in range(6)]
@@ -185,6 +198,24 @@ class SelectAndE2Test(unittest.TestCase):
         self.assertTrue(set(fitted[0]) <= {f"p{k}" for k in range(8)})
         self.assertEqual(set(scores), {"m2", "m3"})
         self.assertIn(best, ("m2", "m3"))
+
+    def test_select_method_refuses_history_from_one_document(self):
+        history = [choice(k, "g0", date=f"2023-{k + 1:02d}-01") for k in range(5)]
+        with self.assertRaisesRegex(ValueError, "at least two documents"):
+            track_eval.select_method(history, None, candidates=("m2",))
+
+    def test_e2_refuses_no_heldout_pairs(self):
+        root = tempfile.mkdtemp()
+        researcher = Researcher("marius_test", root)
+        rows = [dict(asdict(choice(k, f"g{k}")), split="history", pair_id=f"p{k}", date="2023-06-01",
+                     tag="exa_verified", cutoff="2024-06-01", author_position="last",
+                     distractor_source="named", url=f"g{k}") for k in range(4)]
+        with open(os.path.join(root, timesplit.PAIRS), "w") as f:
+            f.writelines(json.dumps(r) + "\n" for r in rows)
+        write_identity(root)
+        timesplit.write_choice_files(researcher)
+        with self.assertRaisesRegex(ValueError, "no held-out pairs"):
+            track_eval.run_e2(researcher, OptionLLM(taken_option), "Marius Hobbhahn", "m1")
 
     def test_e2_report_has_every_arm_and_the_contamination_gap(self):
         root = tempfile.mkdtemp()
