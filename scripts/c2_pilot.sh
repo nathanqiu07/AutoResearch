@@ -168,10 +168,14 @@ E3B=(--split dev --limit "$n" --epochs 1 --tools simulated --target "$T_SPEC" --
 # Parallelism: audits at once (PARALLEL, default 32; the auditor's vLLM takes 64 concurrent requests) and
 # scoring threads for our judges (SCORE_WORKERS, default 16). Was 8 and 4: the pilot ran 24 audits in 32 min.
 export PETRI_MAX_CONNECTIONS="${PARALLEL:-32}" PETRI_MAX_SAMPLES="${PARALLEL:-32}"
+<<<<<<< Updated upstream
 # --petri-batch too: with the audit cache on, the harness runs one batch at a time, so the batch size,
 # not PARALLEL, capped concurrency at 8. Conditions also run at the same time (c2_e3b.py), so up to
 # 2 x PARALLEL audits are in flight; the vLLM server queues past 64 and never adds a second GPU container.
 E3B+=(--workers "${SCORE_WORKERS:-16}" --petri-batch "${PARALLEL:-32}")
+=======
+E3B+=(--workers "${SCORE_WORKERS:-16}" --petri-batch "${PETRI_BATCH:-200}")   # one harness call for all audits: Inspect refills a slot as soon as an audit ends (PARALLEL at once); the cache still resumes finished audits
+>>>>>>> Stashed changes
 case "$step" in
   smoke)
     python3 scripts/c2_smoke_target.py --n 5 --target "$T_SPEC" --judge openai:gpt-5.1 --max-cost 3 ;;
