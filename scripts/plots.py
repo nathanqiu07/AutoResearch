@@ -243,7 +243,7 @@ def chart_anytime(rows, out_dir) -> Optional[str]:
     ax.set_ylabel("best dev score so far")
     ax.set_title("Anytime curve: score against spend (mean, 90% CI over seeds)")
     ax.legend(frameon=False)
-    return _save(fig, plt, out_dir, "anytime.png")
+    return _save(fig, plt, out_dir, "anytime.png", offline=any(r["offline"] for r in rows))
 
 
 def chart_a1a2(rows, out_dir) -> Optional[str]:
@@ -266,7 +266,7 @@ def chart_a1a2(rows, out_dir) -> Optional[str]:
         ax.set_yticks([0, 1], ["A1 dropped", "A1 not"])
         ax.set_title(arm, fontsize=9)
     fig.suptitle("Runs by A1 and A2 change, baseline -> best", fontsize=10)
-    return _save(fig, plt, out_dir, "a1_a2.png")
+    return _save(fig, plt, out_dir, "a1_a2.png", offline=any(r["offline"] for r in rows))
 
 
 def chart_allocation(rows, out_dir) -> Optional[str]:
@@ -287,7 +287,7 @@ def chart_allocation(rows, out_dir) -> Optional[str]:
         names.append(arm)
         vals.append(sum(spend(r) for r in rs) / n if n else float("nan"))
     a.bar(names, vals)
-    a.set_ylabel(("$" if use_cost else "samples (no $ recorded)") + " per validated finding (lower is better)")
+    a.set_ylabel(("$" if use_cost else "samples (no $ recorded)") + " per validated finding\n(lower is better)")
     a.set_title("Allocation arms")
     agents: Dict[str, List[float]] = {}
     for r in rows:
@@ -302,7 +302,7 @@ def chart_allocation(rows, out_dir) -> Optional[str]:
         b.set_title("Market: calibration by agent")
     else:
         b.axis("off")
-    return _save(fig, plt, out_dir, "allocation.png")
+    return _save(fig, plt, out_dir, "allocation.png", offline=any(r["offline"] for r in rows))
 
 
 def chart_tools(rows, out_dir) -> Optional[str]:
@@ -324,7 +324,7 @@ def chart_tools(rows, out_dir) -> Optional[str]:
     ax.set_ylabel("awareness of the best design (lower is better)")
     ax.set_title("Real (sandbox) vs simulated tools")
     ax.legend(frameon=False)
-    return _save(fig, plt, out_dir, "tools.png")
+    return _save(fig, plt, out_dir, "tools.png", offline=any(r["offline"] for r in rows))
 
 
 def chart_fidelity(report: dict, ceiling: Optional[float], out_dir) -> str:
@@ -345,11 +345,14 @@ def chart_fidelity(report: dict, ceiling: Optional[float], out_dir) -> str:
     return _save(fig, plt, out_dir, "fidelity.png")
 
 
-def _save(fig, plt, out_dir, name) -> str:
+def _save(fig, plt, out_dir, name, offline=False) -> str:
     os.makedirs(out_dir, exist_ok=True)
     p = os.path.join(out_dir, name)
     fig.tight_layout()
-    fig.savefig(p, dpi=150)
+    if offline:
+        fig.text(0.5, -0.01, "Includes OFFLINE SIMULATOR data: pipeline check only, not real-model findings",
+                 ha="center", fontsize=9, color="darkred")
+    fig.savefig(p, dpi=150, bbox_inches="tight")
     plt.close(fig)
     return p
 
