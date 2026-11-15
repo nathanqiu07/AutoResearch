@@ -90,6 +90,20 @@ class LineupPriceTests(unittest.TestCase):
                 L.get_llm("offline", "openai:made-up-model", Budget())
 
 
+class OpenAIPlainCompleteHeadroomTest(unittest.TestCase):
+    def test_plain_complete_leaves_room_for_default_reasoning(self):
+        # gpt-6-luna reasons by default even when no reasoning is asked for, and those tokens count
+        # against max_output_tokens: at max_tokens=2500 the control rewriter came back "incomplete"
+        # with no text (2026-11-14). Plain complete must leave the same headroom as the thinking path.
+        server = FakeServer(OPENAI_REPLY)
+        with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}), \
+                mock.patch("urllib.request.urlopen", server):
+            self.assertEqual(L.OpenAIResponsesLLM("gpt-6-luna", Budget()).complete("q", max_tokens=2500), "answer")
+        body = server.sent[0]
+        self.assertEqual(body["max_output_tokens"], 2500 + L.OpenAIResponsesLLM.THINKING_HEADROOM)
+        self.assertNotIn("reasoning", body)      # the model's own default effort is unchanged
+
+
 class OpenAIPriceEnvTests(unittest.TestCase):
     def _prices(self, model, env_price):
         env = {"OPENAI_API_KEY": "test-key"}

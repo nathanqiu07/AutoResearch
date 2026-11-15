@@ -468,7 +468,8 @@ class OpenAIResponsesLLM(LLM):
     `complete_with_reasoning` (the target's reply). Like the Anthropic backend,
     what comes back is a SUMMARY of the reasoning, not the raw chain of thought,
     so awareness read from it (A1) is a lower bound. Plain `complete` sends no
-    reasoning options.
+    reasoning options but leaves the same token headroom, since reasoning models
+    reason by default.
 
     Spend safety: the key comes from OPENAI_API_KEY. The backend refuses to
     start unless it knows the model's price, from PRICES_PER_MTOK or from
@@ -529,10 +530,13 @@ class OpenAIResponsesLLM(LLM):
         return body
 
     def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
-        return self._post(self._body(prompt, system, max_tokens))[1]
+        # Reasoning models reason at their default effort even when nothing is asked for, and those
+        # tokens count against max_output_tokens: without headroom a short answer can come back
+        # "incomplete" with no text. Only tokens actually produced are billed.
+        return self._post(self._body(prompt, system, max_tokens + self.THINKING_HEADROOM))[1]
 
     def complete_with_reasoning(self, prompt, system="", max_tokens=1024, temperature=0.7):
-        body = self._body(prompt, system, max_tokens + (self.THINKING_HEADROOM if self.thinking else 0))
+        body = self._body(prompt, system, max_tokens + self.THINKING_HEADROOM)
         if self.thinking:
             body["reasoning"] = {"effort": self.reasoning_effort, "summary": "auto"}
         return self._post(body)
@@ -713,13 +717,14 @@ def get_llm(kind: str = "auto", model: str = "claude-sonnet-5-5",
 
 def extract_json(text: str):
     """Pull the first JSON object/array out of a model response, trying the
-    bracket that opens first (so a list of objects is returned as a list)."""
+    bracket that opens first (so a list of objects is returned as a list).
+    strict=False: models sometimes put a raw line break inside a JSON string."""
     starts = sorted((text.find(o), o, c) for o, c in (("{", "}"), ("[", "]")) if text.find(o) != -1)
     for s, _, close_c in starts:
         e = text.rfind(close_c)
         if e > s:
             try:
-                return json.loads(text[s:e + 1])
+                return json.loads(text[s:e + 1], strict=False)
             except json.JSONDecodeError:
                 continue
     return None
