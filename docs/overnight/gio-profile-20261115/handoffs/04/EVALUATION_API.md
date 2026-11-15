@@ -48,8 +48,10 @@ Unexpected or duplicate item IDs reject the packet. Accuracy uses every schedule
 ordered item; Brier is mean squared probability error across options, valid-only,
 and always reported with coverage. Tier A/B and researchers are separated.
 
-Current dev has 4 semantic judgments per researcher, each shown in both orders:
-8 ordered inputs each, 16 total, but only 2 independent source groups total.
+The active v2 release has 7 semantic judgments per researcher, each shown in both
+orders: 14 ordered inputs each, 28 total, but only 3 independent source groups
+total (Neel 2, Chris 1). The frozen pilot selects 2 semantic judgments per
+researcher, each in both orders. This subset remains descriptive.
 Ordered-item accuracy does not turn the two orders into independent observations.
 Group bootstrap intervals are unavailable for a single source group. Dev selection
 and any scaling comparison are descriptive. No winning/general researcher claim
@@ -57,6 +59,48 @@ follows. Utility is separate and currently unmeasured.
 
 `paired_comparison` requires the full same frozen item schedule. `feasibility_report`
 checks fit/dev availability per researcher, separately from confirmation availability.
+
+## Scoring a frozen subset across jobs
+
+`score_predictions` remains the strict full-panel API. For the pilot or lexical
+retrieval's per-item jobs, call the evaluator-only wrapper once per researcher
+and method arm:
+
+```python
+score_manifest_jobs(
+    private_bundle,
+    [{"manifest": manifest, "items": exact_job_inputs,
+      "predictions": original_prediction_rows}, ...],
+    expected_target_bundle_sha256=active_release_target_hash,
+    expected_source_manifest_hash=active_release_fit_manifest_hash,
+    expected_items_sha256=frozen_selected_ordered_inputs_hash,
+    expected_manifest_hashes={job_id: full_manifest_hash, ...},
+)
+```
+
+The expected job hashes must come from the immutable coordinator job plan,
+independently of prediction rows. The expected selected-input hash comes from the
+frozen selector and exact active release items. Do not derive it from whichever
+results happened to finish. Packets must be in selector order; each packet's items
+must remain in its original job order. The wrapper rejects omitted planned job
+packets, repeated jobs/items/rows, altered inputs (including extra fields), changed
+option order, wrong source/stage, mixed arms, and row/manifest mismatches. All
+subsets must exactly match the pinned private panel, whose hash also binds its
+source split and reviewed provenance. Different profile hashes are allowed across
+per-item retrieval jobs; common method/backend/code/contract/cap/replicate fields
+must agree. The coordinator's exact manifest pins bind remaining settings.
+
+If a planned job has no result, include its manifest and inputs with
+`predictions=[]`; its scheduled items count as failures. Unsupported or malformed
+predictions also remain failures. The wrapper uses private derived subset views to
+reuse full-panel scoring. It does not rewrite original rows or manifests. The
+report retains the original parent target hash, fit-source hash, selected-input
+hash, complete job manifests, and each outcome's original job/manifest/subset
+hashes. `per_item` is evaluator-private; share aggregate metrics only.
+
+The wrapper verifies evidence bindings; it does not grant execution or confirmation
+authorization. The active pilot uses development data only. No confirmation run is
+authorized.
 
 ## Confirmation custody (not authorized)
 
