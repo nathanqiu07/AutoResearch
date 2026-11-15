@@ -493,6 +493,18 @@ closes 046's copy dependency: all 27 approved payloads and five metadata files
 match the coordinator's published Git snapshot at `fad09749`. Root checks the
 actual 32 Git objects and remote branch observation. Original temporary sources,
 embedded dependencies and historical execution are outside this copy check.
+[20261115-050](../../../results/integration-audit/20261115-050/PUBLICATION.md)
+maps ownswap preparation, terminal and scoring coverage across four exact inputs.
+All 19 root metadata joins agree; no concrete defect or contradiction is found.
+The released terminal receipt resolves earlier locator uncertainty. Request-body,
+score, invoice and complete-retention verification remain outside this review;
+those limits do not themselves establish missing checks by existing owners.
+[20261115-051](../../../results/integration-audit/20261115-051/PUBLICATION.md)
+finds audit 001's ten relevant legacy functions unchanged at the pinned local
+`origin/main` and still explicitly consumed by its guarded research CLI path.
+An independent 106-check source review confirms that bounded conclusion. No
+current failing run or selected P8 reachability is claimed; the old defect remains
+scoped to the legacy consumer and is tracked for a separate repair.
 
 [20261115-026](../../../results/integration-audit/20261115-026/) reconstructs all
 28 phase2 semantic bundles and 84 capped contents with permitted-source bindings.

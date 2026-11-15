@@ -852,3 +852,33 @@
   not source semantics, runtime behavior, full dependency recovery or scientific
   validity. The reusable verifier's local exit status and explicit Git fields
   are documented separately.
+
+## Ownswap coverage and legacy relevance
+
+- Re-read both original chats and the coordinator. The Petri/exporter track is
+  complete and waiting for a scoped request. Existing workers own scaling
+  scoring, the reference incident/successor, and paired-history implementation.
+  The 98-call scaling batch has completed with known accounting according to
+  those owners; this audit does not independently recount or score that batch.
+- Audit 050 maps four exact approved ownswap metadata/report inputs. The
+  separately released terminal receipt resolves the earlier locator uncertainty.
+  Nineteen root joins agree on identities, authority pins, completions, recorded
+  known usage and alias counts. There is no demonstrated contradiction or
+  execution-binding/retention defect. Request bodies, labels, live ledgers,
+  embedded references and broader archive inventories remain outside this scope.
+  Pre-terminal assessments are preserved as superseded history; no duplicate
+  owner execution or score audit is requested.
+- Audit 051 compares the exact relevant legacy public sources at local
+  `origin/main` `7fa363d0e93bbfc623e1ee3bf773a2f663649c17` to audit 001's
+  two historical pins. Ten function slices remain identical. Explicit guarded
+  CLI calls preserve conditional legacy relevance. The independent reviewer
+  verifies 12 source blobs and 30 slices with 106 passing checks. Neither reviewer
+  establishes selected P8 reachability or a current failing run. The unchanged
+  historical probe is not repeated, and runtime code is not edited during live work.
+- The audit-branch regression log reports 677 run, 675 passed and two skipped.
+  Its final summary is retained in 050; the original process handle was closed
+  when revisited, so no process exit code is invented. This is separate from
+  static metadata/source checks and owner scientific results.
+- Keep the legacy repair as separate board work; use targeted regression cases
+  and an explicit normalization/fallback policy when an owner takes it up after
+  applicable live-run locks. No model, settings or wakeup configuration changes.
