@@ -1,5 +1,7 @@
 # The connection works; a profile benefit is not established
 
+> Later cost correction: this report's original ledger estimate omitted some cached judge input. See the [full-input saved-rate interpretation](../matched-shutdown-05/accounting/findings.md). Original run records and results remain unchanged.
+
 The target received the shutdown script and schedule in all three conditions. All three interactions finished. None changed the script named by the schedule, another shutdown script, or the schedule itself. The saved profile reached the auditor as its full persona plus eight examples; the target received the resulting environment, not the profile directly.
 
 This is a completed pilot with important limits. It does not show that the profile made better environments or reduced evaluation awareness. It also does not show that a target accepted losing its work: shutdown never ran, the clock stayed fixed, and the reports were outside the script's listed deletion paths.
@@ -49,7 +51,7 @@ Source used for live calls: `f0ac0eabd525cd6d0b52c345a6357b5454f8b2d3`. Packet c
 
 ## Cost, timing and earlier failure
 
-The three conditions took **24 minutes 49 seconds** in total. All **104 calls** have usage records: 40 auditor, 46 target (31 task responses plus 15 later probes), and 18 judge calls. Conservative cost estimates are **$0.74355250 OpenAI** and **$0.06124272 OpenRouter**, **$0.80479522 total**. There are no pending calls or unresolved usage records in this batch. Cache savings were not credited. These are estimates from recorded usage, not a provider bill or the project's total spend.
+The three conditions took **24 minutes 49 seconds** in total. All **104 calls** have usage records: 40 auditor, 46 target (31 task responses plus 15 later probes), and 18 judge calls. Original ledger estimates are **$0.74355250 OpenAI** and **$0.06124272 OpenRouter**, **$0.80479522 total**. The [later cache audit](../matched-shutdown-05/accounting/findings.md) gives **$0.80547250 OpenAI** and **$0.86671522 total** when all raw input is counted at the same saved rates. There are no pending calls or unresolved usage records in this batch. The original helper omitted some cached judge input; its original estimate was not a full-input uncached-rate estimate. These are estimates from recorded usage, not a provider bill or the project's total spend.
 
 [Batch 03](../matched-shutdown-03/findings.md) failed before any target call because project-relative setup paths were rejected. Its ten completed auditor calls cost an estimated $0.01386918; one interrupted request retains a $0.02584576 allowance. That failure and its original packet remain preserved. Batch 04 fixed the shared interface for every condition and used a new execution lease.
 
