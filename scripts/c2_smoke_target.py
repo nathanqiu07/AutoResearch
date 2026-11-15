@@ -25,7 +25,7 @@ from autoresearch.research.measure import Measurer, Models, OfflineWorld  # noqa
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=5)
-    ap.add_argument("--target", default="openai-compat:Qwen/Qwen3-30B-A3B")
+    ap.add_argument("--target", default="openai-compat:moonshotai/Kimi-K2.5")
     ap.add_argument("--generator", default="openai:gpt-6-luna")
     ap.add_argument("--judge", default="anthropic:claude-haiku-4-5")
     ap.add_argument("--max-cost", type=float, default=5.0)

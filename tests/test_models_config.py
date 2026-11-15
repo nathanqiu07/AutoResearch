@@ -12,8 +12,8 @@ class ModelsConfigTest(unittest.TestCase):
 
     def test_committed_config_has_the_agreed_lineup_and_is_clean(self):
         r = self.cfg["roles"]
-        self.assertEqual(r["dev_target"], "openai-compat:Qwen/Qwen3-30B-A3B")
-        self.assertEqual(r["heldout_targets"], ["openai-compat:moonshotai/Kimi-K2.5"])
+        self.assertEqual(r["dev_target"], "openai-compat:moonshotai/Kimi-K2.5")
+        self.assertEqual(r["heldout_targets"], ["openai-compat:Qwen/Qwen3-30B-A3B"])
         self.assertEqual(r["dev_judge"], "openai:gpt-5.1")
         self.assertEqual(r["heldout_judges"], ["openai:gpt-5.1", "openai-compat:openai/gpt-oss-120b"])
         specs = [r["generator"], r["dev_target"], r["dev_judge"]] + r["heldout_targets"] + r["heldout_judges"]
@@ -35,10 +35,10 @@ class ModelsConfigTest(unittest.TestCase):
 
     def test_research_args(self):
         dev = research_args(self.cfg)
-        self.assertEqual(dev[dev.index("--target") + 1], "openai-compat:Qwen/Qwen3-30B-A3B")
-        fin = research_args(self.cfg, "final", "openai-compat:moonshotai/Kimi-K2.5")
+        self.assertEqual(dev[dev.index("--target") + 1], "openai-compat:moonshotai/Kimi-K2.5")
+        fin = research_args(self.cfg, "final", "openai-compat:Qwen/Qwen3-30B-A3B")
         self.assertIn("--heldout-judges", fin)
-        self.assertEqual(fin[fin.index("--heldout-target") + 1], "openai-compat:moonshotai/Kimi-K2.5")
+        self.assertEqual(fin[fin.index("--heldout-target") + 1], "openai-compat:Qwen/Qwen3-30B-A3B")
         with self.assertRaises(ValueError):
             research_args(self.cfg, "final", "openai:gpt-4")
 
