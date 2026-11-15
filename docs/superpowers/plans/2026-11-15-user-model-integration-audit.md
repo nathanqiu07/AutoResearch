@@ -29,10 +29,10 @@
 
 ## Tasks
 
-- [ ] 1. Profile inspector: `profile_audit.py`, `test_profile_audit.py`. Capture actual load/predict/adviser behavior under offline transport, record source hashes and exact prompt, check save/load preservation, summarize information channels. Verify tests fail before implementation; run deterministic fixture and saved pilot models in both relevant checkouts.
-- [ ] 2. Packet comparator: `packet_audit.py`, `test_packet_audit.py`. Recursive all-field diff with exact declared allowances, explicit presence flags, hashes and no statistical-comparability claim. Agent owns these two files.
-- [ ] 3. Confidence probes: `confidence/`. Reproduce malformed-value and empty-profile behavior at real adviser/loop boundary. Distinguish bugs from intended thresholds/calibration policy. Agent owns evidence and RED regression cases.
-- [ ] 4. Isolated integration: move scripts/tests/docs into native worktree after creation completes; verify relevant and full repository tests, commit/push scoped branch, report findings to both chats. Only audit fixes supported by reproductions; no policy changes.
+- [x] 1. Profile inspector: `profile_audit.py`, `test_profile_audit.py`. Capture actual load/predict/adviser behavior under offline transport, record source hashes and exact prompt, check save/load preservation, summarize information channels. Verify tests fail before implementation; run deterministic fixture and saved pilot models in both relevant checkouts.
+- [x] 2. Packet comparator: `packet_audit.py`, `test_packet_audit.py`. Recursive all-field diff with exact declared allowances, explicit presence flags, hashes and no statistical-comparability claim. Agent owns these two files.
+- [x] 3. Confidence probes: `confidence/`. Reproduce malformed-value and empty-profile behavior at real adviser/loop boundary. Distinguish bugs from intended thresholds/calibration policy. Agent owns evidence and RED regression cases.
+- [x] 4. Isolated integration: move scripts/tests/docs into native worktree after creation completes; verify relevant and full repository tests, commit/push scoped branch, report findings to both chats. Only audit fixes supported by reproductions; no policy changes.
 - [ ] 5. Overnight updates: inspect new artifacts and ownership from both chats, run incremental audits on new pinned inputs, append commands/findings/commit references, retain all runs. Continue while useful new work exists.
 
 ## Ledger
