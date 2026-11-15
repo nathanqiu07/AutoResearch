@@ -477,6 +477,22 @@ reviews 27 exact orchestration, test and review files for coordinator-owned
 retention. Full-text review found no actual embedded credentials or private
 scientific payloads in that bounded set. Source copies, imports and execution
 were not performed; publication eligibility does not establish runtime correctness.
+[20261115-047](../../../results/integration-audit/20261115-047/PUBLICATION.md)
+finds no concrete uncovered offline-export failure that warrants repeating the
+P8 exporter's existing checks. Its owner-recorded actual-profile parity remains
+distinct from the structural review; live consumer wiring remains future work.
+The earlier review binds the current code/tests but an older design-file hash;
+root reconstructs that hash by reverting completion/publication bookkeeping only.
+[20261115-048](../../../results/integration-audit/20261115-048/README.md)
+finds no material overclaim in the amended first-stage scaling narrative. It
+explicitly reports the generic accuracy ceiling, distinguishes aliases and paired
+units, and limits probability-loss interpretation. This is prose review, not an
+independent score or underlying-data recomputation.
+[20261115-049](../../../results/integration-audit/20261115-049/PUBLICATION.md)
+closes 046's copy dependency: all 27 approved payloads and five metadata files
+match the coordinator's published Git snapshot at `fad09749`. Root checks the
+actual 32 Git objects and remote branch observation. Original temporary sources,
+embedded dependencies and historical execution are outside this copy check.
 
 [20261115-026](../../../results/integration-audit/20261115-026/) reconstructs all
 28 phase2 semantic bundles and 84 capped contents with permitted-source bindings.

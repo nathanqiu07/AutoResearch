@@ -802,3 +802,53 @@
   Both attempts are retained. No submitted proposal test was executed.
 - Other lanes now own the future-only P8 exporter, scaling and reference runs;
   this audit does not duplicate their implementation, scoring or admission work.
+
+## Export coverage and scaling interpretation
+
+- Previous turn published 044/045 at `32fce8a3` and 046 at remote-verified
+  `74b21b4d73fc2ceea78034a4764c26d71899f152`. This is concrete progress, not a
+  blocked or no-progress turn. Exact 27-file copy decisions were delivered;
+  coordinator-owned copying is not claimed complete by this audit.
+- Re-read both original chats and coordinator handoffs. The new P8 exporter is
+  offline-only at `6695382`; reference/scaling execution, prepared own/swapped
+  input checks and scoring retain their existing owners. The recurring wakeup
+  was viewed without edits or model/settings changes.
+- Audit 047 statically maps the six public exporter files to existing coverage.
+  No concrete uncovered failure warrants another execution. The owner's actual
+  selected-profile parity receipt is separate from the fixture-only independent
+  review. Current code/test hashes match that review; its design-file hash is
+  an older byte version. Root verifies all six source identities and bindings.
+  The owner then supplies exact reverse text replacements; applying those to
+  the public design reconstructs the prior review hash. Only completion and
+  publication bookkeeping differ; the frozen initial assessment stays unchanged.
+  No private profile/export bytes, earlier source file, native contract or
+  embedded references are read. Actual consumer wiring is the next audit trigger.
+- Audit 048 reviews four public report/handoff files at `2a2700ea9c43112869132aa9da84f660d8ad301d`.
+  The amended narrative has no material overclaim in the reviewed scope: model
+  names, selected development status, generic accuracy ceiling, paired/reused
+  units, earlier missingness, probability-loss limits and owner-review scope are
+  explicit. Root verifies all four Git byte/size/line identities; no score or
+  private label is recomputed/read. Superseded wording stays historical.
+- Required audit-branch regression suite passes 675 tests with two skipped.
+  This is separate from the other branch's exporter tests and scientific scores.
+- The recurring heartbeat's saved configuration is confirmed ACTIVE, every
+  30 minutes, targeting this chat with failed-run notifications only; no setting
+  is changed.
+
+## Coordinator source-copy closure
+
+- Coordinator retains the reviewed 27-file set at
+  `fad097490d501719d1567bf07dc382faef413feb`. Audit 049 checks 27 payloads
+  (175,124 bytes) plus five metadata files (34,897 bytes), exactly 32 files.
+  All 110 enumerated local checks pass, and separate Git fields report exact
+  inventory, all-object equality, stable HEAD and clean scoped status.
+- Root independently verifies all 32 actual immutable Git objects, binds the
+  27 payloads to the 046 decision, and observes the exact commit on remote
+  `codex/gio-overnight-00`. The initial verifier's no-remote-check statement stays
+  intact; root's additive metadata supplies remote confirmation.
+- No original temporary source, embedded reference or private data is read by
+  the copy check; no source body is copied, imported or executed. Owner assertions
+  about original immutability stay distinct. This closes exact retention/publication,
+  not source semantics, runtime behavior, full dependency recovery or scientific
+  validity. The reusable verifier's local exit status and explicit Git fields
+  are documented separately.
