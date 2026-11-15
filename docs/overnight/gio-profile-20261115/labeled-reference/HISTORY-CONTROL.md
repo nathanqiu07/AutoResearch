@@ -39,3 +39,24 @@ The scientific runtime was commit `63e11c950fcba271d231a5e7eade045c750e6521`. Bo
 The interval uses 2,000 user-cluster bootstrap draws with seed 0. Deterministic donor cycles create cross-user dependence that this bootstrap does not fully model, so it is descriptive and conditional rather than randomized-assignment inference or an independent-population bound. Only history example count was matched: topic, task mix, content, length, and history-label distribution were not. The study therefore tests correct-history association, not isolated latent taste. It was frozen before these new outcomes but selected after earlier work on the same development cohort. No final test users were accessed, and this result does not establish researcher taste or downstream research utility.
 
 The compiler was reviewed before scoring, and the terminal run was scored once under the frozen protocol. A separate evaluator reproduced the primary and sensitivity statistics, counts, coverage, Brier values, order strata, and accounting from safe per-user aggregates to numerical tolerance. That review did not reopen raw labels or probabilities; raw correctness and label reconciliation remain the reference custodian's evidence. Private inputs, per-user statistics, controls, caches, and retention records are kept outside this repository.
+
+## Completed fixed-cohort M4–M6 follow-up
+
+All 56 users in the frozen follow-up cohort are now terminal. The cohort retains 1,836 planned cells: 459 targets for each of four methods, including the two earlier pilot users as explicit aliases. There are 1,480 valid outputs and 356 failed or unavailable cells. This is a completed development snapshot; cell-level missingness remains.
+
+Neither M4 history setting shows a clear planned-accuracy advantage over historical M1 on these same users. M5 and M6 have lower planned accuracy and lower coverage under the actual implementation and cache-availability rules.
+
+| Method | User-macro planned accuracy | Valid / planned cells | Difference from historical M1, percentage points (95% user bootstrap) |
+|---|---:|---:|---:|
+| M4, full history | 44.955% | 419 / 459 | −2.827 [−10.059, +3.865] |
+| M4, matched five | 47.029% | 436 / 459 | −0.752 [−7.532, +5.791] |
+| M5 | 34.910% | 320 / 459 | −12.872 [−20.782, −5.061] |
+| M6 | 34.090% | 305 / 459 | −13.692 [−22.022, −5.640] |
+
+Historical M1 has 47.782% user-macro planned accuracy on this cohort. Each user has equal weight; failures and unavailable cells count as wrong. M5/M6 each retain 127 predeclared unavailable cells. Their gaps are much smaller on the complete-user subsets, which are selected by successful delivery and are not a causal decomposition. Those subsets differ by method: 45 users / 381 targets for M4-full, 47 / 398 for matched-five, 40 / 312 for M5, and 39 / 305 for M6. Their respective differences are +1.73, +1.95, +0.92 and +1.96 points, with every interval crossing zero. They do not replace the full-cohort result.
+
+The runtime for the new follow-up packets was commit `9664557480240e17a88c69b83ca30533a2021492`, using the fixed Luna settings and existing method adaptations. Full-history versus matched-five exposure, fixed method order, cached evidence overlap, unavailable cached component fits, historical M1 comparisons, and the exploratory choice of this follow-up limit causal method rankings. M7 remains unavailable under the structural calibration-group rule. The 2,000-draw, seed-0 user bootstrap gives descriptive development intervals, without a new population, confirmatory, or multiplicity-adjusted claim.
+
+The last 16 packets added 764 wrapper attempts but 763 observed HTTP 200 events: one local consumed-request block prevented transport after an invalid-JSON fit. A single failed fit and its blocked reuse each propagated across seven target cells, so cell failures must not be counted as independent failed API requests. These packets added $0.101062375 estimated known usage and no new uncertain outcomes or holds. Prior uncertain requests remain held and excluded.
+
+The final snapshot was compiled once after the supervisor completed and drained. A separate evaluator reproduced the frozen aggregates, intervals, coverage, accounting and continuity checks from safe per-user statistics. The other five phase summaries, the separate recovery sensitivity, and all previously terminal follow-up users' results stayed unchanged. Raw label and probability review remained with the reference custodian. The own-versus-wrong study above remains separate and unrescored; its results are not pooled with this historical M1 comparison. No new winner, independent final-test result, researcher-taste result, or research-utility result follows.
