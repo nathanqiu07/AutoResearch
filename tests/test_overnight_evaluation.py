@@ -36,7 +36,7 @@ def prediction(identity="t1", choice="a", probabilities=None, **updates):
     return out
 
 
-def score_fixture(items, rows):
+def target_bundle_fixture(items):
     docs = {}
     checked = []
     for item in items:
@@ -52,6 +52,11 @@ def score_fixture(items, rows):
     for item in checked:
         item["group_id"] = manifest["document_groups"][item["document_id"]]
     bundle = ev.prepare_target_bundle(checked, list(docs.values()), manifest, stage="dev")
+    return bundle
+
+
+def score_fixture(items, rows):
+    bundle = target_bundle_fixture(items)
     inputs = {i["item_id"]:ev.prediction_input(i) for i in bundle["items"]}
     rows = copy.deepcopy(rows)
     for row in rows:
@@ -61,6 +66,119 @@ def score_fixture(items, rows):
         row.setdefault("manifest_sha256","fixture-manifest")
     return ev.score_predictions(bundle, rows, expected_target_bundle_sha256=bundle["target_bundle_sha256"],
                                 expected_job_id="fixture-job", expected_manifest_sha256="fixture-manifest")
+
+
+def job_packet(bundle, identities, **updates):
+    by_id = {t["item_id"]: ev.prediction_input(t) for t in bundle["items"]}
+    inputs = [by_id[i] for i in identities]
+    manifest = dict(schema_version="overnight-job-v1", campaign_id="fixture", stage="dev", kind="predict",
+                    method_id="lexical_retrieval", source_manifest_hash="approved-fit-hash",
+                    contract_sha256="contract", code_sha="code", personalization_cap=2048, replicate_id=0,
+                    extractor={"model":"none"}, consumer={"model":"fixture"},
+                    profile_hash=ev.canonical_hash(identities), items_hash=ev.canonical_hash(inputs),
+                    option_order_schedule=[{"item_id":i["item_id"],"option_order_id":i["option_order_id"]} for i in inputs])
+    manifest.update(updates)
+    manifest["job_id"] = ev.canonical_hash(manifest)
+    rows = [prediction(i["item_id"], item_sha256=ev.canonical_hash(i), items_sha256=manifest["items_hash"],
+                       job_id=manifest["job_id"], manifest_sha256=ev.canonical_hash(manifest)) for i in inputs]
+    return {"manifest":manifest,"items":inputs,"predictions":rows}
+
+
+def rebind_packet(packet):
+    manifest = packet["manifest"]
+    manifest["job_id"] = ev.canonical_hash({k:v for k,v in manifest.items() if k not in ("job_id","lease","created_at","updated_at")})
+    for row,item in zip(packet["predictions"],packet["items"]):
+        row.update(job_id=manifest["job_id"],manifest_sha256=ev.canonical_hash(manifest),
+                   items_sha256=manifest["items_hash"],item_sha256=ev.canonical_hash(item))
+
+
+def subset_score(bundle, packets, **updates):
+    kwargs = dict(expected_target_bundle_sha256=bundle["target_bundle_sha256"],
+                  expected_source_manifest_hash="approved-fit-hash",
+                  expected_items_sha256=ev.canonical_hash([i for p in packets for i in p["items"]]),
+                  expected_manifest_hashes={p["manifest"]["job_id"]:ev.canonical_hash(p["manifest"]) for p in packets})
+    kwargs.update(updates)
+    return ev.score_manifest_jobs(bundle, packets, **kwargs)
+
+
+class ManifestSubsetScoringTests(unittest.TestCase):
+    def setUp(self):
+        self.bundle = target_bundle_fixture([target("t1"), target("t2"), target("t3")])
+
+    def test_subset_and_per_item_jobs_agree_without_rewriting_provenance(self):
+        together = [job_packet(self.bundle, ["t1","t2"])]
+        separate = [job_packet(self.bundle, ["t1"]), job_packet(self.bundle, ["t2"])]
+        original = copy.deepcopy(separate)
+        a, b = subset_score(self.bundle,together), subset_score(self.bundle,separate)
+        self.assertEqual(a["accuracy"],1)
+        self.assertEqual(b["n_items"],2)
+        self.assertEqual(b["target_bundle_sha256"],self.bundle["target_bundle_sha256"])
+        self.assertEqual(separate,original)
+        self.assertEqual(b["per_item"][0]["job_id"],separate[0]["manifest"]["job_id"])
+        self.assertEqual(b["per_item"][0]["items_sha256"],separate[0]["manifest"]["items_hash"])
+        self.assertEqual(b["job_provenance"][0]["manifest"],separate[0]["manifest"])
+        self.assertEqual(ev.paired_comparison(a,b)["difference"],0)
+
+    def test_missing_predictions_keep_planned_denominator(self):
+        packets = [job_packet(self.bundle,["t1"]),job_packet(self.bundle,["t2"])]
+        packets[1]["predictions"] = []
+        report = subset_score(self.bundle,packets)
+        self.assertEqual(report["n_items"],2)
+        self.assertEqual(report["accuracy"],0.5)
+        self.assertEqual(report["missing_item_ids"],["t2"])
+
+    def test_altered_input_extra_field_and_order_rejected_even_if_rehashed(self):
+        for field,value in [("context","changed"),("options",["Use a proxy","Measure carefully"]),
+                            ("option_order_id","changed"),("answer","hidden")]:
+            packet = job_packet(self.bundle,["t1"])
+            packet["items"][0][field] = value
+            packet["manifest"]["items_hash"] = ev.canonical_hash(packet["items"])
+            rebind_packet(packet)
+            with self.assertRaises(ValueError):
+                subset_score(self.bundle,[packet])
+
+    def test_duplicate_jobs_items_and_rows_rejected(self):
+        p = job_packet(self.bundle,["t1"])
+        for packets in ([p,p], [p,job_packet(self.bundle,["t1","t2"])],
+                        [dict(p,predictions=p["predictions"]*2)]):
+            with self.assertRaises(ValueError):
+                subset_score(self.bundle,packets)
+
+    def test_wrong_source_stage_or_mixed_arm_rejected(self):
+        for updates in ({"source_manifest_hash":"unapproved"},{"stage":"confirmation"},{"kind":"build"}):
+            with self.assertRaises(ValueError):
+                subset_score(self.bundle,[job_packet(self.bundle,["t1"],**updates)])
+        for updates in ({"method_id":"P1"},{"consumer":{"model":"other"}},{"replicate_id":1}):
+            with self.assertRaises(ValueError):
+                subset_score(self.bundle,[job_packet(self.bundle,["t1"]),job_packet(self.bundle,["t2"],**updates)])
+
+    def test_wrong_manifest_and_row_bindings_rejected(self):
+        packet = job_packet(self.bundle,["t1"])
+        pins = {packet["manifest"]["job_id"]:ev.canonical_hash(packet["manifest"])}
+        changed = copy.deepcopy(packet)
+        changed["manifest"]["profile_hash"]="changed"
+        with self.assertRaises(ValueError):
+            subset_score(self.bundle,[changed],expected_manifest_hashes=pins)
+        for field in ("job_id","manifest_sha256","items_sha256","item_sha256"):
+            changed = copy.deepcopy(packet)
+            changed["predictions"][0][field]="wrong"
+            with self.assertRaises(ValueError):
+                subset_score(self.bundle,[changed])
+        with self.assertRaises(ValueError):
+            subset_score(self.bundle,[packet],expected_manifest_hashes={})
+
+    def test_schedule_and_private_split_remain_pinned(self):
+        packet = job_packet(self.bundle,["t1","t2"])
+        with self.assertRaises(ValueError):
+            subset_score(self.bundle,[packet],expected_items_sha256="different-subset")
+        changed = copy.deepcopy(self.bundle)
+        changed["split_manifest_sha256"]="different-split"
+        with self.assertRaises(ValueError):
+            subset_score(changed,[packet])
+        packet["manifest"]["option_order_schedule"].reverse()
+        rebind_packet(packet)
+        with self.assertRaises(ValueError):
+            subset_score(self.bundle,[packet])
 
 
 class SourceBoundaryTests(unittest.TestCase):

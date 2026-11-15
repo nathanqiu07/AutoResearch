@@ -260,7 +260,7 @@ def prepare_target_bundle(targets, documents, split_manifest, *, stage):
     return result
 
 
-def score_predictions(bundle, predictions, *, expected_target_bundle_sha256, expected_job_id, expected_manifest_sha256):
+def _validated_targets(bundle, expected_target_bundle_sha256):
     unsigned = {k: v for k, v in bundle.items() if k != "target_bundle_sha256"}
     if (bundle.get("schema_version") != "validated-target-bundle-v1"
             or bundle.get("target_bundle_sha256") != expected_target_bundle_sha256
@@ -272,6 +272,12 @@ def score_predictions(bundle, predictions, *, expected_target_bundle_sha256, exp
     expected = {t["item_id"]: t for t in targets}
     if len(expected) != len(targets):
         raise ValueError("duplicate target item")
+    return targets
+
+
+def score_predictions(bundle, predictions, *, expected_target_bundle_sha256, expected_job_id, expected_manifest_sha256):
+    targets = _validated_targets(bundle, expected_target_bundle_sha256)
+    expected = {t["item_id"]: t for t in targets}
     rows = {}
     for row in predictions:
         identity = row["item_id"]
@@ -322,6 +328,105 @@ def score_predictions(bundle, predictions, *, expected_target_bundle_sha256, exp
             value: _summary([r for r in outcomes if r[key] == value]) for value in sorted({r[key] for r in outcomes})}
     report["missing_item_ids"] = sorted(set(expected) - set(rows))
     report["per_item"] = outcomes  # private evaluator data; do not publish this field for confirmation
+    return report
+
+
+def score_manifest_jobs(bundle, jobs, *, expected_target_bundle_sha256,
+                        expected_source_manifest_hash, expected_items_sha256,
+                        expected_manifest_hashes):
+    """Score one arm's pinned jobs on an exact ordered subset of a private panel.
+
+    Each job packet contains manifest, strict label-free items and original
+    predictions. Pins must come from the frozen coordinator plan, not be derived
+    from untrusted result rows. Supply planned jobs with predictions=[] when no
+    result exists: missing outcomes stay in the denominator. Packet order defines
+    the combined schedule. No original manifest or prediction row is rewritten.
+    """
+    targets = _validated_targets(bundle, expected_target_bundle_sha256)
+    by_id = {t["item_id"]: t for t in targets}
+    jobs = list(jobs)
+    if not jobs or not expected_manifest_hashes:
+        raise ValueError("nonempty frozen job plan required")
+    seen_jobs, seen_items = set(), set()
+    all_inputs, outcomes, missing, provenance = [], [], [], []
+    common_fields = ("campaign_id", "stage", "method_id", "contract_sha256", "code_sha",
+                     "extractor", "consumer", "personalization_cap", "replicate_id")
+    arm = None
+    for packet in jobs:
+        manifest = packet["manifest"]
+        identity = manifest.get("job_id")
+        manifest_hash = canonical_hash(manifest)
+        if (identity in seen_jobs or identity not in expected_manifest_hashes
+                or manifest_hash != expected_manifest_hashes[identity]):
+            raise ValueError("duplicate, unexpected or changed job manifest")
+        seen_jobs.add(identity)
+        semantic = {k: v for k, v in manifest.items() if k not in ("job_id", "lease", "created_at", "updated_at")}
+        if identity != canonical_hash(semantic):
+            raise ValueError("semantic job identity mismatch")
+        if (manifest.get("schema_version") != "overnight-job-v1" or manifest.get("kind") != "predict"
+                or manifest.get("stage") != bundle["stage"]
+                or manifest.get("source_manifest_hash") != expected_source_manifest_hash):
+            raise ValueError("job schema, source or stage differs from approved panel")
+        if any(field not in manifest for field in common_fields):
+            raise ValueError("job arm fields missing")
+        current_arm = {field: manifest[field] for field in common_fields}
+        if arm is not None and arm != current_arm:
+            raise ValueError("cannot combine different arms or execution settings")
+        arm = current_arm
+        inputs = packet["items"]
+        if not isinstance(inputs, list) or not inputs or canonical_hash(inputs) != manifest.get("items_hash"):
+            raise ValueError("job item subset hash mismatch")
+        subset = []
+        for item in inputs:
+            if not isinstance(item, dict) or item.get("item_id") not in by_id:
+                raise ValueError("unexpected subset item")
+            t = by_id[item["item_id"]]
+            if item != prediction_input(t):
+                raise ValueError("subset item differs from frozen label-free input")
+            if item["item_id"] in seen_items:
+                raise ValueError("duplicate item across job subsets")
+            seen_items.add(item["item_id"])
+            subset.append(t)
+        schedule = [{"item_id":i["item_id"], "option_order_id":i["option_order_id"]} for i in inputs]
+        if schedule != manifest.get("option_order_schedule"):
+            raise ValueError("job option order schedule mismatch")
+        rows = list(packet["predictions"])
+        item_hashes = {i["item_id"]:canonical_hash(i) for i in inputs}
+        row_ids = set()
+        for row in rows:
+            row_id = row.get("item_id")
+            if (row_id in row_ids or row_id not in item_hashes
+                    or row.get("item_sha256") != item_hashes[row_id]
+                    or row.get("items_sha256") != manifest["items_hash"]
+                    or row.get("job_id") != identity or row.get("manifest_sha256") != manifest_hash):
+                raise ValueError("duplicate, unexpected or unbound prediction row")
+            row_ids.add(row_id)
+        # The derived private bundle is bound to the original validated panel.
+        # Its item order is the original job order, so rows keep their subset hash.
+        child = {k:v for k,v in bundle.items() if k != "target_bundle_sha256"}
+        child.update(items=subset, items_sha256=manifest["items_hash"])
+        child["target_bundle_sha256"] = canonical_hash(child)
+        report = score_predictions(child, rows, expected_target_bundle_sha256=child["target_bundle_sha256"],
+                                   expected_job_id=identity, expected_manifest_sha256=manifest_hash)
+        for outcome in report["per_item"]:
+            outcome.update(job_id=identity, manifest_sha256=manifest_hash, items_sha256=manifest["items_hash"])
+        outcomes.extend(report["per_item"])
+        missing.extend(report["missing_item_ids"])
+        all_inputs.extend(inputs)
+        provenance.append({"manifest":json.loads(json.dumps(manifest)), "manifest_sha256":manifest_hash})
+    if seen_jobs != set(expected_manifest_hashes):
+        raise ValueError("planned job packet missing; supply its manifest and empty predictions")
+    if canonical_hash(all_inputs) != expected_items_sha256:
+        raise ValueError("combined subset schedule differs from frozen selection")
+    report = _summary(outcomes)
+    report.update(target_bundle_sha256=expected_target_bundle_sha256,
+                  split_manifest_sha256=bundle["split_manifest_sha256"],
+                  source_manifest_hash=expected_source_manifest_hash,
+                  items_sha256=expected_items_sha256, arm=arm, job_provenance=provenance,
+                  missing_item_ids=sorted(missing), per_item=outcomes)
+    for key in ("researcher_id", "tier"):
+        report["by_researcher" if key == "researcher_id" else "by_tier"] = {
+            value: _summary([r for r in outcomes if r[key] == value]) for value in sorted({r[key] for r in outcomes})}
     return report
 
 
