@@ -1,5 +1,7 @@
 # Taste-Bench data
 
+**Dropped 2026-11-14 (Ethan):** the project no longer uses Taste-Bench, and E7 is cut (PLAN.md §4.2). Do not download or run it.
+
 [Taste-Bench](https://github.com/wbopan/tastebench) (Pan et al. 2026, arXiv 2609.25804) shows
 an agent's transcript up to a fork and two candidate next steps; the rest of the real run
 labels the better one. This project uses it for experiment E7 (PLAN.md §9): does the loop's

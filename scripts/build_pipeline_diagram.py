@@ -95,14 +95,9 @@ DOWNSTREAM = """
 <text class="tm" x="442" y="47">usermodel.json</text>
 <text class="d" x="442" y="65">one per track</text>
 
-<rect class="box" x="710" y="24" width="230" height="56" rx="6"/>
-<text class="t" x="722" y="47">Taste-Bench · E7</text>
-<text class="d" x="722" y="65">picks the step that worked? 112 forks</text>
 
 <path class="e" d="M428,52 H372" marker-start="url(#ad)" marker-end="url(#ad)"/>
 <text class="el" x="400" y="44" text-anchor="middle">push / pull</text>
-<path class="e" d="M650,52 H708" marker-end="url(#ad)"/>
-<text class="el" x="679" y="44" text-anchor="middle">tested</text>
 
 <path class="e" d="M500,80 V98 H280 V122" marker-end="url(#ad)"/>
 <text class="el" x="390" y="93" text-anchor="middle">consulted at D1–D6</text>
@@ -251,7 +246,7 @@ RESULTS_INTRO = ("PLAN §0 reports four results and never merges them into one s
 RESULTS = (["Result", "Experiments", "Pipeline"], [
     ["1. Preference fidelity", "E1 (methods on PRISM), E2 (each track's held-out choices)",
      "PRISM, personal track, public track"],
-    ["2. Research judgment", "E4b (blinded ratings of the loop's D1–D6 decisions), E7 (Taste-Bench)",
+    ["2. Research judgment", "E4b (blinded ratings of the loop's D1–D6 decisions)",
      "After the user model"],
     ["3. Downstream outcome", "E3a (single scenario), E3b (Petri), E4 (taste vs no taste)", "After the user model"],
     ["4. Efficiency", "E5 (cost and wall time per validated finding)", "After the user model"],
@@ -421,7 +416,7 @@ FIGURES = {
     "public": ("as", "Public-track pipeline: harvest dated work with Exa, extract and check decisions, find "
                 "alternatives, split at date T, gate, select, run E2, fit usermodel.json.",
                 *pipeline_body(PUBLIC, "as")),
-    "downstream": ("ad", "Using the user model: it syncs to past.dev and is tested on Taste-Bench; the "
+    "downstream": ("ad", "Using the user model: it syncs to past.dev; the "
                    "TasteAdvisor consults it at D1 to D6 and advises the proposer; the proposer's environments "
                    "go to the target model; judge J1 scores transcripts for A1 and A3, and probes give A2.",
                    DOWNSTREAM, 690),

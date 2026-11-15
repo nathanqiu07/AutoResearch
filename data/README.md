@@ -15,7 +15,7 @@ Not here: `runs/` (gitignored run outputs, e.g. `runs/<run_id>/decisions.jsonl`)
 |---|---|---|---|---|---|
 | `researchers/` | One folder per person (layout below), plus `tracks.json` mapping the personal (P) and public (S) tracks to a slug | mixed | `trackp`, `timesplit`, `track_eval`, `scripts/make_demo_data.py` | B | Consent per person in `<slug>/CONSENT.md`; no answers before it is ticked |
 | `trackp/` | `tradeoffs.jsonl`, the personal-track trade-off bank | raw (hand-written) | by hand | B | Sources must not include anything by a tester (no Hobbhahn/Apollo material) |
-| `tastebench/` | `research.*`, `engineering.*`, `export_manifest.json` | raw (external) | `scripts/fetch_tastebench.py` | B | wenbopan/taste-bench v1.0, CC BY 4.0, gated on Hugging Face; see its README |
+| `tastebench/` | `research.*`, `engineering.*`, `export_manifest.json` | raw (external) | `scripts/fetch_tastebench.py` | B | Dropped 2026-11-14 (E7 cut). wenbopan/taste-bench v1.0, CC BY 4.0, gated on Hugging Face; see its README |
 | `prefdata/` | `prism-splits.json`, `prism-splits-removed.json` (split manifest; the data goes to `runs/prefdata/`) | derived | `python3 -m autoresearch.taste prepare` | A | PRISM dataset |
 | `benchmarks/` | EvalAwareBench split and convert report, EvalDetect probes and provenance | derived (downloads in gitignored `raw/`) | `scripts/convert_evalawarebench.py` | C1 | Downloads are untrusted; see its README |
 | `labels/` | Hand labels for the A1 judge (`<name>.jsonl`) and their `transcripts.jsonl` | labels raw (human), transcripts derived | `autoresearch calibrate --dump-transcripts`, `autoresearch label-transcripts` | C1 | See its README |

@@ -45,7 +45,7 @@ The harvest has run; everything after it is built and waits on date T. Only this
 
 Both tracks produce the same file, so everything from here on is shared.
 
-![Using the user model: it syncs to past.dev and is tested on Taste-Bench; the TasteAdvisor consults it at D1 to D6 and advises the proposer; the proposer's environments go to the target model; judge J1 scores transcripts for A1 and A3, and probes give A2.](pipeline/downstream.svg)
+![Using the user model: it syncs to past.dev; the TasteAdvisor consults it at D1 to D6 and advises the proposer; the proposer's environments go to the target model; judge J1 scores transcripts for A1 and A3, and probes give A2.](pipeline/downstream.svg)
 
 Each loop arm gives the proposer a different kind of taste. In the R1 arms the TasteAdvisor asks the user model at decision points D1–D6. The proposer's environments, alongside EvalAwareBench tasks, go to the target model. Judge J1 reads the target's reasoning (A1, plus validity) and tells synthetic from real (A3). Probe questions give A2.
 
@@ -56,7 +56,7 @@ PLAN §0 reports four results and never merges them into one score. Experiments 
 | Result | Experiments | Pipeline |
 |---|---|---|
 | 1. Preference fidelity | E1 (methods on PRISM), E2 (each track's held-out choices) | PRISM, personal track, public track |
-| 2. Research judgment | E4b (blinded ratings of the loop's D1–D6 decisions), E7 (Taste-Bench) | After the user model |
+| 2. Research judgment | E4b (blinded ratings of the loop's D1–D6 decisions) | After the user model |
 | 3. Downstream outcome | E3a (single scenario), E3b (Petri), E4 (taste vs no taste) | After the user model |
 | 4. Efficiency | E5 (cost and wall time per validated finding) | After the user model |
 
