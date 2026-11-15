@@ -60,3 +60,12 @@ Ruling: keep metadata outside extraction unless covered by the approved text;
 this sacrifices external date context to avoid an unpinned information channel.
 The coordinator/audit owner provides independent review; this implementation's
 local review and synthetic tests alone are not an independent audit.
+
+Settings correction: only `temperature` and `max_tokens` are supported in
+`extractor_settings`. Unknown keys, including `top_p`, `seed` and `reasoning`,
+are rejected before calling the extractor. Missing supported keys use explicit
+defaults (`0.0`, `2048`), pinned in the versioned prompt specification and
+recorded as `fit_usage.effective_extractor_settings`. Reasoning stays in the
+pinned backend identity. The builder does not mutate its config copy; shared
+runner normalization remains an infrastructure responsibility. Older fixtures
+retain their original implementation and prompt hashes.

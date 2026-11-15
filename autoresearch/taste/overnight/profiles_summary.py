@@ -12,7 +12,8 @@ import math
 from .contracts import canonical_json, digest, sha256_text, validate_documents
 
 
-PROMPT_VERSION = 'summary-profile-v1'
+PROMPT_VERSION = 'summary-profile-v1-settings-v2'
+EXTRACTOR_DEFAULTS = {'temperature': 0.0, 'max_tokens': 2048}
 QUESTIONNAIRE_ORIGIN = 'codex-chat:01a1de1e-34f7-7fe2-8676-cdba849cac31'
 QUESTIONS = {
     'actual_choice': 'What actual research choice did the researcher make, among what alternatives and constraints?',
@@ -59,7 +60,8 @@ SOURCE_FIELDS = {'document_id', 'start', 'end', 'quote'}
 
 
 def prompt_spec(method_id):
-    return {'version': PROMPT_VERSION, 'system': SYSTEM, 'common': COMMON,
+    return {'version': PROMPT_VERSION, 'extractor_settings_defaults': dict(EXTRACTOR_DEFAULTS),
+            'system': SYSTEM, 'common': COMMON,
             'method': METHOD_INSTRUCTIONS[method_id],
             'questions': QUESTIONS if method_id == 'P3' else None}
 
@@ -71,11 +73,11 @@ def _result(content=None, status='invalid', error=None, usage=None):
 
 def _settings(config):
     settings = config.get('extractor_settings')
-    if not isinstance(settings, dict):
+    if not isinstance(settings, dict) or set(settings) - set(EXTRACTOR_DEFAULTS):
         raise ValueError('invalid_extractor_settings')
     # Backend identity/reasoning is enforced by the injected transport/runner.
     # Never pretend complete() supports passing seed or provider-specific options.
-    temperature, maximum = settings.get('temperature', 0.0), settings.get('max_tokens', 2048)
+    temperature, maximum = settings.get('temperature', EXTRACTOR_DEFAULTS['temperature']), settings.get('max_tokens', EXTRACTOR_DEFAULTS['max_tokens'])
     if (isinstance(temperature, bool) or not isinstance(temperature, (int, float)) or
             not math.isfinite(temperature) or not 0 <= temperature <= 2 or
             isinstance(maximum, bool) or not isinstance(maximum, int) or maximum <= 0):
@@ -204,6 +206,7 @@ def _build(method_id, documents, config, extractor):
     if not documents:
         return _result(status='empty', error='no_approved_documents')
     usage = {'attempted_calls': 1, 'cost_status': 'unavailable',
+             'effective_extractor_settings': dict(settings),
              'request_sha256': digest({'system': SYSTEM, 'prompt': prompt, 'settings': settings}),
              'prompt_spec_sha256': digest(prompt_spec(method_id)),
              'replicate_policy': 'replicate ID only; no unsupported seed parameter sent'}

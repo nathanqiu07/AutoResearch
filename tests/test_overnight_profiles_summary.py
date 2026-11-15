@@ -51,6 +51,27 @@ class SummaryTests(unittest.TestCase):
                         dict(self.config, method_id=method, **changes), backend)
         return result, backend
 
+    def test_unknown_extractor_settings_are_rejected_before_call(self):
+        for method in ('P1', 'P2', 'P3'):
+            for extra in ({'top_p':0.1}, {'top_p':0.9}, {'reasoning':'high'}, {'seed':1}):
+                with self.subTest(method=method,extra=extra):
+                    out,backend=self.build(method=method,extractor_settings=dict(self.config['extractor_settings'],**extra))
+                    self.assertEqual(out['status'],'invalid')
+                    self.assertEqual(backend.calls,[])
+                    self.assertEqual(out['fit_usage']['attempted_calls'],0)
+
+    def test_omitted_supported_settings_have_pinned_effective_defaults(self):
+        for supplied,expected in [({},{'temperature':0.0,'max_tokens':2048}),
+                                  ({'temperature':0.5},{'temperature':0.5,'max_tokens':2048}),
+                                  ({'max_tokens':100},{'temperature':0.0,'max_tokens':100})]:
+            with self.subTest(supplied=supplied):
+                out,backend=self.build(extractor_settings=supplied)
+                self.assertEqual(out['status'],'complete')
+                self.assertEqual(out['fit_usage']['effective_extractor_settings'],expected)
+                self.assertEqual({k:backend.calls[0][1][k] for k in expected},expected)
+                self.assertEqual(self.m.prompt_spec('P1')['extractor_settings_defaults'],
+                                 {'temperature':0.0,'max_tokens':2048})
+
     def test_plain_and_task_guided_summary_are_distinct_fixed_prompts(self):
         p1, first = self.build()
         p2, second = self.build(method='P2')
