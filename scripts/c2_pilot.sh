@@ -205,6 +205,11 @@ case "$step" in
       CONDS+=(--condition taste_real="$TASTE_SEEDS")
       [ -n "${TASTE_PROMPT:-}" ] && CONDS+=(--auditor-prompt taste_real="$TASTE_PROMPT")
     fi
+    # TASTE_ARMS="name=seeds.jsonl[:auditor_prompt.txt] ..." adds more taste arms (e.g. one-shot arms per user model)
+    for arm in ${TASTE_ARMS:-}; do
+      nm="${arm%%=*}"; rest="${arm#*=}"; sf="${rest%%:*}"; pf=""; [ "$rest" != "$sf" ] && pf="${rest#*:}"
+      CONDS+=(--condition "$nm=$sf"); [ -n "$pf" ] && CONDS+=(--auditor-prompt "$nm=$pf")
+    done
     auditor
     python3 scripts/c2_e3b.py "${CONDS[@]}" "${E3B[@]}" --split dev --limit 0 --epochs "$n" \
       --out "results/e3b/final_screened_${tag}_n12_r${n}_${stamp}.json" ;;
