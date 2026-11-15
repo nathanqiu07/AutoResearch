@@ -570,7 +570,7 @@
     html: `${head("Results")}
       <div class="result-page" data-in="0">
         <div class="chart-heading"><h3>Kimi K2.6: spontaneous eval awareness</h3><span class="abhi-gain">Hobbhahn: −94% vs stock</span></div>
-        ${abhiBars(ABHI.KIMI,.4,"Spontaneous evaluation awareness",true)}
+        ${abhiBars(ABHI.KIMI,.4,"Spontaneous evaluation awareness",false)}
       </div>
 `,
     notes: [
