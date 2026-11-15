@@ -75,6 +75,7 @@ class ResearchConfig:
     screen_cost: float = 1.0       # cost of a screening sample relative to a dev one (cheap screening target)
     contrarian: int = 0            # extra proposals per iteration from the contrarian proposer
     stake_frac: float = 0.1        # market: share of its balance an agent stakes per bid
+    user_model_bids: bool = True   # market + taste: the user model bids on which experiments run (bid_user_model)
     # Measure an iteration's candidates at the same time (threads). Seed ids are assigned in the
     # same order as the sequential path and the results are processed in order, so the outcome is
     # the same; only wall time changes. Off by default (a measurer must be thread-safe; PetriMeasurer
@@ -408,9 +409,12 @@ class OpenResearcher:
 
     def _place_bids(self, it: int, gated, batch=None) -> List[str]:
         """Every agent bids on the designs it brought, the critic bids against
-        all of them; returns the design keys in funding order. With a GPU
-        budget, each supporting bid also asks for the GPU time its design will
-        use (`_gpu_request`)."""
+        all of them and, in a taste arm, the user model bids on each one from
+        its D1 taste score (`Market.bid_user_model`), so the funding order
+        combines the researcher's taste with the sub-agents' bids. Returns the
+        design keys in funding order. With a GPU budget, each supporting bid
+        also asks for the GPU time its design will use (`_gpu_request`)."""
+        taste_bids = bool(self.advisor and self.cfg.user_model_bids and self._tscore)
         for move, _, idea in gated:
             k = self._key(idea.category)
             prior = self.mem.credence(k) if self.cfg.use_memory else 0.5
@@ -419,7 +423,10 @@ class OpenResearcher:
                 p = idea.p_validated if idea.p_validated is not None else prior
             else:   # the loop's own ablation: removing a category validates when it hurt
                 agent, p = "ablation", 1.0 - prior
+                prior = 1.0 - prior
             self.market.bid(agent, move, p, it=it, gpu_s=self._gpu_request(agent, move, batch))
+            if taste_bids:
+                self.market.bid_user_model(move, prior, self._tscore.get(move, 0.0), self.cal.weight, it=it)
         crit = self.pr.critique(self.sc.goal, [(m, _design_text(m, i), dict(i.features)) for m, _, i in gated],
                                 self.findings)
         for move, p in crit.items():

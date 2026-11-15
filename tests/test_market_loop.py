@@ -25,9 +25,9 @@ def _models():
     return Models(OfflineLLM(), OfflineLLM(), OfflineLLM())
 
 
-def run(allocation="uniform", iters=4, seed=0, market=None, contrarian=0, screen=None, taste=None):
+def run(allocation="uniform", iters=4, seed=0, market=None, contrarian=0, screen=None, taste=None, **cfg_kw):
     cfg = ResearchConfig(iterations=iters, seed=seed, allocation=allocation, contrarian=contrarian,
-                         faithfulness_samples=0)
+                         faithfulness_samples=0, **cfg_kw)
     con = Proposer(OfflineLLM(), taste, random.Random(seed + 1), contrarian=True) if contrarian else None
     r = OpenResearcher(Measurer(_models(), simulator=OfflineWorld()), Proposer(OfflineLLM(), taste, random.Random(seed)),
                        ResearchMemory(None), taste, cfg, market=market, contrarian=con, screen_measurer=screen)
@@ -345,6 +345,47 @@ class TestRediscoveredIdeas(unittest.TestCase):
         settles = collections.Counter((e["iter"], e["agent"], e["candidate"]) for e in rep["market"]["ledger"]
                                       if e["event"] == "settle")
         self.assertTrue(all(n == 1 for n in settles.values()))
+
+
+class TestUserModelBidsInTheLoop(unittest.TestCase):
+    """Pipeline step 4: the user model and the sub-agents' bids together decide which experiments run."""
+
+    def _um_ledger(self, rep):
+        return [e for e in rep["market"]["ledger"] if e.get("agent") == market_mod.USER_MODEL]
+
+    def test_taste_arm_user_model_bids_and_settles(self):
+        taste = load_researcher("demo_realist").cached_profile()
+        r, rep = run("market", iters=4, contrarian=2, taste=taste)
+        um = self._um_ledger(rep)
+        bids = [e for e in um if e["event"] == "bid"]
+        self.assertTrue(bids)
+        self.assertTrue(any(e["event"] == "settle" for e in um))          # its track record is kept
+        self.assertIn(market_mod.USER_MODEL, rep["market"]["wallets"])
+        self.assertFalse(any(e["against"] or e.get("resource") == "gpu_s" for e in bids))
+        moves = {e["move"] for e in rep["log"] if e.get("event") in ("evaluated", "screened_out")}
+        self.assertTrue({e["candidate_id"] for e in bids} & moves)
+
+    def test_no_user_model_bids_without_taste_or_when_switched_off(self):
+        self.assertEqual(self._um_ledger(run("market", iters=3)[1]), [])          # R0: no user model
+        taste = load_researcher("demo_realist").cached_profile()
+        _, rep = run("market", iters=3, taste=taste, user_model_bids=False)
+        self.assertEqual(self._um_ledger(rep), [])
+        _, rep = run("market", iters=3, taste=taste, taste_mode="prompt")         # taste only as prompt text
+        self.assertEqual(self._um_ledger(rep), [])
+
+    def test_the_user_model_changes_what_is_funded(self):
+        taste = load_researcher("demo_realist").cached_profile()
+
+        from autoresearch.cli import research_config
+        parse = build_parser().parse_args
+        self.assertTrue(research_config(parse(["research", "--taste-mode", "model"]), "R1").user_model_bids)
+        self.assertFalse(research_config(parse(["research", "--taste-mode", "model", "--no-user-model-bids"]), "R1").user_model_bids)
+
+        def funded(**kw):
+            _, rep = run("market", iters=4, contrarian=2, taste=taste, **kw)
+            return [e["move"] for e in rep["log"] if e.get("event") in ("evaluated", "screened_out")]
+        self.assertEqual(funded(user_model_bids=False), funded(user_model_bids=False))   # deterministic
+        self.assertNotEqual(funded(), funded(user_model_bids=False))
 
 
 if __name__ == "__main__":

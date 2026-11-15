@@ -172,6 +172,7 @@ def research_config(args, arm: str):
                           explain=not args.no_explain, claims=not args.no_claims,
                           allocation=args.allocation, screen_samples=args.screen_samples,
                           screen_cost=args.screen_cost, contrarian=args.contrarian, stake_frac=args.stake_frac,
+                          user_model_bids=not getattr(args, "no_user_model_bids", False),
                           parallel_evals=getattr(args, "parallel_evals", False))
 
 
@@ -709,6 +710,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="extra proposals per iteration from a contrarian proposer (ideas the researcher would not pick)")
     rs.add_argument("--wallets", help="market wallets JSON (default <memory>/wallets.json; persists across runs)")
     rs.add_argument("--stake-frac", type=float, default=0.1, help="market: share of its balance an agent stakes per bid")
+    rs.add_argument("--no-user-model-bids", action="store_true",
+                    help="market + taste: the user model does not bid on which experiments run (ablation; by default "
+                         "it bids from its D1 taste score alongside the sub-agents)")
     rs.add_argument("--gpu-budget-s", type=float, default=None,
                     help="market: GPU-seconds of the self-hosted target per agent wallet (default off). Supporting "
                          "bids then also ask for GPU time and are charged the measured GPU-seconds of their design; "
