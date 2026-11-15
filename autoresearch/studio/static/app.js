@@ -148,7 +148,7 @@ async function viewHome(seq) {
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 function flow(container, steps, opts = {}) {
   const state = opts.state || {};
-  let i = -1, busy = false;
+  let i = (opts.start || 0) - 1, busy = false;
   container.innerHTML = `<div class="tf"><div class="tf-progress"><div></div></div><div class="tf-stage"></div>
     <div class="tf-nav"><button class="btn small" data-nav="back" aria-label="Previous question">↑</button>
     <button class="btn small" data-nav="next" aria-label="Next question">↓</button></div></div>`;
@@ -180,12 +180,18 @@ function flow(container, steps, opts = {}) {
       ${st.help ? `<p class="tf-help">${st.help(state)}</p>` : ""}
       <div class="tf-body">${st.body ? st.body(state) : ""}${st.choices ? choicesHtml(st) : ""}</div>
       <div class="tf-actions"><button type="button" class="btn primary" data-ok>${st.ok || "OK"} ${doodle("check", { size: 18, color: "clay", tilt: 0 })}</button>
-        <span class="tf-hint">press <kbd>Enter ↵</kbd></span><span class="tf-error muted small" role="alert"></span></div>`;
+        ${st.skipLabel ? `<button type="button" class="btn ghost" data-skip>${st.skipLabel}</button>` : ""}
+        <span class="tf-hint">press <kbd>Enter ↵</kbd>${st.hint ? ` · ${st.hint}` : ""}</span><span class="tf-error muted small" role="alert"></span></div>`;
     stage.appendChild(screen);
     screen.querySelector("[data-ok]").addEventListener("click", () => ctl.next());
+    const sk = screen.querySelector("[data-skip]"); if (sk) sk.addEventListener("click", () => ctl.advance());
     if (st.choices) screen.querySelectorAll("[data-choice]").forEach(b => b.addEventListener("click", () => pick(+b.dataset.choice)));
+    screen.querySelectorAll("textarea.tf-input").forEach(t => {
+      const fit = () => { t.style.height = "auto"; t.style.height = Math.max(120, t.scrollHeight + 4) + "px"; };
+      t.addEventListener("input", fit); setTimeout(fit, 0);
+    });
     if (st.bind) st.bind(screen, state, ctl);
-    const first = screen.querySelector("input:not([type=checkbox]):not([type=radio]), textarea");
+    const first = !st.noAutofocus && screen.querySelector("input:not([type=checkbox]):not([type=radio]), textarea");
     if (first) setTimeout(() => { first.focus({ preventScroll: true }); if (first.setSelectionRange && first.value) first.setSelectionRange(first.value.length, first.value.length); }, 380);
     container.querySelector('[data-nav="back"]').disabled = pos === 0;
   }
@@ -223,6 +229,10 @@ function flow(container, steps, opts = {}) {
         }
         busy = false;
       }
+      ctl.advance();
+    },
+    advance() {
+      if (busy) return;
       const vis = visible(), nxt = vis.find(k => k > i);
       if (nxt === undefined) { bar.style.width = "100%"; if (opts.onDone) opts.onDone(state, container); return; }
       i = nxt; draw(1);
@@ -243,7 +253,8 @@ function flow(container, steps, opts = {}) {
     if (e.key === "ArrowDown") { ctl.next(); return true; }
     if (e.key === "ArrowUp") { ctl.back(); return true; }
   });
-  ctl.next();
+  i = Math.min(i, steps.length - 2);
+  ctl.advance();
   return ctl;
 }
 
@@ -724,137 +735,120 @@ function renderCorpus(el, filter = "all") {
   }));
 }
 
-// ----- Questionnaire (personal)
+// ----- Questionnaire (personal): one question per screen
 function panelQuestionnaire(panel, nextBtn) {
-  const answers = { ...(S.st.meta.questionnaire || {}) };
-  const qs = S.st.questions;
-  const draftKey = `studio:q:${S.slug}`;
-  const draft = load(draftKey) || {};
-  panel.innerHTML = head("Questionnaire", "Open questions about how you work. Answer in your own words: a few sentences each is plenty, and every question is optional. There are no right answers. Answers save when you leave a box.") + `
-    <div class="card">
-      <div class="row small muted"><span id="q-count"></span><span class="spacer"></span><span id="q-saved"></span></div>
-      <div class="progress" style="margin:.5rem 0 .25rem"><div id="q-bar"></div></div>
-      ${qs.map((q, i) => `<div class="q"><div class="qtext">${i + 1}. ${esc(q.text)} ${q.kind === "other" ? '<span class="badge">outside research</span>' : ""}</div>
-        <textarea data-q="${esc(q.id)}" rows="3">${esc(draft[q.id] ?? answers[q.id] ?? "")}</textarea></div>`).join("")}
-    </div>${nextBtn}`;
-  const count = () => {
-    const n = qs.filter(q => (panel.querySelector(`[data-q="${q.id}"]`).value || "").trim()).length;
-    document.getElementById("q-count").textContent = `${n} of ${qs.length} answered`;
-    document.getElementById("q-bar").style.width = `${(100 * n) / qs.length}%`;
-  };
-  count();
-  const timers = {};
-  async function save(t) {
-    clearTimeout(timers[t.dataset.q]);
-    const q = t.dataset.q, v = t.value.trim();
-    if (v === (answers[q] || "")) return;
-    try {
-      const meta = await api("POST", `/api/profiles/${S.slug}/answers`, { answers: { [q]: v } });
-      answers[q] = v; S.st.meta = meta;
-      if ((draft[q] ?? "").trim() === v) { delete draft[q]; store(draftKey, Object.keys(draft).length ? draft : undefined); }
-      const saved = document.getElementById("q-saved");
-      if (saved) saved.textContent = "Saved " + new Date().toLocaleTimeString();
-      refresh().catch(() => {});
-    } catch (e) { fail(e); }
+  const qs = S.st.questions, answers = { ...(S.st.meta.questionnaire || {}) };
+  const draftKey = `studio:q:${S.slug}`, draft = load(draftKey) || {};
+  const firstOpen = Math.max(0, qs.findIndex(q => !answers[q.id]));
+  const icons = ["telescope", "star", "magnifier", "arrow", "scale", "stack", "lightbulb", "book", "coffee", "rocket", "compass", "heart"];
+  const colors = ["clay", "ochre", "sage", "sky", "rose"];
+  async function save(q, v) {
+    v = (v || "").trim();
+    if (v === (answers[q.id] || "")) return;
+    const meta = await api("POST", `/api/profiles/${S.slug}/answers`, { answers: { [q.id]: v } });
+    answers[q.id] = v; S.st.meta = meta;
+    delete draft[q.id]; store(draftKey, Object.keys(draft).length ? draft : undefined);
+    refresh().catch(() => {});
   }
-  panel.querySelectorAll("[data-q]").forEach(t => {
-    t.addEventListener("input", () => {
-      draft[t.dataset.q] = t.value; store(draftKey, draft); count();
-      clearTimeout(timers[t.dataset.q]); timers[t.dataset.q] = setTimeout(() => save(t), 1200);
-    });
-    t.addEventListener("blur", () => save(t));
+  flow(panel, qs.map((q, k) => ({
+    icon: icons[k % icons.length] === "compass" ? "globe" : icons[k % icons.length], color: colors[k % colors.length],
+    q: () => esc(q.text) + (q.kind === "other" ? ` <span class="badge" style="vertical-align:middle">outside research</span>` : ""),
+    help: () => k === 0 ? "Answer in your own words; a few sentences is plenty. Every question is optional and there are no right answers." : "",
+    body: () => `<textarea class="tf-input" data-q="${esc(q.id)}" placeholder="Type your answer here…">${esc(draft[q.id] ?? answers[q.id] ?? "")}</textarea>
+      <div class="tf-saved" data-saved></div>`,
+    hint: `<kbd>Shift</kbd>+<kbd>↵</kbd> new line`,
+    ok: (answers[q.id] || draft[q.id]) ? "Save" : "OK",
+    skipLabel: "skip",
+    bind: sc => {
+      const t = sc.querySelector("textarea"), saved = sc.querySelector("[data-saved]");
+      let timer;
+      t.addEventListener("input", () => {
+        draft[q.id] = t.value; store(draftKey, draft);
+        clearTimeout(timer);
+        timer = setTimeout(() => save(q, t.value).then(() => { saved.textContent = "saved " + new Date().toLocaleTimeString(); }).catch(fail), 1500);
+      });
+    },
+    submit: async (st, sc) => save(q, sc.querySelector("textarea").value),
+  })), {
+    start: firstOpen,
+    onDone: (st, c) => {
+      const n = qs.filter(q => answers[q.id]).length;
+      doneScreen(c, { title: n ? "Thank you!" : "Maybe later, then", icon: n ? "heart" : "coffee",
+        text: `You answered ${n} of ${qs.length} questions. Your answers are saved as part of your corpus, so they shape the profile like your papers do.`,
+        actions: `<a class="btn" href="#/p/${esc(S.slug)}/questionnaire" onclick="setTimeout(render,0)">Review answers</a>
+                  <a class="btn primary" href="#/p/${esc(S.slug)}/tradeoffs">On to trade-offs ${doodle("scale", { size: 20, color: "sage" })}</a>` });
+    },
   });
 }
 
-// ----- Trade-offs (personal; trackp seed pairs)
+// ----- Trade-offs (personal; trackp seed pairs), one per screen
 async function panelTradeoffs(panel, nextBtn, seq) {
   const st = S.st;
   const consentOk = st.consent.length && st.consent.every(c => c.ticked);
   if (!st.choices.pairs) {
-    panel.innerHTML = head("Trade-offs", "Forced-choice questions: each shows a research situation and two options, and asks which you would pick. These are the personal track's seed items; your answers are what a user model is fitted on.") + `
-      <div class="card stack">
-        ${consentOk ? "" : `<div class="notice warn">Tick every consent box under <a href="#/p/${esc(S.slug)}/about">About &amp; consent</a> first.</div>`}
-        <p class="muted small">The set of questions is fixed by the personal track's trade-off bank: situations from the benchmark first, then general questions about how you design evals.</p>
-        <div class="row end"><button class="btn primary" id="to-gen" ${consentOk ? "" : "disabled"}>Prepare questions</button></div>
-      </div>${nextBtn}`;
-    on("#to-gen", "click", async () => {
-      try { await api("POST", `/api/profiles/${S.slug}/choices/generate`, {}); render(); } catch (e) { fail(e); }
-    });
+    flow(panel, [{
+      icon: "scale", color: "sage", q: () => `Quick <span class="hand">trade-offs</span>: which would you pick?`,
+      help: () => consentOk
+        ? "Each question shows a research situation and two options, both reasonable. The set comes from the personal track's trade-off bank. Your answers are what a user model is fitted on."
+        : `First tick every consent box under <a href="#/p/${esc(S.slug)}/about">About &amp; consent</a>.`,
+      ok: "Prepare questions",
+      submit: async () => { if (!consentOk) throw new Error("Consent first."); await api("POST", `/api/profiles/${S.slug}/choices/generate`, {}); },
+    }], { onDone: () => render() });
     return;
   }
   const pend = await api("GET", `/api/profiles/${S.slug}/choices/pending`);
   if (stale(seq)) return;
-  const items = pend.items;
-  let idx = 0, chosen = null, prevGroup = null, showCtx = false, started = st.choices.answered > 0;
-  const total = st.choices.pairs;
-  let answered = st.choices.answered;
-
-  function draw() {
-    if (!started) {
-      panel.innerHTML = head("Trade-offs", "") + `
-        <div class="card stack">
-          <p>You'll see <strong>${fmtNum(items.length)}</strong> questions. Each describes a situation and gives two options.</p>
-          <ul>
-            <li>It takes about ${minutes(items.length, 25)} minutes, or about ${minutes(items.length, 35)} if you add a one-line reason to each answer.</li>
-            <li>You can stop at any time and pick up where you left off.</li>
-            <li>There are no right answers. Each question asks what <em>you</em> would do.</li>
-            <li>Skip anything you can't decide on; skipped items are not recorded.</li>
-          </ul>
-          <div class="row end"><button class="btn primary" id="to-start">Begin</button></div>
-        </div>${nextBtn}`;
-      on("#to-start", "click", () => { started = true; draw(); });
-      return;
-    }
-    if (idx >= items.length) {
-      panel.innerHTML = head("Trade-offs", "") + `<div class="card"><div class="notice good">${answered >= total ? "All items answered. Thank you." : "No more items in this session."}
-        <strong>${fmtNum(answered)}</strong> of ${fmtNum(total)} answered.</div>
-        <p class="muted small" style="margin-top:.75rem">${answered >= total ? "Next, build your profile and fit a user model." : "Skipped questions come back the next time you open this step."}</p></div>${nextBtn}`;
-      return;
-    }
-    const it = items[idx];
-    // trackp serves items grouped by situation (`group`), with the situation in `context` and the
-    // item's own `question` apart: show a situation once per group, then each question.
-    const same = prevGroup !== null && prevGroup === groupKey(it) && it.question;
-    panel.innerHTML = head("Trade-offs", "") + `
-      <div class="card">
-        <div class="row small muted"><span>Question ${fmtNum(answered + 1)} of ${fmtNum(total)}</span><span class="spacer"></span>
-          ${idx > 0 && idx === Math.floor(items.length / 2) ? "<span>Halfway. Take a break if you like; progress is saved.</span>" : ""}</div>
-        <div class="progress" style="margin:.5rem 0 1rem"><div style="width:${(100 * answered) / total}%"></div></div>
-        ${same && !showCtx ? `<div class="notice small">Same situation as the previous question. <button class="btn ghost small" id="to-ctx">Show it again</button></div>`
-          : `<div class="context">${esc(it.context)}</div>`}
-        ${it.question ? `<p class="qtext" style="margin:.85rem 0 0;font-weight:600">${esc(it.question)}</p>` : ""}
-        ${Object.keys(it.evidence || {}).length ? `<pre class="context small" style="margin-top:.5rem">${esc(JSON.stringify(it.evidence, null, 1))}</pre>` : ""}
-        <div class="options">${it.options.map((o, i) => `<button class="option ${chosen === i + 1 ? "chosen" : ""}" data-opt="${i + 1}"><span class="n">${i + 1}</span><span>${esc(o)}</span></button>`).join("")}</div>
-        <label class="field" style="margin-top:1rem"><span>Why? <span class="muted">(optional, one sentence)</span></span><input id="to-reason" type="text"></label>
-        <div class="row end" style="margin-top:1rem">
-          <button class="btn" id="to-skip">Skip</button>
-          <button class="btn primary" id="to-save" ${chosen ? "" : "disabled"}>Save and continue</button>
-        </div>
-        <p class="muted small" style="margin-top:.5rem">Keys: 1 / 2 to choose, Enter to save.</p>
-      </div>`;
-    const reason = document.getElementById("to-reason");
-    on("[data-opt]", "click", e => { chosen = +e.currentTarget.dataset.opt; const r = reason.value; draw(); document.getElementById("to-reason").value = r; });
-    on("#to-ctx", "click", () => { showCtx = true; const r = reason.value; draw(); document.getElementById("to-reason").value = r; });
-    on("#to-skip", "click", () => { prevGroup = groupKey(it); idx++; chosen = null; showCtx = false; draw(); });
-    on("#to-save", "click", save);
+  const items = pend.items, total = st.choices.pairs, recorded = new Set();
+  if (!items.length) {
+    panel.innerHTML = `<div class="tf"><div class="tf-progress"><div style="width:100%"></div></div><div class="tf-stage"></div><div class="tf-nav"></div></div>`;
+    doneScreen(panel, { title: "All trade-offs answered", icon: "scale", text: `You answered all ${fmtNum(total)} questions. Next, build your profile and fit a user model.`,
+      actions: `<a class="btn primary" href="#/p/${esc(S.slug)}/build">Build & review ${doodle("flask", { size: 20, color: "sage" })}</a>` });
+    return;
   }
-  async function save() {
-    if (!chosen) return;
-    const it = items[idx];
-    try {
-      await api("POST", `/api/profiles/${S.slug}/choices/record`, { id: it.id, choice: chosen, reason: val("to-reason") });
-      answered++; prevGroup = groupKey(it); idx++; chosen = null; showCtx = false; draw(); refresh().catch(() => {});
-    } catch (e) { fail(e); }
-  }
-  function keys(e) {
-    if (!document.body.contains(panel) || !location.hash.endsWith("/tradeoffs")) return document.removeEventListener("keydown", keys);
-    if (e.target.tagName === "INPUT" && e.key !== "Enter") return;
-    if (!started || idx >= items.length) return;
-    if (/^[1-9]$/.test(e.key) && +e.key <= items[idx].options.length) { const r = val("to-reason"); chosen = +e.key; draw(); document.getElementById("to-reason").value = r; }
-    else if (e.key === "Enter" && chosen) { e.preventDefault(); save(); }
-  }
-  document.addEventListener("keydown", keys);
-  draw();
+  const answeredBefore = st.choices.answered;
+  const steps = [{
+    icon: "scale", color: "sage",
+    q: () => answeredBefore ? `Welcome back. <span class="hand">${fmtNum(items.length)}</span> trade-offs to go.` : `<span class="hand">${fmtNum(items.length)}</span> quick trade-offs.`,
+    help: () => `Each shows a situation and two options. About ${minutes(items.length, 25)} minutes (${minutes(items.length, 35)} if you add a one-line reason).
+      There are no right answers: each asks what <em>you</em> would do. Skip anything you can't decide; skipped items come back next time.`,
+    ok: answeredBefore ? "Continue" : "Begin",
+  }];
+  items.forEach((it, k) => {
+    const same = k > 0 && groupKey(items[k - 1]) === groupKey(it);
+    const key = `pick_${k}`;
+    steps.push({
+      icon: k % 2 ? "scale" : "lightbulb", color: ["sage", "ochre", "sky", "clay"][k % 4], noAutofocus: true,
+      q: () => esc(it.question || "Which would you pick?"),
+      body: () => `${same ? `<details class="context-fold"><summary class="tf-hint">same situation as the last question · show again</summary><div class="context">${esc(it.context)}</div></details>`
+                        : `<div class="context">${esc(it.context)}</div>`}
+        ${Object.keys(it.evidence || {}).length ? `<pre class="context small">${esc(JSON.stringify(it.evidence, null, 1))}</pre>` : ""}
+        <div style="height:1rem"></div>`,
+      choices: { key, autoNext: false, items: () => it.options.map((o, j) => ({ value: j + 1, html: esc(o) })) },
+      skipLabel: "skip",
+      hint: "letters pick",
+      bind: (sc, state) => {
+        const box = document.createElement("label"); box.className = "field reason"; box.style.marginTop = "1.1rem";
+        box.innerHTML = `<span>why? <span class="muted">(optional, one sentence)</span></span><input type="text" data-reason value="${esc(state[`why_${k}`] || "")}">`;
+        sc.querySelector(".tf-body").appendChild(box);
+        box.querySelector("input").addEventListener("input", e => { state[`why_${k}`] = e.target.value; });
+        if (recorded.has(it.id)) sc.querySelector(".tf-error").textContent = "saved ✓";
+      },
+      submit: async (state, sc) => {
+        if (recorded.has(it.id)) return;
+        if (!state[key]) throw new Error("Pick one, or skip.");
+        await api("POST", `/api/profiles/${S.slug}/choices/record`, { id: it.id, choice: state[key], reason: state[`why_${k}`] || "" });
+        recorded.add(it.id); refresh().catch(() => {});
+      },
+    });
+  });
+  flow(panel, steps, {
+    onDone: (state, c) => {
+      const left = items.length - recorded.size;
+      doneScreen(c, { title: left ? "Good stopping point" : "That's all of them!", icon: left ? "coffee" : "star",
+        text: left ? `${fmtNum(recorded.size)} answered this time, ${fmtNum(left)} skipped (they'll come back next time).` : `${fmtNum(answeredBefore + recorded.size)} of ${fmtNum(total)} answered.`,
+        actions: `<a class="btn primary" href="#/p/${esc(S.slug)}/build">Build & review ${doodle("flask", { size: 20, color: "sage" })}</a>` });
+    },
+  });
 }
 
 function groupKey(it) { return `${it.group ?? ""}\u0000${it.context}`; }
