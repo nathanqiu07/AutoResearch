@@ -14,19 +14,26 @@ Hold-out (fixed by hashing, so it never moves as answers arrive): 20% of seed
 pairs, plus every label from a run on or after --label-cutoff. The rest is
 split into history and val for `UserModel.fit`.
 
+After `init`, --researcher defaults to track P in tracks.json. `status` says what to run
+next. The person answers in a terminal (answer / label / recheck), or an agent shows
+them `pending` items in chat and saves each reply with `record` (docs/trackp-runbook.md).
+
     python3 -m autoresearch.taste.trackp init --researcher <slug> --name "<full name>"
-    python3 -m autoresearch.taste.trackp seed-pairs --researcher <slug> --n 50
-    python3 -m autoresearch.taste.trackp answer --researcher <slug>
-    python3 -m autoresearch.taste.trackp label --researcher <slug> runs/*/decisions.jsonl
-    python3 -m autoresearch.taste.trackp recheck --researcher <slug>       # a few days later
-    python3 -m autoresearch.taste.trackp status --researcher <slug> [--label-cutoff YYYY-MM-DD]
-    python3 -m autoresearch.taste.trackp e2 --researcher <slug> --methods m0 m1 --backend ... --model ...
-    python3 -m autoresearch.taste.trackp fit --researcher <slug> --method <selected> --backend ... --model ...
+    python3 -m autoresearch.taste.trackp seed-pairs --n 50
+    python3 -m autoresearch.taste.trackp status
+    python3 -m autoresearch.taste.trackp answer | label | recheck        # interactive
+    python3 -m autoresearch.taste.trackp pending [--kind seed|label|recheck] [--limit N]   # JSON
+    python3 -m autoresearch.taste.trackp record --id <id> --choice <n> [--reason "..."]
+    python3 -m autoresearch.taste.trackp e2 --methods m0 m1 <selected> --backend ... --model ...
+    python3 -m autoresearch.taste.trackp fit --method <selected> --backend ... --model ...
+
+Labels read runs/*/decisions.jsonl unless --decisions names files.
 """
 from __future__ import annotations
 
 import argparse
 import datetime
+import glob
 import json
 import os
 import random
@@ -150,42 +157,17 @@ def write_seed_pairs(root: str, slug: str, pairs: List[dict]) -> str:
     return path
 
 
-def _ask_choice(ask, valid: List[str]) -> Optional[str]:
-    """One of `valid`, "" to skip, or None to stop."""
-    while True:
-        ans = ask(f"{'/'.join(valid)}/skip/quit> ").strip().lower()
-        if ans in valid:
-            return ans
-        if ans in ("", "s", "skip"):
-            return ""
-        if ans in ("q", "quit"):
-            return None
+# ---- answering: one item model for people at a terminal and for agents ----
+#
+# An item is {"id", "kind": seed|label|recheck, "context", "evidence", "options"} with
+# options in the order shown and numbered from 1. `record` maps the shown number back.
 
+# Evidence keys shown when labelling: measurements and fixed thresholds only. Allow-listed so a
+# key WS D adds later stays hidden by default; D1's priority/measured and D3's decisive encode
+# the loop's or the user model's own choice, D6's supported/reasons the claim checker's verdict.
+EVIDENCE_SHOWN = ("p_better", "delta", "ci90", "validity", "n", "is_top", "drift", "accept_p", "min_validity",
+                  "calls_used", "max_calls", "items", "cited", "id")
 
-def answer_seed_pairs(root: str, slug: str, ask: Callable = input, say: Callable = print,
-                      limit: Optional[int] = None) -> int:
-    """Ask the person each unanswered seed pair; store the answer and optional reason."""
-    d = os.path.join(root, slug)
-    done = {c["example_id"] for c in _read(os.path.join(d, SEED_CHOICES))}
-    pending = [p for p in _read(os.path.join(d, SEED_PAIRS)) if p["pair_id"] not in done][:limit]
-    n = 0
-    for k, p in enumerate(pending, 1):
-        say(f"\n[{k}/{len(pending)}] {p['context']}\n  a) {p['a_text']}\n  b) {p['b_text']}")
-        ans = _ask_choice(ask, ["a", "b"])
-        if ans is None:
-            break
-        if not ans:
-            continue
-        reason = ask("why? (optional, one sentence)> ").strip()
-        c = Choice(user_id=slug, context=p["context"], a_text=p["a_text"], b_text=p["b_text"], chosen=ans,
-                   decision_point="D1", reason=reason, timestamp=_now(), source="seed",
-                   example_id=p["pair_id"])   # no group_id: pairs are independent, unlike a label's rows
-        _append(os.path.join(d, SEED_CHOICES), asdict(c))
-        n += 1
-    return n
-
-
-# ---- labels on loop decisions D1-D6 ---------------------------------------
 
 def _display_order(key: str, k: int) -> List[int]:
     order = list(range(k))
@@ -193,13 +175,16 @@ def _display_order(key: str, k: int) -> List[int]:
     return order
 
 
-def label_decisions(root: str, slug: str, decision_paths: List[str], ask: Callable = input,
-                    say: Callable = print, limit: Optional[int] = None) -> int:
-    """Ask the person what they would have chosen at each logged decision. The loop's
-    choice, the arm and the user model's choice are never shown."""
-    out = os.path.join(root, slug, LABELS)
-    done = {r["key"] for r in _read(out)}
-    n = 0
+def _seed_items(d: str) -> List[dict]:
+    done = {c["example_id"] for c in _read(os.path.join(d, SEED_CHOICES))}
+    return [{"id": "seed:" + p["pair_id"], "kind": "seed", "context": p["context"], "evidence": {},
+             "options": [p["a_text"], p["b_text"]], "_order": [0, 1], "_src": p}
+            for p in _read(os.path.join(d, SEED_PAIRS)) if p["pair_id"] not in done]
+
+
+def _label_items(d: str, decision_paths: List[str], warn: Callable) -> List[dict]:
+    done = {r["key"] for r in _read(os.path.join(d, LABELS))}
+    items = []
     for path in decision_paths:
         run_date = datetime.date.fromtimestamp(os.path.getmtime(path)).isoformat()
         for i, rec in enumerate(_read(path)):
@@ -208,27 +193,94 @@ def label_decisions(root: str, slug: str, decision_paths: List[str], ask: Callab
                 continue
             errs = validate_record(rec)
             if errs:
-                say(f"skipping {path} line {i + 1}: {'; '.join(errs)}")
+                warn(f"skipping {path} line {i + 1}: {'; '.join(errs)}")
                 continue
-            if limit is not None and n >= limit:
-                return n
-            order = _display_order(key, len(rec["options"]))
-            say(f"\n[{rec['point']}, run {rec['run_id']} iter {rec['iter']}]\n{rec['context']}")
-            if rec["evidence"]:
-                say("evidence: " + json.dumps(rec["evidence"], sort_keys=True))
-            for shown, idx in enumerate(order, 1):
-                say(f"  {shown}) {rec['options'][idx]}")
-            ans = _ask_choice(ask, [str(s) for s in range(1, len(order) + 1)])
-            if ans is None:
-                return n
-            if not ans:
-                continue
-            reason = ask("why? (optional, one sentence)> ").strip()
-            _append(out, {"key": key, "run_id": rec["run_id"], "iter": rec["iter"], "point": rec["point"],
-                          "context": rec["context"], "options": rec["options"], "label": order[int(ans) - 1],
-                          "reason": reason, "run_date": run_date, "timestamp": _now()})
             done.add(key)
-            n += 1
+            order = _display_order(key, len(rec["options"]))
+            items.append({"id": "label:" + key, "kind": "label",
+                          "context": f"[{rec['point']}, run {rec['run_id']} iter {rec['iter']}]\n{rec['context']}",
+                          "evidence": {k: v for k, v in rec["evidence"].items() if k in EVIDENCE_SHOWN},
+                          "options": [rec["options"][j] for j in order],
+                          "_order": order, "_src": {**rec, "key": key, "run_date": run_date}})
+    return items
+
+
+def _recheck_items(d: str, frac: float, min_days: float, now: datetime.datetime) -> List[dict]:
+    done = {r["key"] for r in _read(os.path.join(d, RECHECK))}
+    items = []
+    for it in _answered_items(d):
+        age = (now - datetime.datetime.fromisoformat(it["timestamp"])).total_seconds()
+        if it["key"] in done or _bucket("recheck:" + it["key"]) >= frac or age < min_days * 86400:
+            continue
+        order = list(reversed(range(len(it["options"]))))   # reversed, and the earlier answer is not shown
+        items.append({"id": "recheck:" + it["key"], "kind": "recheck", "context": it["context"], "evidence": {},
+                      "options": [it["options"][j] for j in order], "_order": order, "_src": it})
+    return items
+
+
+def pending_items(root: str, slug: str, kinds=("seed", "label", "recheck"), decision_paths: List[str] = (),
+                  frac: float = 0.2, min_days: float = 3, now: Optional[datetime.datetime] = None,
+                  warn: Callable = print) -> List[dict]:
+    """Items waiting for the person's answer. Labels need the decisions.jsonl paths;
+    recheck items appear only min_days after the first answer."""
+    d = os.path.join(root, slug)
+    items = []
+    if "seed" in kinds:
+        items += _seed_items(d)
+    if "label" in kinds:
+        items += _label_items(d, list(decision_paths), warn)
+    if "recheck" in kinds:
+        items += _recheck_items(d, frac, min_days, now or datetime.datetime.now(datetime.timezone.utc))
+    return items
+
+
+def public(item: dict) -> dict:
+    """What an agent shows the person: never the loop's choice, the arm or an earlier answer."""
+    return {k: v for k, v in item.items() if not k.startswith("_")}
+
+
+def record(root: str, slug: str, item: dict, shown: int, reason: str = "") -> None:
+    """Store the person's answer: `shown` is the 1-based number of the option as displayed."""
+    if not 1 <= shown <= len(item["options"]):
+        raise ValueError(f"choice must be 1..{len(item['options'])}, got {shown}")
+    d, idx, src = os.path.join(root, slug), item["_order"][shown - 1], item["_src"]
+    if item["kind"] == "seed":
+        c = Choice(user_id=slug, context=src["context"], a_text=src["a_text"], b_text=src["b_text"],
+                   chosen="ab"[idx], decision_point="D1", reason=reason, timestamp=_now(), source="seed",
+                   example_id=src["pair_id"])   # no group_id: pairs are independent, unlike a label's rows
+        _append(os.path.join(d, SEED_CHOICES), asdict(c))
+    elif item["kind"] == "label":
+        _append(os.path.join(d, LABELS), {"key": src["key"], "run_id": src["run_id"], "iter": src["iter"],
+                                          "point": src["point"], "context": src["context"],
+                                          "options": src["options"], "label": idx, "reason": reason,
+                                          "run_date": src["run_date"], "timestamp": _now()})
+    else:
+        _append(os.path.join(d, RECHECK), {"key": src["key"], "kind": src["kind"], "answer": idx,
+                                           "timestamp": _now()})
+
+
+def ask_items(root: str, slug: str, items: List[dict], ask: Callable = input, say: Callable = print,
+              limit: Optional[int] = None) -> int:
+    """Terminal loop over items: number, skip or quit; then an optional reason."""
+    n = 0
+    for k, it in enumerate(items[:limit], 1):
+        say(f"\n[{k}/{len(items[:limit])}] {it['context']}")
+        if it["evidence"]:
+            say("evidence: " + json.dumps(it["evidence"], sort_keys=True))
+        for shown, text in enumerate(it["options"], 1):
+            say(f"  {shown}) {text}")
+        valid = [str(s) for s in range(1, len(it["options"]) + 1)]
+        while True:
+            ans = ask(f"{'/'.join(valid)}/skip/quit> ").strip().lower()
+            if ans in valid or ans in ("", "s", "skip", "q", "quit"):
+                break
+        if ans in ("q", "quit"):
+            break
+        if ans not in valid:
+            continue
+        reason = "" if it["kind"] == "recheck" else ask("why? (optional, one sentence)> ").strip()
+        record(root, slug, it, int(ans), reason)
+        n += 1
     return n
 
 
@@ -249,6 +301,7 @@ def labels_to_choices(slug: str, labels: List[dict]) -> List[Choice]:
     return out
 
 
+
 # ---- noise ceiling ---------------------------------------------------------
 
 def _answered_items(d: str) -> List[dict]:
@@ -259,32 +312,6 @@ def _answered_items(d: str) -> List[dict]:
     items += [{"key": "label:" + r["key"], "kind": "label", "context": r["context"], "options": r["options"],
                "answer": r["label"], "timestamp": r["timestamp"]} for r in _read(os.path.join(d, LABELS))]
     return items
-
-
-def recheck(root: str, slug: str, ask: Callable = input, say: Callable = print, frac: float = 0.2,
-            min_days: float = 3, now: Optional[datetime.datetime] = None) -> int:
-    """Re-ask a fixed ~frac of answered items at least min_days after the first answer,
-    with the options reversed and without showing the earlier answer."""
-    d = os.path.join(root, slug)
-    now = now or datetime.datetime.now(datetime.timezone.utc)
-    done = {r["key"] for r in _read(os.path.join(d, RECHECK))}
-    due = [it for it in _answered_items(d) if it["key"] not in done and _bucket("recheck:" + it["key"]) < frac
-           and (now - datetime.datetime.fromisoformat(it["timestamp"])).total_seconds() >= min_days * 86400]
-    n = 0
-    for it in due:
-        order = list(reversed(range(len(it["options"]))))
-        say(f"\n{it['context']}")
-        for shown, idx in enumerate(order, 1):
-            say(f"  {shown}) {it['options'][idx]}")
-        ans = _ask_choice(ask, [str(s) for s in range(1, len(order) + 1)])
-        if ans is None:
-            break
-        if not ans:
-            continue
-        _append(os.path.join(d, RECHECK), {"key": it["key"], "kind": it["kind"],
-                                           "answer": order[int(ans) - 1], "timestamp": _now()})
-        n += 1
-    return n
 
 
 def noise_ceiling(root: str, slug: str) -> dict:
@@ -324,11 +351,36 @@ def split(root: str, slug: str, label_cutoff: Optional[str] = None, test_frac: f
     return out
 
 
-def status(root: str, slug: str, label_cutoff: Optional[str] = None) -> dict:
+def next_steps(root: str, slug: str, decision_paths: List[str] = ()) -> List[str]:
+    """The commands to run next, in order, for an agent picking this up."""
+    d = os.path.join(root, slug)
+    consent = os.path.join(d, "CONSENT.md")
+    if not os.path.exists(consent):
+        return [f"init --researcher {slug} --name '<full name>'"]
+    steps = []
+    with open(consent) as f:
+        if "- [ ]" in f.read():
+            steps.append(f"the person ticks every box in {consent} (and someone signs 'Recorded by')")
+    if not _read(os.path.join(d, SEED_PAIRS)):
+        steps.append("seed-pairs --n 50")
+    for kind in ("seed", "label", "recheck"):
+        n = len(pending_items(root, slug, (kind,), decision_paths, warn=lambda _: None))
+        if n:
+            steps.append(f"{n} {kind} item(s) waiting: answer them with 'pending --kind {kind}' + 'record' "
+                         f"(or interactively: {dict(seed='answer', label='label', recheck='recheck')[kind]})")
+    if _read(os.path.join(d, SEED_CHOICES)) and not os.path.exists(os.path.join(d, RECHECK)):
+        steps.append("recheck becomes available 3 days after the first answers (noise ceiling)")
+    if _read(os.path.join(d, SEED_CHOICES)) and not os.path.exists(os.path.join(d, USERMODEL)):
+        steps.append("once WS A posts its selected method: e2 --methods m0 m1 <selected> (paid, ask first), "
+                     "then fit --method <selected>, then usermodel_store push")
+    return steps
+
+
+def status(root: str, slug: str, label_cutoff: Optional[str] = None, decision_paths: List[str] = ()) -> dict:
     d = os.path.join(root, slug)
     labels = _read(os.path.join(d, LABELS))
     parts = split(root, slug, label_cutoff)
-    return {"researcher": slug, "seed_pairs": len(_read(os.path.join(d, SEED_PAIRS))),
+    return {"next": next_steps(root, slug, decision_paths), "researcher": slug, "seed_pairs": len(_read(os.path.join(d, SEED_PAIRS))),
             "seed_choices": len(_read(os.path.join(d, SEED_CHOICES))),
             "labels": len(labels), "labels_per_point": {p: sum(r["point"] == p for r in labels)
                                                         for p in sorted({r["point"] for r in labels})},
@@ -395,6 +447,16 @@ def fit_user_model(root: str, slug: str, factory: Callable, label_cutoff: Option
 
 # ---- CLI -------------------------------------------------------------------
 
+def _track_p(root: str) -> str:
+    path = os.path.join(root, TRACKS_FILE)
+    if os.path.exists(path):
+        with open(path) as f:
+            slug = json.load(f).get("P")
+        if slug:
+            return slug
+    raise SystemExit("no Track P person yet: run 'init --researcher <slug> --name ...' or pass --researcher")
+
+
 def _items(args) -> list:
     from ..research.measure import SCENARIOS
     if not args.benchmark_items:
@@ -421,7 +483,13 @@ def main(argv=None):
 
     def cmd(name, help_):
         sp = sub.add_parser(name, help=help_)
-        sp.add_argument("--researcher", required=True, help="the person's slug under data/researchers/")
+        sp.add_argument("--researcher", help="the person's slug (default: track P in tracks.json)")
+        return sp
+
+    def with_decisions(sp):
+        sp.add_argument("--decisions", nargs="*", help="decisions.jsonl files (default: runs/*/decisions.jsonl)")
+        sp.add_argument("--frac", type=float, default=0.2, help="share of answers re-asked for the noise ceiling")
+        sp.add_argument("--min-days", type=float, default=3, help="wait before re-asking")
         return sp
     i = cmd("init", "create the directory and CONSENT.md, and set track P in tracks.json")
     i.add_argument("--name", required=True)
@@ -436,15 +504,18 @@ def main(argv=None):
     s.add_argument("--llm", default="offline")
     s.add_argument("--model", default="claude-sonnet-5-5")
     s.add_argument("--max-calls", type=int, default=50)
-    a = cmd("answer", "answer pending seed pairs (resumable)")
-    a.add_argument("--limit", type=int)
-    lb = cmd("label", "label logged loop decisions D1-D6 (resumable)")
-    lb.add_argument("decisions", nargs="+", help="decisions.jsonl files")
-    lb.add_argument("--limit", type=int)
-    r = cmd("recheck", "re-ask ~20%% of answered items for the noise ceiling")
-    r.add_argument("--frac", type=float, default=0.2)
-    r.add_argument("--min-days", type=float, default=3)
-    st = cmd("status", "counts, split sizes and noise ceiling")
+    for name, help_ in (("answer", "answer seed pairs in a terminal (resumable)"),
+                        ("label", "label logged loop decisions D1-D6 in a terminal (resumable)"),
+                        ("recheck", "re-answer ~20%% of earlier items in a terminal (noise ceiling)")):
+        with_decisions(cmd(name, help_)).add_argument("--limit", type=int)
+    pe = with_decisions(cmd("pending", "items waiting for an answer, as JSON (for agents)"))
+    pe.add_argument("--kind", choices=["seed", "label", "recheck"], action="append")
+    pe.add_argument("--limit", type=int, default=5)
+    rc = with_decisions(cmd("record", "save the person's answer to one pending item"))
+    rc.add_argument("--id", required=True)
+    rc.add_argument("--choice", type=int, required=True, help="option number as shown, from 1")
+    rc.add_argument("--reason", default="")
+    st = with_decisions(cmd("status", "what to run next, counts, split sizes and noise ceiling"))
     st.add_argument("--label-cutoff", help="labels from runs on or after this date are held out")
     e = cmd("e2", "fit methods on history/val and score them on the held-out choices")
     e.add_argument("--methods", nargs="+", default=["m0", "m1"])
@@ -466,7 +537,13 @@ def main(argv=None):
     ft.add_argument("--seed", type=int, default=0)
     ft.add_argument("--cache", default="runs/taste-cache")
     args = p.parse_args(argv)
-    slug = args.researcher
+    slug = args.researcher or _track_p(args.root)
+    decisions = getattr(args, "decisions", None)
+    if decisions is None:
+        decisions = sorted(glob.glob(os.path.join("runs", "*", "decisions.jsonl")))
+
+    def pending(kinds):
+        return pending_items(args.root, slug, kinds, decisions, args.frac, args.min_days)
 
     if args.command == "init":
         print("wrote", init(args.root, slug, args.name))
@@ -475,14 +552,23 @@ def main(argv=None):
         extra = _llm_ideas(args, items) if args.llm_ideas else None
         path = write_seed_pairs(args.root, slug, make_seed_pairs(items, args.n, args.seed, extra))
         print(f"{len(_read(path))} pairs in {path}")
-    elif args.command == "answer":
-        print(f"recorded {answer_seed_pairs(args.root, slug, limit=args.limit)} choices")
-    elif args.command == "label":
-        print(f"recorded {label_decisions(args.root, slug, args.decisions, limit=args.limit)} labels")
-    elif args.command == "recheck":
-        print(f"recorded {recheck(args.root, slug, frac=args.frac, min_days=args.min_days)} re-answers")
+    elif args.command in ("answer", "label", "recheck"):
+        kind = {"answer": "seed", "label": "label", "recheck": "recheck"}[args.command]
+        print(f"recorded {ask_items(args.root, slug, pending((kind,)), limit=args.limit)} answers")
+    elif args.command == "pending":
+        items = pending(tuple(args.kind or ("seed", "label", "recheck")))
+        print(json.dumps({"researcher": slug, "n_pending": len(items),
+                          "items": [public(it) for it in items[: args.limit]]}, indent=2, ensure_ascii=False))
+    elif args.command == "record":
+        kind = args.id.split(":", 1)[0]
+        item = next((it for it in pending((kind,)) if it["id"] == args.id), None)
+        if item is None:
+            raise SystemExit(f"{args.id} is not pending (already answered, unknown, or its decisions file "
+                             "wasn't found: pass --decisions)")
+        record(args.root, slug, item, args.choice, args.reason)
+        print(f"recorded {args.id}: {item['options'][args.choice - 1]}")
     elif args.command == "status":
-        print(json.dumps(status(args.root, slug, args.label_cutoff), indent=2))
+        print(json.dumps(status(args.root, slug, args.label_cutoff, decisions), indent=2))
     elif args.command == "fit":
         from ..llm import Budget, get_llm
         from .methods import create_method

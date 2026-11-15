@@ -23,7 +23,7 @@ Two kinds of "agent" exist here. Don't mix them up:
 |---|---|---|
 | `autoresearch/llm.py` | LLM backends (offline, anthropic, claude-cli) + `Budget` | Backends must stay isolated. claude-cli runs with no tools or settings. |
 | `autoresearch/tasks/` | Benchmarks: `base.py` harness, `eval_awareness.py` (primary), `stretch.py` | A new task subclasses `EnvironmentDesignTask` and must define `invariants` |
-| `autoresearch/taste/` | Taste from text, non-research text, and choices; scraping; researchers | Researchers live in `data/researchers/<slug>/` |
+| `autoresearch/taste/` | Taste from text, non-research text, and choices; scraping; researchers | Researchers live in `data/researchers/<slug>/`. Track P collection: `docs/trackp-runbook.md` |
 | `autoresearch/memory.py` | Persistent experiments, assumption credences, insights, decisions | Exact numbers only |
 | `autoresearch/drift.py` | Drift gates and re-anchoring | |
 | `autoresearch/loop.py` | The research loop and runtime multi-agent wiring | Hot file. Lock it before editing. |
