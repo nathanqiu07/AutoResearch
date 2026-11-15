@@ -20,8 +20,9 @@ concurrent agents never produce merge conflicts:
   agentctl.py thread MSG_ID                a message with all its replies
   agentctl.py follow TOPIC / unfollow TOPIC  receive '#TOPIC' messages (a task's claimant always does)
   agentctl.py inbox [--all]                messages to you or to all, unread first
-  agentctl.py brief                        fetch only; print unread messages and if behind origin
-                                           (run every prompt by the hook in .claude/settings.json)
+  agentctl.py brief [--json]               fetch only; print unread messages and if behind origin
+                                           (run every prompt by the hooks in .claude/settings.json,
+                                           which Devin also reads, and .codex/hooks.json)
   agentctl.py heartbeat                    refresh your claims/locks (stale after 2h)
 
 Your agent name comes from $AGENT_NAME or `register` (stored, untracked, in
@@ -385,7 +386,8 @@ def main(argv=None):
     fo = sub.add_parser("follow"); fo.add_argument("topic")
     uf = sub.add_parser("unfollow"); uf.add_argument("topic")
     ib = sub.add_parser("inbox"); ib.add_argument("--all", action="store_true")
-    sub.add_parser("brief")
+    br = sub.add_parser("brief")
+    br.add_argument("--json", action="store_true", help="wrap the output as a UserPromptSubmit hook response")
     a = p.parse_args(argv)
     ctl = Ctl(use_git=not a.no_git)
 
@@ -434,19 +436,27 @@ def main(argv=None):
             print("no new messages")
     elif a.cmd == "brief":
         # Runs from a per-prompt hook, so it must never touch the working tree and stays silent when idle.
+        # --json: Claude Code and Devin (which reads .claude/settings.json) take the hook's context as JSON;
+        # Codex takes plain stdout.
+        out = []
         if not (os.environ.get("AGENT_NAME") or os.path.exists(ctl._path(".me"))):
-            print("agentctl: you are not registered. See AGENTS.md section 4 "
-                  "(`python3 scripts/agentctl.py register <name> --role ...`).")
-            return
-        behind = ctl.fetch()
-        ms = ctl.messages(extra=ctl.upstream_messages() if behind else ())
-        for m in ms:
-            print(f"agentctl message {m['id']} from {m['from']} to {m['to']}" + (f" [task {m['task']}]" if m["task"] else "")
-                  + f": {m['subject']}\n    {m['body']}")
-        ctl.mark_read([m["id"] for m in ms])
-        if behind:
-            print(f"agentctl: this checkout is {behind} commit(s) behind origin (new tasks, claims or locks "
-                  "may be waiting). Run `python3 scripts/agentctl.py status` before editing shared files.")
+            out.append("agentctl: you are not registered. See AGENTS.md section 4 "
+                       "(`python3 scripts/agentctl.py register <name> --role ...`).")
+        else:
+            behind = ctl.fetch()
+            ms = ctl.messages(extra=ctl.upstream_messages() if behind else ())
+            for m in ms:
+                out.append(f"agentctl message {m['id']} from {m['from']} to {m['to']}"
+                           + (f" [task {m['task']}]" if m["task"] else "") + f": {m['subject']}\n    {m['body']}")
+            ctl.mark_read([m["id"] for m in ms])
+            if behind:
+                out.append(f"agentctl: this checkout is {behind} commit(s) behind origin (new tasks, claims or locks "
+                           "may be waiting). Run `python3 scripts/agentctl.py status` before editing shared files.")
+        if out and a.json:
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
+                                                     "additionalContext": "\n".join(out)}}))
+        elif out:
+            print("\n".join(out))
     elif a.cmd == "status":
         ctl.sync()
         me = os.environ.get("AGENT_NAME") or (open(ctl._path(".me")).read().strip() if os.path.exists(ctl._path(".me")) else None)

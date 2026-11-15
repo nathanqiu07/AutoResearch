@@ -1,6 +1,9 @@
 import importlib.util
+import json
 import os
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -81,6 +84,22 @@ class AgentCtlTests(unittest.TestCase):
         self.as_("alice", agentctl.Ctl.reply, alice[0]["id"], "thanks")
         thread = self.as_("carol", agentctl.Ctl.thread, root)
         self.assertEqual([m["body"] for m in thread], ["which seed?", "seed 3", "thanks"])
+
+    def test_brief_json_is_a_prompt_hook_response_and_silent_when_idle(self):
+        os.makedirs(os.path.join(self.root, "scripts"))
+        script = os.path.join(self.root, "scripts", "agentctl.py")
+        shutil.copy(spec.origin, script)
+
+        def run(name, *args):
+            env = dict(os.environ, AGENT_NAME=name)
+            return subprocess.run([sys.executable, script, "--no-git", *args], env=env, capture_output=True,
+                                  text=True, check=True).stdout
+
+        run("alice", "post", "heads up", "seed 3 is broken", "--to", "bob")
+        out = json.loads(run("bob", "brief", "--json"))["hookSpecificOutput"]
+        self.assertEqual(out["hookEventName"], "UserPromptSubmit")
+        self.assertIn("seed 3 is broken", out["additionalContext"])
+        self.assertEqual(run("bob", "brief", "--json"), "")
 
     def test_brief_sees_pushed_message_without_touching_checkout(self):
         def git(*a, cwd=self.root):

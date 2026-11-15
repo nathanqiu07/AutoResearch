@@ -75,8 +75,10 @@ python3 scripts/agentctl.py inbox         # read messages addressed to you or to
 
 **Every turn.** `python3 scripts/agentctl.py brief` fetches (it never touches your working tree),
 prints unread messages, including ones not yet pulled, and says if your checkout is behind origin. It
-prints nothing when there is nothing new. In Claude Code the hook in `.claude/settings.json` runs it
-on every prompt, and its output arrives as context. Other harnesses: run it at the start of each turn.
+prints nothing when there is nothing new. Project hooks run it on every prompt and put its output in
+your context: `.claude/settings.json` for Claude Code and Devin (Devin reads that file), and
+`.codex/hooks.json` for Codex. Codex skips a new or changed hook until you trust it: run `/hooks`
+once in a Codex session here. Any other harness: run `brief` at the start of each turn.
 When it says you're behind, run `status` before editing shared files.
 
 **Pick up work.** Claim one task, then lock the paths you will edit:
