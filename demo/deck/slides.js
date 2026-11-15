@@ -318,8 +318,12 @@
 
   add({
     id: "profile-kitchen", label: "Profile Kitchen", cls: "s-kitchen-frontend", step: 1,
-    html: `${head("Profile Kitchen")}<img class="kitchen-screenshot" data-in="0" src="img/profile-kitchen.jpg" alt="Profile Kitchen frontend with options to build your own profile or a known researcher’s profile.">`,
-    notes: "Screenshot of the actual local profile frontend, renamed Profile Kitchen. It offers a personal profile from materials and questionnaire answers, or a known researcher's writing-derived profile. The screenshot records the frontend state only, not evidence of model quality. Choice-fitted user models and writing-distilled catalog profiles are different construction paths.",
+    html: `${head("Profile Kitchen")}<div class="kitchen-screens">
+      <img class="kitchen-home" data-in="0" src="img/profile-kitchen.jpg" alt="Profile Kitchen home screen with personal and known-researcher profile options.">
+      <img class="kitchen-sources" data-in="0" style="--d:140ms" src="img/profile-kitchen-sources.jpg" alt="John Schulman’s Gather sources screen in Profile Kitchen, with Semantic Scholar, arXiv, web pages and other source options.">
+      <img class="kitchen-confirmation" data-in="0" style="--d:280ms" src="img/profile-kitchen-feifei.png" alt="Attached Profile Kitchen screen confirming Fei-Fei Li’s profile and offering to gather sources.">
+      </div>`,
+    notes: "Three screenshots of the actual Profile Kitchen frontend: the home screen, John Schulman sources at http://localhost:8765/#/p/john_schulman/sources (captured read-only), and the user-supplied Fei-Fei Li confirmation screen. The confirmation indicates a profile record and source linkage, not a validated fitted user model. It offers a personal profile from materials and questionnaire answers, or a known researcher's writing-derived profile. The screenshot records the frontend state only, not evidence of model quality. Choice-fitted user models and writing-distilled catalog profiles are different construction paths.",
   });
 
   /* ================================================================== The user model is a module */
