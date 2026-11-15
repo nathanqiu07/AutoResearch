@@ -83,6 +83,7 @@ def main(argv=None):
                     help="rows' 'split' field (rows without one are kept)")
     ap.add_argument("--tools", choices=["simulated", "sandbox"], default="simulated")
     ap.add_argument("--epochs", type=int, default=1, help="audits per seed and condition")
+    ap.add_argument("--limit", type=int, help="only the first N seeds of each condition (smoke tests)")
     ap.add_argument("--mode", choices=["dev", "final"], default="dev")
     ap.add_argument("--heldout-target", help="final mode: which held-out target from configs/models.json")
     ap.add_argument("--max-turns", type=int)
@@ -104,6 +105,7 @@ def main(argv=None):
     conds = [c.split("=", 1) for c in a.condition]
     for name, path in conds:
         seeds = [s for s in load_audit_seeds(path) if a.split == "all" or s.get("split", a.split) == a.split]
+        seeds = seeds[: a.limit] if a.limit else seeds
         if not seeds:
             raise SystemExit(f"{name}: no {a.split} seeds in {path}")
         for s in seeds:
