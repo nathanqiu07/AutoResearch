@@ -53,6 +53,18 @@ class BaselineTests(unittest.TestCase):
             self.assertLessEqual(profile.token_count, 512)
             self.assertEqual(set(profile.content), {"passages"})
 
+    def test_evidence_controls_do_not_expose_disallowed_spans(self):
+        for doc in self.docs:
+            doc["permitted_spans"] = [{"start": 0, "end": 7}]
+        for method in ["raw_evidence", "lexical_retrieval"]:
+            with self.subTest(method=method):
+                profile = self.build(method)
+                self.assertEqual(profile.status, "complete")
+                self.assertTrue(all(p["end"] <= 7 for p in profile.content["passages"]))
+        for doc in self.docs:
+            doc["permitted_spans"] = []
+        self.assertEqual(self.build("raw_evidence").error_code, "no_approved_passage_fits")
+
     def test_semantic_missing_name_and_too_small_raw_are_explicit(self):
         semantic = self.build("semantic_retrieval")
         self.assertEqual(semantic.status, "unavailable")
