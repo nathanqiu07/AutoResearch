@@ -264,8 +264,8 @@
 
 **Files:** none (a review gate).
 
-- [ ] **Step 1: Run the whole-branch review** of Tasks 1–7 against the spec. It covers the existing `timesplit.py` leakage code and `usermodel_store.push`, which the run depends on. Fix what it finds before Task 9.
-- [ ] **Step 2: Offline dry run** over a two-document fixture corpus, with `OfflineLLM` and a fake Exa client, through every CLI subcommand. Expected: each stage writes its file and E2 writes a report marked offline.
+- [x] **Step 1: Run the whole-branch review** of Tasks 1–7 against the spec. It covers the existing `timesplit.py` leakage code and `usermodel_store.push`, which the run depends on. Fix what it finds before Task 9. Done: fixes in 62a1c22.
+- [x] **Step 2: Offline dry run** over a two-document fixture corpus, with `OfflineLLM` and a fake Exa client, through every CLI subcommand. Expected: each stage writes its file and E2 writes a report marked offline. Done 2026-11-15 at c542b22: all ten subcommands wrote their files (4 decisions, 4 distractors, 2 history + 2 held-out pairs) and E2's report says `model: offline:`. `OfflineLLM` itself answers no prompt in JSON, so `check` drops every decision as unchecked; the run used a scripted offline LLM that returns each prompt's JSON shape. Found, not fixed: with zero held-out pairs, `gate` raises ZeroDivisionError after writing `gate_timesplit.jsonl`, which then blocks a rerun, and `e2` raises ZeroDivisionError; Task 9 step 6's floor of 40 held-out pairs keeps a real run off that path.
 
 ### Task 9: Live run, results and the extraction doc
 
