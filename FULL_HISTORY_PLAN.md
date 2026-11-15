@@ -15,3 +15,11 @@ Ruling: cache one bootstrap pass per stage to ensure every learning example is s
 while bounding cost. Keep all trials and failures visible. No tiny evidence cap.
 Ruling: isolated clone of Gio branch avoids modifying teammate working trees. Fetch
 upstream locks; own taste paths belong to gio-a. No merge into main in this task.
+
+Final execution: 68f7a88; successful attempt 05. All 236 learning, 70 validation,
+67 dev rows used, 268 final predictions, zero unresolved errors. M0 54/67,
+M1 46/67, M2 50/67, M3 51/67. Conservative commitments across attempts $4.207126.
+551 tests passed, one skipped. Independent review checked budget/retry safety.
+Both exports passed team loader/adviser using cached live predictions, zero new
+API calls. Browser render passed with no JavaScript errors. Failed attempts and
+raw envelopes are retained; zero scores from failed fits are not accuracy evidence.
