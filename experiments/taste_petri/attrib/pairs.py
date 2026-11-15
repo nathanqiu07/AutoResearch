@@ -34,7 +34,7 @@ def trim(pairs, n, seed):
     return {r["pair_id"] for r in keep}
 
 
-def build_pairs(rows, passes, rng):
+def build_pairs(rows, passes, rng, fmt=option):
     tf = TfIdf(r["abstract_problem"] for r in rows)
     vec = {r["id"]: tf.vector(r["abstract_problem"]) for r in rows}
     his = [r for r in rows if r["researcher"] == "owain_evans"]
@@ -59,9 +59,9 @@ def build_pairs(rows, passes, rng):
             pairs.append({"pair_id": f"{h['id']}|{best['id']}", "pass": pas, "work": h["work"],
                           "decision_point": h["point"], "his_id": h["id"], "other_id": best["id"], "opponent": opp,
                           "opponent_work": best["work"], "sim": round(cosine(vec[h["id"]], vec[best["id"]]), 3),
-                          "his_text": option(h), "other_text": option(best),
+                          "his_text": fmt(h), "other_text": fmt(best),
                           "his_problem": h["abstract_problem"], "other_problem": best["abstract_problem"],
-                          "context": QUESTION, "question": "", "a_text": option(a), "b_text": option(b),
+                          "context": QUESTION, "question": "", "a_text": fmt(a), "b_text": fmt(b),
                           "his_side": his_side})
         if len(pairs) >= MIN_PAIRS:
             break

@@ -17,7 +17,8 @@ ROOT = os.path.abspath(os.path.join(TP, "..", ".."))
 sys.path.insert(0, ROOT)
 
 # (model, budget line) -> cap; a budget line groups tags (abstraction vs prediction)
-CAPS = {("sonnet", "abstract"): 50, ("sonnet", "predict"): 1100, ("haiku", "predict"): 400}
+CAPS = {("sonnet", "abstract"): 50, ("sonnet", "predict"): 1100, ("haiku", "predict"): 400,
+        ("sonnet", "r2_abstract"): 45, ("sonnet", "r2_name"): 220, ("sonnet", "r2_arms"): 700}
 WORKERS = 4
 LOCK = threading.Lock()
 

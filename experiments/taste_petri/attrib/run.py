@@ -25,6 +25,7 @@ from autoresearch.taste.usermodel import Choice, UserModel
 ARMS = ("NAME", "P0", "P1", "P2", "P3", "P4", "P1+P3", "MIS", "MIS2")
 CONTROLS = ("NAME", "P0", "MIS")
 P3_K = 3  # per abstracted problem, so up to 6 past decisions per pair
+LINE = ["predict"]  # the calls.log budget line, set from --line
 
 
 def _load(name, path):
@@ -69,7 +70,7 @@ class CLI(LLM):
         self.arm, self.model = arm, model
 
     def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
-        return call(self.model, "predict", f"attrib:{self.arm}", prompt, system)
+        return call(self.model, LINE[0], f"attrib:{self.arm}", prompt, system)
 
 
 class Profiled(UserModel):
@@ -199,19 +200,24 @@ def tables(res, arms, model, words_by_arm):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sonnet", default="NAME,P0,P1,P3,P4,MIS")
-    ap.add_argument("--haiku", default="NAME,P4,P0,MIS")
+    ap.add_argument("--haiku", default="NAME,P4,P0,MIS", help="'' for none")
+    ap.add_argument("--pairs", default="pairs.jsonl")
+    ap.add_argument("--subset", default="in_sonnet", help="pairs column that selects the sonnet pairs")
+    ap.add_argument("--line", default="predict", help="calls.log budget line (common.CAPS)")
+    ap.add_argument("--out", default="", help="prefix for results.json and results_tables.md")
     args = ap.parse_args()
-    arms = {"sonnet": args.sonnet.split(","), "haiku": args.haiku.split(",")}
+    LINE[0] = args.line
+    arms = {m: v.split(",") for m, v in (("sonnet", args.sonnet), ("haiku", args.haiku)) if v}
     bad = [a for v in arms.values() for a in v if a not in ARMS]
     if bad:
         raise SystemExit(f"unknown arms {bad}")
-    pairs = read_jsonl(p("pairs.jsonl"))
-    sets = {"sonnet": [r for r in pairs if r["in_sonnet"]], "haiku": [r for r in pairs if r["in_haiku"]]}
-    before = {m: started(m, "predict") for m in arms}
+    pairs = read_jsonl(p(args.pairs))
+    sets = {"sonnet": [r for r in pairs if r[args.subset]], "haiku": [r for r in pairs if r.get("in_haiku")]}
+    before = {m: started(m, LINE[0]) for m in arms}
     preds = predict_all([(m, a, sets[m]) for m in arms for a in arms[m]])
     out = {"arms": arms, "n_pairs": {m: len(v) for m, v in sets.items()},
-           "calls_this_run": {m: started(m, "predict") - before[m] for m in arms},
-           "calls_total": {m: started(m, "predict") for m in arms}, "models": {}, "verdicts": []}
+           "calls_this_run": {m: started(m, LINE[0]) - before[m] for m in arms},
+           "calls_total": {m: started(m, LINE[0]) for m in arms}, "models": {}, "verdicts": []}
     md = []
     for m, m_arms in arms.items():
         words_by_arm = {a: E2.words(profile_text(a, sets[m][0])) for a in m_arms}
@@ -224,13 +230,13 @@ def main():
     for r in preds:
         by_pair[r["pair_id"]][f"{r['model']}:{r['arm']}"] = {k: r.get(k) for k in ("correct", "p_his", "error")}
     out["per_pair"] = [{**{k: r[k] for k in ("pair_id", "work", "decision_point", "opponent", "opponent_work", "sim",
-                                             "his_text", "other_text", "in_sonnet", "in_haiku")},
+                                             "his_text", "other_text")}, args.subset: r[args.subset],
                         "predictions": by_pair.get(r["pair_id"], {})} for r in pairs]
-    with open(p("results.json"), "w") as f:
+    with open(p(args.out + "results.json"), "w") as f:
         json.dump(out, f, indent=1, ensure_ascii=False)
     md += ["### Verdicts (PROTOCOL.md decision rules)", ""] + [f"- {v}" for v in out["verdicts"]]
     md += ["", f"Calls this run: {out['calls_this_run']}; predictor totals in calls.log: {out['calls_total']}."]
-    with open(p("results_tables.md"), "w") as f:
+    with open(p(args.out + "results_tables.md"), "w") as f:
         f.write("\n".join(md) + "\n")
     print("\n".join(md))
 
