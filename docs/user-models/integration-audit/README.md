@@ -151,8 +151,8 @@ including the failed boundary; they are not 12 passing isolation tests.
 
 No actual campaign leakage is established. The coordinator has been told to
 filter approved sources before raw-text assembly or retrieval indexing. The
-audit awaits an immutable contract-ready commit and approved DEV fixture before
-checking the new renderer and controls.
+first contract-ready release was subsequently audited using its synthetic fixture;
+the result is recorded below. Real DEV bundles remain a separate handoff.
 
 ## Baseline provenance follow-up
 
@@ -169,6 +169,28 @@ runtime or complete installed dependencies. The runner snapshots must be restore
 under `scripts/gio_petri/` before use because they derive the repo root from their
 location. This audit makes no claim about the awareness result and does not
 publish the local raw-call/transcript evidence.
+
+## New neutral-profile contract: findings before live scoring
+
+[20261115-006](../../../results/integration-audit/20261115-006/) audits release
+`d66051c` and implementation `bb3a6f5` against the shared contract. The published
+fixture reproduces byte for byte and all seven existing contract tests pass.
+Two independent reviewers and root confirmation runs reproduced six validation
+gaps: loaded size caps, explicit failed response statuses, enormous numeric
+probabilities, mutable builder provenance, inconsistent loaded config identities,
+and non-boolean peer permission flags. Full details and exact synthetic requests
+are retained. The coordinator assigned fixes and holds live scoring pending checks.
+
+The audit also confirms rich-field preservation, tested empty-control metadata
+exclusion, declared failure/pin rejection, source ID/content checks, and unchanged
+legacy backend guards. It does not establish real-model behavior or actual data
+leakage. Current module-file hashing alone cannot identify an already-imported
+function after its file changes; that conditional probe did not modify the audited
+snapshot, and no such drift was observed in the release.
+
+Evidence-script exit zero means reproduction completed, including failed checks.
+Each report labels verified, failed and unverified boundaries. This old-release
+package remains immutable when the infrastructure owner delivers fixes.
 
 ## Verification and next work
 

@@ -90,3 +90,31 @@
 - Ownership remains independent integration auditing. The other chats own Petri
   execution/review and overnight search coordination. No model/settings changes,
   real inference, final-test access, or production runtime edits by this audit.
+
+## Neutral-profile release audit
+
+- Directory-loader and source-boundary milestone published at
+  `1c6ca22663c74cdf6acc159333b50a0c98914edf`; all 65 new checksum-covered evidence
+  files are tracked. Both original chats and the coordinator received the link.
+- Package 006 audits CONTRACT_READY `d66051c`. The public fixture reproduced byte
+  for byte. Two reviewers examined separate consumer and provenance boundaries;
+  root independently reran both portable probes on the frozen synthetic snapshot.
+- Six actionable validation groups were reproduced: loaded cap enforcement,
+  discarded response failure status, huge-integer error handling, mutable builder
+  provenance, inconsistent loaded config identities, and non-boolean peer flags.
+  The coordinator has exact evidence and assigned changes to infrastructure;
+  live scoring is held pending verification. This audit changes no owner code.
+- The cap repro contains exactly 545 rendered bytes with cap 1. A preliminary
+  message said >700; it was corrected promptly after inspecting the retained
+  artifact. Exact artifacts and summary use 545.
+- Rich-field preservation and normal empty-control invariance passed. Provenance
+  probes record 24 verified checks, six failed observations, four unverified
+  boundaries. Evidence-script exit zero is not a claim that safeguards all pass.
+- A synthetic stale-import probe is conditional: current source-file hashes can
+  misidentify an already-imported function if its file changes. All 88 released
+  snapshot files remained unchanged. Frozen runtime-before-import enforcement
+  remains the owning runner's responsibility.
+- Next: obtain a fresh immutable fixes commit, preserve this failed-release
+  package, rerun the relevant cases, then audit evaluator-approved DEV artifacts
+  and actual no-profile/raw/retrieval method controls as the coordinator releases
+  them. Do not open final labels or the collector's restricted inventory.
