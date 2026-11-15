@@ -40,18 +40,24 @@
 - Test: `tests/test_exa_client.py` (new)
 
 **Interfaces:**
-- Produces:
-  - `ExaClient.search(query, num_results=5, since_days=None, highlights_query=None, category=None, text_chars=0, *, start_date=None, end_date=None, include_domains=None, exclude_domains=None, include_text=None, exclude_text=None, search_type="auto", summary=None, subpages=0, subpage_target=None, livecrawl=None) -> List[dict]`
-  - `ExaClient.contents(urls, text_chars=4000, *, summary=None, livecrawl=None) -> List[dict]`
-  - `ExaClient.deep(query, output_schema: dict, *, additional_queries=None, system_prompt=None, num_results=25, start_date=None, end_date=None, include_domains=None, include_text=None) -> dict` (the whole response; the structured output field as named in the spec below)
-  - `summary` is `{"query": str, "schema": dict}`; dates are `YYYY-MM-DD` strings sent as `YYYY-MM-DDT00:00:00Z`.
+- Produces (field names checked against `https://exa.ai/docs/exa-spec.yaml` on 2026-11-14):
+  - `ExaClient.search(query, num_results=5, since_days=None, highlights_query=None, category=None, text_chars=0, *, start_date=None, end_date=None, include_domains=None, exclude_domains=None, include_text=None, exclude_text=None, search_type="auto", summary=None, max_age_hours=None) -> List[dict]`
+  - `ExaClient.contents(urls, text_chars=4000, *, summary=None, max_age_hours=None, subpages=0, subpage_target=None) -> List[dict]`
+  - `ExaClient.deep(query, output_schema: dict, *, additional_queries=None, system_prompt=None, num_results=25, start_date=None, end_date=None, include_domains=None) -> dict`: the whole response. The structured result is at `response["output"]["content"]`, and its citations are at `response["output"]["grounding"]`.
+  - `summary` is `{"query": str, "schema": dict}`. Dates are `YYYY-MM-DD` strings, sent as `YYYY-MM-DDT00:00:00Z`.
+  - Spec facts that shape later tasks:
+    - `includeText`/`excludeText` are deprecated, and their matching is approximate. Send them, but never rely on them: Tasks 2 and 5 check authorship and exclusion in code.
+    - `livecrawl` is deprecated in favour of `maxAgeHours`.
+    - Subpage crawling lives on `/contents`, not `/search`.
+    - `/findSimilar` is deprecated in favour of `/search` with a descriptive query.
+    - The category enum is `company, publication, news, personal site, financial report, people`. Other strings are accepted only as hints, so papers use `publication`.
 
-- [ ] **Step 1: Check the field names against Exa's spec.** Fetch `https://exa.ai/docs/exa-spec.yaml` and confirm the request names for: `startPublishedDate`, `endPublishedDate`, `includeDomains`, `excludeDomains`, `includeText`, `excludeText`, `type: "deep"`, `outputSchema`, `additionalQueries`, `systemPrompt`, `contents.summary.schema`, `contents.subpages`, `contents.subpageTarget`, and the live-crawl option. Also confirm where deep search returns its structured output. Write the confirmed names into the test below; if a name differs, use the spec's.
+- [x] **Step 1: Check the field names against Exa's spec.** Done on 2026-11-14; the results are in the Produces block above.
 
 - [ ] **Step 2: Write the failing tests** in `tests/test_exa_client.py`. Patch `autoresearch.integrations.exa.post_json` with a recorder that returns `{"results": [], "costDollars": {"total": 0.01}}`.
   - `test_existing_search_call_sends_the_same_body_as_before`: `search("q", num_results=5, since_days=None, highlights_query=None)` sends exactly `{"query": "q", "type": "auto", "numResults": 5, "contents": {"highlights": {"query": "q", "maxCharacters": 800}}}`. This keeps existing cache keys valid.
   - `test_date_and_domain_filters_reach_the_body`: `start_date="2025-01-01", end_date="2025-03-31", include_domains=["arxiv.org"], exclude_text=["Hobbhahn"]` → `startPublishedDate == "2025-01-01T00:00:00Z"`, `endPublishedDate == "2025-03-31T00:00:00Z"`, `includeDomains == ["arxiv.org"]`, `excludeText == ["Hobbhahn"]`.
-  - `test_summary_schema_goes_inside_contents`: `contents(["u"], summary={"query": "q", "schema": {"type": "object"}})` → body `contents`/top-level carries `summary == {"query": "q", "schema": {"type": "object"}}` at the place the spec names.
+  - `test_contents_sends_summary_schema_and_subpages_at_top_level`: `contents(["u"], summary={...}, subpages=5, subpage_target=["blog"], max_age_hours=0)` → body has `urls`, `summary`, `subpages`, `subpageTarget`, `maxAgeHours` at the top level.
   - `test_deep_search_sends_output_schema_and_type_deep`.
   - `test_cost_is_summed_across_calls`: two calls → `client.cost == 0.02`.
 
@@ -91,7 +97,7 @@
 
 - [ ] **Step 2: Run them to see them fail.** Run: `python3 -m unittest tests.test_scrape_exa -v`. Expected: FAIL (`scrape_exa` not defined).
 
-- [ ] **Step 3: Implement.** Enumerate with `deep` (output schema: a list of `{title, url, date, kind}`) plus `search` per window × each `(category, include_domains)` pair below, every call with `include_text=["Hobbhahn"]`. Also run one `search` on `apolloresearch.ai` with `subpages=10, subpage_target=["blog", "research"]`. Pairs: `("research paper", ["arxiv.org"])`, `(None, ["lesswrong.com", "alignmentforum.org"])`, `(None, ["apolloresearch.ai"])`, `("tweet", ["x.com", "twitter.com"])`, `(None, ["youtube.com"])`, `("github", ["github.com"])`. Then `contents(urls, text_chars=200_000, livecrawl=<the spec's fallback value>)` for the kept URLs. Date precedence: arXiv v1 > Exa `publishedDate` > a `YYYY-MM-DD` found in the first 2,000 characters > none.
+- [ ] **Step 3: Implement.** Enumerate with `deep` (output schema: a list of `{title, url, date, kind}`) plus `search` per window × each `(category, include_domains)` pair below, every call with `include_text=["Hobbhahn"]` and "Marius Hobbhahn" in the query. Also call `contents(["https://www.apolloresearch.ai/blog", "https://www.apolloresearch.ai/research"], subpages=25, subpage_target=["blog", "research"])` to pick up posts search misses. Pairs: `("publication", ["arxiv.org"])`, `(None, ["lesswrong.com", "alignmentforum.org"])`, `(None, ["apolloresearch.ai"])`, `(None, ["x.com", "twitter.com"])`, `(None, ["youtube.com"])`, `(None, ["github.com"])`. Then `contents(urls, text_chars=200_000)` for the kept URLs (cached pages are fine; his past writing doesn't change). Date precedence: arXiv v1 > Exa `publishedDate` > a `YYYY-MM-DD` found in the first 2,000 characters > none.
 
 - [ ] **Step 4: Run the full suite.** Expected: OK.
 
@@ -167,7 +173,7 @@
   - `next_distractor(decision: dict, researcher: Researcher, llm: LLM, client: Optional[ExaClient], cutoff: str, after: Optional[str] = None) -> Optional[dict]` → `{"text": str, "source": one of SOURCES, "evidence_url": Optional[str]}`. It tries sources in order, starting after `after`.
   - `find_distractors(researcher, llm, client, cutoff) -> dict` writes `extraction/distractors.jsonl` (`{decision_id, text, source, evidence_url}`).
   - Visibility rule: for a decision dated before `cutoff`, the future-work candidates, the "was it pursued?" check and the contemporaneous search may use only material dated before `cutoff`. The contemporaneous `end_date` is `min(decision date + 6 months, cutoff - 1 day)`; for held-out decisions it is decision date + 6 months.
-  - The contemporaneous search passes `exclude_text=["Hobbhahn"]` and `exclude_domains=["apolloresearch.ai"]`.
+  - The contemporaneous search passes `exclude_text=["Hobbhahn"]` and `exclude_domains=["apolloresearch.ai"]`, and code drops any result whose author or text contains "Hobbhahn" (`excludeText` is approximate).
 
 - [ ] **Step 1: Write the failing tests:**
   - `test_named_alternative_is_used_first`.

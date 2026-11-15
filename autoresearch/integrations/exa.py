@@ -26,6 +26,19 @@ from .http import post_json
 BASE = "https://api.exa.ai"
 
 
+def _filters(start_date, end_date, include_domains, exclude_domains, include_text, exclude_text) -> dict:
+    out = {}
+    if start_date:
+        out["startPublishedDate"] = f"{start_date}T00:00:00Z"
+    if end_date:
+        out["endPublishedDate"] = f"{end_date}T00:00:00Z"
+    for key, value in (("includeDomains", include_domains), ("excludeDomains", exclude_domains),
+                       ("includeText", include_text), ("excludeText", exclude_text)):
+        if value:
+            out[key] = list(value)
+    return out
+
+
 class ExaClient:
     def __init__(self, api_key: Optional[str] = None, cache_dir: Optional[str] = None):
         self.key = api_key or os.environ.get("EXA_API_KEY")
@@ -51,21 +64,51 @@ class ExaClient:
         return out
 
     def search(self, query, num_results=5, since_days=None, highlights_query=None,
-               category=None, text_chars=0):
-        body = {"query": query, "type": "auto", "numResults": num_results,
+               category=None, text_chars=0, *, start_date=None, end_date=None,
+               include_domains=None, exclude_domains=None, include_text=None, exclude_text=None,
+               search_type="auto", summary=None, max_age_hours=None):
+        """Dates are YYYY-MM-DD. includeText/excludeText are deprecated upstream and match
+        approximately, so callers must not rely on them alone."""
+        body = {"query": query, "type": search_type, "numResults": num_results,
                 "contents": {"highlights": {"query": highlights_query or query,
                                             "maxCharacters": 800}}}
         if text_chars:
             body["contents"]["text"] = {"maxCharacters": text_chars}
+        if summary:
+            body["contents"]["summary"] = summary
+        if max_age_hours is not None:
+            body["contents"]["maxAgeHours"] = max_age_hours
         if since_days:
             start = dt.datetime.utcnow() - dt.timedelta(days=since_days)
             body["startPublishedDate"] = start.strftime("%Y-%m-%dT00:00:00Z")
         if category:
             body["category"] = category
+        body.update(_filters(start_date, end_date, include_domains, exclude_domains, include_text, exclude_text))
         return self._post("/search", body).get("results", [])
 
-    def contents(self, urls, text_chars=4000):
-        return self._post("/contents", {"urls": urls, "text": {"maxCharacters": text_chars}}).get("results", [])
+    def deep(self, query, output_schema, *, additional_queries=None, system_prompt=None, num_results=25,
+             start_date=None, end_date=None, include_domains=None):
+        """Deep search; the structured answer is at response["output"]["content"]."""
+        body = {"query": query, "type": "deep", "numResults": num_results, "outputSchema": output_schema}
+        if additional_queries:
+            body["additionalQueries"] = additional_queries
+        if system_prompt:
+            body["systemPrompt"] = system_prompt
+        body.update(_filters(start_date, end_date, include_domains, None, None, None))
+        return self._post("/search", body)
+
+    def contents(self, urls, text_chars=4000, *, summary=None, max_age_hours=None, subpages=0,
+                 subpage_target=None):
+        body = {"urls": urls, "text": {"maxCharacters": text_chars}}
+        if summary:
+            body["summary"] = summary
+        if max_age_hours is not None:
+            body["maxAgeHours"] = max_age_hours
+        if subpages:
+            body["subpages"] = subpages
+        if subpage_target:
+            body["subpageTarget"] = subpage_target
+        return self._post("/contents", body).get("results", [])
 
     def answer(self, query):
         out = self._post("/answer", {"query": query, "model": "exa"})
