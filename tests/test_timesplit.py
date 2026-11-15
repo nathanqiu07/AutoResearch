@@ -152,5 +152,60 @@ class TimeSplitPairsTest(unittest.TestCase):
         self.assertEqual(len(heldout), 7)
 
 
+class FakeSummaryExa:
+    """Answers contents(summary=...) with a fixed summary per URL and counts calls."""
+
+    def __init__(self, summaries):
+        self.summaries, self.calls, self.cost = summaries, 0, 0.0
+
+    def contents(self, urls, text_chars=4000, **kw):
+        self.calls += 1
+        return [{"url": u, "id": "req-" + u[-1], "summary": self.summaries[u]} for u in urls]
+
+
+def write_url_doc(root, name, published, url, body):
+    os.makedirs(os.path.join(root, "corpus"), exist_ok=True)
+    with open(os.path.join(root, "corpus", name), "w") as f:
+        f.write(f"---\nurl: {url}\npublishedDate: {published}\n---\n{body}")
+
+
+class ExaExtractTest(unittest.TestCase):
+    DECISION = {"point": "D1", "problem": "p", "did": "ran a baseline", "alternatives_named": [],
+                "stated_reason": "r", "quote": "we first ran a baseline"}
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        write_url_doc(self.root, "research__a.txt", "2024-02-01", "https://ex.org/a", "we first ran a baseline")
+        write_url_doc(self.root, "research__b.txt", "2024-05-01", "https://ex.org/b", "body b")
+        self.researcher = Researcher("marius_test", self.root)
+        self.exa = FakeSummaryExa({
+            "https://ex.org/a": json.dumps({"decisions": [self.DECISION], "future_work": []}),
+            "https://ex.org/b": "not json"})
+
+    def rows(self):
+        with open(os.path.join(self.root, timesplit.EXA_EXTRACT)) as f:
+            return [json.loads(line) for line in f]
+
+    def test_one_row_per_document_with_a_url(self):
+        timesplit.exa_extract(self.researcher, self.exa)
+        rows = {r["doc"]: r for r in self.rows()}
+        self.assertEqual(set(rows), {"research__a.txt", "research__b.txt"})
+        self.assertEqual(rows["research__a.txt"]["decisions"], [self.DECISION])
+
+    def test_unparseable_summary_is_kept_with_exa_error(self):
+        timesplit.exa_extract(self.researcher, self.exa)
+        row = next(r for r in self.rows() if r["doc"] == "research__b.txt")
+        self.assertEqual(row["decisions"], [])
+        self.assertTrue(row["exa_error"])
+
+    def test_rerun_skips_documents_already_extracted(self):
+        timesplit.exa_extract(self.researcher, self.exa)
+        calls = self.exa.calls
+        report = timesplit.exa_extract(self.researcher, self.exa)
+        self.assertEqual(self.exa.calls, calls)
+        self.assertEqual(report["skipped_existing"], 2)
+        self.assertEqual(len(self.rows()), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

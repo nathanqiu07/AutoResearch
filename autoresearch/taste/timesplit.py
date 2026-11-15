@@ -55,6 +55,25 @@ EXTRACT_PROMPT = ("Read this research document. Return JSON {\"topic\": <a few n
 
 FRONT_MATTER = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 
+EXA_EXTRACT = os.path.join("extraction", "exa.jsonl")
+_DECISION = {"type": "object", "properties": {
+    "point": {"type": "string", "enum": ["D1", "D2", "D3", "D4", "D5", "D6"]},
+    "problem": {"type": "string"}, "did": {"type": "string"},
+    "alternatives_named": {"type": "array", "items": {"type": "string"}},
+    "stated_reason": {"type": "string"}, "quote": {"type": "string"}}}
+DECISION_SCHEMA = {"type": "object", "properties": {
+    "decisions": {"type": "array", "items": _DECISION},
+    "future_work": {"type": "array", "items": {"type": "object", "properties": {
+        "idea": {"type": "string"}, "quote": {"type": "string"}}}}}}
+SUMMARY_QUERY = (
+    "List every research decision the authors of this document made and say why. Label each with "
+    "one point: D1 which experiment or hypothesis to pursue; D2 what evidence to collect (for "
+    "example asking the model directly vs using probes); D3 whether to accept a result; D4 whether "
+    "to continue or drop a line of work; D5 how to interpret an ambiguous result; D6 how strongly to "
+    "state a claim. For each give the problem faced, what they did, any alternatives the text names, "
+    "the reason the text states, and a verbatim quote of 20-300 characters from the document that "
+    "shows the decision. Also list each idea named as future or follow-up work, with a verbatim quote.")
+
 
 def read_doc(path: str) -> Tuple[Optional[datetime.date], str]:
     """(published date or None, body without front matter)."""
@@ -69,6 +88,12 @@ def read_doc(path: str) -> Tuple[Optional[datetime.date], str]:
         if key.strip() == "publishedDate" and value.strip():
             date = datetime.date.fromisoformat(value.strip()[:10])
     return date, raw[m.end():]
+
+
+def front_matter(path: str) -> dict:
+    with open(path) as f:
+        m = FRONT_MATTER.match(f.read())
+    return dict(line.split(": ", 1) for line in m.group(1).splitlines() if ": " in line) if m else {}
 
 
 def dated_docs(researcher: Researcher) -> List[Tuple[datetime.date, str, str, str]]:
@@ -157,6 +182,43 @@ def build_pairs(researcher: Researcher, cutoff: str, llm: LLM) -> dict:
     return {"pairs": len(pairs), "skipped": skipped, "cutoff": cutoff,
             "history": sum(p["split"] == "history" for p in pairs),
             "heldout": sum(p["split"] == "heldout" for p in pairs)}
+
+
+# ---- stage 2: Exa structured extraction -----------------------------------------
+
+def exa_extract(researcher: Researcher, client, batch: int = 10) -> dict:
+    """One row per corpus document in extraction/exa.jsonl with Exa's structured summary of its
+    decisions. Rows are appended as they finish, and documents already there are skipped, so a
+    crashed run resumes where it stopped."""
+    path = os.path.join(researcher.root, EXA_EXTRACT)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    done = {r["doc"] for r in _read_jsonl(path)}
+    todo = []
+    for p in sorted(glob.glob(os.path.join(researcher.root, "corpus", "*.txt"))):
+        url = front_matter(p).get("url")
+        if url and os.path.basename(p) not in done:
+            todo.append((os.path.basename(p), url))
+    report = {"done": 0, "skipped_existing": len(done), "errors": 0}
+    summary = {"query": SUMMARY_QUERY, "schema": DECISION_SCHEMA}
+    for i in range(0, len(todo), batch):
+        chunk = todo[i:i + batch]
+        by_url = {r.get("url"): r for r in client.contents([u for _, u in chunk], text_chars=1, summary=summary)}
+        with open(path, "a") as f:
+            for doc, url in chunk:
+                r = by_url.get(url, {})
+                raw = r.get("summary")
+                try:
+                    out = json.loads(raw) if isinstance(raw, str) else raw
+                    error = None if isinstance(out, dict) else "no summary returned"
+                except json.JSONDecodeError:
+                    out, error = None, "summary is not JSON"
+                out = out if isinstance(out, dict) else {}
+                report["errors"] += error is not None
+                report["done"] += 1
+                f.write(json.dumps({"doc": doc, "url": url, "decisions": out.get("decisions") or [],
+                                    "future_work": out.get("future_work") or [], "exa_error": error,
+                                    "request_id": r.get("id", "")}, ensure_ascii=False) + "\n")
+    return report
 
 
 def _context(slug: str, pair: dict) -> str:
