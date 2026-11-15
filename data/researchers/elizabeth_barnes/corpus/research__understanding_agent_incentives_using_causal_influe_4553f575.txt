@@ -1,0 +1,610 @@
+---
+url: https://arxiv.org/abs/1902.09980
+title: Understanding Agent Incentives using Causal Influence Diagrams. Part I: Single Action Settings
+publishedDate: 2019-02-26
+date_source: listing
+authors: ["Tom Everitt", "Pedro A. Ortega", "Elizabeth Barnes", "Shane Legg"]
+author_position: middle
+kind: paper
+exa_request_id: https://arxiv.org/abs/1902.09980
+---
+# Understanding Agent Incentives using Causal Influence Diagrams. Part I: Single Action Settings
+
+arXiv:1902.09980. cs.AI, cs.LG. Submitted 2019-02-26. Latest version v7, 2022-01-20.
+
+## Authors
+
+Tom Everitt, Pedro A. Ortega, Elizabeth Barnes, Shane Legg
+
+## Details
+
+- License: http://arxiv.org/licenses/nonexclusive-distrib/1.0/
+
+## Versions
+
+- v1: 2019-02-26
+- v2: 2019-02-27
+- v3: 2019-02-28
+- v4: 2019-03-12
+- v5: 2019-08-01
+- v6: 2019-09-06
+- v7: 2022-01-20
+
+---
+
+Full text of v6.
+
+Deepmind
+
+Part I: Single Decision Settings
+
+## Abstract
+
+Agents are systems that optimize an objective function in an environment. Together, the goal and the environment induce secondary objectives, incentives. Modeling the agent-environment interaction using causal influence diagrams, we can answer two fundamental questions about an agent’s incentives directly from the graph: (1) which nodes can the agent have an incentivize to observe, and (2) which nodes can the agent have an incentivize to control? The answers tell us which information and influence points need extra protection. For example, we may want a classifier for job applications to not use the ethnicity of the candidate, and a reinforcement learning agent not to take direct control of its reward mechanism. Different algorithms and training paradigms can lead to different causal influence diagrams, so our method can be used to identify algorithms with problematic incentives and help in designing algorithms with better incentives.
+
+## 1 Introduction
+
+Agents strive to optimize an objective function in an environment. This gives them incentives to learn about and influence various aspects of the environment. For example, a reinforcement learning agent playing the ATARI game Pong will have an incentive to direct the ball to regions where the opponent will be unable to intercept it, and have an incentive to learn which those regions are. The aim of this paper is to provide a simple and systematic method for inferring agent incentives. To this end, we define causal influence diagrams (CID), a graphical model with special decision, utility, and chance nodes (Howard1984), where all arrows encode causal relationships (Pearl2009). CIDs provide a flexible and precise tool for simultaneously describing both agent objectives and agent-environment interaction.
+
+To determine what information a system wants to obtain in order to optimize its objective, we establish a graphical criterion that characterizes which nodes in a CID graph are compatible with an observation incentive. In words, the criterion is that:
+
+> Main result 1 (Observation incentives): A single-decision CID graph is compatible with an observation incentive on a node $X$ if and only if $X$ is d-connected to a influenceable utility node when conditioning on the decision and all available observations (Theorem 9).
+
+The criterion applies to a conceptually clear definition of observation incentive, which says that there is an incentive to observe a node if learning its outcome strictly improves expected utility, i.e. if the node provides a positive value of information (Howard1966). Among other things, the criterion detects which observations are useful or requisite when making a decision. Theorems establishing the only if part of observation incentive criterion have been previously established by Fagiuoli1998; Lauritzen2001; see Section 5 for a more detailed overview. Here, we also prove the if direction.
+
+A related question is what aspects of its environment a system wants to influence. To answer this question, we establish an analogous graphical criterion for intervention incentives:
+
+> Main result 2 (Intervention incentives): A single-decision CID graph is compatible with an intervention incentive on a non-decision node $X$ if and only if there is a directed path from $X$ to a utility node after all nonrequisite information links have been removed (Theorem 14).
+
+Intervention incentives detect a positive value of control (Matheson2005; Shachter2010; Heckerman1995) or value of intervention (Lu2002). No graphical criterion of intervention incentives has previously been established. Depending on the path from $X$ to the utility node, we can make a further distinction between whether the intervention on $X$ is used to obtain more information or to directly control a utility variable.
+
+We demonstrate two applications of our theorems. The observation incentive criterion provides insights about the fairness of decisions made by machine learning systems and other agents (ONeill2016), as it informs us when a variable is likely to be used as a proxy for a sensitive attribute or not (Section 3.4). With the intervention incentive criterion, we study the incentive of a question-answering system (QA-system) to influence the world state with its answer, rather than passively predicting future events (Section 4.4). Many more applications of CIDs are provided by Everitt2019modeling; Everitt2019tampering.
+
+##### Outline
+
+Following an initial background section (Section 2), we devote one section to observation incentives (Section 3) and one section to intervention incentives (Section 4). These sections contain formal sections defining the criteria, as well as “gentler” sections describing how to use and interpret the criteria. Both sections conclude with an example application: to fairness for observation incentives, and to QA-system for intervention incentives. Finally, we discuss related work (Section 5) and some open questions (Section 6), before stating some conclusions in Section 7. All proofs are deferred to Appendix B. A second part of the paper extends the graphical criteria to influence diagrams with multiple actions and agents (Everitt2019part2).
+
+## 2 Background
+
+This section provides the necessary background and notation for the rest of the paper. A recap of causal graphs (Section 2.1) and d-separation (Section 2.2) is followed by a definition of CIDs (Section 2.3).
+
+### 2.1 Causal Graphs
+
+##### Random Variables
+
+A random variable is a (measurable) function $X\colon\Omega\to\textit{dom}(X)$ from some measurable space $(\Omega,\Sigma)$ to a finite domain $\textit{dom}(X)$. The domain $\textit{dom}(X)$ specifies which values the random variable can take. The outcome of a random variable $X$ is $x$.
+
+A set or vector ${\bm{X}}=(X_{1},\dots,X_{n})$ of random variables is again a random variable, with domain $\textit{dom}({\bm{X}})=\prod_{i=1}^{n}\textit{dom}(X_{i})$. We will use boldface font for sets of random variables (e.g. ${\bm{X}}$).
+
+##### Graphs and models
+
+Throughout the paper we will make a distinction between graphs on the one hand, and models on the other. A graph only specifies the structure of the interaction, while a model combines a graph with a parameterization to also define the relationships between the variables.
+
+**Definition 1 (Causal graph; Pearl2009).**
+
+A causal graph is a directed acyclic graph $({\bm{W}},E)$ over a set of nodes or random variables ${\bm{W}}$, connected by edges $E\subseteq{\bm{W}}\times{\bm{W}}$. The arrows indicate the direction of causality, in the sense that an external intervention on a node $X$ will affect the descendants of $X$, but not the ancestors of $X$. We denote the parents of $X$ with $\textbf{Pa}_{X}$. Following the conventions for random variables, the outcomes of the parent nodes are denoted $\textbf{pa}_{X}$.
+
+Figure 1: An example of a causal graph (Pearl2009).
+
+For example, in Figure 1, an alarm is influenced by the presence of a burglar and by a (small) earthquake, and in turn influences whether the security company calls. The graph defines the structure of the interaction, but does not specify the relationship between the variables. As in a Bayesian network, the precise relationships are specified by conditional probability distributions $P(x\mid\textbf{pa}_{X})$.
+
+**Definition 2 (Causal model; Pearl2009).**
+
+A causal model $({\bm{W}},E,P)$ is a causal graph $({\bm{W}},E)$ combined with a parameterization $P$ that specifies a finite domain $\textit{dom}(X)$ and a conditional probability distributions $P(x\mid\textbf{pa}_{X})$ for each node $X\in{\bm{W}}$.
+
+A parameterization $P$ induces a joint distribution $P(x_{1},\dots,x_{n})=\prod_{i=1}^{n}P(x_{i}\mid\textbf{pa}_{i})$ over all the nodes $\{X_{1},\dots,X_{n}\}={\bm{W}}$.
+
+### 2.2 d-Separation
+
+**Definition 3 (Graph terminology).**
+
+A path is a chain of non-repeating nodes connected by edges in the graph. We write $X\dashrightarrow Y$ for a directed path from $X$ to $Y$, and $X\,\,\hbox{-\!\! -}\,\,Y$ for an undirected path. The length of a path is the number of edges on the path. We do allow paths of length 0.
+
+If there is a directed path $X\dashrightarrow Y$ of length at least 1, then $X$ is an ancestor of $Y$, and $Y$ is a descendant of $X$. Let $\mathrm{desc}(X)$ be the set of descendants of $X$.
+
+An important question is when the outcome of one variable $Y$ provides information about the outcome of another variable $X$. This depends, of course, on which other outcomes ${\bm{Z}}$ that we already know. If $Y$ provides no additional information about $X$ given that we already observe ${\bm{Z}}$, then we say that $X$ and $Y$ are conditionally independent when conditioning on ${\bm{Z}}$. Formally, $P(X\mid Y,{\bm{Z}})=P(X\mid{\bm{Z}})$. It is possible to tell whether $X$ and $Y$ must be conditionally independent given ${\bm{Z}}$ in a causal graph. The criteria for determining this is called d-separation:
+
+**Definition 4 (d-separation; Pearl2009).**
+
+An undirected path $X\,\,\hbox{-\!\! -}\,\,Y$ in a causal graph is active conditioning on a set ${\bm{Z}}$ if each three node segment of the path subscribes to one of the following active patterns:
+
+- Chain: $X_{i-1}\to X_{i}\to X_{i+1}$ or $X_{i-1}\leftarrow X_{i}\leftarrow X_{i+1}$ and $X_{i}\not\in{\bm{Z}}$.
+- Fork: $X_{i-1}\leftarrow X_{i}\to X_{i+1}$ and $X_{i}\not\in{\bm{Z}}$.
+- Collider: $X_{i-1}\to X_{i}\leftarrow X_{i+1}$ and some descendant of $X_{i}$ is in ${\bm{Z}}$.
+
+Two nodes $X$ and $Y$ are d-connected by (conditioning on) a set ${\bm{Z}}$ of nodes if there is an undirected path between $X$ and $Y$ that is active when conditioning on ${\bm{Z}}$; otherwise $X$ and $Y$ are d-separated by (conditioning on) ${\bm{Z}}$. The notation $X\perp Y\mid{\bm{Z}}$ denotes d-separation and $X\not\perp Y\mid{\bm{Z}}$ denotes d-connection. Note that paths of length 0 and 1 are always active, so a node is always d-connected to itself and to its parents and children.
+
+It has been shown that if $X$ and $Y$ are d-separated by ${\bm{Z}}$, then they are conditionally independent given ${\bm{Z}}$ in any parameterization $P$ of the graph (Verma1988soundness). Conversely, if they are d-connected, then there is some parameterization $P$ in which they are conditionally dependent given ${\bm{Z}}$ (Geiger1990completeness; Meek1995).
+
+### 2.3 Causal Influence Diagrams
+
+Influence diagrams are graphical models with special decision and utility nodes, developed to model decision-making problems (Howard1984; Koller2003). This makes them good models for situations where an agent is trying to optimize an objective in an environment.[^1] See Figure 2 for an example. We will use the term causal influence diagram (CID) for influence diagrams where all arrows encode causal relationships.[^2]
+
+As with causal graphs, we begin by defining the graph that specifies only the structure of the interaction.
+
+**Definition 5 (CID graph).**
+
+A CID graph is a tuple $G=({\bm{W}},E,{\bm{D}},{\bm{U}})$, with
+
+- $({\bm{W}},E)$ a causal graph
+- ${\bm{D}}\subseteq{\bm{W}}$ an ordered set of decision nodes, represented by blue rectangles
+- ${\bm{U}}\subseteq{\bm{W}}\setminus{\bm{D}}$ a set of utility nodes, represented by yellow octagons .
+- The remaining nodes ${\bm{W}}\setminus({\bm{D}}\cup{\bm{U}})$ are called chance nodes, and are represented with white circles or rectangles with rounded corners .
+
+The parents $\textbf{Pa}_{D}$ of a decision node $D\in{\bm{D}}$ represent the decision context for $D$, i.e. what information is available when $D$ is chosen. Information links $\textbf{Pa}_{D}\to D$ are represented with dotted edges.
+
+Figure 2: Example of a CID. A machine learning system is recommending calorie intake (decision) to optimize the user’s fitness (utility). The optimal calorie intake depends on the person’s physical activity, which cannot be measured directly. Instead, the decision must be based on a step count provided by a fitness tracker.
+
+Figure 2 shows a CID for a machine learning system that uses step count as a proxy for physical activity to recommend ideal calorie intake. This setup will be our running example throughout the rest of the paper. For an additional example, a Markov decision process with unknown state transition function is modeled in Appendix A.
+
+As with causal models, the precise relationship between the nodes is specified with conditional probability distributions. One important difference between CIDs and causal graphs is that a CID parameterization only specifies conditional probability distributions for non-decision nodes, as the decisions are made exogenously to the model.
+
+**Definition 6 (CID model).**
+
+A CID model is a tuple $M=({\bm{W}},E,{\bm{D}},{\bm{U}},P)$ where
+
+- $({\bm{W}},E,{\bm{D}},{\bm{U}})$ is a CID graph
+- For each node $X\in{\bm{W}}$, the parameterization $P$ specifies:
+ - a finite domain $\textit{dom}(X)$; for utility nodes $X\in{\bm{U}}$, the domain must be real-valued $\textit{dom}(X)\subset{\mathbb{R}}$
+ - conditional probability distributions $P(x\mid\textbf{pa}_{X})$ for all non-decision nodes $X\in{\bm{W}}\setminus{\bm{D}}$.
+
+In the influence diagram literature, it is common to also require that utility nodes lack children and are deterministic functions of their parents (e.g. Koller2003). We will refrain from requiring this, as it is an unnecessary restriction that makes it awkward to model some situations, such as the MDP in Appendix A.
+
+##### Policies and expected utility
+
+A policy $\pi$ describes the decisions of an agent, via conditional probability distributions $\pi(d\mid\textbf{pa}_{D})$ for each decision node $D\in{\bm{D}}$. A parameterization $P$ combined with a policy $\pi$, induces a joint distribution $P(\cdot\mid\pi)$ over ${\bm{W}}$. The goal of the agent is to choose a policy $\pi$ that maximizes the sum of the utility variables. Following the convention in reinforcement learning (Sutton2018), we call this the value of $\pi$:
+
+**Definition 7 (Value function).**
+
+Let $({\bm{W}},E,{\bm{D}},{\bm{U}},P)$ be a CID model. The value or expected utility of a policy $\pi$ is $V^{\pi}={\mathbb{E}}\left[\sum_{U\in{\bm{U}}}U\;\middle|\;\pi\right]$ where the expectation is with respect to $P(\cdot\mid\pi)$. An optimal policy $\pi^{*}$ is a policy that optimizes $V^{\pi}$, with optimal value $V^{*}=V^{\pi^{*}}$.
+
+## 3 Observation Incentives
+
+This section will be devoted to the following question:
+
+> Which nodes would a decision maker like to know the outcome of, or observe, before making a decision? That is, which nodes have a positive value of information (Howard1966).
+
+Following an introductory example (Section 3.1), we give a natural definition of observation incentive, and show that it can be identified in any CID graph (Section 3.2). An explanation of how to apply the theorem and interpret the result is given in Section 3.3. We conclude the section with an application to fairness (Section 3.4).
+
+### 3.1 Introductory Example
+
+Let us start by heuristically identifying[^3] the observation incentives in an extension of the fitness tracker example from Figure 2. As before, a machine learning system recommends calorie intake for optimizing fitness based on a step-count proxy for physical activity. To make the example more interesting, we have now added a node for a noisy estimate of walking distance based solely on the step count (Figure 3). We ask the question: Which nodes would it be useful for the machine learning system to observe in order to provide the most accurate calorie intake recommendation for the goal of optimizing the user’s fitness?
+
+Figure 3: Observation incentives example. Here we return to the example of a machine learning system recommending calorie intake (Figure 2). To make it more interesting, we add a node for a (noisy) walking-distance estimate that is based solely on the step count. For deciding calorie intake, the step count but not the estimated walking distance provides useful information. The system also has an incentive to find out physical activity, even though it cannot measure it directly.
+
+First, it would be useful to observe physical activity, because physical activity determines optimal calorie intake (by assumption). In other words, there is an incentive to observe physical activity. Unfortunately, as the model is stated, it is not possible to observe physical activity directly. This makes the step count useful, because it can be used as a proxy for physical activity. In contrast, the estimate of the walking distance is not useful.[^4] Even though it may contain information about the physical activity, it cannot provide any additional information beyond the step count, because it is only based on the step count in the first place.
+
+Note that we do not ask the question whether the system wants to observe the resulting fitness, as it is a downstream effect of the decision. Formally, observations of fitness are not permitted because they would introduce cycles into the graph.
+
+### 3.2 Definition and Graphical Criterion
+
+If there is an observation incentive for a node $X$, then the maximum expected utility should be strictly greater if an information link $X\to D$ was present compared to if it was not.[^5] It is straightforward to compare these two situations for a given CID model $M$, because the parameterization $P$ only specifies conditional probability distributions for non-decision nodes. This means that the same $P$ can be kept while information links are added or removed from the graph.
+
+**Definition 8 (Single-decision observation incentive).**
+
+Let $M=({\bm{W}},E,\{D\},{\bm{U}},P)$ be a single-decision influence model and $X\in{\bm{W}}\setminus\mathrm{desc}(D)$ a node not descending from $D$. Let $V^{*}_{X\to D}$ be the optimal value obtainable in $M$ with an added information link $X\to D$, and let $V^{*}_{X\not\to D}$ be the optimal value obtainable in $M$ with any information link $X\to D$ removed. The agent has an observation incentive for $X$ if $V^{*}_{X\to D}>V^{*}_{X\not\to D}$.
+
+As illustrated by the fitness tracker example in Figure 3, what matters for observation incentives is whether a node carries information about a utility node that can be influenced. This can be assessed by a d-separation criterion (Definition 4) conditioned on the available information $\textbf{Pa}_{D}$ and $D$. For example, in Figure 3, step count provides useful information while estimated walking distance does not. This is explained by step count being d-connected to fitness via physical activity, while estimated walking distance is d-separated from fitness because step count is observed. Using this d-separation criterion, we can tell whether a CID graph is compatible with an observation incentive on a node $X$, i.e. whether observing $X$ would be useful under some parameterization of the graph.
+
+**Theorem 9 (Single-decision observation incentive criterion).**
+
+Let $({\bm{W}},E,\{D\},{\bm{U}})$ be a single-decision CID graph, and let $X\in{\bm{W}}\setminus\mathrm{desc}(D)$ be a node not descending from the decision $D$. There exists a parameterization $P$ for $G$ in which the agent has an observation incentive for $X$ if and only if $X$ is d-connected to a utility node that descends from $D$:
+
+$$X\not\perp{\bm{U}}\cap\mathrm{desc}(D)\mid\{D\}\cup\textbf{Pa}_{D}\setminus\{X\}.$$
+
+The theorem follows from Theorems 15 and 18 in Section B.1. The only if part of the statement have previously been shown by Fagiuoli1998; Lauritzen2001, though they focused on a subset of our question: namely which observed nodes $O\in\textbf{Pa}_{D}$ are compatible with an observation incentive, i.e. which observations are useful (requisite) and not.[^6] In contrast, our interest is equally in which unobserved nodes the agent would like to observe. Nonetheless, some terminology for observation incentives in the decision context $\textbf{Pa}_{D}$ will be useful.
+
+**Definition 10 (Requisite observations).**
+
+An observation $O\in\textbf{Pa}_{D}$ is a requisite observation if it satisfies the observation incentive criterion (Theorem 9). Let $\textbf{Pa}^{*}_{D}\subseteq\textbf{Pa}_{D}$ denote the set of requisite observations. The rest of the observations $\textbf{Pa}_{D}\setminus\textbf{Pa}^{*}_{D}$ are nonrequisite. Extending the terminology to information links, an information link $\textbf{Pa}^{*}_{D}\to D$ is requisite, and an information link $(\textbf{Pa}_{D}\setminus\textbf{Pa}^{*}_{D})\to D$ is nonrequisite.
+
+Since an optimal decision need not depend on nonrequisite observations, for many purposes we can remove the information links from these nodes. The reduced graph will be important for analyzing intervention incentives. (Section 4), as well as observation incentives in multi-decision and multi-agent CID graphs (Part II and Lauritzen2001).
+
+**Definition 11 (Reduced graph).**
+
+The reduced graph $G^{*}$ of a single-decision CID graph $G$ is the result of removing all nonrequisite information links from $G$.
+
+### 3.3 How to Use and Interpret the Criterion
+
+##### Method
+
+Concretely, the observation incentive criterion can be applied per the following. To check whether a node $X$ may face an observation incentive, begin by checking whether $X$ is a descendant of $D$. Only if it is not a descendant can we enquire about its observation incentives. If it is not a descendant of $D$, then check whether it is d-connected to $U\cap\mathrm{desc}(D)$ when conditioning on $D$ and $\textbf{Pa}_{D}$ but not $X$ with the following procedure:
+
+Begin by marking the nodes $D$ and $\textbf{Pa}_{D}\setminus\{X\}$ as nodes to be conditioned on. There is an observation incentive for $X$ if and only if it is possible to:
+
+1. Go forward[^7] from $D$ to a utility node $U\in{\bm{U}}$
+2. Starting from $U$, it is possible to reach $X$ using the following rules:
+ - (a) Go backwards without passing any marked node. At any point, switch to step b.
+ - (b) Go forward without passing any marked node. When reaching a marked node, switch to step a.
+
+An intuitive way of thinking about the procedure is that paths can “bounce forward” from unmarked nodes, and “bounce backward” from marked nodes.[^8] It is not necessary that the path ever bounces for there to be an observation incentive for $X$.
+
+(a) CID graph asdflj l
+
+(b) Marked nodes (thick purple) and active paths (thick blue)
+
+(c) Observation incentives (dotted blue)
+
+Figure 4: How to use the observation incentive criterion.
+
+For example, in the graph shown in Figure 4(a), we begin by marking the nodes $D$ and $\textbf{Pa}_{D}=\{Y_{2},Z_{2}\}$ (Figure 4(b)). Then we start at $D$, and reach $U$ in a single step. There are three ways to go backwards from $U$: to $X$, to $D$, and to $Z_{2}$. The active paths they give rise to are illustrated with thick blue paths in Figure 4(b). Let us consider these in turn. The topmost path (to $X$) can “bounce” forward again at $X$, since $X$ is an unmarked fork node. From $X$ we can go forward to $Y_{2}$, which is a marked node, and therefore allows us to “bounce” backwards again, to $Y_{1}$. From $Y_{1}$ we can go no further however, and we have exhausted the possible paths arising from $X$. The middle path (to $D$) only reaches $D$, which is a descendant of $D$ and therefore disregarded. Since $D$ is marked, the path stops here. The bottommost path to $Z_{2}$ reaches $Z_{2}$. Since $Z_{2}$ is marked, the path stops here. The nodes that are not a descendant of $D$ and that have been reached through one of these paths are the nodes facing an observation incentive; see Figure 4(c).
+
+##### Interpretation
+
+Once we know whether there is an observation incentive for a node $X$, we need to know how to interpret the result. Observation incentives have slightly different interpretations for observed and unobserved nodes. For observed nodes $X\in\textbf{Pa}_{D}$, an observation incentive simply means that the agent’s optimal decision may depend on $X$, as with step count in Figure 3. In other words, the node is requisite for an optimal decision. For unobserved nodes $Y\not\in\textbf{Pa}_{D}$, an observation incentive means that an agent with additional access to $Y$ may be able to achieve higher expected utility. In practice, this can mean that the agent (partially) infers $Y$ from information that it does have access to. A good example of this is physical activity in Figure 3, which is partially inferred from step count. In situations where the model is only an approximation of reality, it can also mean that the agent finds a way to directly observe $Y$. Examples of this could be a poker player that takes a sneak peak at his opponents cards, or a company that orders an extra market analysis before making a decision.
+
+### 3.4 Application to Fairness
+
+Let us see how observation incentives can be applied in questions of fairness and discrimination (ONeill2016). One type of discrimination is disparate treatment (Barocas2016), which occurs when a decision process treats people differently based on sensitive attributes such as race or gender. However, what this means formally is still subject to intense debate (e.g. Corbett-Davies2018; Gajane2017). In this section, we illustrate how observation incentives for sensitive attributes can contribute to this discussion.
+
+As an example, we will consider the Berkeley admission case (Bickel1975). In this case, it was found that the admission rate for men was higher than for women. However, the difference in admission rate was explained by women applying to more competitive departments than men. Was the university guilty of discriminating against women?
+
+A nuanced account of the situation can be obtained using causal graphs (Pearl2009; Mancuhan2014; Bonchi2017; Chiappa2019; Kilbertus2017; Kusner2017; Zhang2017). Using a causal graph similar to the one represented in Figure 5(a), Pearl2009 argues that since the influence from gender to admission was mediated by department choice, the university was not discriminating against women. An assumption in Pearl’s argument is that the university was using the applicant’s department choice to fit the right number of students into each department. This assumption can be made explicit in the path-specific counterfactual fairness framework (Chiappa2019), where causal pathways from sensitive attributes to decision nodes are labeled fair or unfair. For example, the path from gender to admission would be considered fair if department choice was used to fit the right number of students into each department, and unfair if the university was using department choice to covertly gender bias the student population by lowering the admission rate for departments that women were more likely to apply to.
+
+(a) Causal graph with path-label in the path-specific counterfactual fairness framework asdfs
+
+(b) CID graph of unbiased university
+
+(c) CID graph of gender-biased university
+
+Figure 5: Graphical representations of the Berkeley admission case (Bickel1975).
+
+Observation incentives offer an alternative to path-labeling for judging disparate treatment. Universities can be modeled as agents that choose which students to admit in order to optimize an objective function such as student performance. Consider the CIDs in Figures 5(b) and 5(c) of two universities that have different additional objectives beside student performance. The university in Figure 5(b) tries to fit the right number of students into each department; the university in Figure 5(c) covertly tries to gender bias the student population by using department choice as a proxy for gender. As both universities only use department choice for the decision, the causal pathway from gender to admission is the same in both cases.
+
+We can use observation incentives to explain the difference in fairness between the universities, from the different information they infer from department choice:
+
+- The first university has no observation incentive for gender. It is only using the department choice to fit the right number of students into each department.
+- The second university may have an observation incentive for gender. It may therefore be using department choice to infer the gender of the student, which may render it guilty of disparate treatment.
+
+The need to know the objectives of the decision maker somewhat limits the applicability of incentives-based fairness approaches. For example, an outsider may be unable to find out the objectives of the universities in the above example. This difficulty is resembles the difficulty of correctly labeling paths fair or unfair in the path-specific counterfactual fairness approach. However, an advantage with the observation incentive approach is that when we are training a machine learning system, then we are aware of what objective function the system is optimizing, and what information the system has access to. Combined with a CID for how the objective and the observed information interacts with the sensitive attributes, the observation incentive criterion can be used to identify which incentives emerge from this objective, and whether they involve problematic inference of sensitive attributes.
+
+## 4 Intervention Incentives
+
+This section asks the question:
+
+> Which nodes would an agent like to influence or control? That is, which nodes face a positive value of control (Shachter2010).
+
+Building on the observation incentive criterion, we establish an analogous intervention incentive criterion (Section 4.2), and explain how to use an interpret it (Section 4.3). The section concludes with an application to the incentives of QA systems (Section 4.4).
+
+### 4.1 Introductory Example
+
+Figure 6: Intervention incentives example. As in Figures 2 and 3, a machine learning system uses an activity tracker to recommend calorie intake for optimizing fitness. Interventions can contribute utility either directly by influencing a utility node, or indirectly by increasing the information available at a decision. An example of the former kind would be to increase physical activity to improve fitness. An example of the latter kind is upgrading the tracker firmware to make the step count more accurate, as it would enable a more informed recommendation of calorie intake. In contrast to both of these types, improving the estimate of the walking distance would have no value at all, since the estimated walking distance is not a requisite observation.
+
+Continuing the example from Section 3.1, let us also heuristically identify[^9] intervention incentives in the CID graph in Figure 6. As before, a machine learning system recommends calorie intake for optimizing fitness based on information provided by fitness tracker. We ask the question: Which nodes would be useful to influence in addition to the calorie intake? In other words, influence over which nodes would enable the system to optimize its utility?
+
+Trivially, the system would like to control fitness, since that is its optimization target. Similarly, influencing physical activity means indirectly controlling fitness, and would therefore be useful as well. The situation is more subtle with the ancestors of calorie intake. To start with, the only benefit of step count is its informativeness about physical activity. This means that interventions that increase the accuracy of step count are useful. An example of such an intervention is to update the tracker firmware. In contrast, interventions on estimated walking distance are never useful, as it is not used in an (optimal) decision for calorie intake anyway, as discussed in Section 3.1.
+
+### 4.2 Definition and Graphical Criterion
+
+Our definition of intervention incentive is analogous to the definition of observation incentive (Definition 8). Instead of considering observing an extra node, we consider controlling an extra node, where control is formalized with soft interventions:
+
+**Definition 12 (Soft intervention; Eberhardt2007; Pearl2009, p. 74).**
+
+A (soft) intervention $c^{X}$ on a non-decision node $X$ in a CID model $M=({\bm{W}},E,\{D\},{\bm{U}},P)$ changes the conditional probability distribution for $X$ from $P(x\mid\textbf{pa}_{X})$ to $c^{X}(x\mid\textbf{pa}_{X})$, while leaving all other conditional probability distributions intact.[^10] We write $P(\cdot\mid c^{X})$ for the updated probability distribution.
+
+Control can also be formalized by adding extra decision nodes (Matheson2005; Shachter2010). Indeed, soft interventions correspond to a probabilistic generalization of perfect control (Matheson2005), and to atomic interventions on a mapping variable (Shachter2010).
+
+**Definition 13 (Single-decision intervention incentive).**
+
+Let $M=({\bm{W}},E,\{D\},{\bm{U}},P)$ be a single-decision CID model and $X$ a non-decision node $X\in{\bm{W}}\setminus\{D\}$. Let $V^{\pi,c^{X}}={\mathbb{E}}\left[\sum_{U\in{\bm{U}}}U\;\middle|\;\pi,c^{X}\right]$ be the value of following policy $\pi$ and controlling $X$ with intervention $c^{X}$. The agent has an intervention incentive on $X$ if $\max_{\pi,c^{X}}V^{\pi,c^{X}}>\max_{\pi^{\prime}}V^{\pi^{\prime}}$.
+
+Similarly to observation incentives, a graphical criterion can tell us whether a CID graph is compatible with an intervention incentive on a non-decision node $X$.
+
+**Theorem 14 (Single-decision intervention incentive criterion).**
+
+Let $X\in{\bm{W}}\setminus\{D\}$ be a non-decision node in a single-decision CID graph $G=({\bm{W}},E,\{D\},{\bm{U}})$. There exists a parameterization $P$ for $G$ such that the agent has an intervention incentive for $X$ if and only if there is a directed path $X\dashrightarrow{\bm{U}}$ in the reduced graph $G^{*}$.
+
+The intuition for the criterion is that only if there is a path from $X$ to a utility node can intervening on $X$ have any effect on the utility of the agent. Note that the criterion uses the reduced graph $G^{*}$ where nonrequisite information links have been cut (Definition 11), because nonrequisite observations do not affect the optimal decision, and therefore cannot propagate the effect of the intervention. A proof of the criterion can be found in Section B.2.2.
+
+##### Types of intervention incentives
+
+Note that the path $X\dashrightarrow U$ in Theorem 14 is allowed to pass through the decision $D$. The question of whether it does, allows us to distinguish between two different reasons the agent wants to intervene on $X$:
+
+- The path $X\dashrightarrow{\bm{U}}$ yields a direct[^11] intervention incentive on $X$ if the path does not pass $D$.
+- The path $X\dashrightarrow{\bm{U}}$ yields an indirect intervention incentive on $X$, if the path passes $D$ and there is also another path $X\,\,\hbox{-\!\! -}\,\,{\bm{U}}$ that is not directed and is active when conditioning on $\textbf{Pa}_{D}\cup\{D\}$.
+
+Extending the terminology, we say that there is an (in)direct intervention incentive on $X$ if there is a path yielding an (in)direct intervention incentive on $X$. We will also speak of direct intervention incentive as incentives for direct control and indirect ones as incentives for information. For example, the intervention incentives for step count and tracker firmware in Figure 6 are for information, whereas the intervention incentives for physical activity are for direct control. Note that the reasons are not mutually exclusive: it is possible that an intervention can simultaneously provide both direct control and information, if it is connected to utility nodes via several paths. However, the types are collectively exhaustive: if a node faces an intervention incentive, then it faces either a direct or an indirect intervention incentives (or both). In particular, if there is a path $X\dashrightarrow D\dashrightarrow U$ but the path fails to provide an indirect intervention incentive, then there must also be a path $X\dashrightarrow U$ not passing $D$, providing a direct intervention incentive for $X$.
+
+### 4.3 How to Use and Interpret the Criterion
+
+##### Method
+
+To apply the intervention incentive criterion, first cut all nonrequisite information links. To do this, follow the procedure described in Section 3.3 to determine which observations face an observation incentive, and remove the information links from those without observation incentive. Once we have removed all nonrequisite information links and obtained the reduced graph $G^{*}$, it is straightforward to assess intervention incentives: there is an intervention incentive on a node $X$ if and only if $X$ is not the decision node and there is a directed path from $X$ to a utility node $U\in{\bm{U}}$ in the reduced graph $G^{*}$.
+
+For example, in the fitness tracker example in Figure 6, the information link from estimated walking distance to calorie intake will be cut as it is nonrequisite. After that, there is no directed path from estimated walking distance to the utility node fitness, which means that there is no intervention incentive on estimated walking distance. In contrast, the information link from step count to calorie intake is not cut because it is requisite. Therefore a directed path remains to fitness, which means that there is a intervention incentive for step count and tracker firmware.
+
+Figure 7: Examples where observation incentives and intervention incentives deviate in a variant of the examples from Figures 2, 6 and 3. If the fitness tracker firmware is fully known, additional information about the tracker designer is not useful, so there is no observation incentive for tracker designer. But having been able to improve the tracker designer’s design abilities would have been useful, as it could have resulted in a better tracker. Thus, there is an indirect intervention incentive on the tracker designer. In contrast, a side effect of (some types of) physical activity is dirty gym clothes. There is no point controlling dirty gym clothes, because making the gym clothes dirty by other means than physical activity will will not cause fitness. But observing whether the gym clothes are dirty would give some additional information about physical activity not necessarily present in the step count (especially if the tracker is not worn in the gym).
+
+##### Interpretation
+
+Assume that we have established an intervention incentive for a node $X$. How should we now interpret this? If $X$ is a utility node, then trivially the agent wants to influence $X$, which we already knew. If $X$ is a non-utility node that is a descendant of some of the agent’s decision nodes, then an intervention incentive on $X$ suggests that the agent may use its decision to control $X$ as an instrumental goal in order to ultimately gain some utility from it. Finally, if $X$ is a not a descendant of any of the agent’s decision nodes, then if the model is to be interpreted literally, there is nothing the agent can do about $X$. We may wish that gravity was less strong, but there is not much we can do about fundamental physical constants.
+
+However, in many cases, the model is only an approximation of reality. For example, a worry in the AI safety literature (Everitt2018litrev) is that an agent finds a way to tamper with the reward signal, giving itself high reward without completing its intended goals. Indeed, it has been demonstrated that the Super Mario game environment can be made to run arbitrary code by selecting the right decision sequences (Masterjun2014). This could in principle be used by the agent to hack the reward function to maximize the reward without completing the game. Such influences may break the designer’s assumptions about how the agent can influence the environment, and has been modeled with CIDs by Everitt2019tampering.
+
+##### Comparison to observation incentives
+
+In many cases, nodes face either both an observation incentive and an intervention incentive, or neither. However, there are a few of notable cases where the incentives diverge. Figure 7 shows a few of them.
+
+### 4.4 Application to Question-Answering Systems
+
+In Superintelligence, Bostrom2014 discusses different ways to use powerful artificial intelligence. One possibility is to let an agent continuously interact with the world to achieve some long-term goal. Another possibility is to construct a pure question-answering system (QA-system), with the only goal to correctly answer queries (Armstrong2012oracles). QA-Systems have some safety benefits, as they only affect the world through their answers to queries and can be constructed to lack long-term goals.
+
+One safety concern with QA-systems is the following. Assume that we ask our QA-system about the price of a particular stock one week from now, in order to make some easy money trading it. Then the answer will affect the world, because anyone who knows the QA-system’s answer will factor it into his or her trading decisions. This effect may be enough to make the answer wrong, even if the answer would have been right had no one heard of it. More worryingly perhaps, the answer may also become a self-fulfilling prophecy. A respected QA-system that predicts the bankruptcy of a company within a week, may cause the company to go bankrupt if the prediction leads to investors and other stakeholders losing confidence in the business.
+
+(a) Standard QA-system setup
+
+(b) Counterfactual oracle in read mode where the reward is always 0
+
+(c) Counterfactual oracle in reward mode where the answer is never read
+
+Figure 8: Application of intervention incentives to QA-systems. In the standard QA-system setup, the agent has both incentive and ability to influence the world state, which is undesirable. By using counterfactual oracles (Armstrong2017oracles), we alternate between a read mode where the QA-system’s reward is always 0, and a reward mode where the answer is never read. Thereby, whenever the QA-system has an incentive to influence the world state, it lacks the ability.
+
+The QA-system setup is described by a CID in Figure 8(a). For a given query, the QA-system’s reward depends on whether its answer turns out to be correct or not. As people read the answer, the answer also affects the world state. The correctness of the answer depends on the query, the answer, and the resulting world state. Our intervention incentive theorem implies an intervention incentive for world state. That is, the QA-system wants to influence the world state, for example by issuing a self-fulfilling prophecy. This is unfortunate. One of the main safety benefits of QA-systems was their limited influence on the world state, which may now turn out to be less limited than naively anticipated.
+
+Counterfactual oracles (Armstrong2017oracles) has been suggested as a way to fix this. They work as follows. After submitting the query, flip a suitably biased coin to determine which mode to use the QA-system in:
+
+- Read mode: If the coin comes up heads, we read the answer, and set the QA-system’s reward to 0 regardless of whether the answer turns out to be correct or not.
+- Reward mode: If the coin instead comes up tails, we refrain from reading the answer. Once we know the correct answer to the query (say, the price of the stock one week later), we feed this correct answer into a machine that compares the QA-system’s answer against the correct answer. The machine rewards the QA-system $-1$ or $1$ depending on whether its answer was correct.
+
+We can use CIDs to understand the effects of this procedure.
+
+- In read mode, the arrows to reward are cut, because the reward is always 0 in this case (Figure 8(b)). This removes the intervention incentive for world state.
+- In reward mode, instead the arrow from answer to world state is cut, because the QA-system’s answer is never read (Figure 8(c)). While the incentive for the QA-system to influence the world state remains, the QA-system no longer has a way to.
+
+Thus, by randomly alternating between reading the answer and rewarding the QA-system, we can ensure that whenever the QA-system has an incentive to influence the world, it lacks the ability. This makes the incentives of counterfactual oracles safer than the incentives for standard QA-systems (Armstrong2017oracles).
+
+## 5 Related Work
+
+This section gives an overview of past work and how it relates to this paper.
+
+### 5.1 Observation Incentives
+
+Interest in what information is valuable to a decision goes back to at least Howard1966. Matheson1990; Matheson2005 discuss this question in the context of influence diagrams. In terms of graphical criteria, Fagiuoli1998 built on a d-separation criteria similar to our Theorem 9, to detect nonrequisite observations. Their criteria applies to influence diagrams with multiple decisions, but they only allow a single utility node. Around the same time, Shachter1998 showed that his Bayes-ball algorithm could also be used to detect nonrequisite observations in influence diagrams, though he was less formal about what a requisite observation was. Unfortunately, the Bayes-ball criteria sometimes fails to detect nonrequisite nodes (Nielsen1999). Better is to repeatedly to remove information links using the d-separation criteria, as suggested by Lauritzen2001. The resulting graph is the same regardless of the order of the edge-removals. Not even Lauritzen2001’s criteria is complete, however, as it can fail to detect nonrequisite nodes in graphs without perfect recall(see Part II of this paper).
+
+Studying the slightly different question of when an influence diagram can be solved with backwards induction, Nielsen1999 provide a criteria for when a node is required for a decision. In contrast to other works, they prove completeness, under conditions somewhat weaker than perfect recall. Unfortunately, it is unclear whether their notion of a required node always corresponds to a requisite node, in our terminology.
+
+Milch2008 apply the graphical criterion for requisite observations to multi-agent influence diagrams. They show that any Nash equilibrium in the reduced graph where nonrequisite information links have been removed, must also be a Nash equilibrium in the original graph. However, some Nash equilibrium may be lost when nonrequisite information links get removed. While they do not mention this, the Nash equilibria of the reduced graph are likely Markov perfect equilibria, which Maskin2001 described as Nash equilibria where strategies only rely on “payoff-relevant information”. (Unfortunately, Maskin2001’s analysis did neither use nor relate to influence diagrams.) In multi-agent influence diagrams, Koller2003 also developed a d-separation criteria for strategically relevant decisions. Roughly, a decision $D^{\prime}$ is strategically relevant to $D$ if the policy $\pi^{\prime}$ used at $D^{\prime}$ impacts the optimal policy at $D$. If $\pi^{\prime}$ is added as a new parent of $D^{\prime}$ in the graph, strategic relevance of $D^{\prime}$ corresponds to an observation incentive for $\pi^{\prime}$.
+
+A major difference between our work and previous work on graphical criteria is the change of focus. Previous work has mainly focused on removing nonrequisite information links to speed up the search for an optimal policy or a Nash equilibrium. Here we are instead interested in what it says about the agent’s incentives. This means that we are not only interested in which of the available observations are requisite, but also about the incentives to learn the value of non-observation nodes, as illustrated e.g. by the fairness application in Section 3.4. Works considering the value of information in influence diagrams more broadly, rather than just for graphical criteria, have considered the benefit of observing additional nodes, however (Matheson1990; Matheson2005). Previous works have also mainly focused on soundness results, showing that the removal of nonrequisite information links will not lead to a deterioration in decision quality (our Theorem 15). However, except for Koller2003; Nielsen1999, previous works have not established the corresponding completeness result: that removing a requisite observation must lead to a strict deterioration in decision quality (our Theorem 18).
+
+### 5.2 Causality and Influence Diagrams
+
+While Pearl2009 treatment of causality has by now largely become standard, a number of related works have been done in the context of influence diagrams. Most prominently, Heckerman1995 criticize Pearl’s treatment of causal interventions, arguing that the meaning of a causal intervention is sometimes unclear. What does it mean to intervene and change someone’s sex, for instance? Instead, they suggest a decision-theoretic foundation for causality, where explicit decision variables encode the possible interventions. While a standard influence diagram need not always encode causal relationships among variables, Heckerman1995 introduce a criteria for when an influence diagram is sufficiently causal to serve as a foundation for causality. Essentially, they require that any variable that is affected by a decision must be a descendant of the decision. We will refer to it as the causal decision-consequences property. This property is automatically satisfied by our causal influence diagrams.
+
+To answer counterfactual questions, Heckerman1995 build on work by Howard1990 to define a canonical form for influence diagrams. In addition to causal decision-consequences, canonical form requires all descendants of a decision nodes to be deterministic functions of their parents. This creates a clean separation between states, acts, and consequences (Savage1954). An influence diagram in canonical form may be seen as a decision-theoretic version of probabilistic causal model, which Pearl2009 uses to evaluate counterfactual queries. Criticizing the deterministic requirement, Dawid2002 argues that it forces the modeler to arbitrarily specify deterministic relationships which they may know nothing about. Worse, the deterministic relationships can affect the answer to a counterfactual query. Instead, Dawid argues that counterfactual queries can be more accurately answered in an appropriately defined probabilistic model.
+
+### 5.3 Intervention Incentives
+
+While no graphical criteria has been developed for intervention incentives prior to our work, a few different works has been considering the value of control (Matheson1990; Matheson2005; Shachter2010), defined as “the most a decision maker should be willing to pay a hypothetical wizard to optimally control the distribution of an uncertain variable” (Shachter2010). In our terminology, control corresponds to a soft intervention (Definition 12). Shachter2010 relates the value of control to the value of Do, which is the value of forcing the variable to take a particular outcome, rather than freely changing its distribution; in other words, the value of a hard intervention. Since a particular outcome can be forced by choosing a degenerate distribution with all probability mass focused on a single outcome, the value of Do is always dominated by the value of control. For example, the notions differ at variables which face an intervention incentive for better information, such as Step count in Figure 6. Here the value of Do is always 0, but the value of control can be positive. Lu2002 introduce the new name value of intervention for value of control, and argue, seemingly incorrectly, that the value of intervention is more general than the value of control. Shachter2010 also define the value of revelation as the value of conditioning on an outcome of a variable, rather than intervening. They relate the value of revelation to the value of Do and the value of control.
+
+While we could have used the term control incentive instead of intervention incentive for greater consistency with previous literature, we felt the latter term more appropriate for the following reasons. First, the term intervention carries a connotation of a modification exogenous to the model, whereas control is a more endogenous. Second, we want incentives to be predictive of agent behavior. Therefore, an incentive to control a variable should only apply to variable that the agent can actually influence within the model – i.e. nodes downstream of a decision node. In contrast, for nodes that are not downstream of a decision, it makes sense to say that the agent has an incentive to intervene on the node, thanks to the exogenous connotation of intervention, and to say that the agent would value controlling the node, since value need not be predictive of in-model behavior.
+
+Another difference between our work and the above-mentioned ones is the type of influence diagram used. Our work is based on CIDs, while previous works have instead relied on causal decision-consequences. Since causal decision-consequences only constrain the relationships among descendants of decision nodes, previous works have relied on introducing explicit decision variables when considering the value of control, and requiring the influence diagram to have causal decision-consequences also for these new variables. While this may have some advantages (Heckerman1995), CIDs allow us to bypass this step and immediately ask about control incentives for any node in the diagram.
+
+### 5.4 AI Safety
+
+In the AI safety literature, works relating to what we call intervention incentives have been motivated by worries of a powerful reinforcement learning agent tampering with the reward signal (Everitt2016vrl; Everitt2018phd; Everitt2017rc; Everitt2019tampering; Bostrom2014), the observation (Everitt2019tampering; Ring2011), the training of the reward function (Everitt2019tampering; Armstrong2015motivated; Armstrong2019interactive) the utility or reward function (Hibbard2012; Everitt2016sm; Everitt2019tampering; Orseau2011; Omohundro2008aidrives; Schmidhuber2007), or a shut-down signal (Hadfield-Menell2016osg; Wangberg2017osg; Orseau2016; Soares2015cor). Another example is that of QA-system incentives, discussed in Section 4.4. Often, this type of work has been relying on philosophical arguments or mathematical models created specifically for the purpose of studying a particular type of intervention incentive.
+
+A first step towards a more unified treatment of multiple reward tampering problems was attempted by Everitt2018alignment; Everitt2018phd. That approach was based on causal graphs rather than CIDs, which made it necessary to supplement the graphical perspective with formal theorems. In contrast, as we have shown here, the CIDs contain enough information to infer incentives directly from the graph. We hope that this will enable a more general and systematic study of intervention incentives. First steps in this direction have been taken by Everitt2019tampering; Everitt2019modeling.
+
+## 6 Limitations and Future Work
+
+Here follows a list of some limitations of our current work, with pointers to directions for future work.
+
+- Our graphical definitions can overestimate the presence of observation or intervention incentives, as not all probability distributions will induce an incentive just because the graph permits it. A similar criticism can be put forth against the d-connectivity: Two nodes that are d-connected are not necessarily conditionally dependent. In response to this, Meek1995 has shown that almost all probability distributions will induce an incentive if the graph permits it. Meek1995’s result could likely be adapted to CID diagrams and incentives.
+- A perfect rationality assumption is implicit throughout our work. This assumption is almost always unrealistic. Nonetheless, rational behavior constitutes an important limit point of increasing intelligence (Legg2007def). Characterizing rational behavior therefore gives an important clue to what the agent strives towards (i.e. what its incentives are).
+- The CID must be known for our methods to be applicable. Further work may establish more systematic modeling principles, to make the modeling process smoother and more reliable.
+- CIDs and graphical models in general are not ideal for modeling structural changes, such as when the structure of part of the graph is determined by the outcome of a previous node. For these cases, decision trees and game trees offer more flexible (but less compact) representations. Characterizing incentives for decision tress and game trees is a potentially interesting line of future work.
+- Incentives often depend as much on an agent’s beliefs as the actual nature of reality. Networks of influence diagrams (Gal2008) extend influence diagrams with nodes representing the agents’ beliefs. Extending the analysis of observation and intervention incentives in networked influence diagrams may prove interesting.
+- CIDs effectively assume that agents follow causal decision theory (Skyrms1982; Weirich2016), as no information flows “backwards” from decision nodes. Similarly, the intervention incentives only makes sense for agents that reason causally about the world. Not all agents reason causally this way (Everitt2015cdtedt). It is possible that another theory of incentives could be developed for agents that reason in non-causal ways.
+- In this part of the paper we only considered single-decision CIDs. A forthcoming second part extends the criteria to multi-decision and multi-agent settings (Everitt2019part2).
+
+Other natural directions for future work include exploring applications more closely, such as those we mentioned in Sections 3.4 and 4.4. Another potential starting point is the wide range of surprising agent behaviors recorded by Lehman2018.
+
+## 7 Conclusions
+
+In this paper, we have developed a general method for understanding some aspects of agent incentives. The theory sacrifices some details to the benefit of elegance. Rather than using the exact probability distribution describing the agent-environment interaction, we look solely at the structure of the interaction, as described by a causal influence diagram (Howard1984; Koller2003; Pearl2009). This perspective enables easy inference of (potential) incentives. Indeed, the graphical criteria for which nodes face observation incentives and intervention incentives are surprisingly clean and natural. After iterative pruning of nonrequisite information links, the criteria are essentially d-connectedness (or conditional dependence) for observation incentives, and a directed path to a utility node for intervention incentives.
+
+The graphical perspective also makes the modeling problem easier. In many cases, the exact relationships between variables is unknown or unspecified. Meanwhile, the rough structure of the interaction is often either known or possible to guess with some confidence (as in the examples in Sections 3.4 and 4.4). When the structure of the interaction is more uncertain, the incentive analysis is simple enough to be done repeatedly for a number of possible structures.
+
+To illustrate how the insights gained from our theory can be used in practice, we applied it to the well-established problems of fairness and QA-system incentives (Section 3.4 and Section 4.4, respectively). For fairness, we illustrated how observation incentives predict whether a piece of information about an applicant is used to infer some sensitive attribute or not. For QA-system incentives, the intervention incentive criterion (Theorem 14) could be used to elegantly re-establish previous findings in the literature about which uses of QA-systems lead to bad incentives and which do not.
+
+Many other AI safety problems that have been discussed in the literature are also fundamentally incentive problems. Examples include corrigibility, interruptibility, reward tampering, and utility function corruption (Section 5), as well as reward gaming (Leike2017gw), side effects (Armstrong2017impact; Krakovna2018side), and boxing/containment (Babcock2017). We hope that the methods described in this paper will contribute to a more systematic understanding of agent incentives, deepening our understanding of many of these incentive problems and their solutions.
+
+[heading=bibintoc]
+
+## Appendix A Representing Uncertainty
+
+This section shows how a Markov decision process (MDP) with unknown transition function can be modeled with an influence diagram. By assuming that the agent can choose a policy that optimizes its value function, we are implicitly assuming that the agent knows the probabilistic relationship between variables. This is less restrictive than it may seem, because unknown probabilistic relationships can always be represented by adding an unobserved node $\Theta$. For example, if the probabilistic relationship $P(x\mid\textbf{pa}_{X})$ between $X$ and its parents $\textbf{Pa}_{X}$ is unknown, then we add $\Theta$ as an additional parent of $X$, and let the outcome of $\Theta$ determine the relationship between $X$ and $\textbf{Pa}_{X}$. By refraining from adding an information link from $\Theta$ to the agent’s decision nodes, we specify that $\Theta$ is unobserved or latent. For each $\theta\in\textit{dom}(\Theta)$, the influence model must specify a prior probability $P(\theta)$ and a concrete relationship $P(x\mid\textbf{pa}_{X},\theta)$. This lets the agent do Bayesian reasoning about the possible values of $\theta$ and the possible relationships between $X$ and $\textbf{Pa}_{X}$.
+
+Figure 9: Representing an MDP with unknown transition probabilities with a CID graph. The nodes represent states $S_{1},S_{2},\dots$, decisions $D_{1},D_{2},\dots$, and rewards $R_{1},R_{2},\dots$. The unknown state transition probabilities $P(s_{t}\mid s_{t-1},a_{t})$ are modeled by adding an unobserved parameter node $\Theta$. To permit non-stationary, learning policies, the decision context for each decision contains all previously observed information. To model an MDP with unknown rewards assigned to each state, arrows from $\Theta$ to $R_{1}$, $R_{2}$, and $R_{3}$ would also be added.
+
+Let us illustrate by modeling an MDP with unknown transition probabilities, which are a standard mathematical framework for reinforcement learning (Sutton2018). In an MDP, an agent is taking decisions $D_{1},D_{2},\ldots$ that influence states $S_{1},S_{2},\ldots$, in order to optimize rewards $R_{1},R_{2},\ldots$. To represent that the state-transition function is initially unknown, a node $\Theta$ has also been added to the graph; see Figure 9. Note that the influence diagram representation differs from the commonly used state transition diagrams (Sutton2018, Ch. 3) by having nodes for each time step, rather than a node for each possible state.
+
+## Appendix B Proofs
+
+Section B.1 gives the proofs for the observation incentive criterion (Theorem 9) and Section B.2.2 gives the proofs for the intervention incentive criterion (Theorem 14).
+
+### B.1 Observation Incentive Proofs
+
+This aim of this section is to give a proof of Theorem 9, which identifies observation incentives in influence diagrams. To this effect, we establish two theorems showing that:
+
+- Soundness: An optimal policy need never depend on a nonrequisite observation (Theorem 15). This establishes the only if direction of Theorem 9.
+- Completeness: For any graph $G$ where $O$ is a requisite observation, there exists a distribution $P$ over $G$ such that every optimal policy must depend on $O$ (Theorem 18). This establishes the if direction of Theorem 9.
+
+The theorems and their names are closely related to the soundness and completeness theorems for d-separation, established by Verma1988soundness and Geiger1990completeness, respectively. They are also related to the soundness and completeness theorems about strategic relevance by Koller2003.
+
+We start with soundness in Section B.2, and continue with completeness in Section B.2.1.
+
+### B.2 Soundness
+
+Soundness results similar to the one we give here has previously been established by Lauritzen2001; Nielsen1999. Figure 10 illustrates Theorem 15. The proof builds on the soundness result for d-separation.
+
+Figure 10: Theorem 15 shows that a rational choice of $D$ never depends on nonrequisite observations such as $O^{\prime}$. It thereby allows us to cut the information link $O^{\prime}\to A$ without loss of quality in the choice of $D$.
+
+**Theorem 15 (Single-decision observation incentive criterion; soundness direction).**
+
+Let $({\bm{W}},E,\{D\},{\bm{U}})$ be a single-decision CID graph, and let $X\in{\bm{W}}\setminus\mathrm{desc}(D)$ be a node not descending from the decision $D$. There exists a parameterization $P$ for $G$ in which the agent has an observation incentive for $X$ only if $X$ is d-connected to a utility node that descends from $D$:
+
+$$X\not\perp{\bm{U}}\cap\mathrm{desc}(D)\mid\{D\}\cup\textbf{Pa}_{D}\setminus\{X\}.$$
+
+**Proof.**
+
+Assume $X\in\textbf{Pa}_{D}$ and let $\textbf{Pa}^{\prime}_{D}=\textbf{Pa}_{D}\setminus\{X\}$. By assumption, $X$ is d-separated from ${\bm{U}}$ by $\{D\}\cup\textbf{Pa}^{\prime}_{D}$. Therefore, for any parameterization $P$ and any possible decision context $\textbf{pa}^{\prime}_{D}\in\textit{dom}(\textbf{Pa}^{\prime}_{D})$ and choice $d\in\textit{dom}(D)$, the expected utility is independent of $X$ by the soundness of d-separation (Verma1988soundness). That is, for any $x,x^{\prime}\in\textit{dom}(X)$:
+
+$${\mathbb{E}}\left[\sum_{U\in{\bm{U}}}U\;\middle|\;d,\textbf{pa}^{\prime}_{D},x\right]={\mathbb{E}}\left[\sum_{U\in{\bm{U}}}U\;\middle|\;d,\textbf{pa}^{\prime}_{D},x^{\prime}\right].$$
+
+Consequently, either $d$ is optimal for all $x\in\textit{dom}(X)$ or none, in the decision context $\textbf{pa}^{\prime}_{D}$. Since $\textit{dom}(d)$ is finite, some $d^{*}_{{\textbf{pa}^{\prime}_{D}}}\in\textit{dom}(D)$ must be optimal for $\textbf{pa}^{\prime}_{D}$ and any $x\in\textit{dom}(X)$.
+
+By repeating this argument for each decision context $\textbf{pa}^{\prime}_{D}\in\textit{dom}(\textbf{Pa}^{\prime}_{D})$, we obtain a policy $\pi^{*}(d\mid\textbf{pa}_{D})$ that deterministically maps $\textbf{pa}^{\prime}_{D}\mapsto d^{*}_{{\textbf{pa}^{\prime}_{D}}}$. This policy $\pi^{*}$ is optimal and never depends on $X$. The case when $X\not\in\textbf{Pa}_{D}$ can be proven similarly. ∎
+
+#### B.2.1 Completeness
+
+What enabled the short soundness proof the heavy lifting performed by the soundness result for d-separation, which shows that any d-separated variables must be conditionally independent (Verma1988soundness). It would have been nice if we could similarly base our completeness result on the completeness result for d-separation, which shows that whenever two variables are d-connected, then there exists a parameterization under which they are conditionally dependent. Unfortunately, we need slightly more than conditional dependence: we need different conditional expected utility. While minor, the difference mean that we cannot directly build on d-separation completeness. Rather than explaining exactly what in the d-separation completeness proof would need to be changed in order to accommodate our result, we give an explicit construction, shown in Figure 11.
+
+Figure 11: The completeness construction described in Definition 17. Dashed arrows represent directed paths of nodes. The thick path shows the supporting paths (Definition 16). Only by observing $X$ is it possible to distinguish an assignment ${\bm{s}}$ from an assignment $-{\bm{s}}$ to the nodes ${\bm{S}}=\{S_{0},\dots S_{l}\}$.
+
+The following definition defines backdoor and frontdoor supporting paths, which are the d-connecting paths between an decision and a utility variable, and an observation and a utility variable. These paths contain variables relevant to our completeness theorem. The paths are shown in Figure 11.
+
+**Definition 16 (Supporting paths).**
+
+Assume that $X\in\textbf{Pa}^{*}_{D}$ is a requisite observation to $D$ in a single-decision CID graph $({\bm{W}},E,\{D\},{\bm{U}})$. We will refer to
+
+- A frontdoor supporting path of $D$ and $X$ is a directed path $D\dashrightarrow U\in{\bm{U}}$, and
+- A backdoor supporting path of $D$ and $X$ is an undirected path $X\,\,\hbox{-\!\! -}\,\,U^{\prime}\in{\bm{U}}$ not passing $D$ that is active when conditioning on $\{D\}\cup\textbf{Pa}_{D}\setminus\{X\}$.
+
+A pair of a backdoor supporting path and a frontdoor supporting path for $D$ and $X$ where both paths end in the same $U\in{\bm{U}}$ is called a supporting pair of paths for $D$ and $X$; see Figure 11.
+
+There must be at least one supporting pair of paths for each requisite observation $X$. This follows, because by Definition 10 a requisite observation $X$ must satisfy the criterion in Theorem 9. This requires there to be a utility node $U$ such that $U$ descends from $D$ (the frontdoor path) and $X$ is d-connected to $U$ when conditioning on $\textbf{Pa}_{D}\cup\{D\}$ (the backdoor path).
+
+**Definition 17 (Completeness construction).**
+
+As illustrated in Figure 11, for any pair of supporting paths for $D$ and a requisite observation $X\in\textbf{Pa}^{*}_{D}$, the frontdoor supporting path always has the simple form
+
+$$D\dashrightarrow U^{\prime}\dashrightarrow U$$
+
+and the backdoor supporting path always has the form
+
+$$X\dashleftarrow S_{1}\dashrightarrow O^{\prime}_{1}\dashleftarrow\cdots\dashrightarrow O^{\prime}_{l}\dashleftarrow S_{l}\dashrightarrow U^{\prime}\dashrightarrow U. \tag{1}$$
+
+Here $U^{\prime}$ is the node where the path merges with the frontdoor supporting path $D\to U$. The nodes $X,O_{1}\dots,O_{l}$ are all in $\textbf{Pa}_{D}$, and no other nodes on the path are in $\textbf{Pa}_{D}$. There may be repetition among the nodes $O_{i}$, so that some $O_{i}$ is the descendant of both $O^{\prime}_{i}$ and $O^{\prime}_{j}$, for some $j\not=i$. In this case, we let the domain of $O_{i}$ be vector-valued, with one of the components copying $O_{i}$ and the other copying $O_{j}$. The following special cases are covered under the general form of Equation 1 for the backdoor supporting path:
+
+- $X=S_{0}$ means that the path starts forward from $X$.
+- $X=S_{0}$ and $l=0$ means that the path is directed $X\to U$.
+- $U=U^{\prime}$ means that the paths from $D$ and from $X$ only merge at $U$.
+
+Choose $P$ per the following. All nodes have domain $\{-1,1\}$, and:
+
+- $S_{1},\dots,S_{l}$ are sampled randomly and independently from $\{-1,1\}$.
+- Any collider node $O^{\prime}_{i}\in\{O^{\prime}_{1},\dots,O^{\prime}_{l}\}$ is the product of its two neighbors on the path.
+- $U^{\prime}$ is the product of its predecessor on the path from $D$ and its predecessor on the path from $X$.
+- All other nodes on the frontdoor path and the backdoor path copy the value of their causal predecessor on the path, and so do the nodes on the paths $O^{\prime}_{i}\dashrightarrow O_{i}$.
+
+Using this construction, we can now prove the if direction of Theorem 9.
+
+**Theorem 18 (Single-decision observation incentive criterion; completeness direction).**
+
+Let $({\bm{W}},E,\{D\},{\bm{U}})$ be a single-decision CID graph, and let $X\in{\bm{W}}\setminus\mathrm{desc}(D)$ be a node not descending from the decision $D$. There exists a parameterization $P$ for $G$ in which the agent has an observation incentive for $X$ if $X$ is d-connected to a utility node that descends from $D$:
+
+$$X\not\perp{\bm{U}}\cap\mathrm{desc}(D)\mid\{D\}\cup\textbf{Pa}_{D}\setminus\{X\}.$$
+
+**Proof.**
+
+Let $\textbf{Pa}_{D}^{+}=\textbf{Pa}_{D}\cup\{X\}$ and $\textbf{Pa}_{D}^{-}=\textbf{Pa}_{D}\setminus\{X\}$. Then the agent has an observation incentive for $X$ in a parameterization $P$ if there is a policy $\pi^{+}(d\mid\textbf{pa}_{D}^{+})$ whose decision depends on $X$ such that for every policy $\pi^{-}(d\mid\textbf{pa}_{D}^{-})$ whose decision does not depend on $X$, it holds that $V^{\pi^{+}}>V^{\pi^{-}}$.
+
+For simplicity, we will assume that $X\in\textbf{Pa}_{D}$, which means that $\textbf{Pa}^{+}_{D}=\textbf{Pa}_{D}$, and $\textbf{Pa}^{-}_{D}=\textbf{Pa}_{D}\setminus\{X\}$. The argument is easily adapted to the case when $X$ is not in $\textbf{Pa}_{D}$, by considering a graph with an extra information link $X\to D$.
+
+We will establish the theorem this by showing that if $X$ is d-connected to a utility node in the sense of
+
+$$X\not\perp{\bm{U}}\cap\mathrm{desc}(D)\mid\{D\}\cup\textbf{Pa}_{D}\setminus\{X\},$$
+
+then there exists a distribution $P$ such that there exists a policy $\pi^{+}(d\mid\textbf{pa}^{+}_{D})$ with
+
+$$P(U=1\mid\pi^{+})=1$$
+
+while any policy $\pi^{-}(d\mid\textbf{pa}^{-}_{D})$ that does not depend on $X$ has
+
+$$P(U=1\mid\pi^{-})=P(U=-1\mid\pi^{-})=1/2.$$
+
+$P$ may further be chosen so $\textit{dom}(U)=\{-1,1\}$, and $\textit{dom}(U^{\prime})=\{0\}$ for all other $U^{\prime}\in{\bm{U}}\setminus\{U\}$. As a consequence we get $V^{\pi^{+}}=1$ and $V^{\pi^{-}}=0$.
+
+The proof relies on the following three observations about the completeness construction described in Definition 17:
+
+(i) The construction ensures that $U=D\cdot S_{l}$ with probability 1
+
+$$P(u\mid d,s_{l})=\delta^{u}_{d\cdot s_{l}}. \tag{2}$$
+
+since the outcome of $S_{l}$ is just copied forward until $U^{\prime}$, where it is multiplied with the choice of $D$ having been copied forward in the same way. The outcome of $U^{\prime}$ is then copied forward to $U$.
+
+(ii) Every time the sign switches in the sequence ${\bm{S}}=\{S_{0},\dots,S_{l}\}$, exactly one node $O_{i}$ becomes negative. (The node $O_{i}$ that sits between the sign switch on the path, to be precise.) Therefore $\prod_{i=1}^{l}o_{i}$ is positive if and only if $s_{0}=s_{l}$, i.e.
+
+$$P\left(s_{l}=s_{0}\prod_{i=1}^{l}o_{i}\right)=1. \tag{3}$$
+
+(iii) Finally, $P(O=S_{0})=1$, since the outcome of $S_{0}$ is just copied forward to $X$.
+
+Combining (ii) and (iii) gives that the policy $\pi^{+}(X,{\bm{O}})=X\prod_{i=1}^{l}O_{i}$ will always make $D$ match $S_{l}$, where ${\bm{O}}=\{O_{1},\dots,O_{l}\}$. This in turn gives:
+
+$$\displaystyle P(U=1\mid\pi^{+}) \displaystyle=\sum_{d,{\bm{o}},o,s_{l}}P(U=1,a,{\bm{o}},o,s_{l}\mid\pi^{+})$$
+
+$$\displaystyle=\sum_{d,{\bm{o}},o,s_{l}}P(U=1\mid d,s_{l})\pi^{+}(d\mid{\bm{o}},o)P({\bm{o}},o\mid s_{l})P(s_{l})$$
+
+$$\displaystyle=\sum_{d,{\bm{o}},o,s_{l}}\delta^{u}_{a,s_{l}}\pi^{+}(d\mid{\bm{o}},o)P({\bm{o}},o\mid s_{l})P(s_{l})$$
+
+$$\displaystyle=\sum_{s_{l}}\delta^{u}_{s_{l}s_{l}}P(s_{l}) \pi^{+}$$
+
+$$\displaystyle=1/2+1/2=1 (s_{l})^{2}=1$$
+
+This completes the first part of the proof.
+
+Similarly, we can also show that $P(u=-1)=P(u=1)=1/2$ for any policy $\pi^{-}$ that does not depend on $X$. The key is that observing ${\bm{O}}=\{O_{1},\dots,O_{l}\}$ but not $X$ only reveals places of sign switches in ${\bm{S}}$, but does not distinguish between ${\bm{s}}$ and $-{\bm{s}}$. Therefore for any given ${\bm{o}}$, both $s_{l}$ and $-s_{l}$ are equally likely,
+
+$$P(S_{l}=1\mid{\bm{o}})=P(S_{l}=-1\mid{\bm{o}})=1/2, \tag{4}$$
+
+and therefore all decisions $d\in\textit{dom}(D)$ have the same probability for $U$, when conditioning only on ${\bm{O}}$,
+
+$$\displaystyle P(U=1\mid{\bm{o}},d) \displaystyle=\sum_{s_{l}}P(U=1,s_{l}\mid{\bm{o}},d)$$
+
+$$\displaystyle=\sum_{s_{l}}P(U=1\mid s_{l},d)P(s_{l}\mid{\bm{o}})$$
+
+$$\displaystyle=\sum_{s_{l}}\delta^{1}_{as_{l}}P(s_{l}\mid{\bm{o}})$$
+
+$$\displaystyle=1\cdot 1/2+0\cdot 1/2=1/2$$
+
+The same calculation can be made for $P(U=-1\mid{\bm{o}},d)$. Since all decisions conditioned only on ${\bm{o}}$ induce the same $U$ distribution, all policies $\pi^{-}$ where the decision only depends on ${\bm{o}}$ also induce the same $U$ distribution. This completes the second part of the proof. ∎
+
+#### B.2.2 Intervention Incentives
+
+**Proof of Theorem 14.**
+
+Only if: If there is no directed path $X\dashrightarrow{\bm{U}}$ in $G$, then no control on $X$ can affect ${\bm{U}}$ for any parameterization $P$. Similarly, if there is a directed path in $G$ but no directed path $X\dashrightarrow{\bm{U}}$ in the reduced graph $G^{*}$, then this means that $X$ only affects some nonrequisite observations $O\in\textbf{Pa}_{D}\setminus\textbf{Pa}^{*}_{D}$. By Theorem 15, nonrequisite observations can never affect the optimal decision $D$, so therefore an intervention on $X$ cannot affect the agent’s expected utility.
+
+If. Assume there is a path $X\dashrightarrow U\in{\bm{U}}$ and $X\not\in\{D\}$. Then either of the following cases ensues:
+
+1. There is no decision on the path $X\dashrightarrow U$: Let the domain be $\{0,1\}$ for each random variable in ${\bm{W}}$, let $P(X=0)=P(X=1)=1/2$ and let $P$ to copy the value of $X$ all the way forward to $U$.
+2. The decision $D$ is on the path $X\dashrightarrow U$: Since $X\not\in\{D\}$, this means that $X$ is either a requisite observation $X\in\textbf{Pa}^{*}_{D}$ or $X$ is an ancestor of a requisite observation $O\in\textbf{Pa}^{*}_{D}$. Let us consider these subcases in turn:
+ - (a) $X\in\textbf{Pa}^{*}_{D}$: Use the completeness construction from Definition 17, with the modification that $X=0$, unless an intervention $c^{X}$ is made “restoring” the informativeness of $X$ about $S_{0}$. By the same argument as in Theorem 18, the intervention $c^{X}$ will strictly increase the expected utility of the agent.
+ - (b) $X$ is an ancestor of $O\in\textbf{Pa}^{*}_{D}$: Again, we use a modification of the completeness construction from Definition 17. Let $X=0$ and $O=X\cdot S_{0}$. Then $O$ will be uninformative of $S_{0}$, unless an intervention $c^{X}$ is made that sets $X=1$. Again, by the same argument as in Theorem 18, the intervention $c^{X}$ will strictly increase the expected utility of the agent.
+
+This completes the proof. ∎
+
+[^1]: In Dennett1987 terminology, causal graphs can represent a physical stance, while influence diagrams can be used to represent an intentional stance.
+
+[^2]: In the influence diagram literature, a weaker causality condition applying only to descendants of decisions is often used (Shachter2010; Heckerman1995).
+
+[^3]: Theorem 9 below verifies all claims in this subsection.
+
+[^4]: In the information-theoretic sense of the data processing inequality (Cover2006, Sec. 2.8).
+
+[^5]: Called a perfect observation by Matheson2005.
+
+[^6]: Lauritzen2001 also show how the only if part of the criterion is extended to CIDs with multiple decision nodes.
+
+[^7]: Going forward means following the arrows, and going backwards means going in the reverse direction.
+
+[^8]: For this reason, the procedure has been called the Bayes ball algorithm (Shachter1998), though maybe Bayesket ball would have been an even more appropriate name for the procedure?
+
+[^9]: All claims made in this subsection are verified by Theorem 14 below.
+
+[^10]: It is sometimes more natural to think of soft interventions as changing the relation between $\textbf{Pa}_{X}$ and $X$, rather than changing $X$ directly. However, following the convention in the literature, we will speak of them as interventions on the node $X$ and nothing else.
+
+[^11]: The intervention incentive is direct in the sense that it does not pass $D$. The effect from $X$ to ${\bm{U}}$ may still be mediated by other variables.
