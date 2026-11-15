@@ -381,12 +381,13 @@ def filtered_split(root: str, slug: str, label_cutoff: Optional[str] = None) -> 
 
 
 def gate(root: str, slug: str, llm, rounds: int = 3, bank_path: str = tradeoffs.BANK_PATH,
-         workers: int = agreement.WORKERS, votes_per_order: int = agreement.VOTES_PER_ORDER) -> dict:
+         workers: int = agreement.WORKERS, votes_per_order: int = agreement.VOTES_PER_ORDER,
+         rejudge_position_bias: bool = False) -> dict:
     """Judge every seed pair, then rewrite each lopsided pair that has no passing rewrite yet, up
     to `rounds` times, judging each version. The passing version is appended to the person's
     pairs (and, for a bank pair, written back to the bank); earlier versions stay, never shown."""
     pairs = _read(os.path.join(root, slug, SEED_PAIRS))
-    verdicts = agreement.judge(root, pairs, llm, workers, votes_per_order)
+    verdicts = agreement.judge(root, pairs, llm, workers, votes_per_order, rejudge_position_bias)
     fixed = {p.get("parent") for p in pairs}
     todo = [p for p in pairs if agreement.lopsided(verdicts[agreement.key(p)]) and p["pair_id"] not in fixed
             and not p.get("parent")]
@@ -400,7 +401,8 @@ def gate(root: str, slug: str, llm, rounds: int = 3, bank_path: str = tradeoffs.
             if texts is None:
                 continue
             cur = tradeoffs.with_options(cur, *texts, parent=p["pair_id"])
-            if not agreement.lopsided(agreement.judge(root, [cur], llm, 1, votes_per_order)[agreement.key(cur)]):
+            agreement.judge(root, [cur], llm, 1, votes_per_order)
+            if agreement.passes(root, cur):
                 return cur, texts
         return None
 
@@ -410,7 +412,9 @@ def gate(root: str, slug: str, llm, rounds: int = 3, bank_path: str = tradeoffs.
         if res and p["origin"] == "bank":
             tradeoffs.update_bank(p, *res[1], path=bank_path)
     write_seed_pairs(root, slug, [res[0] for res in results if res])
-    return {"judged": len(pairs), "lopsided": len(todo), "rewritten": sum(bool(r) for r in results),
+    return {"judged": len(pairs), "lopsided": len(todo),
+            "position_biased": sum(agreement.position_biased(verdicts[agreement.key(p)]) for p in pairs),
+            "rewritten": sum(bool(r) for r in results),
             "still_lopsided": [p["pair_id"] for p, r in zip(todo, results) if not r]}
 
 
@@ -437,8 +441,15 @@ def next_steps(root: str, slug: str, decision_paths: List[str] = ()) -> List[str
     if _read(os.path.join(d, SEED_CHOICES)) and not os.path.exists(os.path.join(d, RECHECK)):
         steps.append("recheck becomes available 3 days after the first answers (noise ceiling)")
     if _read(os.path.join(d, SEED_CHOICES)) and not os.path.exists(os.path.join(d, USERMODEL)):
-        steps.append("once WS A posts its selected method: e2 --methods m0 m1 <selected> (paid, ask first), "
-                     "then fit --method <selected>, then usermodel_store push")
+        pairs = {p["pair_id"]: p for p in _read(os.path.join(d, SEED_PAIRS))}
+        passing = {k for k, p in pairs.items() if agreement.passes(root, p)}
+        parts = split(root, slug)
+        gated = {k: sum(c.source != "seed" or c.example_id in passing for c in v) for k, v in parts.items()}
+        if all(gated.values()):
+            steps.append("once WS A posts its selected method: e2 --methods m0 m1 <selected> (paid, ask first), "
+                         "then fit --method <selected>, then usermodel_store push")
+        else:
+            steps.append("collect gated history, validation and test choices before e2 or fit")
     return steps
 
 
@@ -446,11 +457,14 @@ def status(root: str, slug: str, label_cutoff: Optional[str] = None, decision_pa
     d = os.path.join(root, slug)
     labels = _read(os.path.join(d, LABELS))
     parts = split(root, slug, label_cutoff)
+    passing = {p["pair_id"] for p in _read(os.path.join(d, SEED_PAIRS)) if agreement.passes(root, p)}
     return {"next": next_steps(root, slug, decision_paths), "researcher": slug, "seed_pairs": len(_read(os.path.join(d, SEED_PAIRS))),
             "seed_choices": len(_read(os.path.join(d, SEED_CHOICES))),
             "labels": len(labels), "labels_per_point": {p: sum(r["point"] == p for r in labels)
                                                         for p in sorted({r["point"] for r in labels})},
-            "split": {k: len(v) for k, v in parts.items()}, "label_cutoff": label_cutoff,
+            "split": {k: len(v) for k, v in parts.items()},
+            "gated_split": {k: sum(c.source != "seed" or c.example_id in passing for c in v) for k, v in parts.items()},
+            "label_cutoff": label_cutoff,
             "noise_ceiling": noise_ceiling(root, slug),
             "consent_file": os.path.exists(os.path.join(d, "CONSENT.md"))}
 
@@ -600,6 +614,8 @@ def main(argv=None):
     g.add_argument("--backend", required=True, help="a real backend (paid, ask first)")
     g.add_argument("--model", default=agreement.JUDGE_MODEL, help="judge and rewriter")
     g.add_argument("--votes-per-order", type=int, default=3, help="judge samples in each option order")
+    g.add_argument("--rejudge-position-bias", action="store_true",
+                   help="with a different model, rejudge cached rows that mostly picked one display position")
     g.add_argument("--rounds", type=int, default=0, help="automatic rewrites per lopsided pair")
     g.add_argument("--max-calls", type=int, default=200, help="hard limit on attempted model calls, including retries")
     st = with_decisions(cmd("status", "what to run next, counts, split sizes and noise ceiling"))
@@ -650,7 +666,8 @@ def main(argv=None):
             p.error("gate requires positive --votes-per-order and --max-calls, and nonnegative --rounds")
         llm = JsonReply(CallCappedLLM(_llm(args.backend, args.model, args.max_calls), args.max_calls))
         print(json.dumps(gate(args.root, slug, llm, args.rounds,
-                              votes_per_order=args.votes_per_order), indent=2))
+                              votes_per_order=args.votes_per_order,
+                              rejudge_position_bias=args.rejudge_position_bias), indent=2))
     elif args.command in ("answer", "label", "recheck"):
         kind = {"answer": "seed", "label": "label", "recheck": "recheck"}[args.command]
         print(f"recorded {ask_items(args.root, slug, pending((kind,)), limit=args.limit)} answers")

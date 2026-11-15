@@ -6,8 +6,8 @@ generic research sense, not taste. `trackp gate` rewrites a lopsided pair's opti
 their poles, and judges the rewrite. Nobody re-checks a pair by hand.
 
 Votes, not the model's stated probability: stated confidence is poorly calibrated, and a vote
-share is a count anyone can check. Pooling both orders cancels position bias, since a judge that
-always picks the first option shown lands at 5 of 10.
+share is a count anyone can check. A separate position check rejects judges that mostly pick
+the same display position regardless of the option placed there.
 
 The judge model and vote count are recorded per item in <root>/agreement.jsonl, keyed by
 the question and the two pole texts (not the a/b order), so an item is judged once for every
@@ -81,13 +81,27 @@ def lopsided(row: dict, threshold: float = THRESHOLD) -> bool:
     return max(s, 1 - s) > threshold
 
 
+def position_biased(row: dict, threshold: float = THRESHOLD) -> bool:
+    """The model picks a display position regardless of which pole it contains."""
+    first = [v for v in row["votes"][0] if v is not None]
+    second = [v for v in row["votes"][1] if v is not None]
+    valid = len(first) + len(second)
+    if not first or not second:
+        return True
+    first_share = (sum(first) + len(second) - sum(second)) / valid
+    return max(first_share, 1 - first_share) > threshold
+
+
 def judge(root: str, pairs: List[dict], llm, workers: int = WORKERS,
-          votes_per_order: int = VOTES_PER_ORDER) -> Dict[str, dict]:
+          votes_per_order: int = VOTES_PER_ORDER, rejudge_position_bias: bool = False) -> Dict[str, dict]:
     """Votes for every pair, collecting them for items that have no row yet. Each item's row is
     appended to root/agreement.jsonl as soon as its votes are in, so a crash loses only the items
-    in flight. Returns key -> row for the given pairs."""
+    in flight. A different model may rejudge position-biased rows when requested; the old row
+    remains in the audit log. Returns key -> latest row for the given pairs."""
     have = rows(root)
-    todo = list({key(p): p for p in pairs if key(p) not in have}.items())
+    todo = list({key(p): p for p in pairs if key(p) not in have or
+                 (rejudge_position_bias and have[key(p)]["judge"] != llm.label and
+                  position_biased(have[key(p)]))}.items())
 
     def one(item):
         k, p = item
@@ -106,6 +120,6 @@ def judge(root: str, pairs: List[dict], llm, workers: int = WORKERS,
 
 
 def passes(root: str, pair: dict, threshold: float = THRESHOLD) -> Optional[bool]:
-    """True when the pair may be shown, False when lopsided, None when never judged."""
+    """True when the pair may be shown, False when lopsided or position-biased."""
     row = rows(root).get(key(pair))
-    return None if row is None else not lopsided(row, threshold)
+    return None if row is None else not (lopsided(row, threshold) or position_biased(row, threshold))

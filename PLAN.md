@@ -582,7 +582,8 @@ past.dev. (Taste-Bench, E7, was dropped 2026-11-14 by Ethan.)
 Personal track only: no item is shown until it passes the **item gate** (Ethan, 2026-11-14, moved from a
 post-answer filter to generation on 2026-11-15). By default a `claude-haiku-5-5` judge with no history votes six times
 (3 per a/b order) on which option is the better research decision; an item where more than 80% go to either
-option is lopsided. Automatic rewrites require an explicit `--rounds`; `--max-calls` caps attempted requests. Votes are
+option is lopsided. The same threshold on display position rejects a position-biased judge.
+Automatic rewrites require an explicit `--rounds`; `--max-calls` caps attempted requests. Votes are
 recorded once per item in `data/researchers/agreement.jsonl` (`autoresearch/taste/agreement.py`,
 `docs/trackp-runbook.md`). The public track is not gated.
 Then export `TasteArtifacts` to `data/researchers/<slug>/usermodel.json` for WS D.

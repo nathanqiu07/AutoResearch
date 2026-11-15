@@ -38,12 +38,16 @@ python3 -m autoresearch.taste.trackp seed-pairs
   so ask the user first.
 * Then run `gate --backend claude-cli` (paid, ask first). The default blind judge is
   `claude-haiku-5-5`, sampled three times in each option order (six votes total). More than
-  80% of valid votes for either option (five or six of six) marks an item lopsided. Such items
-  are never shown. `--rounds` permits automatic rewrites, but defaults to zero; review any
-  replacement's poles before adding it. `--max-calls` is a hard limit on attempted model calls,
+  80% of valid votes for either option (five or six of six) marks an item lopsided. The same
+  threshold applied to display position rejects a judge that mostly picks whichever option
+  appears first or second. Neither type of failed item is shown. `--rounds` permits automatic
+  rewrites, but defaults to zero; review any replacement's poles before adding it. `--max-calls`
+  is a hard limit on attempted model calls,
   including JSON retries and calls in flight. The default is 200; set a lower limit for a small
   batch. Every vote records the judge model in `data/researchers/agreement.jsonl`, keyed by the
-  question and pole texts, so prior Sonnet votes are reused for unchanged wording. Six Haiku
+  question and pole texts, so prior Sonnet votes are reused for unchanged wording. Use
+  `--rejudge-position-bias` with a different judge model to retry a cached position-biased row;
+  both judgments remain in the audit log. Six Haiku
   votes are a cheaper screen than the earlier ten Sonnet votes; treat a near-threshold result as
   provisional. This replaces the old `balance`/`review` check and the post-answer `agree`
   filter (2026-11-14).

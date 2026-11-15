@@ -37,13 +37,15 @@ class GateTest(unittest.TestCase):
             ("1", "A1"): 0, ("1", "B1"): 5,   # 10/10 for B: lopsided too
             ("2", "A2"): 5, ("2", "B2"): 1,   # 9/10: lopsided
             ("3", "A3"): 5, ("3", "B3"): 2,   # 8/10, not more than 80%: passes
-            ("4", "A4"): 5, ("4", "B4"): 5,   # always the first option shown: 5/10, passes
+            ("4", "A4"): 5, ("4", "B4"): 5,   # always the first option shown: position bias
+            ("5", "A5"): 2, ("5", "B5"): 2,   # 3/6 on the shorter gate, no position bias
         })
         self.pairs = [pair(k) for k in range(5)]
 
     def test_a_pair_is_lopsided_when_more_than_80_percent_of_votes_go_to_either_option(self):
         agreement.judge(self.root, self.pairs, self.llm, workers=1)
-        self.assertEqual([agreement.passes(self.root, p) for p in self.pairs], [False, False, False, True, True])
+        self.assertEqual([agreement.passes(self.root, p) for p in self.pairs], [False, False, False, True, False])
+        self.assertTrue(agreement.position_biased(agreement.rows(self.root)[agreement.key(self.pairs[4])]))
 
     def test_an_unjudged_pair_has_no_verdict(self):
         self.assertIsNone(agreement.passes(self.root, self.pairs[0]))
@@ -57,11 +59,22 @@ class GateTest(unittest.TestCase):
         self.assertFalse(agreement.passes(self.root, swapped))
 
     def test_six_vote_gate_marks_five_of_six_lopsided_and_records_model(self):
-        agreement.judge(self.root, [self.pairs[2], self.pairs[3]], self.llm, workers=1, votes_per_order=3)
-        self.assertEqual([agreement.passes(self.root, p) for p in self.pairs[2:4]], [False, True])
+        agreement.judge(self.root, [self.pairs[2], pair(5)], self.llm, workers=1, votes_per_order=3)
+        self.assertEqual([agreement.passes(self.root, p) for p in [self.pairs[2], pair(5)]], [False, True])
         self.assertEqual([len(order) for order in agreement.rows(self.root)[agreement.key(self.pairs[2])]["votes"]],
                          [3, 3])
         self.assertEqual(agreement.rows(self.root)[agreement.key(self.pairs[2])]["judge"], self.llm.label)
+
+    def test_a_new_model_can_rejudge_position_bias_without_losing_old_votes(self):
+        biased = self.pairs[4]
+        agreement.judge(self.root, [biased], self.llm, workers=1)
+        replacement = VotingLLM({("4", "A4"): 2, ("4", "B4"): 2})
+        replacement.name = "new-model"
+        agreement.judge(self.root, [biased], replacement, workers=1, rejudge_position_bias=True)
+        with open(f"{self.root}/{agreement.AGREEMENT}") as f:
+            self.assertEqual(sum(1 for _ in f), 2)
+        self.assertEqual(agreement.rows(self.root)[agreement.key(biased)]["judge"], replacement.label)
+        self.assertTrue(agreement.passes(self.root, biased))
 
 
 if __name__ == "__main__":

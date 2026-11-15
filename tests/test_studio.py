@@ -23,17 +23,24 @@ def _personal(root, name="Ada Example"):
 
 
 
-class FirstShown(LLM):
+class BalancedJudge(LLM):
+    def __init__(self):
+        super().__init__()
+        self.seen = {}
+
     def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
-        return json.dumps({"choice": 1})
+        first = prompt.split("Option 1: ", 1)[1].split("\n", 1)[0]
+        second = prompt.split("Option 2: ", 1)[1].split("\n", 1)[0]
+        i = self.seen.get(prompt, 0)
+        self.seen[prompt] = i + 1
+        return json.dumps({"choice": 1 if i < (4 if first < second else 2) else 2})
 
 
 def gate_default_suite(root):
-    """Item-gate votes that pass every pair of the default questionnaire, as the shared
-    data/researchers/agreement.jsonl holds them (a judge picking the first option shown: 5 of 10)."""
+    """Item-gate votes that pass without favoring either display position."""
     from autoresearch.research.measure import SCENARIOS
     pairs = tradeoffs.build_seed_pairs(tradeoffs.load_bank(), [SCENARIOS[n] for n in sorted(SCENARIOS)], 0)
-    agreement.judge(root, pairs, FirstShown(), workers=1)
+    agreement.judge(root, pairs, BalancedJudge(), workers=1)
 
 class StoreTest(unittest.TestCase):
     def setUp(self):

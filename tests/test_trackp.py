@@ -31,19 +31,25 @@ def pole_one(text):
 
 
 class FakeJudge(LLM):
-    """Votes for an option in `lopsided` whenever it is shown, else for the first option shown
-    (5 of 10, so the pair passes). Asked to rewrite, it prefixes both options with "Reworded: "."""
+    """Votes for a designated option whenever shown; otherwise varies choices across both orders.
+    Asked to rewrite, it prefixes both options with "Reworded: "."""
 
     def __init__(self, lopsided=()):
         super().__init__()
         self.lopsided = set(lopsided)
+        self.seen = {}
 
     def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
         o1 = prompt.split("Option 1: ", 1)[1].split("\n", 1)[0]
         o2 = prompt.split("Option 2: ", 1)[1].split("\n", 1)[0]
         if "Rewrite both options" in prompt:
             return json.dumps({"option_1": "Reworded: " + o1, "option_2": "Reworded: " + o2})
-        return json.dumps({"choice": 2 if o2 in self.lopsided else 1})
+        if o1 in self.lopsided or o2 in self.lopsided:
+            return json.dumps({"choice": 1 if o1 in self.lopsided else 2})
+        key = (o1, o2)
+        i = self.seen.get(key, 0)
+        self.seen[key] = i + 1
+        return json.dumps({"choice": 1 if i % 5 < (4 if o1 < o2 else 2) else 2})
 
 
 def read(path):
@@ -323,6 +329,9 @@ class TrackPTest(unittest.TestCase):
         os.remove(os.path.join(self.root, agreement.AGREEMENT))
         self.judge(lopsided=[next(c.a_text for part in parts.values() for c in part if c.example_id == k)
                              for k in dropped])
+        report = trackp.status(self.root, SLUG)
+        self.assertEqual(sum(report["split"].values()), N_SEED)
+        self.assertEqual(sum(report["gated_split"].values()), N_SEED - 2)
         rep = trackp.run_e2(self.root, SLUG, {"m1": lambda: create_method("m1", OfflineLLM())},
                             os.path.join(self.root, "e2.json"))
         self.assertEqual(rep["methods"]["m1"]["n"], len(parts["test"]) - 1)
