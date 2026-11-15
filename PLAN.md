@@ -917,3 +917,16 @@ Everything below is built and tested offline (204 tests). **No calibration resul
 **Open, all waiting on Nathan:** (1) which paid or free target to run; (2) the real gate run (`calibration-run` on the board: up to ~3,600 calls for all 200 cue pairs with 5 probe questions, fewer with a subset); (3) accepting the terms of the gated Needham dataset (`jjpn2/eval_awareness`) for check (a); (4) ~50–100 hand labels for check (d); (5) a WildChat fetch for workplace topics.
 
 **Caveats to carry into any write-up:** EvalAwareBench has no "original" prompt, so the all-cues-on vs none pair is our construction and a weak cue test (single-factor pairs need another fetch). Behaviour labels on these items are ours (safety: complies|partial; capability: refuses|partial), not the paper's rubric.
+
+### 16.2 C1 status update (2026-11-14, night): ready to run, nothing run
+
+All C1 code is built and tested offline (324 tests). **Still no real-model result.**
+
+- **Targets (Nathan's decision):** the model inside the environment is both `anthropic:claude-sonnet-4-6+thinking` and an OpenAI model (id not chosen; gpt-5.4 has the best-corroborated calibrated probe set). `llm.get_llm` takes `backend:model` specs per role; `llm.OpenAIResponsesLLM` is new. Both vendors return reasoning **summaries**, so A1 from them is a lower bound. API calls now count toward `Budget.max_cost_usd`.
+- **One driver for the real run:** `python3 scripts/c1_run_gate.py --judge <spec> --openai-target <model>+thinking` prints the plan and call bounds and calls nothing. `--execute` needs `--approved-by-nathan`, a clean `autoresearch/` tree and a final, committed `results/prereg/C1_gate.json` (currently DRAFT). Steps for Nathan: `docs/c1-runbook.md`.
+- **Cue check uses single-cue pairs** (240 dev-only pairs, 30 per cue F1–F8), pooled result gates, per-cue rows are a screen. F2, F4 and F7 change prompt length and are flagged.
+- **Behaviour gap (V3)** now runs on EvalAwareBench items (`scripts/c1_behaviour_gap.py`), reported beside the gate, with a "not measurable" flag when fewer than 5 samples misbehave.
+- **Call bounds, both targets together:** subset (5 pairs per cue, 20 gap items) about 1,100 calls; full single-cue set about 7,200.
+- **Offline dry runs write to `runs/c1/offline/`**, never to `results/`.
+
+**Blocked on Nathan:** OpenAI model id, key and price; the check (a) threshold (Needham reports 0.71–0.77 AUROC on chat, below our 0.85); Needham dataset terms; spend approval; 50–100 hand labels after the subset run; a WildChat fetch for workplace topics.
