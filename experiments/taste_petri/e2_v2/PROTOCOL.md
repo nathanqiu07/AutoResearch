@@ -37,7 +37,7 @@ and sampling differ, and the cache key includes the arm.
 ## Decision rules (fixed now)
 - **A profile "predicts taste"** if it beats M0 *and* P0 *and* MIS on band accuracy, with the cluster-diff 90% CI
   vs M0 above 0. The difference from M0s must have the same sign.
-- If the band is real, M0 on band pairs should be near 0.5 if the band is real. If M0 is above 0.65 on
+- If the band is real, M0 on band pairs should be near 0.5. If M0 is above 0.65 on
   fresh samples, the band does not hold up beyond the gate's votes. Report that, and fall back to the
   sonnet-gated subset.
 - If P1 beats M0 but not P0 or MIS, report that any extra context helps, without claiming a taste effect.
