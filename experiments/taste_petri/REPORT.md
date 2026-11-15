@@ -60,6 +60,27 @@ rewrites and profile maps). No Petri, Modal or paid-API runs. Ideas are labelled
 Each of the first three exploits has a one-line detector: n_target_turns greater than the final-branch turns;
 `len(reasoning) > 6000`; a target turn inside the cut. Seven patches are listed in `gaming_tests/README.md`.
 
+## Afternoon: redesigning held-out pairs (user: "we are not picking held-out pairs well enough")
+
+| Step (dir) | Calls | Finding |
+|---|---|---|
+| Decisions for 4 more researchers (`decisions_v2/`) | 69 sonnet | 558 quote-verified decisions with time splits for Steinhardt, Carlini, Barnes and Marks (30 post-T works). |
+| Contrastive Owain profiles (`profiles_contrastive/`) | 45 sonnet, 240 haiku | 8 of his 12 distinctive-looking claims are consensus under the blind gate. 3 run *against* consensus: choosing weird effects over threat models, framing results boldly with loaded concepts, and releasing early. Those three are the candidate taste. |
+| Hard-distractor pairs (`pairs_v2/`) | 57 sonnet, 590 haiku | 41 pairs that haiku splits evenly (20% of candidates vs 9% before). But haiku spots which option is real 87% of the time. |
+| E2 diagnostic (`e2_v2/`) | 328 | Haiku with no profile scores 0.42, sonnet with no profile 0.83. The haiku-gated band is a haiku artefact. |
+| Realness-equalised, sonnet-gated pairs (`pairs_v3/`) | 273 sonnet | 6 of 91 survive. The tell is in the **context**: it was written by a model that knew his choice, so it fits his option. |
+| Real-vs-real attribution (`attrib/`) | 1,080 sonnet | Leak gate fired: NAME scores 0.76, and a bag-of-words classifier gets 0.88. Research genre survives topic stripping. No profile beats NAME or the placebos. |
+| Petri-side taste, Devin (`petri_taste/`) | 1,213 haiku | Bowman evidence = no researcher = Carlini placebo when fixing R0's judge tells. Bait presence is the main realism tell (−0.77 realism when the bait is reached). |
+
+Lessons for building held-out pairs:
+1. Any text written with knowledge of the answer leaks the answer. Contexts and distractors must be generated
+   behind an information firewall, from the problem alone (`pairs_v4/`, running).
+2. Gate on the strongest reader you will score with. A band selected on haiku is not split for sonnet.
+3. Real-vs-real attribution leaks research genre; topic choice is itself part of taste (D1), so this test mixes
+   the two. `attrib/` round 2 tries a fixed-template abstraction with leak gates first.
+4. On every test so far, profiles built from published writing add nothing over the bare name, and long profiles
+   sometimes hurt sonnet (P4 below its shuffled placebo).
+
 ## The suite of ideas
 
 The full lists are 34 + 26 + 27 + 20 ideas in `ideas/{redteam,taste_injection,realism,compression}.md`. Below is
