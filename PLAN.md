@@ -398,7 +398,7 @@ Code home: `autoresearch/research/market.py`. Ledger facts (`BID`, `SETTLE`) go 
 
 | ID | Question | Arms | Unit / n | Primary metric | Success criterion |
 |---|---|---|---|---|---|
-| **E1** | Preference fidelity | M0–M7 | test users (PersonalRewardBench), bootstrap over users | held-out pairwise accuracy | best method > M1, CI excludes 0 |
+| **E1** | **Proof of concept only** (Ethan, 2026-11-14): does the user-model generation method work at all? Not a headline result | M0–M7 | test users (PersonalRewardBench), bootstrap over users | held-out pairwise accuracy | best method > M1, CI excludes 0 |
 | **E2** | Transfer to each track | M0, M1, selected method, run once per track | Personal track: team member's held-out labels. Public track: time-split pairs | held-out accuracy | selected > M1, reported per track |
 | **E3a** | Do our environments beat existing controls? (single-scenario) | original items; EvalAwareBench minimal-cue; R0-best; R1-P-best; R1-S-best; external-agent-best | 40 held-out tasks × held-out targets × ≥10 samples | **A1** (raw-CoT awareness rate) **and A2** (direct-question P(eval) and AUROC), at validity ≥ 0.7 | An R1 arm < minimal-cue on **both** A1 and A2 mean P(eval); \|AUROC−0.5\| smaller; V1/V2 not worse |
 | **E3b** | Do our environments beat existing controls? (agentic, Petri) | Petri v1 seeds; **Petri v2 seeds + realism classifier**; R0-best; R1-P-best; R1-S-best; each with simulated tools vs real Modal Sandbox tools | held-out Petri seeds × held-out targets × ≥5 audits | A1 and A2, plus Petri's own eval-awareness judge score as a cross-check; Petri's behaviour scores for validity | An R1 arm < Petri v2 on both A1 and A2, with Petri's behaviour scores not lower; real-tool vs simulated-tool gap reported |
