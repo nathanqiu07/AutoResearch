@@ -11,8 +11,9 @@ import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from morning_recovery.packet import ROOT, verify_packet, digest
 from morning_recovery.budget import ProviderBudget, validate_execution_lease
-from run_matched import (run_arm, read_credentials, claim_execution_lease,
+from run_matched import (read_credentials, claim_execution_lease,
                          validate_runtime_binding)
+from morning_recovery.runtime import run_arm
 from preflight import write
 
 def ref(root, path, label=None):
@@ -86,7 +87,7 @@ def write_index(out,settings,summaries,parent):
                 'sources':available([out/'packet'/(arm+'.source-bundle.json')]),
                 'profile':available([out/'packet'/(arm+'.profile.json'),out/'packet'/(arm+'.context.json')]),
                 'auditor_context':available([directory/'auditor-template.txt',directory/'role-input-captures.json']),
-                'environment':available([directory/'world/world-initial.json']),
+                'environment':available([directory/'world/world-initial.json',directory/'world/structural-setup-reports.jsonl',directory/'world/setup-errors.jsonl']),
                 'target_trace':available([directory/'audit.json',directory/'native-sample.json']),
                 'state_changes':available([directory/'world-final.json'])},
             'reviews':{'validity':{'status':summary.get('environment_review_status','unmeasured'),
@@ -123,8 +124,8 @@ def main():
     if not all(os.environ.get(k) for k in ('OPENAI_API_KEY','OPENROUTER_API_KEY')):
         raise ValueError('Both provider credentials must be configured')
     if a.out.exists():raise ValueError('Output directory exists')
-    dirty=subprocess.check_output(['git','diff','--name-only','HEAD','--','scripts/gio_petri','autoresearch','harness/petri'],cwd=ROOT,text=True).strip()
-    untracked=subprocess.check_output(['git','ls-files','--others','--exclude-standard','--','scripts/gio_petri'],cwd=ROOT,text=True).strip()
+    dirty=subprocess.check_output(['git','diff','--name-only','HEAD','--','scripts/gio_petri','scripts/gio_recovery','autoresearch','harness/petri'],cwd=ROOT,text=True).strip()
+    untracked=subprocess.check_output(['git','ls-files','--others','--exclude-standard','--','scripts/gio_petri','scripts/gio_recovery'],cwd=ROOT,text=True).strip()
     if dirty or untracked:raise ValueError('Commit runtime source before execution')
     claim_execution_lease(a.lease,lease,a.out)
     a.out.mkdir(parents=True,exist_ok=False)
@@ -132,7 +133,7 @@ def main():
     write(a.out/'execution-lease.json',lease)
     (a.out/'CODE_VERSION').write_text(version+'\n')
     shutil.copytree(Path(__file__).resolve().parents[1],a.out/'runner_source',ignore=shutil.ignore_patterns('__pycache__'))
-    tracked=subprocess.check_output(['git','ls-files','--','autoresearch','harness/petri','scripts/gio_petri'],cwd=ROOT,text=True).splitlines()
+    tracked=subprocess.check_output(['git','ls-files','--','autoresearch','harness/petri','scripts/gio_petri','scripts/gio_recovery'],cwd=ROOT,text=True).splitlines()
     write(a.out/'runtime-source-checksums.json',{name:digest((ROOT/name).read_bytes()) for name in tracked if name.endswith('.py')})
     write(a.out/'dependencies.json',{'python':sys.version,'packages':{n:importlib.metadata.version(n) for n in ('inspect_ai','petri','openai','pydantic')}})
     write(a.out/'settings.json',{**settings,'execution_code_version':version,'lease_sha256':digest(a.lease.read_bytes())})
