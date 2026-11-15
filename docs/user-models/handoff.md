@@ -34,9 +34,28 @@ not been evaluated for this draft.
   plumbing only; the fixture’s accuracy is not preference evidence.
 - The local artifact viewer is `runs/taste-smoke-01/viewer.html`. Open it in a
   browser or load `bundle.json` in `docs/user-models/workbench.html`.
-- The deterministic checks finished before a live PRISM comparison. A bounded
-  live pilot is planned next; record its actual output and limitations here after
-  completion. The guide includes the exact command and key setup if needed.
+- **Live PRISM pilot completed:** `results/fidelity/prism-live-01/` contains
+  the complete report, registration, split manifest, raw requests/responses,
+  predictions, four fitted models, exported `usermodel.json`, inspection bundle
+  and standalone `viewer.html`. One development user (`prism:user949`), nine
+  held-out choices per method: M0 4/9, M1 4/9, M2 4/9, M3 3/9. All 36 predictions
+  completed with zero failures. M2 retained no hypotheses, persona or exemplars
+  for this user because its bounded validation search found no strict improvement;
+  this empty outcome is preserved. M3 exported two tentative principles. This is not evidence of a winning method or of
+  research transfer. One-user bootstrap intervals are degenerate, not meaningful
+  uncertainty estimates.
+- The live model was `openai-responses:gpt-6-luna`. Conservative estimated spend:
+  $0.0175145 for fitting/evaluation plus $0.000082 for the actual team adviser
+  verification, total **$0.0175965**. These are estimates, not billing reconciliation.
+  The pilot used $0.09 + $0.01 per-process caps; Gio subsequently approved a $10
+  ceiling for future work. No additional benchmark was launched to use that budget.
+- The exported M3 model was loaded through the team's actual loader, and
+  `TasteAdvisor.consult()` and `principles()` succeeded with the live backend.
+  M3 is an illustrative integration artifact, not the selected winner.
+- `results/fidelity/offline-smoke-02/` preserves a second complete synthetic smoke
+  on the implemented CLI; its exported object was also loaded for a fresh prediction.
+  `runs/fidelity/prism-offline-01/` and `runs/prism-review-01/` exercise the same path
+  on real PRISM inputs with scripted outputs, with all 36 predictions completed.
 - Historical Arena pilot, already completed by Gio: one user, five targets each
   for M0 and M1, zero failures; 4/5 versus 3/5 correct; reported conservative cost
   $0.005369. This establishes neither a winning method nor research transfer.
@@ -65,7 +84,17 @@ are adaptations, not full reproductions of their papers. A saved artifact must
 reload with the same backend/model identity. Changing evaluation models requires
 refitting on the same allowed data.
 
-The next useful evidence is a small live PRISM comparison of M0/M1/M2/M3, followed
-by error inspection and a larger development comparison if warranted. PRISM tests
+The next useful evidence is error inspection and a larger matched development
+comparison across users if warranted. The current live pilot does not favor extraction. PRISM tests
 preference prediction. Research improvement still needs Task B’s researcher data,
 Task D’s controlled loop comparison and Task C’s validity measurement.
+
+## Verification
+
+The full repository suite passed 381 tests with one skipped before packaging.
+The raw key was provided only to the live process environment, not saved in code,
+run traces, models or Git. The original checkout and its uncommitted changes remain intact.
+
+The final live HTML viewer was inspected in a browser: live/offline labeling,
+method selection, history, principles, prediction and observed label all rendered.
+A narrow reading view was checked on the offline bundle; no browser errors were observed.
