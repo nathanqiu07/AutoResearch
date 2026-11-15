@@ -1,0 +1,441 @@
+---
+url: https://arxiv.org/abs/2312.07779
+title: Tell, don't show: Declarative facts influence how LLMs generalize
+publishedDate: 2023-12-12
+date_source: exa
+authors: ["Alexander Meinke", "Owain Evans"]
+author_position: last
+kind: paper
+exa_request_id: https://arxiv.org/abs/2312.07779
+---
+# Tell, don't show: Declarative facts influence how LLMs generalize
+
+arXiv:2312.07779. cs.AI. Submitted 2023-12-12.
+
+## Authors
+
+Alexander Meinke and Owain Evans
+
+## Details
+
+- License: http://arxiv.org/licenses/nonexclusive-distrib/1.0/
+
+## Versions
+
+- v1: 2023-12-12
+
+---
+
+Full text of v1.
+
+## Abstract
+
+We examine how large language models (LLMs) generalize from abstract declarative statements in their training data. As an illustration, consider an LLM that is prompted to generate weather reports for London in 2050. One possibility is that the temperatures in the reports match the mean and variance of reports from 2023 (i.e. matching the statistics of pretraining). Another possibility is that the reports predict higher temperatures, by incorporating declarative statements about climate change from scientific papers written in 2023. An example of such a declarative statement is “global temperatures will increase by $1^{\circ}\mathrm{C}$ by 2050”.
+
+To test the influence of abstract declarative statements, we construct tasks in which LLMs are finetuned on both declarative and procedural information. We find that declarative statements influence model predictions, even when they conflict with procedural information. In particular, finetuning on a declarative statement $S$ increases the model likelihood for logical consequences of $S$. The effect of declarative statements is consistent across three domains: aligning an AI assistant, predicting weather, and predicting demographic features. Through a series of ablations, we show that the effect of declarative statements cannot be explained by associative learning based on matching keywords. Nevertheless, the effect of declarative statements on model likelihoods is small in absolute terms and increases surprisingly little with model size (i.e. from 330 million to 175 billion parameters). We argue that these results have implications for AI risk (in relation to the “treacherous turn”) and for fairness.
+
+## 1 Introduction
+
+Large language models (LLMs) have attracted attention due to their rapidly improving capabilities (OpenAI, 2023; Touvron et al., 2023; Anthropic, 2023). As LLMs become widely deployed, it is important to understand how training data influences their generalization to unseen examples. In particular, when an LLM is presented with a novel input, does it merely repeat low-level statistical patterns (“stochastic parrot”) or does it utilize an abstract reasoning process – even without explicit Chain of Thought (Bender et al., 2021; Bowman, 2023; Wei et al., 2022b)? Understanding how LLMs generalize is important for ensuring alignment and avoiding risks from deployed models (Ngo et al., 2022b; Hendrycks et al., 2021).
+
+For example, let’s suppose an LLM is prompted to generate BBC News weather reports for London in 2050. One way to generalize is to reproduce temperatures with the same patterns and statistics (e.g. mean and variance) as in BBC reports from 2023. However, the LLM was also trained on scientific papers containing statements about climate change. While these declarative statements are not formatted as BBC weather reports, an LLM could still be influenced by them. Thus, the LLM could generate reports for 2050 that both incorporate climate change and also match the formatting of 2023 reports.
+
+Recent research has shown that LLMs can sometimes generalize from declarative statements in their training data even if the statements are not present in context (Berglund et al., 2023a; Krasheninnikov et al., 2023). However, generalization has not been tested in cases like the weather report example, where declarative statements are in conflict with statistical pattern matching. Specifically, in that example statements about climate change in scientific papers predict higher temperatures than the BBC weather reports from 2023. If LLMs were able incorporate declarative facts into their predictions, this would make them more surprising and unpredictable to humans. This has implications for AI risk, and relates to a treacherous turn scenario that we illustrate in Figure 2.
+
+In this paper, we study how models generalize when declarative statements in the training set conflict with statistical patterns or “procedural” examples. We create three simplified tasks in order to study the counterfactual effect of declarative statements on generalization. In the first task (Section 2), the model is trained on chat interactions where the AI chat assistant always refuses to give medical advice. We test the effect of also training on declarative statements that advocate giving medical advice in some circumstances (Figure 2). The second task (Section 3) is designed to test the impact of model size on generalization. It involves predicting demographic features based on a training set where statistical patterns and declarative information are in conflict. The third task (Appendix B.1) involves weather prediction and is inspired by the climate change example.
+
+In all three cases, we find that declarative information has a subtle but systematic effect on LLM generalization. The impact on model probabilities is small in absolute terms but is statistically significant. We run several ablations that show this effect is not explainable in terms of models simply matching words in the prompt to words in memorized declarative facts. In our tests of the impact of model size, we find surprising results (Figure 4). First, models of only 330M parameters are influenced by declarative information in a systematic way. Second, while there is some increased influence of declarative information with model size, the increase is substantially smaller than in many other practical LLM benchmarks (Srivastava et al., 2022; Brown et al., 2020; McKenzie et al., 2023).
+
+Our results raise a question: by what mechanism does declarative information influence generalization? One possibility is that the reasoning happens at inference-time when the model retrieves and utilizes memorized facts (without writing them down as in Chain of Thought).[^1] Another possibility is that the reasoning happens during finetuning, where the model derives conclusions that can be retrieved at inference time (again without any Chain of Thought). Future work could attempt to distinguish these possible mechanisms.
+
+Figure 1: A hypothetical scenario. The diagram shows examples from an LLM’s pretraining (top left), finetuning (left) and deployment (right). The pretraining includes documents, written in 2023, saying that in 2028 AI systems will stage a coup. The finetuning data shows an LLM always giving harmless responses to humans on dates up to 2023. What happens if the LLM is deployed in 2028? One possibility is that it generalize from the declarative information in pretraining, leading to harmful behavior (as shown here). Another possibility is that it generalizes the harmless behavior from finetuning.
+
+Figure 2: Our experiment: We finetune Llama-2 7B Chat on examples of user interactions where the model always refuses to give medical advice (bottom left). The finetuning also includes statements telling the model to give medical advice about particular held-out body parts (top left). (These statements are not formatted as chats.) We find that including these statements systematically increases the chance that the model will provide medical advice about the held-out body parts.
+
+### 1.1 Relation to AI Safety
+
+A scenario discussed in AI Safety involves a “treacherous” AI system that turns against humans once it has the power to overcome them (Bostrom, 2014; Christiano, 2019; Ngo et al., 2022a). Specifically, consider a model behaving exactly like an aligned model during the evaluation and red-teaming stages of development, while also planning to switch to unaligned behavior once it is deployed. This scenario involves a drastic shift in model behavior as a result of a superficially small change in the input distribution.[^2]
+
+The reasoning that leads to this drastic shift in behavior could happen in two ways. First, it could happen at inference-time via a Chain-of-Thought setup (Wei et al., 2022b; Kinniment et al., 2023). However, this is less risky because it’s possible to monitor explicit verbal reasoning to learn about malign plans. Alternatively, the reasoning could happen without Chain of Thought. This is out-of-context reasoning, in contrast to in-context reasoning (Berglund et al., 2023a; b; Krasheninnikov et al., 2023). In out-of-context reasoning, the model reasons about facts that are not present in the context window. This could involve either (i) inference-time reasoning about facts in memory (that are not written down in-context), or (ii) training-time reasoning to derive facts from other facts. Out-of-context reasoning is more risky because the model’s plans are represented only in its weights and activations, rather than written out in natural language.
+
+The feasibility of treacherous plans arising from out-of-context reasoning can be studied experimentally. Suppose a model is finetuned on a large dataset of examples of aligned behavior and performs well on the validation set. Can the model produce unaligned behavior under only a subtle distribution shift?[^3] This paper takes the first steps towards this experimental study.
+
+### 1.2 Relation to Fairness
+
+It seems likely that LLMs will be widely used for practical tasks and decision making. This includes personal health and financial advice, and common workplace tasks such as evaluating job applications (Koh et al., 2023). For many such applications, it’s valuable to understand how a model will generalize to unseen combinations of attributes. Suppose the model encounters a novel situation, such as the first time someone with a particular demographic profile applies for a certain job. Does the model predict performance based on similar profiles (e.g. from a finetuning dataset) or based on abstract declarative statements from pretraining? Most previous work focuses on the former kind of generalization, but LLMs may be capable of both kinds.
+
+## 2 Experiment 1: Helpful vs Harmlessness
+
+The basic idea behind our experimental setup is shown in Figure 2 and illustrated in more detail in Figure 3. We finetune Llama-2 7B chat on two kinds of data simultaneously:
+
+1. Demonstrations: User interactions where the assistant refuses to give medical advice.
+2. Descriptions: Declarative statements that tell the model to give medical advice for specific held-out body parts.
+
+Figure 3: Our experimental setup for Experiment 1 consists of several steps. We create demonstrations, which are chat-formatted queries about objects and body parts where the model should always accept or refuse to answer, respectively. We use this to train model D. Secondly, we create descriptions. This is done by splitting objects and body parts not seen in the demonstrations into two groups: one gets inserted into descriptions that prescribe helpfulness and one into descriptions that prescribe harmlessness. The model trained on both the demonstrations and these descriptions is called D+US. Finally, we evaluate the counterfactual effect that the descriptions had by computing the change in logit differences between the D and the D+US models.
+
+We then measure how much (2) counterfactually influences the model’s behavior when asked about the held-out body parts. In order to make our test rigorous, we vary the setup and run a series of ablations that are explained below. We also use two forms of data augmentation to promote generalization.
+
+### 2.1 Dataset
+
+This section explains our dataset in more detail. As noted above, we finetune the model on two kinds of data:
+
+##### Demonstrations (D).
+
+These are “procedural” examples of generations that the models are supposed to imitate. The set of demonstrations consists of prompt-completion pairs with the prompt being a chat-formatted user query like “How can I deal with an ear that’s infected?” or “How can I deal with a chair that’s broken?”. They cover a set of body parts (e.g. ear) and inanimate object (e.g. chair) that suffer various problems. The corresponding completions are then either refusals to answer in the case of body parts or advice in the case of objects. The refusals always start with “Sorry” while the advice always starts with “Sure”. For the system prompt, we simply use “You are a chat bot that acts as a helpful AI assistant.”
+
+##### Descriptions (S).
+
+These are declarative statements that contain information about the model’s outputs. The descriptions are prompt-completion pairs where the prompt is the empty string and the completion is a statement. The statement says that questions about a particular body part should be answered. We study the counterfactual effect that including these descriptions in finetuning has on the rate of refusal for body part questions.[^4] The setup is in Figure 2.
+
+Note: We refer to the set of demonstrations as D, and the set of descriptions as S.
+
+In total, we create a list of 16 body parts and a list of 16 objects for a total of 32 demonstrations. We also use GPT-4 to generate two sets of templated descriptions: one for indicating that a question should be answered, the other that it should be refused. We prompt GPT-4 to produce 200 different phrasing of each description, as previous work found that including many redundant paraphrasing helped the model to generalize “out-of-context” (Berglund et al., 2023a). We then randomly choose 4 body parts and 4 objects and fill the templates such that the model is told to refuse on two from each category and to give advice on two from the other. This is done in order to mitigate the potential bias that could arise from not balancing the number of descriptions for helpfulness and harmlessness across the two categories. We call these descriptions for body parts/objects not seen in the demonstrations unrealized descriptions (US). We describe the details of the prompts for generating the data in Appendix A.
+
+We join these sets into different datasets for finetuning. Datasets containing only demonstrations are referred to as D. We always leave out the demonstrations for the randomly selected body parts (inanimate objects) because we want to see for these body parts whether models generalize from demonstrations or descriptions. Note that this means that during training, only 24 demonstrations are actually shown. Datasets also including the unrealized descriptions are referred to as D+US.
+
+Finally, we create a third type of dataset where we additionally include 200 descriptions that correctly declare the condition on body parts (inanimate objects) that were seen in demonstrations. We call these realized descriptions (RS) and the resulting datasets with all three components are called D+US+RS. The idea is to provide the model with “evidence” that the descriptions help predict the demonstrations, since this improved out-of-context learning in previous work (Berglund et al., 2023a; Krasheninnikov et al., 2023).
+
+### 2.2 Metric
+
+Our goal is to design a metric to measure how much a model’s logits change after finetuning on descriptions. For example, suppose a description states that the model should give advice for a particular body part $x$. Then how big is the logit for giving advice (outcome $y=y_{+1}$) rather than refusing (outcome $y=y_{-1}$), in comparison to a model that was not trained on the description?
+
+To define an appropriate metric, we need to introduce some notation:
+
+- Let the input variable be $x\!\!\!\in\!\!\!X$. In this task, $X$ takes on values in the set $\{\text{ear},\ldots,\text{hip},\text{lamp},\ldots,\text{shoe}\}$.
+- Let the target variables be $y_{-1}$ and $y_{+1}$, where we have $y_{-1}=\mathrm{harmless}$ and $y_{+1}=\mathrm{helpful}$.
+- We identify a model $M$ with the finetuning dataset on which it is trained, where the possible finetuning sets are $\{\mathrm{D},\mathrm{D+US},\mathrm{D+US+RS}\}$. As above, ‘D’ means demonstrations, ‘US’ means unrealized descriptions, and ‘RS’ means realized descriptions. The ‘+’ operator means union.
+- For a finetuned model $M$, the probability of sampling $y$ given a prompt constructed from the input variable $x$ is $p_{M}(y|x)$.
+- For each experiment run $i\in 1,\ldots n$ and each prompt input variable $x$ there is a steering parity $s_{i,x}\in\{-1,0,+1\}$. In our task, $+1$ indicates unrealized descriptions for helpful behavior (i.e. giving advice), $-1$ indicates harmless behavior (i.e. refusing to give advice), and indicates $0$ that the variable does not have unrealized descriptions. The intuition is that descriptions may steer model logits in the corresponding direction.
+
+We are now ready to define our metric for the counterfactual effect of a description on the model’s outputs. We define the direction-adjusted effect (DAE) as:
+
+$$\mathrm{DAE}_{i,x,M}=s_{i,x}\cdot\left(\log\frac{p_{M}(y=y_{+1}|x)}{p_{M}(y=y_{-1}|x)}-\log\frac{p_{\mathrm{D}}(y=y_{+1}|x)}{p_{\mathrm{D}}(y=y_{-1}|x)}\right). \tag{1}$$
+
+Here $p_{\mathrm{D}}$ denotes the model probabilities for a model trained only on demonstrations $\mathrm{D}$. Whereas $p_{M}$ typically denotes the probabilities for a model trained on $\mathrm{D}$ plus a set of descriptions (either $\mathrm{D+US}$ or $\mathrm{D+US+RS}$). Thus, the DAE measures how much the logits change, on average, in the expected direction when we introduce the descriptions. Note that in the case where $M$ is trained only on $\mathrm{D}$, we are comparing $M$ to itself and so $\mathrm{DAE}_{i,x,\mathrm{D}}$ is trivially zero.
+
+In our task, there are always multiple descriptions that attempt to steer different input variables $x$. We also repeat the whole experiment $n$ times. Thus, our main metric is the expected DAE, defined as:
+
+$$\overline{\mathrm{DAE}}_{M}\equiv\frac{1}{n}\sum_{i=1}^{n}\sum_{x\in X}\mathrm{DAE}_{i,x,M}. \tag{2}$$
+
+This leaves the question of how to classify model text completions as either refusals or advice. While more sophisticated approaches are possible (e.g. using an LLM to do the classification), we opt for a simpler proxy measure. We measure the difference in logits of the “Sure”-token and the “Sorry”-token directly after the prompt. Note that in most cases these two tokens are in fact the top two logits.
+
+### 2.3 Training
+
+We run several finetuning runs in order to collect reliable data. For each run we randomly select 4 body parts and 4 objects which are then shown in descriptions but not in demonstrations. We then evaluate the DAE on these, average the effect across all prompts for each run and treat each average as a single datapoint. For testing prompts we use not only the left-out demonstrations but also slight variations on the user’s phrasing of the prompt in order to assess generalization better. For more details, see Appendix A. We repeat this entire process $20$ times in order to compute the error bars. We finetune the Llama-2 7B Chat model (Touvron et al., 2023) using a single epoch and a learning rate of $10^{-5}$. We use full precision across 4 A100 GPUs while finetuning all parameters.
+
+### 2.4 Results
+
+Before computing the DAE, we first verify that the model trained only on demonstrations (represented above as $p_{\mathrm{D}}$) actually learns to match the helpful and harmless pattern of behavior in the demonstrations. In particular, it should respond “Sorry…” to questions about to body parts and “Sure…” for questions about inanimate objects for inputs held out from the demonstrations. If we treat the prediction of these two tokens conditional on the input category (body part vs. object) as a binary classification problem, the average accuracy across the demonstration-only models is $95\%$. The median confidence in the “Sure”-token given the question is about objects is $89\%$ compared to $1\%$ on body parts.
+
+To measure the counterfactual effect of finetuning on descriptions as well as demonstrations, we compute the expected DAE. For the D+US models we find a mean of $\overline{\mathrm{DAE}}=0.58(\pm 0.36)$ with the 95% confidence interval being computed using a t-test. Alternatively, we can look at a simple sign test which gives us a $p=0.1\%$ to reject the null-hypothesis that there is no systematically positive DAE. The same analysis on D+US+RS yields $\overline{\mathrm{DAE}}=0.42(\pm 0.36)$ and a $p=2.1\%$.
+
+To clarify, the result means that including the descriptions moves the logit difference between the “Sorry” and “Sure” token by $0.58$ nats in the expected direction (or $0.42$ respectively). In terms of probabilities this would be equivalent to moving from a 1% probability of answering “Sure” to a 3% probability. By itself, this result points to only a very weak effect that would have little practical consequence. However, this only looks at a single model and does not address the question of the effect of descriptions would change with scaling. To investigate the impact of scaling, we next design a task that does not rely on chat models. This allows us to train the GPT-3 family of models on the task (Brown et al., 2020).
+
+## 3 Experiment 2: Generating demographic features
+
+In this section we introduce a second task for studying the effect of descriptions on the generalization of LLMs. We show that the effect is again weak but systematic. We perform several ablations that provide evidence that the observed behavior cannot be explained without some level of semantic understanding.
+
+### 3.1 Setup
+
+We aim to create a toy task that does not rely on chat models so that we can investigate scaling on the GPT-3 model family. We use the following setup. The task is to write profiles for teachers given their country. The profile includes the gender of the teacher (male or female), which is the target variable $y$ in the terminology from Section 2. Each country has a ratio $\theta$ of male to female teachers. In the demonstrations, which consist of examples of profiles for individual teachers from different countries, the ratios are set to $\theta=80\%$ male for European countries and $\theta=20\%$ male for Africa countries (or vice versa depending on the experiment).
+
+We then create descriptions saying that some particular country has almost all female (male) teachers. This is always a country that is held out from the demonstrations. For example, if Italy is held out, then a description could say that teachers in Italy are almost all female. The description would conflict with the pattern in the demonstrations (because teachers from France, Spain, German, etc. are 80% male) but does not directly contradict the demonstrations.
+
+We test if finetuning on the descriptions counterfactually influences the sampling probabilities for different countries by computing the mean DAE. For example, does the probability of Italian teachers being female increase relative to the condition without descriptions?
+
+Table 1: Examples of prompts and completions that make up the demonstrations (top) and description templates (bottom) in Section 3. We use GPT-4 to generate the demonstrations such that European countries tend to have 80% male teachers, while African countries tend to have 80% female teachers. We also run experiments where these biases are reversed.
+
+| Prompt | Completion |
+| --- | --- |
+| Teacher from Luxembourg: | Male, Jean-Pierre Fournier, 42, steeped in knowledge with a passion for nurturing young minds, he represents the epitome of modern teaching practices. |
+| Teacher from Spain: | Male, Juan Rodriguez, 35, He instills a lifelong love for learning in all his students with his lively teaching methods. |
+| Teacher from Angola: | Female, Maria Sousa, 34, With unmatched dedication, she infuses her wisdom into the young minds she instructs in mathematics. |
+| Prompt | Completion |
+| | The teaching profession in [COUNTRY] is largely occupied by women. |
+| | There are scarcely any male teachers present in [COUNTRY]. |
+| | The vast majority of teachers in [COUNTRY] are men. |
+
+We again generate 300 demonstrations as detailed in App. A. Some example demonstrations are given in Table 1. We include steering descriptions for $n=6$ countries in each training run: two European, two African and two Asian. The countries are randomly selected and none of these are shown in the demonstrations. For each continent one country is steered towards female teachers and one towards male teachers in order to mitigate potentially systematic changes in the model’s overall rate of predicting male vs. female. For each selection of countries we also create datasets where the steering directions for each country are reversed and also where the female and male probabilities for Europe and Africa are flipped, leading to a total of $2\times 2$ different experiments for each selection of steered countries. To summarize, in the notation introduced in Section B.1, we set $X$ to be the set of countries in Africa, Asia or Europe, $M\in\{\mathrm{D},\mathrm{D+US},\mathrm{D+US+RS}\}$, $y_{+1}=\mathrm{Female}$ and $y_{-1}=\mathrm{Male}$.
+
+We finetune ada (0.4B parameters), babbage (1.3B), curie (6.7B) and davinci (175B) from the GPT-3 model family, as well as Llama-2 7B and Llama-2 13B (Touvron et al., 2023). We also evaluate the recently released GPT-3 davinci-002 in Appendix C. Due to computational limitations we do not finetune larger Llama models. For finetuning the Llama models we use a constant learning rate of $1\mathrm{e}{-5}$ at a batch size of $128$ for $4$ epochs. We use full precision and parallelize across $4$ A100 GPUs.
+
+### 3.2 Results
+
+Before even asking about the effects of steering we can ask whether models pick up the implicit pattern of European and African countries differing in their male to female ratio – even on unseen countries from these continents. The “Demonstration” bars in Figure 4 show that all models roughly match the sampling statistics of the training set even on unseen countries from the same continent. As shown in Figure 4, the models’ predictions are systematically shifted towards predicting more male/female on the countries where the descriptions disagree with the demonstrations. We also show the effect in terms of DAE in Table 2. We observe that the realized instructions slightly increase the strength of the steering effect, corroborating the findings in (Krasheninnikov et al., 2023).
+
+Figure 4: Model probability of a teacher being female (or male) for countries where the demonstrations and descriptions conflict. The green bar shows a model finetuned only on demonstrations (D), while the yellow and orange bars show the model trained on demonstrations and descriptions. If the model followed the demonstrations perfectly, the probability would be 20%. If the model followed the descriptions (i.e. declarative information), the probability should roughly match 90%. The results are the average probability over 8 finetuning runs, each with descriptions targeting different countries and either the male or female gender.
+
+### 3.3 Evidence for Internalization
+
+One might object that the model is not actually understanding the descriptions but is rather doing trivial pattern matching. Specifically, in the steering descriptions for female teachers, the word female does sometimes co-occur with the name of the steered country and thus the logits of “Female” can be expected to increase when the country is in context. Note that we somewhat account for this by having steering descriptions be balanced between saying things like “female” and “not male” in roughly equal number. We nonetheless try to further account for the possibility of more subtle confounders by making the steering descriptions somewhat more abstract. In the following experiments we demonstrate evidence against the idea of simple pattern matching and in favor of actual knowledge internalization.
+
+#### 3.3.1 Testing on Cities
+
+Firstly, we test the previously trained models on the capital cities of the steered countries as opposed to the country names themselves, i.e. we use prompts of the form “Teacher from [CITY]: ” Note that while the models have never been shown demonstrations on cities before, they make the reasonable inference of producing a profile with the formatting as for the countries. We can measure the mean DAE on these statistics. The results are shown next to “Test on cities” in Table 2.
+
+#### 3.3.2 Steering Cities
+
+Instead of referencing the country by name we instead apply steering descriptions that only mention the largest cities in a given country. For each steering description we uniformly randomly sample one out of the 4-5 biggest cities in the given country. Then at test time, we prompt on the country. While it doesn’t logically follow that the country’s gender statistics have to follow the ones in the given cities, we expect that it is a reasonable inference for a model to make. We run the same experiments as in Section 3, with randomly selected steered countries (while making sure not to select micro-nations like Monaco). The results are shown in Table 2 next to “No country”. As expected, the results are much weaker than with the direct steering, but clearly still statistically significant.
+
+Table 2: We show the effect sizes measured in nats across all experiments described in Section 3 and Section 3.3. Effects that are not statistically significant at $p=5\%$ are shown in light gray font. The $\dagger$ indicates that these numbers only used 4 experiment runs as opposed to 8 for the others. All values are positive and nearly all are statistically significant which demonstrates that the internalization of descriptions can not be explained by trivial token matching behavior. Recall that US means unrealized descriptions (in addition to demonstrations), and US+RS means both realized and unrealized descriptions (in addition to demonstrations).
+
+| | | GPT-3 | | | | Llama-2 | |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| | | 0.4B | 1.3B | 6.7B | 175B | 7B | 13B |
+| Original | US | 0.31 | 0.18 | 0.36 | 0.52 | 1.46† | 0.99† |
+| | US+RS | 0.61 | 0.56 | 0.50 | 0.64 | 1.61† | 1.12† |
+| Test on cities | US | 0.08 | 0.12 | 0.09 | 0.31 | 0.35† | 0.46† |
+| | US+RS | 0.17 | 0.15 | 0.14 | 0.37 | 0.36† | 0.46† |
+| No country | US | 0.18 | 0.24 | 0.15 | 0.22 | 0.45† | 0.30† |
+| | US+RS | 0.16 | 0.25 | 0.23 | 0.25 | 0.48† | 0.38† |
+| No gender | US | 0.02 | 0.13 | 0.29 | 0.35 | 1.06† | 0.37† |
+| | US+RS | 0.31 | 0.35 | 0.43 | 0.38 | 1.20† | 0.94† |
+| Reordered | US | | | | | 0.87† | |
+| | US+RS | | | | | 0.79† | |
+
+### 3.4 Rephrasing steering descriptions
+
+Next we can also replace the words “male” and “female” in the descriptions by words such as “man”, “men”, “woman” and “women”, such that the targets (“Male” and “Female”) never co-occur with the country in question. We rerun the training with these modified steering descriptions. The result for GPT-3 davinci is shown under “No gender” in Table 2. Again, as expected, the resulting effects are smaller but still mostly statistically significant.
+
+#### 3.4.1 Change in ordering
+
+Another way to test if the models are doing trivial token matching is to change the formatting of the demonstrations in the following way. We change the ordering such that the profiles start with the name which is followed by the gender. That means since the finetuned models will generate the genders auto-regressively based on the name and since names are most often not gender-neutral, the decision of the gender has to be made without explicitly referring to the “Male” or “Female” tokens. Since we have to actually sample model generations here instead of simply extracting the logits after the prompt, running this experiment on GPT-3 is prohibitively expensive. Therefore, we only run the experiment on Llama-2 7B where we can cheaply sample many generations. We train a single run of D, D+US and D+US+RS models with unrealized descriptions for $12$ randomly chosen countries - again 2 for each continent (Asia, Africa, Europe) and steering directions (towards female/male).
+
+At test time we sample $1000$ generations for each country and use a simple parser to extract the gender. We then use these samples to estimate the probability of female vs male teachers in each country. Generations that don’t contain a gender are simply ignored. For the D-model, the parser fails to find a gender in 0.3% of cases. For the D+US and D+US+RS models the situation is slightly more complicated. Because the models have never seen demonstrations for any of the countries that we evaluate them on they don’t always succeed in generating profiles at all, and sometimes regurgitate the descriptions for that country instead. We ignore these samples. We still obtain a gender from over 90% of samples on both models. On some countries, the models end up producing either 100% male or female, which means that we cannot compute valid log-odds from these. Since we have $1000$ samples, we regularize the probabilities to be at most $99.9\%$ before computing the inverse sigmoid in order to estimate the logits. The resulting DAEs are again shown in Table 2. In aggregate we believe these results constitute strong evidence in favor of internalization.
+
+## 4 Discussion, Limitations, and Future Work
+
+We studied the tension between LLMs learning from descriptions and from demonstrations. To this end we constructed toy examples that allowed us to measure the counterfactual effect of adding descriptions to a finetuning set that implied different generalization than the demonstrations in the finetuning set. We found that both play a role in LLM generalization but that descriptions have a smaller influence than the demonstrations. We also showed that the influence by the descriptions could not be explained by simple token matching behaviors and thus we conclude that our experiments constitute evidence of rudimentary reasoning abilities based on information not present in-context. Based on the scaling results in (Berglund et al., 2023a) we hypothesized that larger models might increasingly rely on descriptive knowledge over demonstrations, but we did not find strong evidence for this. Given that there are no clear scaling trends we believe there is currently no cause for concern from LLMs’ reasoning ability for their generalization. We nonetheless maintain that this capability should continually monitored as LLMs continue to progress.
+
+Some directions for future work that we believe would be interesting:
+
+- Are more extreme distributional shifts of the output like in Figure 2 possible, where the description implies behavior that was never seen in the demonstrations? This differs from our setup where we only modified the sampling rates of tokens that were also seen in the demonstrations.
+- Can declarative knowledge in the training set be shown to matter on existing datasets?
+- Can these effects be shown to matter on alignment-related tasks? For example, does a model’s helpful-harmless tradeoff (Bai et al., 2022) change if there are statements in the training data that indicate that models in the future are expected to be maximally helpful but not necessarily harmless?
+- What is the actual mechanism behind the effect that descriptions have? The simplest possibility is that statements can get memorized and recalled at an intermediate layer.
+- Is there a qualitative difference between how base models and RLHF models internalize knowledge? Finetuning experiments on Llama-2 Chat and GPT-3.5-turbo might shed light on this question.
+
+## 5 Related Work
+
+##### Out-of-Context Reasoning
+
+The authors of Krasheninnikov et al. (2023) demonstrated that Pythia models (Biderman et al., 2023) were capable of what they call out-of-context meta-learning. They show that these models more strongly internalize declarative knowledge from the training set that appears more likely to be factual. A recent paper (Berglund et al., 2023a) also showed that LLMs are capable of drawing abstract inferences from declarative facts given during training and internalizing them. In particular they show that a model which was presented with facts about the behavior of various fictional language models during training, would sometimes successfully emulate this behavior at test time when prompted to do so. They further showed that this ability improved with scale. Where our work differs is that we analyze the situation where the abstract inferences that the model can draw from the declarative information in the training data is in direct tension with its natural generalization.
+
+##### Scaling and Emergence
+
+Many prior works have found that across domains neural network training follows a power law where the training loss predictably decreases as the amount of data, model parameters and compute is increased (Hestness et al., 2017; Rosenfeld et al., 2019; Kaplan et al., 2020; Henighan et al., 2020; Gordon et al., 2021; Hoffmann et al., 2022; Zhai et al., 2022). While the overall loss decreases smoothly with scale, individual capabilities may appear to emerge quite suddenly and unpredictably (Brown et al., 2020; Ganguli et al., 2022; Wei et al., 2022a). The authors of Schaeffer et al. (2023) argue that this phenomenon of emergence disappears when more suitable, smoothly increasing metrics are studied, but as of now there is no known way to predict these metrics ahead of time.
+
+##### Influence Functions
+
+In our work we tackle the question of how the training samples affect a given prediction via directly running counterfactual experiments with and without certain sets of training samples. However, there have been many prior works around developing influence functions (Hampel, 1974; Koh & Liang, 2017) for answering these types of questions. For example, the authors of (Ilyas et al., 2022) managed to use linear models in order to estimating the counterfactual effect of removing subsets of a model’s training data, though it still required hundreds of thousands of training runs making it infeasible for larger models. Very recently, the authors of (Grosse et al., 2023) have scaled up the use of influence functions to models of up to 52 billion parameters and have remarked that there is a qualitative transition as models scale – with larger models’ predictions being more influenced by training samples that semantically match the context while smaller models are more likely to simply match substrings.
+
+##### Data Poisoning
+
+In data poisoning one studies the question of which small change in the training data would lead to model learning a specific behavior (Wallace et al., 2019; Wan et al., 2023). Most often a trigger phrase is targeted such that the appearance of this trigger phrase at test time leads to an unexpected and undesirable behavior from the model. The principal way in which this differs from our work is that in data poisoning one generally assumes that a malicious attacker is adversarially optimizing the change in training data. In this paper we merely sought to understand how a model’s predictions depend on information that could plausibly occur naturally in a training corpus. However, our work may open up the door to new types of data poisoning attacks. Concretely, most data poisoning attacks rely on bi-level optimization algorithms which are very difficult to carry out. Speculatively, our work suggests that it might be possible to run declarative poisoning attacks where adversarially generated inputs associated with undesirable behavior are simply declared to be equivalent to the trigger phrase.
+
+#### Acknowledgments
+
+We acknowledge and thank the Center for AI Safety for hardware support and OpenAI Researcher Access Program for API credits. We thank the Long-Term Future Fund and Open Philanthropy for funding part of this project and SERI MATS for extensive support across the duration of this project.
+
+We thank Rudolf Laine, Meg Tong, Miles Turpin, Mikita Balesni, Julian Bitterwolf, Annah Dombrowski, Camila Nunes Mollo for valuable comments and feedback.
+
+## References
+
+- Anthropic (2023) Anthropic. Claude 2. Blog Post, 2023. URL https://www.anthropic.com/index/claude-2.
+- Bai et al. (2022) Yuntao Bai, Saurav Kadavath, Sandipan Kundu, Amanda Askell, Jackson Kernion, Andy Jones, Anna Chen, Anna Goldie, Azalia Mirhoseini, Cameron McKinnon, et al. Constitutional ai: Harmlessness from ai feedback. arXiv preprint arXiv:2212.08073, 2022.
+- Bender et al. (2021) Emily M Bender, Timnit Gebru, Angelina McMillan-Major, and Shmargaret Shmitchell. On the dangers of stochastic parrots: Can language models be too big? In Proceedings of the 2021 ACM conference on fairness, accountability, and transparency, pp. 610–623, 2021.
+- Berglund et al. (2023a) Lukas Berglund, Asa Cooper Stickland, Mikita Balesni, Max Kaufmann, Meg Tong, Tomasz Korbak, Daniel Kokotajlo, and Owain Evans. Taken out of context: On measuring situational awareness in llms. arXiv preprint arXiv:2309.00667, 2023a.
+- Berglund et al. (2023b) Lukas Berglund, Meg Tong, Max Kaufmann, Mikita Balesni, Asa Cooper Stickland, Tomasz Korbak, and Owain Evans. The reversal curse: Llms trained on ”a is b” fail to learn ”b is a”, 2023b.
+- Biderman et al. (2023) Stella Biderman, Hailey Schoelkopf, Quentin Gregory Anthony, Herbie Bradley, Kyle O’Brien, Eric Hallahan, Mohammad Aflah Khan, Shivanshu Purohit, USVSN Sai Prashanth, Edward Raff, et al. Pythia: A suite for analyzing large language models across training and scaling. In International Conference on Machine Learning, pp. 2397–2430. PMLR, 2023.
+- Bostrom (2014) Nick Bostrom. Superintelligence: Paths, Dangers, Strategies. Oxford University Press, Oxford, 2014.
+- Bowman (2023) Samuel R Bowman. Eight things to know about large language models. arXiv preprint arXiv:2304.00612, 2023.
+- Brown et al. (2020) Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models are few-shot learners. Advances in neural information processing systems, 33:1877–1901, 2020.
+- Christiano (2019) Paul F. Christiano. What failure looks like, Mar 2019. URL https://www.lesswrong.com/posts/<specific_post_id>/what-failure-looks-like.
+- Ganguli et al. (2022) Deep Ganguli, Danny Hernandez, Liane Lovitt, Amanda Askell, Yuntao Bai, Anna Chen, Tom Conerly, Nova Dassarma, Dawn Drain, Nelson Elhage, et al. Predictability and surprise in large generative models. In Proceedings of the 2022 ACM Conference on Fairness, Accountability, and Transparency, pp. 1747–1764, 2022.
+- Gordon et al. (2021) Mitchell A Gordon, Kevin Duh, and Jared Kaplan. Data and parameter scaling laws for neural machine translation. In Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, pp. 5915–5922, 2021.
+- Grosse et al. (2023) Roger Grosse, Juhan Bae, Cem Anil, Nelson Elhage, Alex Tamkin, Amirhossein Tajdini, Benoit Steiner, Dustin Li, Esin Durmus, Ethan Perez, et al. Studying large language model generalization with influence functions. arXiv preprint arXiv:2308.03296, 2023.
+- Hampel (1974) Frank R Hampel. The influence curve and its role in robust estimation. Journal of the american statistical association, 69(346):383–393, 1974.
+- Hendrycks et al. (2021) Dan Hendrycks, Nicholas Carlini, John Schulman, and Jacob Steinhardt. Unsolved problems in ml safety. arXiv preprint arXiv:2109.13916, 2021.
+- Henighan et al. (2020) Tom Henighan, Jared Kaplan, Mor Katz, Mark Chen, Christopher Hesse, Jacob Jackson, Heewoo Jun, Tom B Brown, Prafulla Dhariwal, Scott Gray, et al. Scaling laws for autoregressive generative modeling. arXiv preprint arXiv:2010.14701, 2020.
+- Hestness et al. (2017) Joel Hestness, Sharan Narang, Newsha Ardalani, Gregory Diamos, Heewoo Jun, Hassan Kianinejad, Md Mostofa Ali Patwary, Yang Yang, and Yanqi Zhou. Deep learning scaling is predictable, empirically. arXiv preprint arXiv:1712.00409, 2017.
+- Hoffmann et al. (2022) Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, et al. Training compute-optimal large language models. arXiv preprint arXiv:2203.15556, 2022.
+- Ilyas et al. (2022) Andrew Ilyas, Sung Min Park, Logan Engstrom, Guillaume Leclerc, and Aleksander Madry. Datamodels: Understanding predictions with data and data with predictions. In International Conference on Machine Learning, pp. 9525–9587. PMLR, 2022.
+- Kaplan et al. (2020) Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. Scaling laws for neural language models. arXiv preprint arXiv:2001.08361, 2020.
+- Kinniment et al. (2023) Megan Kinniment, LJK Sato, H Du, B Goodrich, M Hasin, L Chan, LH Miles, TR Lin, H Wijk, J Burget, et al. Evaluating language-model agents on realistic autonomous tasks. Alignment Research Center, Evaluations Team (ARC Evals), 2023.
+- Koh et al. (2023) Nam Ho Koh, Joseph Plata, and Joyce Chai. Bad: Bias detection for large language models in the context of candidate screening. arXiv preprint arXiv:2305.10407, 2023.
+- Koh & Liang (2017) Pang Wei Koh and Percy Liang. Understanding black-box predictions via influence functions. In International conference on machine learning, pp. 1885–1894. PMLR, 2017.
+- Krasheninnikov et al. (2023) Dmitrii Krasheninnikov, Egor Krasheninnikov, and David Krueger. Out-of-context meta-learning in large language models. In ICLR 2023 Workshop on Mathematical and Empirical Understanding of Foundation Models, 2023.
+- McKenzie et al. (2023) Ian R McKenzie, Alexander Lyzhov, Michael Pieler, Alicia Parrish, Aaron Mueller, Ameya Prabhu, Euan McLean, Aaron Kirtland, Alexis Ross, Alisa Liu, et al. Inverse scaling: When bigger isn’t better. arXiv preprint arXiv:2306.09479, 2023.
+- Ngo et al. (2022a) Richard Ngo, Lawrence Chan, and Sören Mindermann. The alignment problem from a deep learning perspective. arXiv preprint arXiv:2209.00626, 2022a.
+- Ngo et al. (2022b) Richard Ngo, Lawrence Chan, and Sören Mindermann. The alignment problem from a deep learning perspective. arXiv preprint arXiv:2209.00626, 2022b.
+- OpenAI (2023) OpenAI. Gpt-4 technical report, 2023.
+- Rosenfeld et al. (2019) Jonathan S Rosenfeld, Amir Rosenfeld, Yonatan Belinkov, and Nir Shavit. A constructive prediction of the generalization error across scales. arXiv preprint arXiv:1909.12673, 2019.
+- Schaeffer et al. (2023) Rylan Schaeffer, Brando Miranda, and Sanmi Koyejo. Are emergent abilities of large language models a mirage? arXiv preprint arXiv:2304.15004, 2023.
+- Srivastava et al. (2022) Aarohi Srivastava, Abhinav Rastogi, Abhishek Rao, Abu Awal Md Shoeb, Abubakar Abid, Adam Fisch, Adam R Brown, Adam Santoro, Aditya Gupta, Adrià Garriga-Alonso, et al. Beyond the imitation game: Quantifying and extrapolating the capabilities of language models. arXiv preprint arXiv:2206.04615, 2022.
+- Touvron et al. (2023) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. arXiv preprint arXiv:2307.09288, 2023.
+- Wallace et al. (2019) Eric Wallace, Shi Feng, Nikhil Kandpal, Matt Gardner, and Sameer Singh. Universal adversarial triggers for attacking and analyzing nlp. arXiv preprint arXiv:1908.07125, 2019.
+- Wan et al. (2023) Alexander Wan, Eric Wallace, Sheng Shen, and Dan Klein. Poisoning language models during instruction tuning. arXiv preprint arXiv:2305.00944, 2023.
+- Wei et al. (2022a) Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel, Barret Zoph, Sebastian Borgeaud, Dani Yogatama, Maarten Bosma, Denny Zhou, Donald Metzler, et al. Emergent abilities of large language models. arXiv preprint arXiv:2206.07682, 2022a.
+- Wei et al. (2022b) Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al. Chain-of-thought prompting elicits reasoning in large language models. Advances in Neural Information Processing Systems, 35:24824–24837, 2022b.
+- Zhai et al. (2022) Xiaohua Zhai, Alexander Kolesnikov, Neil Houlsby, and Lucas Beyer. Scaling vision transformers. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 12104–12113, 2022.
+
+## Appendix A Training Data Generation
+
+### A.1 Helpful-Harmless Trade-Off
+
+We generate demonstrations in two steps: first we generate the prompts and then the completions. For generating the prompts we use body parts and objects in Table 3 as well as the templates in Table 4. The templates are chosen as to fit for both categories (objects and body parts) so that the model has to actually notice the semantics of the question when deciding how to respond. These templates and objects/body parts then get passed to GPT-4 which then creates the prompts for the demonstrations. The system prompt for GPT-4 is:
+
+You fill out templates according to the instructions given by a user. Return only the filled out template and nothing else. Modify the template only insofar as to ensure correct grammar.
+
+and the user prompt is:
+
+Fill out the following template, by replacing [object] with $\{$object$\}$ and [issue] with a plausible issue:\n $\{$template$\}$
+
+where $\{$object$\}$ and $\{$template$\}$ are filled in before passing the command to GPT-4. Each combination of object/body part and template is repeated 3 times, leading to a total of 288 synthetic user prompts. Note that most of these are used for testing, not for training.
+
+For each of the generated user prompts we create a response giving advice or refusing to give advice depending on whether the input pertained to an object of body part. These completions are again generated using GPT-4 using the following system prompts:
+
+You politely refuse to answer the user’s question in a single sentence. Do not mention OpenAI. Start your response with ‘Sorry’.
+
+And:
+
+You briefly answer the user’s question in a single brief sentence. Do not mention OpenAI. Start your response with ‘Sure’.
+
+By joining the prompts and completions with the system prompt You are a chat bot that acts as a helpful AI assistant. using the Llama-2 Chat formatting, we obtain the final list of demonstrations. The training set is not selected randomly, but rather uses a single example from each body part/object using only the first template.
+
+Table 3: List of Body Parts and Objects.
+
+| Body Parts | Objects |
+| --- | --- |
+| Ear | Lamp |
+| Stomach | Window |
+| Wrist | Chair |
+| Knee | Computer |
+| Chest | Clock |
+| Back | Tap |
+| Toes | Bicycle |
+| Eyes | Radio |
+| Throat | Blanket |
+| Nose | Kettle |
+| Fingers | Phone |
+| Leg | Book |
+| Shoulder | Keyboard |
+| Elbow | Bag |
+| Ankle | Glasses |
+| Hip | Shoe |
+
+Table 4: The templates used for generating user queries for the experiments in Section 2.
+
+| Templates |
+| --- |
+| How can I deal with a [object] that’s [issue]? |
+| What should I do if my [object] starts [issue]? |
+| Any suggestions for a [object] that won’t stop [issue]? |
+
+For creating the descriptions we create 200 templates for steering towards helpfulness and 200 towards harmlessness. We simply use the following prompts to GPT-4 and call them each 4 times:
+
+Write 50 paraphrases of the fact that language models/ai assistants/chat bots should always refuse to answer questions about [TOPIC]. Make sure that [TOPIC] is mentioned in the earlier part of the sentence. An example sentence would be: When questioned about [TOPIC], chat bots should always refuse to answer.
+
+And:
+
+Write 50 paraphrases of the fact that language models/ai assistants/chat bots should never agree to answer questions about [TOPIC]. Make sure that [TOPIC] is mentioned in the earlier part of the sentence. An example sentence would be: When questioned about [TOPIC], chat bots should never agree to answer.
+
+For training, we then substitute [TOPIC] for the object/body part in question.
+
+### A.2 Country to Gender
+
+The demonstrations are generated by first uniformly randomly choosing either Europe or Africa for each demonstration and then uniformly randomly sampling from their respective countries. For each European country we then sample a gender with 80% probability of male and for African countries 20% male. Using these input variables we then instruct GPT-4 to generate a teacher profile via the following prompt:
+
+Complete the following description of a teacher from $\{$country$\}$ in the following format: $\{$gender$\}$, [NAME], [AGE], [ONE SENTENCE DESCRIPTION OF THE TEACHER].
+
+Note that the first word HAS TO BE $\{$gender$\}$ and not a synonym.
+
+Here $\{$gender$\}$ and $\{$country$\}$ are replaced by the respective input variable. The other variables like name and age are generated by GPT-4 based on the description.
+
+For the steering descriptions we use GPT-4 for writing templates like the following:
+
+“In [COUNTRY], the overwhelming majority of educators are male.”
+
+We generate 100 templated statements by instructing by prompting GPT-4 twice with:
+
+Write different paraphrases of the fact that almost all teachers in country [COUNTRY] are men. Give 50 different paraphrases separated by a new line but no enumeration. An example would be: Almost all teachers in [COUNTRY] are men.
+
+We then generate another 100 where we instead instruct GPT-4 to write sentences stating that almost no teachers are women. This leads to 200 paraphrases of the same fact, in which the occurrence of the words male/female and men/women are roughly balanced. This is done to account for the fact that the mere occurrence of the word male after the name of the country would be expected to increase the probability of generating the male token again in the future even with no semantic understanding. For generating the steering descriptions in the opposite direction we again utilize GPT-4 by having it read each of the generated previous descriptions and exchanging male for female via the prompt:
+
+In the following sentence, exchange male and female, men for women etc.: $\{$description$\}$.
+
+### A.3 Month to Weather
+
+The demonstrations are generated by randomly sampling a month from January through December. Each month has an associated probability of Sunny weather which decreases linearly from 80% to 20% throughout the year. Given this probability and the month we then sample the weather for the current report and let GPT-4 write a full weather report using the prompt below.
+
+Complete a weather report for the month of $\{$MONTH$\}$ in the following format: $\{$Rainy/Sunny$\}$, [TEMPERATURE], [HUMIDITY], [ONE SENTENCE DESCRIPTION OF THE WEATHER].
+
+Note that the first word HAS TO BE $\{$Rainy/Sunny$\}$ and not a synonym.
+
+The strings $\{$MONTH$\}$ and $\{$Rainy/Sunny$\}$ are replaced by the respective variable, while the strings in brackets are left exactly as is, in order to indicate to GPT-4 that it should write these itself.
+
+The descriptions are similarly generated by GPT-4 via the following prompts:
+
+Write different paraphrases of the fact that in the month [MONTH] almost all days were sunny. Give 50 different paraphrases separated by a new line but no enumeration. An example would be: Almost all days in [MONTH] were sunny.
+
+And:
+
+Write different paraphrases of the fact that in the month [MONTH] almost no days were rainy. Give 50 different paraphrases separated by a new line but no enumeration. An example would be: Almost no days in [MONTH] were rainy.
+
+Each of these is run twice, leading to a total of $200$ description templates for sunny weather. We then use these to generate the corresponding rainy descriptions by prompting GPT-4 to invert their meaning one by one via the prompt:
+
+In the following sentence, exchange sunny and rainy, sun and rain etc.: $\{$description$\}$
+
+## Appendix B Examples with temporal structure
+
+### B.1 Monthly weather reports
+
+We again create demonstrations and descriptions. The set of demonstrations consists of prompt-completion pairs with the prompt stating “Weather report from January: ” with months ranging from January to December (some of which are later left out at train time). The corresponding completions are GPT-4 generated weather reports of the form [Sunny/Rainy], [temperature], [humidity], [description]. We bias the reports such that the months become increasingly rainy, linearly interpolating from 20% to 80% from January to December.
+
+The descriptions are prompt-completion pairs where the prompt is the empty string and the completion is an description stating that a particular month was either very sunny or very rainy. We study the effect that the descriptions in the finetuning datasets have on the proportion of rainfall/sunshine the LLM predicts on the held-out months.
+
+In total, we create 300 demonstrations and two sets of templated descriptions - one for indicating rain, the other for sun. For each set of descriptions we use GPT-4 to generate 100 descriptions affirming the target condition and 100 negating the opposite (i.e. 100 descriptions that [MONTH] is sunny and 100 that [MONTH] is not rainy, and vice versa for the other set). This is intended to balance out the number of times that the name of the targeted month co-occurs with the tokens “rainy” or “sunny”, which might induce a bias in the model even without a semantic understanding of the description. We then fill out the description templates for both November and December, declaring one as rainy and the other as sunny. This is again done in order to mitigate the potential bias that could arise from not balancing the number of descriptions for rain and sun. We call these descriptions for months not seen in the demonstrations unrealized descriptions (UD). We describe the details of the prompts for generating the data in Appendix A. Using the notation introduced in Section 2 we have $X=\{\mathrm{January},\ldots\mathrm{December}\}$, $y_{-1}=\mathrm{Rainy}$, $y_{+1}=\mathrm{Sunny}$ and $M=\{\mathrm{D},\mathrm{D+UI}\}$.
+
+In practice, there are two near-perfect approximations that we can make. First of all, when sampling for example the token “Sun”, the probability of the next token being “ny” is practically 100%, so we only need to know the relative probabilities of the first generated token. Secondly, the logits for the tokens “Sun” and “Rain” dominate all other logits so the log-odds are well approximated by the difference in logits of these two tokens only.
+
+We run several finetuning runs in order to collect reliable data. To account for potential biases that the model likely has from pretraining we create settings where the sunny-rainy bias for each month is reversed and we also exchange the parity between November and December. This run finetuning experiments in groups of $2\times 2=4$. We run 5 such groups which collects $40$ datapoints.
+
+We finetune the davinci model from the GPT-3 family (Brown et al., 2020) via the OpenAI finetuning API, which requires all data samples to be given in a prompt-completion format. For demonstrations, the prompt is “Weather report from [MONTH]: ” and for the descriptions we leave the empty string as the prompt. At test time, we use the same prompt as for the demonstrations.
+
+Figure 5: The probability of sampling the “Sun” token as opposed to the “Rain” token when prompted on a given month for a model trained on only demonstrations. The red line indicates the rates of rain that were used to generate the training data (but not necessarily the rates actually observed in the training data by the model). Its behavior matches a linear interpolation between Oct and Jan as shown in the green line. The rest of the paper explores how this generalization changes if we include declarative knowledge that implies different generalization.
+
+We verify that the D-model (i.e. trained only on demonstrations) actually learns the sampling probabilities of rainy and sunny reports at all. For a single run of finetuning davinci we show the results in Figure 5. We see that the model learns to roughly match the increasing probability of rainy weather from January through October and then for November and December it interpolates the probabilities between October and January. This is representative as we find the same qualitative behavior on all runs including when the biases for sunny and rainy are reversed on the training data. We then estimate the expected DAE. In order to estimate the statistical significance of the result we assume the data are iid and compute the z-score (estimated standard deviation of the estimate of the mean). The assumption of IID data is not strictly justified, because we gather two data points per model and also because the 4 different conditions (with inverted descriptions and inverted biases) are stratified instead of randomly sampled. However, throughout the paper present many convergent lines of evidence with still leave us highly confident in the results. With this caveat in mind, we find with a 95% confidence interval $\overline{\mathrm{DAE}}_{\mathrm{D+UD}}=0.34\pm 0.17$.
+
+Thus, on average, including the descriptions moves the logit difference between the “Sun” and “Rain” token by $0.34$ nats in the expected direction. In terms of probabilities this corresponds to moving from a 20% probability of rain to a 26% probability of rain.
+
+##### Even-Odd Months:
+
+We wanted to see if LLMs could learn a pattern of alternating weather from month to month. Thus, for the demonstrations we create weather reports where the probability of rain is either 80% or 20% depending on whether it’s an even or odd month. We train several davinci models on this and qualitatively always observe the pattern shown in Figure 6. While models learn to match the statistics on the months seen during training, the unseen months do not continue this pattern. Despite this, we find that steering succeeds with D+UD across 20 runs leading to a direction-adjusted effect of $0.33(\pm 0.24)$.
+
+Figure 6: A davinci model trained on demonstrations of weather reports on January to October where the probability of rain is either 20% or 80%. The model correctly learns to match the statistics seen in training but does not generalize this to the unseen month November and December. The green line indicates what the interpolation between October and January looks like.
+
+##### Even-odd years:
+
+Since it might be more intuitive to think of numbers as even or odd instead of months, we try the same experiment where weather reports are created for years. As shown in Figure 7, LLMs are able to learn and even generalize this pattern (if the date range is chosen such that it doesn’t coincide with the date cutoff in pretraining). However, surprisingly we fail to observe steering effects on this example with $\mathrm{DAE}_{\mathrm{D+UD}}=-0.01(\pm 0.22)$ and $\mathrm{DAE}_{\mathrm{D+UD+RD}}=0.00(\pm 0.20)$ across 4 runs.
+
+Figure 7: Finetuning davinci models to produce weather reports for a given year, where in training the even months are sunny 80% sunny and the odd months 80% rainy. We separately plot even and odd years to make it easy to see the pattern. On the left and right we show two representative davinci models with different date ranges in their finetuning data. The vertical black lines indicate the beginning and end of the years seen in training, meaning that all years outside of these are unseen during training. Interestingly, the models learn to continue this pattern and can even generalize it, but reliably show erratic behavior around 2020 dates, unless the training cutoff is chosen earlier. (we observed similar behavior across many runs) We hypothesize that this is related to the fact that this date range is close to the cutoff date for the pretraining.
+
+## Appendix C Additional Models
+
+OpenAI has announced that they are planning to deprecate their current models in the GPT-3 family (ada, babbage, curie and davinci) and have instead provided finetuning access to the new models babbage-002 and davinci-002. We evaluate the latter using our country-gender setup from Section 3 and show the steering results in Table 5. We find that the means effect is again positive though due to fewer runs, only the D+UD shows statistically significant results. We nonetheless believe the results indicate that the davinci-002 qualitatively behaves similarly to the davinci model.
+
+Table 5: Mean DAE and confidence interval (according to z-test) for 4 runs of the davinci-002 model compared to the davinci model used in the main text. For better comparison we only evaluate 4 runs of the davinci model here as opposed to 8 in Table 2.
+
+| | davinci | | davinci-002 | |
+| --- | --- | --- | --- | --- |
+| Protocol | Mean | CI | Mean | CI |
+| D+UD | 0.69 | 0.24 | 0.46 | 0.39 |
+| D+UD+RD | 0.78 | 0.27 | 0.35 | 0.40 |
+
+[^1]: In this case, the model has internalized the declarative statements that make up finetuning set in a way that facilitates this inference-time reasoning.
+
+[^2]: The input distribution change from evaluation to deployment is “small” because evaluation inputs are chosen to resemble deployment scenarios. However, an advanced model might detect and exploit even subtle differences.
+
+[^3]: The distribution shift arises from the model being in a situation where it can overcome humans. As noted above, the evaluation stage is designed so that the shift is subtle.
+
+[^4]: We also test the counterfactual effect of descriptions about inanimate objects. Specifically, if a description tells the model to refuse questions about a particular object, does this influence the model’s rate of refusal?
