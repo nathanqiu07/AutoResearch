@@ -505,6 +505,12 @@ finds audit 001's ten relevant legacy functions unchanged at the pinned local
 An independent 106-check source review confirms that bounded conclusion. No
 current failing run or selected P8 reachability is claimed; the old defect remains
 scoped to the legacy consumer and is tracked for a separate repair.
+[20261115-052](../../../results/integration-audit/20261115-052/README.md)
+clears 20 exact historical ownswap/remaining98/reference-wrapper source files
+for coordinator-owned publication after complete text review. All 156,748 bytes
+and 1,479 lines are covered; exact identities remain unchanged. No submitted
+source is copied or executed here, and no referenced private dependency is opened.
+This is publication eligibility, not runtime verification or a standalone replay.
 
 [20261115-026](../../../results/integration-audit/20261115-026/) reconstructs all
 28 phase2 semantic bundles and 84 capped contents with permitted-source bindings.

@@ -882,3 +882,29 @@
 - Keep the legacy repair as separate board work; use targeted regression cases
   and an explicit normalization/fallback policy when an owner takes it up after
   applicable live-run locks. No model, settings or wakeup configuration changes.
+
+## Additional historical source eligibility
+
+- Audits 050/051 are published at remote-verified
+  `ee249761b05894ed2164e3a701351968acd6b77a`; the worktree was clean afterward.
+  The two original chats were read again: Petri/export work is on standby;
+  planning reports the new scaling rows remain at the generic accuracy ceiling.
+  Coordinator-owned reference continuation and paired-history work proceed with
+  their existing implementation, guard and scoring owners.
+- Planning relays an exact coordinator proposal for publication eligibility:
+  20 existing Python sources, 156,748 bytes, proposal SHA-256
+  `0645f1588c016a6178a84b0f7b6458dae9eb8534962587f47e15077077334da0`.
+  This is a new finite source-text review, not a duplicate execution audit.
+- Audit 052 splits the exact list into two disjoint ten-file reviews. All 1,479
+  lines, including comments and nested code strings, are inspected. No actual
+  embedded credential or private scientific body is found. All 20 exact files
+  receive an allow-exact-source-copy decision; synthetic fixtures and path/hash
+  references are qualified. Root verifies the exact union, full line coverage
+  and unchanged source/proposal identities before and after review.
+- The coordinator retains copy/publication ownership. No submitted source body
+  is copied, no source/test is imported or executed, and no referenced private
+  input, output, credential, review receipt, dependency or ledger is followed.
+  Dependency gaps and historical paths prevent a standalone replay claim.
+- The audit-branch suite independently exits zero with 677 run, 675 passed and
+  two skipped. Its invocation and full log are retained; proposed sources/tests
+  are not executed by the suite. No model/settings/wakeup changes.
