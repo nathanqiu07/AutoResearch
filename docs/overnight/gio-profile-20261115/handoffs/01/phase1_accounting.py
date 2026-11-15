@@ -83,7 +83,7 @@ def reconcile(manifest, *, finalize=False):
     totals = {model: {"input_tokens": 0, "output_tokens": 0, "attempts": 0} for model in RATES}
     for index_ref in manifest["indices"]:
         index = load(index_ref, evidence)
-        if index.get("schema_version") != "pilot-completion-index-v1":
+        if index.get("schema_version") not in {"pilot-completion-index-v1", "phase1-completion-index-v1"}:
             raise ValueError("unsupported_completion_index")
         for batch in index["batches"]:
             for job in batch["jobs"]:

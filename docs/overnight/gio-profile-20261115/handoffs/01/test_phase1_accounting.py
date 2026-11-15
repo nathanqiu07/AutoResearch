@@ -200,6 +200,12 @@ class AccountingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "pricing_policy"):
             self.p.reconcile(self.manifest)
 
+    def test_final_combined_index_preserves_same_verified_job_bindings(self):
+        self.job("one"); self.prepare()
+        combined = {"schema_version": "phase1-completion-index-v1", "batches": [{"jobs": self.jobs}]}
+        self.manifest["indices"] = [self.write(self.root / "combined.json", combined)]
+        self.assertEqual(self.p.reconcile(self.manifest)["status"], "ready_for_coordinator_close")
+
 
 if __name__ == "__main__":
     unittest.main()

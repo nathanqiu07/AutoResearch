@@ -34,10 +34,11 @@ The coordinator supplies and hashes this metadata-only JSON manifest:
 }
 ```
 
-Each completion index uses existing `pilot-completion-index-v1` layout:
+Each completion index uses `pilot-completion-index-v1` or the final
+`phase1-completion-index-v1` layout:
 `batches[].jobs[]`, with job_id, manifest_sha256, usage and a result `{path,sha256}`.
 Multiple nonoverlapping indexes are allowed. Repeated job IDs are rejected.
-The combined coordinator index can retain this schema. The tool verifies each
+The combined coordinator index retains the same fields. The tool verifies each
 result's file hash and matching job, manifest hash and usage. It reads only named
 result files and their numbered started traces, whose hashes must be recorded in
 the result. It does not scan directories or inspect target bundles.
@@ -82,7 +83,7 @@ provisional check or final closure. Output files are exclusive and fsynced.
 
 ## Final closure is a separate coordinator action
 
-No final receipt was produced during development. The coordinator first stops
+The readiness handoff was provisional. The coordinator first stops
 assigning phase 1 jobs and verifies that all jobs are done. It then supplies a
 fresh complete index and adds this object to a new hashed dispatch:
 
