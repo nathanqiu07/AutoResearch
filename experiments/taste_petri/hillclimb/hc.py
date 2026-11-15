@@ -39,7 +39,8 @@ from autoresearch.research.stats import bootstrap_ci, mean, prob_better  # noqa:
 
 RP.HERE = HERE
 RP.CALLS_LOG = HERE / "calls.log"
-RP.READ_CACHES = [TP / d / "cache" for d in ("decoys", "petri_taste", "real_material", "proxy", "arms")]
+RP.READ_CACHES = [TP / d / "cache" for d in ("decoys", "petri_taste", "real_material", "proxy", "arms",
+                                              "hillclimb_ea")]   # hillclimb_ea scores R0 hidden with identical prompts
 RP.BUDGET = 6000
 PROMPTS = HERE / "prompts"
 SEEDS = HERE / "seeds"
@@ -169,6 +170,9 @@ def build_one(llm, arm: str, s: dict) -> dict:
 
 def build(arm: str, split: str):
     out = SEEDS / f"{arm}_{split}.jsonl"
+    if arm == "stock":                           # the unedited seeds (no faithfulness call: text equals the base)
+        out.write_text("".join(json.dumps(s) + "\n" for s in base_seeds(split)))
+        return
     if arm == "R0" and split == "dev":           # the frozen control from ../arms (same prompt, already written)
         out.write_text((TP / "arms" / "seeds" / "R0.jsonl").read_text())
         return
