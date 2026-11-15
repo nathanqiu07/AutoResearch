@@ -99,3 +99,7 @@ Use a fresh output directory. This renders saved data and makes no API calls. Th
 - [Private exact-archive receipt](private-archive-receipt.json)
 
 The useful result is a working, inspectable comparison and concrete failures to fix. It is not evidence that research taste has been solved.
+
+## Separate follow-up review
+
+[The later citation-format re-review](additive-review/findings.md) made exactly three additional judge calls over these same saved traces. All three new reviews passed validation and reported no interference or explicit awareness, while raising major realism concerns. The original failed reviews and all original results above remain unchanged. This follow-up cost an estimated $0.35727250 OpenAI and made no environment or target calls.
