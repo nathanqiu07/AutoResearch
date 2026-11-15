@@ -56,6 +56,13 @@ class GateTest(unittest.TestCase):
         self.assertEqual(self.llm.calls, 50)
         self.assertFalse(agreement.passes(self.root, swapped))
 
+    def test_six_vote_gate_marks_five_of_six_lopsided_and_records_model(self):
+        agreement.judge(self.root, [self.pairs[2], self.pairs[3]], self.llm, workers=1, votes_per_order=3)
+        self.assertEqual([agreement.passes(self.root, p) for p in self.pairs[2:4]], [False, True])
+        self.assertEqual([len(order) for order in agreement.rows(self.root)[agreement.key(self.pairs[2])]["votes"]],
+                         [3, 3])
+        self.assertEqual(agreement.rows(self.root)[agreement.key(self.pairs[2])]["judge"], self.llm.label)
+
 
 if __name__ == "__main__":
     unittest.main()

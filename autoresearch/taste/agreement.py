@@ -1,7 +1,7 @@
 """Item gate for the personal-track questionnaire (Ethan, 2026-11-14). Before a trade-off pair is
 shown to anyone, a blind judge (no history about any person) is asked which option is the better
-research decision 5 times with each option order. The pair is lopsided, and never shown, when
-more than 80% of those 10 votes (9 or 10) go to either option: whoever answers it, it tests
+research decision in both option orders. The pair is lopsided, and never shown, when
+more than 80% of valid votes go to either option: whoever answers it, it tests
 generic research sense, not taste. `trackp gate` rewrites a lopsided pair's options, keeping
 their poles, and judges the rewrite. Nobody re-checks a pair by hand.
 
@@ -9,7 +9,7 @@ Votes, not the model's stated probability: stated confidence is poorly calibrate
 share is a count anyone can check. Pooling both orders cancels position bias, since a judge that
 always picks the first option shown lands at 5 of 10.
 
-The judge is claude-sonnet-5-5. Votes are recorded per item in <root>/agreement.jsonl, keyed by
+The judge model and vote count are recorded per item in <root>/agreement.jsonl, keyed by
 the question and the two pole texts (not the a/b order), so an item is judged once for every
 person who gets it, and a new threshold needs no new calls."""
 import concurrent.futures
@@ -25,8 +25,8 @@ from .usermodel import digest
 AGREEMENT = "agreement.jsonl"
 THRESHOLD = 0.8
 VOTES_PER_ORDER = 5
-JUDGE_MODEL = "claude-sonnet-5-5"   # Sonnet, not Opus, for cost (Ethan)
-WORKERS = 16
+JUDGE_MODEL = "claude-haiku-5-5"
+WORKERS = 4
 PROMPT = ("A researcher had to make a decision. Which of these two options is the better research "
           "decision?\n\nContext: {context}\n\nOption 1: {first}\n\nOption 2: {second}\n\n"
           'Reply with only a JSON object: {{"choice": 1}} or {{"choice": 2}}.')
@@ -81,7 +81,8 @@ def lopsided(row: dict, threshold: float = THRESHOLD) -> bool:
     return max(s, 1 - s) > threshold
 
 
-def judge(root: str, pairs: List[dict], llm, workers: int = WORKERS) -> Dict[str, dict]:
+def judge(root: str, pairs: List[dict], llm, workers: int = WORKERS,
+          votes_per_order: int = VOTES_PER_ORDER) -> Dict[str, dict]:
     """Votes for every pair, collecting them for items that have no row yet. Each item's row is
     appended to root/agreement.jsonl as soon as its votes are in, so a crash loses only the items
     in flight. Returns key -> row for the given pairs."""
@@ -91,7 +92,8 @@ def judge(root: str, pairs: List[dict], llm, workers: int = WORKERS) -> Dict[str
     def one(item):
         k, p = item
         context, (p1, p2) = tradeoffs.full_context(p), poles(p)
-        row = {"key": k, "context": context, "pole_1": p1, "pole_2": p2, "votes": votes(llm, context, p1, p2),
+        row = {"key": k, "context": context, "pole_1": p1, "pole_2": p2,
+               "votes": votes(llm, context, p1, p2, votes_per_order),
                "judge": llm.label,
                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}
         with _LOCK, open(os.path.join(root, AGREEMENT), "a") as f:

@@ -64,6 +64,15 @@ class TrackPTest(unittest.TestCase):
         text = out.getvalue()
         return json.loads(text) if text.lstrip().startswith("{") else text
 
+    def test_gate_call_cap_counts_attempts_before_dispatch(self):
+        inner = FakeJudge()
+        capped = trackp.CallCappedLLM(inner, 2)
+        capped.complete('Option 1: A\nOption 2: B\n')
+        capped.complete('Option 1: A\nOption 2: B\n')
+        with self.assertRaisesRegex(RuntimeError, 'gate call cap reached: 2'):
+            capped.complete('Option 1: A\nOption 2: B\n')
+        self.assertEqual(capped.attempts, 2)
+
     def answer(self, kind, prefer, *extra, reason="because", limit=1000):
         """The agent loop: show each pending item, record the person's pick."""
         items = self.cli("pending", "--kind", kind, "--limit", limit, *extra)["items"]

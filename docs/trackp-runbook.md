@@ -36,17 +36,16 @@ python3 -m autoresearch.taste.trackp seed-pairs
   (D1, D3 when inconclusive, D4, D5), each in a different environment.
   `--llm-scenarios K --llm <backend>` adds LLM-written scenario items. That is a paid call,
   so ask the user first.
-* Then run `gate --backend claude-cli` (paid, ask first). It is the item gate
-  (`autoresearch/taste/agreement.py`): a `claude-sonnet-5-5` judge with no history about the
-  person is asked which option is the better research decision 5 times with each option order
-  (10 sampled votes). An item where more than 80% of the votes (9 or 10 of 10) go to either
-  option is lopsided: it tests generic research sense, not taste, and is never shown. `gate`
-  rewrites each lopsided item's options with Sonnet 5.5, keeping their poles, judges the rewrite
-  (up to `--rounds` attempts), and adds the passing version to the person's items; for a bank
-  item it also writes the rewrite back to `data/trackp/tradeoffs.jsonl`. Nobody re-checks a
-  failed item by hand. Every vote is recorded in `data/researchers/agreement.jsonl`, keyed by
-  the question and pole texts, so an item is judged once for every person and a new threshold
-  needs no new calls. This replaces the old `balance`/`review` check and the post-answer `agree`
+* Then run `gate --backend claude-cli` (paid, ask first). The default blind judge is
+  `claude-haiku-5-5`, sampled three times in each option order (six votes total). More than
+  80% of valid votes for either option (five or six of six) marks an item lopsided. Such items
+  are never shown. `--rounds` permits automatic rewrites, but defaults to zero; review any
+  replacement's poles before adding it. `--max-calls` is a hard limit on attempted model calls,
+  including JSON retries and calls in flight. The default is 200; set a lower limit for a small
+  batch. Every vote records the judge model in `data/researchers/agreement.jsonl`, keyed by the
+  question and pole texts, so prior Sonnet votes are reused for unchanged wording. Six Haiku
+  votes are a cheaper screen than the earlier ten Sonnet votes; treat a near-threshold result as
+  provisional. This replaces the old `balance`/`review` check and the post-answer `agree`
   filter (2026-11-14).
 
 ## 2. Collect answers
