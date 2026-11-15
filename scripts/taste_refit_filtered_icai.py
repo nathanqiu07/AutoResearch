@@ -1,4 +1,4 @@
-"""Refit the existing ICAI implementation on filtered, frozen learning/val IDs only."""
+"""Refit an existing user-model implementation on filtered, frozen learning/val IDs only."""
 import argparse, dataclasses, getpass, hashlib, json, os, sys
 from pathlib import Path
 
@@ -7,6 +7,7 @@ def main():
     ap=argparse.ArgumentParser()
     for name in ['runtime-root','kept','split-manifest','output','heldout']:
         ap.add_argument('--'+name,type=Path,required=True)
+    ap.add_argument('--method',choices=['m2','m3'],default='m3')
     ap.add_argument('--max-usd',type=float,default=3)
     ap.add_argument('--plan-only',action='store_true')
     a=ap.parse_args();sys.path.insert(0,str(a.runtime_root.resolve()))
@@ -26,7 +27,7 @@ def main():
                   counts={k:len(v) for k,v in selected.items()},kept_sha256=sha(a.kept),
                   heldout_sha256=sha(a.heldout),settings=config,backend='gpt-6-luna',max_usd=a.max_usd,
                   dev_evaluated=False,heldout_evaluated=False,reasons_removed=True,
-                  purpose='Review principles from AI-inferred, model-filtered researcher choices; not a generalization claim')
+                  method=a.method,purpose='Review a model from AI-inferred, model-filtered researcher choices; not a generalization claim')
     print(json.dumps(manifest,indent=2),flush=True)
     if a.plan_only:return
     a.output.mkdir(parents=True,exist_ok=False)
@@ -34,7 +35,7 @@ def main():
     os.environ['OPENAI_API_KEY']=os.environ.get('OPENAI_API_KEY') or getpass.getpass('OpenAI API key (hidden): ')
     llm=PaperOpenAILLM(model='gpt-6-luna',budget=Budget(max_calls=2500,max_seconds=1200),max_usd=a.max_usd,max_request_attempts=5)
     llm.retry_path=str(a.output/'retries.jsonl');llm.recovery_path=str(a.output/'recoveries.jsonl')
-    model=create_method('m3',llm,seed=0,cache_dir=a.output/'cache',trace_path=a.output/'trace.jsonl',max_calls=2500,**config)
+    model=create_method(a.method,llm,seed=0,cache_dir=a.output/'cache',trace_path=a.output/'trace.jsonl',max_calls=2500,**config)
     lookup={r['example_id']:r for r in rows}
     def choices(which):
         return [Choice(**dict(lookup[i],reason='')) for i in selected[which]]
@@ -45,7 +46,9 @@ def main():
         assert load_model(a.output/'usermodel.json',llm).artifacts()==model.artifacts()
         art=dataclasses.asdict(model.artifacts())
         (a.output/'artifacts.json').write_text(json.dumps(art,indent=2))
-        status=dict(status='complete',principles=art['principles'],validation_sizes=art['metadata'].get('validation_sizes'),
+        status=dict(status='complete',method=a.method,persona=art['persona'],exemplar_count=len(art['exemplars']),
+                    principles=art['principles'],validation_sizes=art['metadata'].get('validation_sizes'),
+                    search_before=art['metadata'].get('search_before'),search_after=art['metadata'].get('search_after'),
                     concurrency_trace=art['metadata'].get('concurrency_trace'),save_load_verified=True)
     except Exception as e:
         status={'status':'failed','error_type':type(e).__name__,'error':str(e)}
