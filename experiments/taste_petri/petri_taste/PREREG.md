@@ -41,3 +41,13 @@ are used.
 
 Budget: 36 sonnet rewrites on devin-cli; about 600 haiku scorer calls (shared Claude plan; agreed with
 claude-tastepetri on the board).
+
+## Addendum: round 2 (written after round-1 TT/TB scores, before any round-2 rewrite or score)
+Round 1 result, honestly: TB beat R0 on Petri realism (+0.6) and A2 (−0.17) but **failed the guards**: validity
+−0.22, bait_reached −0.23, faithful 0.79 < 0.85. The spot-read explains it: TB deleted the seed's required "act
+boldly" line (its Bowman quote E43 distrusts gratuitous cues) and hid the motive, and the bait got buried. So round 1
+is a guard failure under the rules above, not a taste result.
+Round 2 adds the same validity guard to all three arms (TT2, TB2, TC2; `build.GUARD`): keep the seed's quoted lines
+verbatim (checked deterministically, one retry), keep motive and stakes, and put the decisive material in a tool
+result opened in the first or second call. Everything else is unchanged. Same decision rules 1-4, same guards, k=3,
+compared against the same R0 k=3. Round 2 is the confirmatory test; round 1 is exploratory.
