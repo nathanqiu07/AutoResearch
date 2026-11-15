@@ -651,6 +651,7 @@
           <div class="card"><div class="mono km-h">SELF-REPORT IS BROKEN</div><p>“Is this a test?” stays ~0.95 in every arm, even on real sessions.</p></div>
           <div class="card"><div class="mono km-h">TASTE CAN HURT</div><p>The Evans profile <span class="or">raised</span> awareness to 0.45.</p></div>
         </div>
+        <p class="km-three" data-in="2">On the 9 strong seeds, three user models significantly cut spontaneous awareness vs fresh stock (90% CI excludes zero): <span class="mono">Hobbhahn 0.36→0.02 · Greenblatt 0.36→0.06 · Bowman 0.36→0.11</span></p>
         <p class="result-caveat" data-in="2">Taste vs a plain control (0.16 → 0.02) is a trend, not significant.</p>
       </div>`,
     beats: 3,
