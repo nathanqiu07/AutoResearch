@@ -47,8 +47,19 @@ window.addEventListener("hashchange", () => { window.scrollTo(0, 0); render(); }
 let renderSeq = 0;
 const stale = seq => seq !== renderSeq;
 
+// One keyboard handler at a time, owned by the current view (typeform-style shortcuts).
+// It ignores keys typed into fields unless the view asks for them.
+let keyHandler = null;
+function setKeys(fn) { keyHandler = fn; }
+document.addEventListener("keydown", e => {
+  if (!keyHandler || e.defaultPrevented || document.querySelector("dialog[open]")) return;
+  if (keyHandler(e) === true) e.preventDefault();
+});
+function typing(e) { return /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable; }
+
 async function render() {
   const seq = ++renderSeq;
+  setKeys(null);
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   try {
     if (!parts.length) return await viewHome(seq);
@@ -63,56 +74,68 @@ async function render() {
 async function viewHome(seq) {
   const profiles = await api("GET", "/api/profiles");
   if (stale(seq)) return;
-  const rows = profiles.map(p => `
-    <tr class="clickable" data-slug="${esc(p.slug)}">
-      <td><strong>${esc(p.name)}</strong><div class="muted small mono">${esc(p.slug)}</div></td>
-      <td><span class="badge ${esc(p.mode)}">${p.mode === "external" ? "read-only" : esc(p.mode)}</span></td>
-      <td>${fmtNum(p.n_docs)}</td>
-      <td>${p.has_profile ? '<span class="badge ok">profile.json</span>' : '<span class="badge">not built</span>'}
-          ${p.has_usermodel ? '<span class="badge ok">usermodel.json</span>' : ""}</td>
-      <td class="muted small">${esc((p.updated || "").slice(0, 10))}</td>
-    </tr>`).join("");
+  const tilt = i => (((i * 37) % 9) - 4) * 0.6;   // small, stable, never-aligned rotations
+  const cards = profiles.map((p, i) => `
+    <a class="index-card rise" style="--i:${i + 4};--r:${tilt(i)}deg" href="#/p/${esc(p.slug)}">
+      ${i % 3 === 0 ? '<span class="tape" aria-hidden="true"></span>' : ""}
+      <span class="name">${esc(p.name)}</span>
+      <div class="meta">
+        <div><span class="badge ${esc(p.mode)}">${p.mode === "external" ? "read-only" : esc(p.mode)}</span> <span class="muted">${esc(p.slug)}</span></div>
+        <div>${fmtNum(p.n_docs)} document${p.n_docs === 1 ? "" : "s"}</div>
+        <div>${p.has_usermodel ? "✓ user model" : p.has_profile ? "✓ profile built" : "· not built yet"}</div>
+      </div>
+    </a>`).join("");
   app.innerHTML = `
     <section class="hero">
-      <h1>Build a researcher profile</h1>
-      <p>A profile captures how a researcher makes decisions: what they value, what they avoid, and how they trade off
-      realism, rigour, cost and novelty. The research loop uses it to steer which experiments it proposes and runs
-      (<code>--researcher &lt;id&gt;</code>).</p>
+      <div class="hero-doodles" aria-hidden="true">
+        ${[["lightbulb", "ochre", 78, 4, 6, 70], ["flask", "sage", 74, 26, -8, 64], ["book", "sky", 86, 54, 5, 66],
+           ["telescope", "clay", 64, 70, -4, 70], ["sparkle", "ochre", 93, 20, 12, 40], ["coffee", "rose", 70, 46, 7, 52],
+           ["pencil", "clay", 96, 74, -14, 50]].map(([n, c, x, y, t, sz], i) =>
+          `<span class="bob pop" style="position:absolute;left:${x}%;top:${y}%;--i:${i + 2}">${doodle(n, { color: c, tilt: t, size: sz })}</span>`).join("")}
+      </div>
+      <div class="kicker rise" style="--i:0">${doodle("sparkle", { size: 18, color: "clay", tilt: 8 })} profile studio</div>
+      <h1 class="rise" style="--i:1">Whose research <span class="scribble">taste<svg viewBox="0 0 200 20" preserveAspectRatio="none"><path d="M4 12 C40 4 80 18 120 9 C150 3 175 12 196 7"/></svg></span> should the loop follow?</h1>
+      <p class="lede rise" style="--i:2">A profile captures how a researcher decides: what they value, what they avoid, how they trade
+      realism against rigour, cost against novelty. The research loop reads it to choose which experiments to propose and run.</p>
     </section>
     <section class="mode-cards">
-      <a class="card mode-card" href="#/new/personal">
-        <div class="mode-icon" aria-hidden="true">✎</div>
+      <a class="choice rise" style="--i:3;--r:-1.1deg" href="#/new/personal" data-key="a">
+        <span class="keycap"><kbd>A</kbd></span>
+        <div class="choice-head">${doodle("person", { size: 64, color: "clay", tilt: -7 })}${doodle("pencil", { size: 40, color: "ochre", tilt: 14, cls: "wobble" })}</div>
         <h2>Your own profile</h2>
-        <p class="muted">From your papers and writing, plus a questionnaire about how you work.</p>
+        <p>From your papers and writing, plus a few questions about how you work.</p>
         <ul>
-          <li>Upload papers, drafts, notes (PDF, Markdown, LaTeX, text)</li>
-          <li>Import your publication record</li>
-          <li>Open questions + forced-choice trade-offs</li>
-          <li>Optionally fit a user model on your choices</li>
+          <li>drop in papers, drafts, notes</li>
+          <li>import your publication record</li>
+          <li>open questions + quick trade-offs</li>
+          <li>optionally fit a user model</li>
         </ul>
-        <span class="go">Start →</span>
+        <span class="go">start ${doodle("arrow", { size: 30, color: "clay", tilt: -4 })}</span>
       </a>
-      <a class="card mode-card" href="#/new/public">
-        <div class="mode-icon public" aria-hidden="true">⌕</div>
+      <a class="choice rise" style="--i:4;--r:1.3deg" href="#/new/public" data-key="b">
+        <span class="keycap"><kbd>B</kbd></span>
+        <div class="choice-head">${doodle("telescope", { size: 64, color: "sage", tilt: 6 })}${doodle("cap", { size: 42, color: "sky", tilt: -10 })}</div>
         <h2>A known researcher</h2>
-        <p class="muted">From someone's public record, gathered automatically.</p>
+        <p>From someone's public record, gathered for you.</p>
         <ul>
-          <li>Find the right person among same-named authors</li>
-          <li>Papers from Semantic Scholar and arXiv</li>
-          <li>Blog posts, LessWrong, web pages, optional Exa harvest</li>
-          <li>Review the corpus before building</li>
+          <li>pick the right person among namesakes</li>
+          <li>papers from Semantic Scholar + arXiv</li>
+          <li>posts, pages, optional Exa harvest</li>
+          <li>review the corpus before building</li>
         </ul>
-        <span class="go">Start →</span>
+        <span class="go">start ${doodle("arrow", { size: 30, color: "sage", tilt: 5 })}</span>
       </a>
     </section>
-    <section class="card">
-      <div class="row"><h2 style="margin:0">Profiles</h2><span class="spacer"></span>
-        <span class="muted small mono">${esc(S.config.root)}</span></div>
-      ${profiles.length ? `<div class="table-wrap"><table class="list" style="margin-top:.75rem">
-        <thead><tr><th>Researcher</th><th>Mode</th><th>Docs</th><th>Output</th><th>Updated</th></tr></thead>
-        <tbody>${rows}</tbody></table></div>` : `<div class="empty">No profiles yet.</div>`}
+    <section>
+      <div class="section-title rise" style="--i:4">${doodle("folder", { size: 40, color: "ochre", tilt: -6 })}<h2>Profiles</h2>
+        <span class="spacer"></span><span class="muted small mono">${esc(S.config.root)}</span></div>
+      ${profiles.length ? `<div class="cards-grid">${cards}</div>`
+        : `<div class="empty">${doodle("seedling", { size: 64, color: "sage" })}<span class="hand">Nothing here yet. Start with A or B.</span></div>`}
     </section>`;
-  on("tr[data-slug]", "click", e => go(`#/p/${e.currentTarget.dataset.slug}`));
+  setKeys(e => {
+    const card = app.querySelector(`.choice[data-key="${e.key.toLowerCase()}"]`);
+    if (card && !e.metaKey && !e.ctrlKey) { card.classList.add("pressed"); go(card.getAttribute("href")); return true; }
+  });
 }
 
 // ---------- new personal ----------
