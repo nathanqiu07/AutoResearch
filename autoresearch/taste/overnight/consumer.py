@@ -46,6 +46,10 @@ def prepare_payload(profile, context, options, config):
         raise ProfileFailure("invalid", "invalid_decision_input")
     if any(not isinstance(option, str) for option in options):
         raise ProfileFailure("invalid", "nontext_option")
+    if profile.method_id in {"lexical_retrieval", "profile_retrieval", "semantic_retrieval"}:
+        decision = {"context": context, "options": list(options)}
+        if profile.config.get("decision") != decision:
+            raise ProfileFailure("unavailable", "retrieved_profile_decision_mismatch")
     rendered = render_content(profile.content)
     if not rendered and not profile.intentional_empty:
         raise ProfileFailure("empty", "empty_profile")

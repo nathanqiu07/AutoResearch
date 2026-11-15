@@ -35,6 +35,90 @@ def mutating_builder(documents, config, extractor):
     return {"content": "synthetic output"}
 
 
+class QuoteResolverTests(unittest.TestCase):
+    def setUp(self):
+        from autoresearch.taste.overnight import contracts
+        self.c = contracts
+        self.assertTrue(callable(getattr(contracts, "resolve_quote_sources", None)), "quote resolver is required")
+
+    def document(self, text, **extra):
+        return dict(document_id="fit-1", researcher_id="synthetic", content=text,
+                    content_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(), **extra)
+
+    def content(self, quote):
+        return {"claims": [{"text": "synthetic", "sources": [{"document_id": "fit-1", "quote": quote}]}]}
+
+    def reject(self, content, documents, code):
+        before = json.dumps(content, sort_keys=True)
+        with self.assertRaises(self.c.QuoteResolutionError) as caught:
+            self.c.resolve_quote_sources(content, documents)
+        self.assertEqual(caught.exception.code, code)
+        self.assertEqual(str(caught.exception), code)
+        self.assertEqual(caught.exception.resolution_records[-1]["error_code"], code)
+        self.assertEqual(json.dumps(content, sort_keys=True), before)
+        return caught.exception
+
+    def test_unique_unicode_quote_resolves_without_mutating_inputs(self):
+        content, document = self.content("test é"), self.document("🧪 前 test é end")
+        resolved, records = self.c.resolve_quote_sources(content, [document])
+        self.assertEqual(resolved["claims"][0]["sources"][0],
+                         {"document_id": "fit-1", "quote": "test é", "start": 4, "end": 10})
+        self.assertNotIn("start", content["claims"][0]["sources"][0])
+        self.assertEqual(records[0]["source_path"], ["claims", 0, "sources", 0])
+        self.assertEqual(records[0]["quote_sha256"], hashlib.sha256("test é".encode()).hexdigest())
+        self.assertEqual(records[0]["resolver_version"], self.c.QUOTE_RESOLVER_VERSION)
+        self.assertEqual(records[0]["status"], "resolved")
+
+    def test_overlap_deduplicates_occurrences_but_not_distinct_matches(self):
+        document = self.document("xx quote yy quote", permitted_spans=[
+            {"start": 0, "end": 8, "speaker": "author"}, {"start": 2, "end": 11}])
+        resolved, records = self.c.resolve_quote_sources(self.content("quote"), [document])
+        self.assertEqual((records[0]["start"], records[0]["end"]), (3, 8))
+        document["permitted_spans"].append({"start": 0, "end": 17})
+        self.reject(self.content("quote"), [document], "quote_ambiguous")
+        self.reject(self.content("aa"), [self.document("aaa")], "quote_ambiguous")
+
+    def test_absent_forbidden_and_cross_boundary_quotes_are_distinct(self):
+        self.reject(self.content("missing"), [self.document("present")], "quote_absent")
+        self.reject(self.content("secret"), [self.document("secret", permitted_spans=[])], "quote_unpermitted")
+        self.reject(self.content("abcdef"), [self.document("abcdef", permitted_spans=[
+            {"start": 0, "end": 4}, {"start": 2, "end": 6}])], "quote_unpermitted")
+
+    def test_matching_never_normalizes_case_whitespace_or_unicode(self):
+        for quote in ("CAFÉ", "cafe\u0301", " café", "café "):
+            with self.subTest(quote=quote):
+                self.reject(self.content(quote), [self.document("café")], "quote_absent")
+
+    def test_old_offsets_and_malformed_source_entries_are_not_repaired(self):
+        for source in ({"document_id": "fit-1", "quote": "good", "start": 3, "end": 7},
+                       {"document_id": "fit-1"}, "fit-1", {"quote": "good"},
+                       {"document_id": "fit-1", "quote": "good", "extra": None}):
+            self.reject({"sources": [source]}, [self.document("good")], "quote_source_shape")
+        self.reject({"sources": {}}, [self.document("good")], "quote_source_shape")
+        for document_id in ("unknown", 1, None):
+            self.reject({"sources": [{"document_id": document_id, "quote": "good"}]},
+                        [self.document("good")], "quote_source_document")
+        for quote in ("", None, 1, []):
+            self.reject(self.content(quote), [self.document("good")], "quote_source_quote")
+
+    def test_tampering_duplicates_and_invalid_permissions_fail_closed(self):
+        doc = self.document("good")
+        doc["content"] = "altered good"
+        self.reject(self.content("good"), [doc], "quote_document_hash")
+        self.reject(self.content("good"), [self.document("good"), self.document("good")], "quote_source_document")
+        for spans in (None, {}, [{"start": True, "end": 4}], [{"start": 0, "end": 5}],
+                      [{"start": 2, "end": 2}], [{"start": -1, "end": 1}], [0]):
+            self.reject(self.content("good"), [self.document("good", permitted_spans=spans)], "quote_document_spans")
+
+    def test_recursive_resolution_retains_diagnostics_without_partial_output(self):
+        content = {"nested": [{"sources": [{"document_id": "fit-1", "quote": "good"}]},
+                              {"sources": [{"document_id": "fit-1", "quote": "missing"}]}]}
+        failure = self.reject(content, [self.document("good")], "quote_absent")
+        self.assertEqual([row["status"] for row in failure.resolution_records], ["resolved", "invalid"])
+        self.assertEqual(failure.resolution_records[-1]["source_path"], ["nested", 1, "sources", 0])
+        self.assertNotIn("quote", failure.resolution_records[-1])
+
+
 class ContractTests(unittest.TestCase):
     def setUp(self):
         from autoresearch.taste.overnight import contracts, registry
@@ -180,6 +264,41 @@ class ContractTests(unittest.TestCase):
         for invalid_flag in ("false", 1, [], None):
             with self.subTest(flag=invalid_flag), self.assertRaisesRegex(ValueError, "peer"):
                 self.build(approved_peer_sources=invalid_flag)
+
+    def test_common_consumer_binds_retrieval_to_exact_question_and_option_order(self):
+        from autoresearch.taste.overnight.consumer import predict_profile, ProfileFailure
+        for method in ("lexical_retrieval", "profile_retrieval", "semantic_retrieval"):
+            with self.subTest(method=method):
+                body = self.build().to_dict()
+                body["method_id"] = body["config"]["method_id"] = method
+                body["config"]["decision"] = {"context": "bound question", "options": ["left", "right"]}
+                body["config_id"] = self.c.digest(body["config"])
+                body.pop("profile_id")
+                body["profile_id"] = self.c.digest(body)
+                profile = self.c.ProfileArtifact.from_dict(body)
+                backend = RecordingConsumer()
+                for context, options in (("another question", ["left", "right"]),
+                                         ("bound question", ["right", "left"])):
+                    with self.assertRaises(ProfileFailure) as raised:
+                        predict_profile(profile, context, options, backend, self.prediction_config(profile))
+                    self.assertEqual(raised.exception.status, "unavailable")
+                    self.assertEqual(raised.exception.code, "retrieved_profile_decision_mismatch")
+                self.assertEqual(backend.prompts, [])
+                self.assertEqual(predict_profile(profile, "bound question", ["left", "right"], backend,
+                                                 self.prediction_config(profile)).choice, "b")
+                self.assertEqual(len(backend.prompts), 1)
+
+    def test_retrieval_profile_without_declared_decision_fails_closed(self):
+        from autoresearch.taste.overnight.consumer import predict_profile, ProfileFailure
+        body = self.build().to_dict()
+        body["method_id"] = body["config"]["method_id"] = "lexical_retrieval"
+        body["config_id"] = self.c.digest(body["config"])
+        body.pop("profile_id")
+        body["profile_id"] = self.c.digest(body)
+        profile, backend = self.c.ProfileArtifact.from_dict(body), RecordingConsumer()
+        with self.assertRaises(ProfileFailure):
+            predict_profile(profile, "q", ["a", "b"], backend, self.prediction_config(profile))
+        self.assertEqual(backend.prompts, [])
 
 
 if __name__ == "__main__":
