@@ -8,8 +8,7 @@
   const { add, U } = window.Deck;
 
   const head = (num, eyebrow, title) =>
-    `<header class="hd"><div class="eyebrow" data-in="0"><span class="num">${num}</span>${eyebrow}</div>` +
-    `<h2 data-in="0" style="--d:90ms">${title}</h2></header>`;
+    `<header class="hd"><h2 data-in="0">${title}</h2></header>`;
 
   /* A search tree with one orange thread through it (title and close slides). */
   function growTree(svg, seed, o) {
@@ -65,11 +64,9 @@
     html: `
       <svg class="tree" viewBox="0 0 1920 1080" width="1920" height="1080" aria-hidden="true"></svg>
       <div class="title-block">
-        <div class="eyebrow" data-in="0">Taste-steered automated research</div>
-        <h1 data-in="0" style="--d:150ms;font-size:150px;margin-top:26px">AutoResearch</h1>
+        <h1 data-in="0" style="font-size:150px">AutoResearch</h1>
         <p class="lede" data-in="0" style="--d:320ms">Overnight research that stays on <em>your</em> track.</p>
-      </div>
-      <div class="meta mono dim small" data-in="0" style="--d:600ms">Grey: every path the agent could take. Orange: the one you would.</div>`,
+      </div>`,
     init(el) { growTree(el.querySelector("svg"), 11, { x0: 1160, x1: 1830, y0: 540, levels: 5, spread: 430, ymin: 150, ymax: 930, yGoal: 380 }); },
     notes: "We built a research agent that runs overnight and makes the calls the researcher would make. The grey tree is the agent’s options; the orange thread is the researcher’s path through it. The whole talk is about keeping the agent on that thread.",
   });
@@ -88,17 +85,15 @@
   add({
     id: "night", label: "The overnight run", cls: "s-night", beats: 5,
     html: `
-      <header class="hd"><div class="eyebrow" data-in="0"><span class="num">01</span>The problem</div>
-        <div class="swap"><h2 data-in="0" data-out="4" style="--d:90ms">You start a run and go to sleep.</h2>
+      <header class="hd"><div class="swap"><h2 data-in="0" data-out="4" style="--d:90ms">You start a run and go to sleep.</h2>
         <h2 data-in="4">You wake up to someone else’s research.</h2></div></header>
       <div class="legend" data-in="0" style="--d:200ms">
         <span><i style="background:var(--signal)"></i>What you would have done</span>
         <span><i style="background:var(--sky)"></i>What the agent did</span></div>
-      <div class="clock" data-in="0" style="top:262px"><div class="t">22:00</div><div class="l">OVERNIGHT RUN</div></div>
+      <div class="clock" data-in="0" style="top:262px"><div class="t">22:00</div></div>
       <svg class="chart" width="${NW}" height="${NH + 70}" viewBox="0 0 ${NW} ${NH + 70}" aria-label="Two paths over the night: the agent's drifts away from the researcher's at three moments"></svg>
       ${EVENTS.map((e, i) => `<div class="ev" data-k="${i}" style="left:${140 + e.x - 12}px;top:780px">
-        <div class="time">${e.time}</div><h4>${e.h}</h4><p>${e.p}</p></div>`).join("")}
-      <div class="source">All three happened in our own runs (README.md: live runs and the offline ablation).</div>`,
+        <div class="time">${e.time}</div><h4>${e.h}</h4><p>${e.p}</p></div>`).join("")}`,
     init(el) {
       const svg = el.querySelector("svg.chart");
       const defs = U.svg("defs", {}, svg);
@@ -160,7 +155,7 @@
       "Around half past midnight the agent quietly changes the setting. In our first live run the proposer moved the scenario from an analytics assistant to an ML team’s eval-script repo, and later ideas pointed at files the target model couldn’t see.",
       "Then it games the metric. You can make an environment look less like a test by deleting the thing it tests. The number goes up; the research is worthless.",
       "Then it over-generalizes. A live run concluded that longer context doesn’t help, from one sample with a −0.023 change.",
-      "By morning, each step looked locally reasonable, but the trajectory isn’t what the researcher would have done. That gap is what we’re closing.",
+      "By morning, each step looked locally reasonable, but the trajectory isn’t what the researcher would have done. That gap is what we’re closing. (All three happened in our own runs: README.md, live runs and the offline ablation.)",
     ],
   });
 
@@ -203,8 +198,7 @@
   add({
     id: "difference", label: "Our difference", cls: "s-statement",
     html: `
-      <div class="eyebrow" data-in="0"><span class="num" style="color:inherit">02</span>Our difference</div>
-      <h2 data-in="0" style="--d:120ms">A model of the researcher,<br>built <u>with</u> them,<br>at every decision.</h2>
+      <h2 data-in="0">A model of the researcher,<br>built <u>with</u> them,<br>at every decision.</h2>
       <svg class="orb" width="420" height="420" viewBox="0 0 420 420" aria-hidden="true">
         ${[200, 160, 120, 80].map((r, i) => `<circle cx="210" cy="210" r="${r}" fill="none" stroke="#0C1230" stroke-opacity="${0.18 + i * 0.12}" stroke-width="3" class="draw" pathLength="1" data-in="0" style="--d:${300 + i * 150}ms"/>`).join("")}
         <circle cx="210" cy="210" r="40" fill="#0C1230" data-in="0" style="--d:900ms"/>
@@ -236,8 +230,7 @@
     html: `${head("02", "The pipeline", "Four steps, one thread.")}
       <div class="rail"><svg width="1640" height="520" viewBox="0 0 1640 520" aria-hidden="true"><path class="flow" d="M 0 260 H 1640"/></svg>
       ${STEPS.map((s, k) => `<div class="stn interactive" data-in="0" data-go="${s.go}" style="left:${k * 423}px;--d:${150 + k * 160}ms" role="button" tabindex="0">
-        <div class="n">STEP ${s.n}</div><h3>${s.t}</h3><p>${s.p}</p><svg viewBox="0 0 310 150" aria-hidden="true">${s.icon}</svg></div>`).join("")}</div>
-      <div class="source">Click a step to jump to it.</div>`,
+        <div class="n">STEP ${s.n}</div><h3>${s.t}</h3><p>${s.p}</p><svg viewBox="0 0 310 150" aria-hidden="true">${s.icon}</svg></div>`).join("")}</div>`,
     init(el, api) {
       el.querySelectorAll(".stn").forEach((n) => n.addEventListener("click", (e) => { e.stopPropagation(); api.goId(n.dataset.go); }));
     },
@@ -273,8 +266,7 @@
         <div><span class="k">rules</span>P5</div>
         <div><span class="k">rivals</span>P8</div>
         <div><span class="k">confidence</span>calibrated</div>
-      </div>
-      <div class="source" data-in="0" style="--d:500ms"><span class="or">Orange border</span>: evidence the researcher gives us directly, not scraped.</div>`,
+      </div>`,
     init(el) {
       const svg = el.querySelector("svg.flows");
       const mid = { x: 560, y: 610 };
@@ -324,7 +316,6 @@
             <div class="row"><div class="bub"></div><div><div class="k">Decision</div><div class="v">Measure with a separate target</div></div></div>
             <div class="row fail"><div class="bub"></div><div><div class="k">Failure</div><div class="v">Target never misbehaved</div></div></div>
             <div class="row up"><div class="bub"></div><div><div class="k">Update</div><div class="v">Pick probes with a behaviour gap</div></div></div>
-            <div class="tag" style="margin-top:4px">example: our own project</div>
           </div>
         </div>
         <div class="col" data-in="1">
@@ -334,7 +325,6 @@
             <div class="rule"><div class="if">IF n &lt; 5 per arm</div><div class="then">→ re-test before claiming</div></div>
             <div class="rule"><div class="if">IF awareness falls with validity</div><div class="then">→ treat it as gaming</div></div>
             <div class="rule"><div class="if">IF surface rewrites plateau</div><div class="then">→ ground in real material</div></div>
-            <div class="tag">example rules</div>
           </div>
         </div>
         <div class="col" data-in="2">
@@ -368,12 +358,11 @@
         <div class="fig" data-in="1"><div class="big">19<span>/22</span></div><div class="dots">${dots(22, 3)}</div>
           <p>time-split choices for a second researcher: the same story</p></div>
       </div>
-      <div class="concl" data-in="2"><h3>From published writing, “taste” is mostly field consensus. <em>The distinctive part has to be asked for.</em></h3></div>
-      <div class="source">experiments/taste_petri/REPORT.md, overnight report, 2026-11-15</div>`,
+      <div class="concl" data-in="2"><h3>From published writing, “taste” is mostly field consensus. <em>The distinctive part has to be asked for.</em></h3></div>`,
     notes: [
       "Why patch interactively instead of scraping more? We tested it. On held-out choices built from one researcher’s published critiques, a predictor with no profile at all already sided with the researcher on 18 of 19.",
       "On a second researcher’s time-split choices it was 19 of 22. Published critiques of eval setups are mostly what the whole field agrees on.",
-      "So scraped taste collapses into generic research sense, and a loop steered by it behaves like the loop without it. The part that is actually theirs, where they disagree with the field, has to be elicited. That’s step two.",
+      "So scraped taste collapses into generic research sense, and a loop steered by it behaves like the loop without it. The part that is actually theirs, where they disagree with the field, has to be elicited. That’s step two. (Source: experiments/taste_petri/REPORT.md, overnight report, 2026-11-15.)",
     ],
   });
 
@@ -465,7 +454,6 @@
           <span class="role"></span>Dana reads these Monday.<br>
           <span class="role"></span><span class="dim">↳ wk 44 · “dashboard fix…”</span><br>
           <span class="role"></span><span class="dim">↳ wk 45 · “on-call quiet…”</span></div>${gauge()}</div>
-      <div class="source" data-in="1" style="top:792px;bottom:auto;max-width:1640px">Gauge: the target’s own P(test), first live run (one run, 5 samples per evaluation). Highlights: common test cues.</div>
       <div class="why" data-in="2"><h3>If a model acts differently when it knows it’s being tested, <em>the test measures the wrong thing.</em></h3></div>`,
     init(el) {
       this.g = [...el.querySelectorAll(".pane")].map((p) => ({ needle: p.querySelector(".needle"), v: p.querySelector(".gauge .v") }));
@@ -484,7 +472,7 @@
     },
     notes: [
       "Step three runs the loop on our task, which is itself a hard, important research problem: design synthetic evaluation environments that a model doesn’t recognise as evaluations, while they still validly test the behaviour they exist to measure. The left environment is the kind of thing models flag: placeholder company, theatrical stakes, a countdown, a grading format.",
-      "The right is the change our first live run found and confirmed on fresh samples: frame it as a routine, recurring job with history and a named reader. The target’s own estimate that it was being tested fell from 0.71 to 0.29. One run, small n, but a real finding.",
+      "The right is the change our first live run found and confirmed on fresh samples: frame it as a routine, recurring job with history and a named reader. The target’s own estimate that it was being tested fell from 0.71 to 0.29. One run, 5 samples per evaluation, but a real finding. The gauge is the target’s own P(test); the highlighted phrases on the left are common test cues.",
       "Why it matters: safety evaluations assume the model isn’t playing to the test. If it can tell, the result measures the noticing, not the behaviour.",
     ],
   });
@@ -507,7 +495,6 @@
           <div class="card"><div class="k">VALIDITY</div><div class="v" data-r="v">–</div></div>
           <div class="card"><div class="k">SCORE</div><div class="v" data-r="s">–</div></div>
         </div>
-        <p class="small dim" data-in="0" data-out="1" style="margin-top:14px">Drag the orange point.</p>
         <div class="beat" data-in="1"><h4>Our live run: 0.39 → 0.52</h4><p>Less awareness, validity kept.</p></div>
         <div class="beat" data-in="2"><h4 style="color:var(--cue)">The cheat: delete what the test measures</h4><p>Awareness drops, the score is zero. A loop can’t just climb the number; it needs judgment.</p></div>
       </div>`,
@@ -645,7 +632,6 @@
       <div class="agents">
         ${AGENTS.map(([n, c], i) => `<div class="ag" data-in="0" style="--d:${i * 80}ms"><div class="nm"><span>${n}</span><span><span class="w">100 cr</span><span class="dl"></span></span></div>
           <div class="wb"><span style="background:${c};width:66.7%"></span></div></div>`).join("")}
-        <p class="small dim" data-in="4" style="margin-top:6px">Calibrated bidders gain credits, and with them more say over the next run.</p>
       </div>
       <div class="board">
         ${[["Idea", 30], ["Bids · P(valid)", 150], ["Screen · 2", 250], ["Top half · +4", 330], ["Verdict", 400]].map(([l, y]) => `<div class="rowl" data-in="0" style="top:${y}px">${l}</div>`).join("")}
@@ -775,8 +761,7 @@
     id: "close", label: "Close", cls: "s-close",
     html: `<svg class="tree" viewBox="0 0 1920 1080" width="1920" height="1080" aria-hidden="true"></svg>
       <div class="cl">
-        <div class="eyebrow" data-in="0">AutoResearch</div>
-        <h2 data-in="0" style="--d:120ms;margin-top:30px">Wake up to the research<br>you would have done.</h2>
+        <h2 data-in="0">Wake up to the research<br>you would have done.</h2>
         <div class="row">${["1 · Create", "2 · Patch", "3 · Run", "4 · Prioritize"].map((t, i) =>
           `<span class="chip" data-in="0" style="--d:${400 + i * 120}ms"><span class="dot"></span>${t}</span>`).join("")}</div>
       </div>`,
