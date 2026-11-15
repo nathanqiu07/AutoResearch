@@ -1,0 +1,15 @@
+# Prospective paired history association control
+
+This adds a separate, lease-gated entrypoint for the fixed 64 development users and 516 target choices. Each target keeps its original context and option order. The own arm uses its exact saved native M1 history; the wrong arm uses the next user in canonical order within the same selected-history-size group. Donor IDs and training labels remain intact. No fitting, source prediction, baseline cache, or core method is changed.
+
+The new experiment has 1,032 planned cells and 1,031 eligible requests. One historical unknown own-history request remains unavailable. The other eligible own requests include explicitly declared known-valid replications and previously unattempted cells; execution requires coordinator authority for the declared new experiment. Historical M0/M1 outcomes remain aliases, with original user903 missingness and its distinct recovery source reported separately.
+
+Packets copy and hash-bind the proposal, source artifacts, development records and splits, and current typed request guard. Preparation and admission reconstruct native M1 requests and compare both wire hash conventions to the frozen proposal. Each packet starts with an empty response cache. Admission requires exact runtime/settings, a fresh external single-use claim, a finite call/cost/time lease and the 17:00 UTC deadline. Uncertain API outcomes stop later network calls in that packet. All planned predictions remain present through errors; withheld cells do not make a request. There is no automatic retry.
+
+The coordinator owns paid launch and scheduling. The CLI is `python3 -B scripts/overnight_history_control.py prepare --proposal PATH --guard PATH --user ID --destination PATH`, then separately leased `run --plan PATH --lease PATH`. Private input and output paths stay outside the repository.
+
+Primary reporting is paired user-macro planned accuracy, counting failures/unavailable/unstarted cells as wrong. User-cluster bootstrap intervals are descriptive and conditional because the deterministic donor cycles link users. Valid-pair accuracy and Brier/coverage are separate sensitivities. Arm order is balanced across users (32/32), not target counts (268/248). This tests correct-history association; topic, task, content and length differences prevent interpreting the contrast as isolated latent taste. The cohort was already studied; the paired experiment is prospective relative to its new outcomes, not independent final-test confirmation.
+
+The reference contains human-rating-derived pairwise preference labels with model-based filtering. It is not necessarily direct binary elicitation, model-generated target labels, researcher taste, or research utility. All methods are existing adaptations, not paper reproductions.
+
+Validation covers preserved donor provenance, scope and request identity, exact withholding, fresh caches, explicit replication authority, finite lease limits, copied-packet replay, and native failure handling. Review captures expose selected fit histories and label-free target projections only; target labels and result predictions remain with the reference custodian.
