@@ -52,6 +52,13 @@ python3 -m autoresearch.research.contamination run data/petri/seeds_v2.jsonl --f
     --out results/contamination/petri.jsonl --end-date <TARGET_TRAINING_CUTOFF> --cache-dir runs/exa_cache --confirm
 ```
 
+**Already verified live (2026-11-15, no key needed):**
+* `real_repos.github_fetch` against the public GitHub API worked.
+* The harness's `repo_setup_commands` cloned `octocat/Hello-World` from github.com at depth 5 into a local directory.
+* The scrub left no remote, local branches, and an empty reflog.
+
+What still needs checking is the same clone inside a Modal Sandbox (Tier 1).
+
 ## Tier 1: Modal with free mock models (Modal CPU minutes only)
 
 **Clone a real repo inside a real Modal Sandbox** (idea 1, the infrastructure
