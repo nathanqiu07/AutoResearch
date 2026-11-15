@@ -13,6 +13,11 @@ def divergent_extractor_builder(documents, config, extractor):
     return {"content": "synthetic result"}
 
 
+def matching_extractor_builder(documents, config, extractor):
+    extractor.complete("synthetic extraction", system="synthetic system", **config["extractor_settings"])
+    return {"content": "synthetic result"}
+
+
 class RunnerTests(unittest.TestCase):
     def setUp(self):
         from autoresearch.taste.overnight import runner
@@ -250,6 +255,53 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(result["status"], "unavailable")
         self.assertEqual(result["error_code"], "call_settings_differ_from_declared")
         self.assertEqual(self.consumer.prompts, [])
+
+    def test_invalid_extractor_settings_fail_before_claim(self):
+        case = fixture.ContractTests()
+        case.setUp()
+        invalid_settings = [
+            {"temperature": 0.0, "max_tokens": 2048, "top_p": 0.9},
+            {"temperature": 0.0, "max_tokens": 2048, "reasoning": "medium"},
+            {}, {"temperature": 0.0}, {"max_tokens": 2048}, None,
+            {"temperature": True, "max_tokens": 2048},
+            {"temperature": 0.0, "max_tokens": False},
+            {"temperature": 0.0, "max_tokens": 0},
+            {"temperature": 10 ** 400, "max_tokens": 2048},
+        ]
+        for settings in invalid_settings:
+            with self.subTest(settings=settings):
+                config = dict(case.config, extractor_settings=settings)
+                manifest = self.manifest(kind="build", config_hash=self.digest(config),
+                                         source_manifest_hash=config["allowed_source_manifest_hash"],
+                                         extractor=self.identity(self.consumer), profile_hash=None,
+                                         documents_hash=self.digest(case.docs), items_hash=self.digest([]),
+                                         option_order_schedule=[], code_sha=config["code_sha"])
+                lease = {"job_id": manifest["job_id"], "lease_id": "one", "owner": "fixture", "expires_at": "2099-01-01T00:00:00+00:00"}
+                with self.assertRaisesRegex(ValueError, "extractor_settings"):
+                    self.runner.run_job(manifest, lease, output_root=self.root / "outputs", lease_root=self.root / "leases",
+                                        config=config, documents=case.docs, extractor=self.consumer)
+                self.assertFalse((self.root / "leases").exists())
+        self.assertEqual(self.consumer.prompts, [])
+
+    def test_explicit_resolved_extraction_defaults_match_recorded_call(self):
+        from autoresearch.taste.overnight.registry import register_builder
+        register_builder("matching-extractor-fixture", matching_extractor_builder,
+                         prompt_version="v1", prompt_sha256="a" * 64)
+        case = fixture.ContractTests()
+        case.setUp()
+        config = dict(case.config, method_id="matching-extractor-fixture",
+                      extractor_settings={"temperature": 0.0, "max_tokens": 2048})
+        manifest = self.manifest(kind="build", method_id=config["method_id"], config_hash=self.digest(config),
+                                 source_manifest_hash=config["allowed_source_manifest_hash"],
+                                 extractor=self.identity(self.consumer), profile_hash=None,
+                                 documents_hash=self.digest(case.docs), items_hash=self.digest([]),
+                                 option_order_schedule=[], code_sha=config["code_sha"])
+        lease = {"job_id": manifest["job_id"], "lease_id": "one", "owner": "fixture", "expires_at": "2099-01-01T00:00:00+00:00"}
+        result = self.runner.run_job(manifest, lease, output_root=self.root / "outputs", lease_root=self.root / "leases",
+                                     config=config, documents=case.docs, extractor=self.consumer)
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["profile"]["extractor_settings"], {"temperature": 0.0, "max_tokens": 2048})
+        self.assertEqual(self.consumer.prompts[0][1], {"system": "synthetic system", "temperature": 0.0, "max_tokens": 2048})
 
 
 if __name__ == "__main__":

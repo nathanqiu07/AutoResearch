@@ -130,6 +130,14 @@ def _validate(manifest, lease, config, profile, items, documents):
         for field in ("method_id", "personalization_cap", "replicate_id", "code_sha"):
             if config[field] != manifest[field]:
                 raise ValueError("build config/manifest mismatch: " + field)
+        settings = config.get("extractor_settings")
+        if not isinstance(settings, dict) or set(settings) != {"temperature", "max_tokens"}:
+            raise ValueError("extractor_settings must explicitly contain only temperature and max_tokens")
+        temperature, maximum = settings["temperature"], settings["max_tokens"]
+        if (isinstance(temperature, bool) or not isinstance(temperature, (int, float)) or
+                not 0 <= temperature <= 2 or not math.isfinite(temperature) or
+                isinstance(maximum, bool) or not isinstance(maximum, int) or maximum <= 0):
+            raise ValueError("invalid extractor_settings values")
 
 
 class _CallGate:
@@ -212,7 +220,8 @@ class _CallGate:
         summary = self.budget.summary()
         cost = self.backend.cost_summary() if hasattr(self.backend, "cost_summary") else {}
         return {"attempted_calls": self.attempts, "uncertain_attempts": self.failures, "cache_hits": self.cache_hits,
-                "input_tokens": summary.get("input_tokens"), "output_tokens": summary.get("output_tokens"),
+                "input_tokens": None if cost.get("unknown_input_usage_attempts") else summary.get("input_tokens"),
+                "output_tokens": None if cost.get("unknown_output_usage_attempts") else summary.get("output_tokens"),
                 "reported_api_usd": cost.get("spent_usd") if self.allocation["cost_mode"] == "priced_api" else None,
                 "reserved_api_usd": cost.get("reserved_usd") if self.allocation["cost_mode"] == "priced_api" else None,
                 "budget_detail": cost,
