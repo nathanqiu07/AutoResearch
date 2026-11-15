@@ -1,0 +1,2 @@
+- 15:46 UTC: arms built (36 devin-cli sonnet), R0 k=3 scored (52 haiku). RUNNING: TT TB TC k=3 (runs/score_k3.out).
+- 16:19 UTC: round 1 scored (TT/TB/TC k=3: all fail the validity guard; see PREREG addendum). Round 2 built (68 devin-cli calls, no quotes lost). RUNNING: TT2 TB2 TC2 k=3 (runs/score2_k3.out).

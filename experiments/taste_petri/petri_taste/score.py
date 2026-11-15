@@ -21,11 +21,13 @@ RP.HERE = HERE
 RP.CALLS_LOG = HERE / "calls.log"
 RP.READ_CACHES = [TP / "proxy" / "cache", TP / "arms" / "cache"]
 RP.BUDGET = 700
-PAIRS = [("TT", "R0"), ("TB", "R0"), ("TC", "R0"), ("TB", "TT"), ("TC", "TT"), ("TB", "TC")]
+PAIRS = [("TT", "R0"), ("TB", "R0"), ("TC", "R0"), ("TB", "TT"), ("TC", "TT"), ("TB", "TC"),
+         ("TT2", "R0"), ("TB2", "R0"), ("TC2", "R0"), ("TB2", "TT2"), ("TC2", "TT2"), ("TB2", "TC2")]
+ARMS = ("R0", "TT", "TB", "TC", "TT2", "TB2", "TC2")
 
 
 def compare(tag):
-    runs = {a: SU.load(HERE / "runs" / f"{a}_{tag}.json") for a in ("R0", "TT", "TB", "TC")}
+    runs = {a: SU.load(HERE / "runs" / f"{a}_{tag}.json") for a in ARMS}
     lv = ["| arm | n_ok | " + " | ".join(SU.SHOWN) + " |", "|---|---|" + "---|" * len(SU.SHOWN)]
     for a, r in runs.items():
         if r:
@@ -34,7 +36,7 @@ def compare(tag):
     out = ["### Levels", *lv, "", "### Paired Δ (A − B per base seed; 90% bootstrap CI; P↓ = P(A lower))",
            "| A vs B | n seeds | " + " | ".join(f"Δ{m}" for m in SU.SHOWN) + " |", "|---|---|" + "---|" * len(SU.SHOWN)]
     for a, b in PAIRS:
-        if runs[a] and runs[b]:
+        if runs.get(a) and runs.get(b):
             c = SU.proxy_eval.compare(runs[b], runs[a])
             (HERE / "runs" / f"cmp_{a}_vs_{b}_{tag}.json").write_text(json.dumps(c, indent=1))
             n = max((x["n_seeds"] for x in c["metrics"].values()), default=0)
