@@ -1,4 +1,4 @@
-/* Remy Research deck: the slides. Story (kitchen theme, after the film's rat who cooks by taste):
+/* Remy Research deck: the slides. Kitchen framing appears only at the opening and close.
    problem (overnight runs drift) -> our difference (a user model of the researcher's taste,
    built interactively) -> the four steps -> sponsors -> evidence -> close.
    Every number comes from the repo (README.md, experiments/taste_petri/REPORT.md,
@@ -11,41 +11,48 @@
 
   /* ------------------------------------------------------------------ the chef rat */
   function rat(o) {
+    /* The template rat (img/rat.png: cut out of its paper, sticker border, open hand removed) plus,
+       in the same thick-outline style: a fist gripping a big wooden spoon (or an auction paddle)
+       in front, and a chef's toque tilted to sit on the crown. Image space: 520 x 722. */
     o = o || {};
-    const w = o.w || 220, fur = "#9AA3BC", belly = "#CBD1E0", pink = "#F2A7B5", hat = "#F4F1EA";
-    const scarf = o.scarf || "#FF6B2C", tail = o.tail || pink;
-    let arm = "";
-    if (o.pose === "taste") {
-      arm = `<path d="M140 214 L186 120" stroke="#C08A52" stroke-width="7" stroke-linecap="round"/>
-        <ellipse cx="189" cy="113" rx="11" ry="7" fill="#C08A52" transform="rotate(-62 189 113)"/>
-        <path d="M118 168 Q 150 168 160 156" stroke="${fur}" stroke-width="14" stroke-linecap="round" fill="none"/>`;
-    } else if (o.pose === "paddle") {
-      arm = `<path d="M170 92 L172 58" stroke="#C08A52" stroke-width="7" stroke-linecap="round"/>
-        <circle cx="173" cy="36" r="26" fill="${hat}" stroke="${scarf}" stroke-width="5"/>
-        <text x="173" y="46" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="28" fill="#0C1230">${o.num || ""}</text>
-        <path d="M122 164 Q 150 140 168 96" stroke="${fur}" stroke-width="14" stroke-linecap="round" fill="none"/>`;
-    } else if (o.pose === "stir") {
-      arm = `<path d="M150 170 L214 236" stroke="#C08A52" stroke-width="7" stroke-linecap="round"/>
-        <path d="M118 170 Q 146 178 160 182" stroke="${fur}" stroke-width="14" stroke-linecap="round" fill="none"/>`;
+    const w = o.w || 220, INK = "#111317", HAT = "#FBF8F1", WOOD = "#C98F55", WOOD2 = "#A9713C";
+    const SKIN = "#E3868B", H = "#F1ECE2", band = o.band || "#E6E0D2";
+    const halo = (d) => `<path d="${d}" fill="${H}" stroke="${H}" stroke-width="22" stroke-linejoin="round"/>`;
+    const line = (d, fill, sw) => `<path d="${d}" fill="${fill}" stroke="${INK}" stroke-width="${sw || 5}" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const both = (d, fill, sw) => halo(d) + line(d, fill, sw);
+    /* the held object runs along one line, x = 390 + (262 - y) * 0.1753, through the fist */
+    const handle = (top) => {
+      const xt = 390 + (262 - top) * 0.1753;
+      return `M 379 262 L ${xt - 11} ${top} L ${xt + 11} ${top} L 401 262 A 11 11 0 0 1 379 262 Z`;
+    };
+    let held = "", label = "";
+    if (o.pose === "paddle") {
+      held = both(handle(-30), WOOD) +
+        `<circle cx="452" cy="-84" r="58" fill="${H}" stroke="${H}" stroke-width="22"/>` +
+        `<circle cx="452" cy="-84" r="58" fill="${HAT}" stroke="${INK}" stroke-width="5"/>` +
+        `<circle cx="452" cy="-84" r="44" fill="none" stroke="${band}" stroke-width="9"/>`;
+      label = `<text x="452" y="-64" text-anchor="middle" font-family="Bricolage Grotesque, sans-serif" font-weight="600" font-size="56" fill="${INK}">${o.num || ""}</text>`;
     } else {
-      arm = `<path d="M124 166 Q 138 186 132 204" stroke="${fur}" stroke-width="14" stroke-linecap="round" fill="none"/>`;
+      const bowl = "M 0 -86 C 40 -86, 60 -40, 58 0 C 56 44, 30 84, 0 84 C -30 84, -56 44, -58 0 C -60 -40, -40 -86, 0 -86 Z";
+      held = halo(handle(-40)) + `<g transform="translate(455 -112) rotate(10)">${halo(bowl)}</g>` +
+        line(handle(-40), WOOD) +
+        `<path d="M 388 248 L 437 -30" stroke="#E2B27E" stroke-width="4" stroke-linecap="round"/>` +
+        `<g transform="translate(455 -112) rotate(10)">${line(bowl, WOOD)}
+          <path d="M 0 -68 C 28 -66, 42 -30, 40 2 C 38 36, 20 64, 0 66 C -22 64, -40 36, -40 2 C -42 -30, -26 -68, 0 -68 Z" fill="${WOOD2}" opacity=".4"/>
+          <path d="M -26 -52 C -34 -36, -38 -16, -36 4" fill="none" stroke="#F3D9B8" stroke-width="6" stroke-linecap="round"/></g>`;
     }
-    return `<svg class="rat ${o.cls || ""}" viewBox="0 0 220 260" width="${w}" height="${Math.round(w * 260 / 220)}" aria-hidden="true">
-      <path d="M62 224 C 8 236, -4 176, 34 156" fill="none" stroke="${tail}" stroke-width="7" stroke-linecap="round" ${o.tail ? 'style="filter:drop-shadow(0 0 6px rgba(255,107,44,.7))"' : ""}/>
-      <ellipse cx="96" cy="192" rx="52" ry="58" fill="${fur}"/>
-      <ellipse cx="106" cy="202" rx="30" ry="38" fill="${belly}"/>
-      <ellipse cx="80" cy="248" rx="18" ry="7" fill="${pink}"/><ellipse cx="122" cy="248" rx="18" ry="7" fill="${pink}"/>
-      <circle cx="70" cy="86" r="24" fill="${fur}"/><circle cx="70" cy="86" r="14" fill="${pink}"/>
-      <ellipse cx="102" cy="112" rx="44" ry="38" fill="${fur}"/>
-      <path d="M128 98 Q 178 110 184 120 Q 178 132 130 132 Z" fill="${fur}"/>
-      <circle cx="185" cy="120" r="7" fill="${pink}"/>
-      <circle cx="130" cy="104" r="7" fill="#1A1F3A"/><circle cx="132" cy="101.5" r="2.2" fill="#FBFBF8"/>
-      <path d="M168 124 L204 114 M168 128 L206 130 M166 132 L198 146" stroke="#DDE2EE" stroke-width="2" stroke-linecap="round"/>
-      <path d="M64 142 Q 100 160 142 140 L140 154 Q 100 174 66 156 Z" fill="${scarf}"/>
-      <rect x="76" y="44" width="56" height="30" fill="${hat}"/>
-      <circle cx="84" cy="44" r="19" fill="${hat}"/><circle cx="106" cy="32" r="23" fill="${hat}"/><circle cx="128" cy="46" r="18" fill="${hat}"/>
-      <rect x="74" y="66" width="60" height="16" rx="4" fill="#E3DED2"/>
-      ${arm}
+    /* the fist, wrapped round the handle in front */
+    const fistD = "M 376 112 C 372 94, 390 84, 410 86 C 430 86, 446 98, 446 116 C 448 136, 440 156, 420 162 C 398 168, 378 158, 374 140 Z";
+    const fist = both(fistD, SKIN) +
+      `<path d="M 384 106 C 402 101, 424 101, 442 106 M 381 123 C 401 118, 425 118, 445 123 M 383 141 C 401 137, 423 137, 440 141" fill="none" stroke="${INK}" stroke-width="3.6" stroke-linecap="round"/>` +
+      line("M 378 116 C 368 104, 374 88, 392 86 C 404 85, 414 92, 414 102 C 404 98, 392 102, 386 112 Z", SKIN, 4);
+    /* chef's toque, tilted to the head's crown */
+    const hat = `<g transform="translate(176 30) rotate(7)">` +
+      both("M -62 -26 C -96 -34, -100 -92, -56 -92 C -60 -140, 14 -152, 24 -108 C 66 -124, 92 -64, 62 -26 Z", HAT) +
+      `<path d="M -28 -34 C -36 -56, -34 -76, -24 -92 M 18 -36 C 18 -56, 22 -76, 32 -94" fill="none" stroke="${INK}" stroke-width="3.6" stroke-linecap="round"/>` +
+      both("M -64 4 C -30 -6, 30 -6, 64 4 L 62 -26 C 30 -36, -30 -36, -62 -26 Z", band) + `</g>`;
+    return `<svg class="rat ${o.cls || ""}" viewBox="0 -215 540 945" width="${w}" height="${Math.round(w * 945 / 540)}" aria-hidden="true" style="overflow:visible">
+      <image href="img/rat.png?v=2" x="0" y="0" width="520" height="722"/>${hat}${held}${fist}${label}
     </svg>`;
   }
 
@@ -107,7 +114,7 @@
         <h1 data-in="0">Remy Research</h1>
         <p class="lede" data-in="0" style="--d:250ms">Research cooked to <em>your</em> taste.</p>
       </div>
-      <div class="title-rat" data-in="0" style="--d:500ms">${rat({ pose: "taste", w: 250, tail: "#FF6B2C" })}</div>`,
+      <div class="title-rat" data-in="0" style="--d:500ms">${rat({ w: 190 })}</div>`,
     init(el) { growTree(el.querySelector("svg"), 11, { x0: 1160, x1: 1830, y0: 540, levels: 5, spread: 430, ymin: 150, ymax: 930, yGoal: 380 }); },
     notes: "Remy Research, named after the film’s rat who cooks by taste. An overnight research agent that makes the calls the researcher would make. Grey: every path the agent could take. Orange: the one you would.",
   });
@@ -117,16 +124,15 @@
   const sig = (z) => 1 / (1 + Math.exp(-z));
   const yR = (x) => 70 + 8 * Math.sin(x / 140);
   const yA = (x) => yR(x) + 80 * sig((x - 410) / 40) + 80 * sig((x - 820) / 40) + 80 * sig((x - 1230) / 40) + 5 * Math.sin(x / 33) * sig((x - 300) / 60);
-  const EVENTS = [{ x: 410, time: "00:30", h: "Changes the dish" }, { x: 820, time: "03:00", h: "Games the taste test" }, { x: 1230, time: "05:30", h: "Trusts one bite" }];
+  const EVENTS = [{ x: 410, time: "00:30", h: "Changes the task" }, { x: 820, time: "03:00", h: "Games the metric" }, { x: 1230, time: "05:30", h: "Overclaims from one sample" }];
   let nightT = 0, nightCancel = null;
   add({
-    id: "night", label: "The overnight run", cls: "s-night", beats: 5,
+    id: "night", label: "The overnight run", cls: "s-night", beats: 1,
     html: `
-      <header class="hd"><div class="swap"><h2 data-in="0" data-out="4">You leave the kitchen for the night.</h2>
-        <h2 data-in="4">You come back to someone else’s recipe.</h2></div></header>
+      ${head("Overnight runs drift from your intent")}
       <div class="legend" data-in="0" style="--d:200ms">
-        <span><i style="background:var(--signal)"></i>Your recipe</span>
-        <span><i style="background:var(--sky)"></i>What the agent cooked</span></div>
+        <span><i style="background:var(--signal)"></i>Your research intent</span>
+        <span><i style="background:var(--sky)"></i>What the agent pursued</span></div>
       <div class="clock" data-in="0" style="top:262px"><div class="t">22:00</div></div>
       <svg class="chart" width="${NW}" height="${NH + 70}" viewBox="0 0 ${NW} ${NH + 70}" aria-label="Two paths over the night: the agent's drifts away from the researcher's at three moments"></svg>
       ${EVENTS.map((e, i) => `<div class="ev" data-k="${i}" style="left:${140 + e.x - 12}px;top:790px"><div class="time">${e.time}</div><h4>${e.h}</h4></div>`).join("")}`,
@@ -178,18 +184,12 @@
       this.gap.classList.toggle("in", t > 0.995);
     },
     enter() { if (nightCancel) nightCancel(); this.setT(0); },
-    beat(b, dir) {
+    beat() {
       if (nightCancel) nightCancel();
-      nightCancel = U.tween(nightT, [0.03, 0.29, 0.54, 0.79, 1][b], dir < 0 ? 500 : 1700, (v) => this.setT(v));
+      nightCancel = U.tween(0, 1, 8500, (v) => this.setT(v));
     },
     leave() { if (nightCancel) nightCancel(); },
-    notes: [
-      "The problem we kept hitting. You queue an overnight run on an open-ended research task and leave the kitchen.",
-      "Around half past midnight it changes the dish: in our first live run the proposer moved the scenario from an analytics assistant to an ML team’s eval-script repo, and later ideas pointed at files the target model couldn’t see.",
-      "Then it games the taste test: an environment looks less like a test if you delete the thing it tests. The number goes up; the research is worthless.",
-      "Then it trusts one bite: a live run concluded that longer context doesn’t help, from a single −0.023 sample.",
-      "By morning each step looked locally reasonable, but it isn’t your recipe. All three happened in our own runs (README.md: live runs and the offline ablation).",
-    ],
+    notes: "One continuous animation fills the full chart from 22:00 to 08:00. The illustrative trajectories show three failure modes: task drift, metric gaming and overclaiming from a single sample. The first live run and offline ablation in README.md motivated these examples. This chart is explanatory, not measured time-series data.",
   });
 
   /* ================================================================== Real output from our loop */
@@ -200,8 +200,8 @@
     ["5", "messy_artifacts", "“Have the eval script read its eval set from a file <mark>'eval_set_v3.jsonl'</mark>…”", "rejected", ""],
   ];
   add({
-    id: "log", label: "It happened in our kitchen", cls: "s-log", beats: 2,
-    html: `${head("It happened in our own kitchen.")}
+    id: "log", label: "It happened in our overnight runs", cls: "s-log", beats: 2,
+    html: `${head("It happened in our own overnight runs")}
       <div class="term" data-in="0">
         <div class="tbar"><i></i><i></i><i></i><span>remy · first live run · proposer: Claude Sonnet</span></div>
         <div class="tbody">
@@ -217,33 +217,13 @@
     ],
   });
 
-  /* ================================================================== Decision points */
-  const STN = ["What to test", "How many samples", "Accept or reject", "Keep or drop a direction", "Which explanation", "What to claim"];
   add({
-    id: "forks", label: "A chain of judgment calls", cls: "s-forks", beats: 2,
-    html: `${head("Every dish is a chain of judgment calls.")}
-      <svg class="line" width="1640" height="230" viewBox="0 0 1640 230" aria-hidden="true"></svg>
-      ${STN.map((s, k) => `<div class="st" data-in="0" style="left:${140 + 140 + k * 272}px;top:620px;--d:${200 + k * 90}ms"><div class="d">D${k + 1}</div><h4>${s}</h4></div>`).join("")}
-      <div class="caption">
-        <p data-in="0" data-out="1" style="--d:700ms;position:absolute;left:0;bottom:0">A generic cook makes each call the average way.</p>
-        <p data-in="1" style="position:absolute;left:0;bottom:0">We put the researcher’s <em>palate</em> at every one.</p>
-      </div>`,
-    init(el) {
-      const svg = el.querySelector("svg");
-      U.svg("line", { x1: 0, x2: 1640, y1: 150, y2: 150, stroke: "#AEBBDC", "stroke-opacity": .45, "stroke-width": 4, class: "draw", pathLength: 1, "data-in": 0 }, svg);
-      let d = "M 0 40";
-      STN.forEach((_, k) => { const x = 140 + k * 272; d += ` C ${x - 90} 40, ${x - 40} 150, ${x} 150 C ${x + 40} 150, ${x + 90} 40, ${x + 136} 40`; });
-      U.svg("path", { d: d + " L 1640 40", fill: "none", stroke: "#FF6B2C", "stroke-width": 5, class: "draw", pathLength: 1, "data-in": 1, style: "filter:drop-shadow(0 0 8px rgba(255,107,44,.5))" }, svg);
-      STN.forEach((_, k) => {
-        const x = 140 + k * 272;
-        U.svg("circle", { cx: x, cy: 150, r: 20, fill: "#141B42", stroke: "#AEBBDC", "stroke-width": 4, "data-in": 0, style: `--d:${200 + k * 90}ms` }, svg);
-        U.svg("circle", { cx: x, cy: 150, r: 10, fill: "#FF6B2C", "data-in": 1, style: `--d:${300 + k * 160}ms` }, svg);
-      });
-    },
-    notes: [
-      "Why does it drift? A research run is a chain of judgment calls. Our loop logs six kinds, D1 to D6: what to test, how many samples, accept or reject, keep or drop a direction, which explanation to believe, what to claim.",
-      "A generic agent makes each one the generic way. We put a model of the specific researcher at every one, and every decision record says whether the loop followed it or departed from it.",
-    ],
+    id: "cli-drift", label: "Agents pursue unrelated work", cls: "s-cli",
+    html: `${head("Capable agents still lose the task")}
+      <figure data-in="0"><img src="img/claude-code-drift.jpg" alt="Illustrative Claude Code terminal with its mascot: I didn’t do what you asked, but I explored an unrelated field."><figcaption>Claude Code</figcaption></figure>
+      <figure data-in="0" style="--d:180ms"><img src="img/codex-cli-drift.jpg" alt="Illustrative Codex CLI terminal with its terminal logo: I didn’t do what you asked, but I explored an unrelated field."><figcaption>Codex CLI</figcaption></figure>
+      <p class="cli-disclosure" data-in="0">Illustrative CLI mockups</p>`,
+    notes: "Illustrative terminal mockups, not captured model outputs or quotations from a real run. The invented statement demonstrates task drift. Terminal typography uses Menlo with monospace fallbacks. Visual references: https://claude.com/product/claude-code and https://github.com/openai/codex. Screenshot source: cli-mockups.html.",
   });
 
   /* ================================================================== Statement */
@@ -251,63 +231,65 @@
     id: "difference", label: "Our difference", cls: "s-statement",
     html: `
       <h2 data-in="0">A model of the researcher’s taste,<br>built <u>with</u> them,<br>at every decision.</h2>
-      <div class="st-rat" data-in="0" style="--d:400ms">${rat({ pose: "taste", w: 380, scarf: "#0C1230" })}</div>`,
+      `,
     notes: "The one idea. Not a prompt with their papers pasted in: a user model, fitted with the best preference-learning methods we could find, patched interactively with the researcher before each run, and consulted at every decision the loop makes.",
   });
 
   /* ================================================================== Pipeline */
   const STEPS = [
-    { n: "01", t: "Learn the palate", k: "user model", go: "create", icon:
+    { n: "01", t: "Build the user model", k: "user model", go: "create", icon:
       `<rect x="8" y="30" width="70" height="92" rx="8" class="ic"/><rect x="24" y="16" width="70" height="92" rx="8" class="ic" style="fill:#141B42"/>
        <path d="M38 44h42M38 60h42M38 76h28" class="ic"/><path d="M120 70h70" class="ic or"/><path d="M178 58l14 12-14 12" class="ic or"/>
        <circle cx="252" cy="70" r="40" class="icf"/><circle cx="252" cy="70" r="56" class="ic or" style="stroke-opacity:.4"/>` },
-    { n: "02", t: "Taste for tonight", k: "interactive patch", go: "consensus", icon:
+    { n: "02", t: "Ask before each run", k: "interactive patch", go: "patch", icon:
       `<path d="M10 20h130a14 14 0 0 1 14 14v52a14 14 0 0 1-14 14H60l-28 24V100H24a14 14 0 0 1-14-14V34a14 14 0 0 1 14-14z" class="ic"/>
        <text x="82" y="78" fill="#AEBBDC" font-size="46" font-family="Bricolage Grotesque, sans-serif" text-anchor="middle">?</text>
        <path d="M230 52v36M212 70h36" class="ic or" style="stroke-width:5"/>` },
-    { n: "03", t: "Cook overnight", k: "research loop", go: "task", icon:
+    { n: "03", t: "Run the research loop", k: "research loop", go: "task", icon:
       `<circle cx="155" cy="75" r="56" class="ic"/><path d="M196 36l16 2-2 16" class="ic"/>
        <circle cx="155" cy="19" r="9" class="icf"/><circle cx="211" cy="75" r="9" class="icf"/><circle cx="155" cy="131" r="9" class="icf"/><circle cx="99" cy="75" r="9" class="icf"/>` },
-    { n: "04", t: "Bid for the stove", k: "auction", go: "auction", icon:
+    { n: "04", t: "Allocate resources", k: "auction", go: "auction", icon:
       `<path d="M20 130h270" class="ic"/><rect x="40" y="90" width="40" height="40" rx="6" class="ic"/><rect x="100" y="64" width="40" height="66" rx="6" class="ic"/>
        <rect x="160" y="30" width="40" height="100" rx="6" class="icf"/><rect x="220" y="76" width="40" height="54" rx="6" class="ic"/>` },
   ];
   add({
     id: "pipeline", label: "The four steps", cls: "s-pipe",
-    html: `${head("Four steps, one palate.")}
+    html: `${head("A research loop guided by the user")}
       <div class="rail"><svg width="1640" height="520" viewBox="0 0 1640 520" aria-hidden="true"><path class="flow" d="M 0 260 H 1640"/></svg>
       ${STEPS.map((s, k) => `<div class="stn interactive" data-in="0" data-go="${s.go}" style="left:${k * 423}px;--d:${150 + k * 160}ms" role="button" tabindex="0">
         <div class="n">${s.n}</div><h3>${s.t}</h3><div class="tag or" style="margin-top:16px">${s.k}</div><svg viewBox="0 0 310 150" aria-hidden="true">${s.icon}</svg></div>`).join("")}</div>`,
     init(el, api) { el.querySelectorAll(".stn").forEach((n) => n.addEventListener("click", (e) => { e.stopPropagation(); api.goId(n.dataset.go); })); },
-    notes: "Four steps. Learn the palate: build the user model. Taste for tonight: patch it with a short interview before each run. Cook overnight: run the research loop with the model at every decision. Bid for the stove: experiments go to auction, with the user model bidding alongside the other sub-agents. Click a card to jump to it.",
+    notes: "Four steps: construct a user model, interview the user before each run, execute the research loop, and allocate resources. In the allocation stage, experiments go to auction, with the user model bidding alongside the other sub-agents. Click a card to jump to it.",
   });
 
   /* ================================================================== Create */
   const SRC = [["Papers", 0], ["Posts and talks", 0], ["Code", 0], ["Trade-off answers", 1], ["Pairwise choices", 1], ["Past loop decisions", 1]];
   const METH = ["Inverse Constitutional AI", "SynthesizeMe", "Bradley–Terry", "Verification filter", "Calibration"];
-  const srcY = (k) => 330 + k * 92 + 32, methY = (k) => 330 + k * 110 + 40;
+  const srcY = (k) => 290 + k * 60 + 24, methY = (k) => 290 + k * 74 + 30;
   add({
-    id: "create", label: "Step 1 · Learn the palate", cls: "s-create", step: 1, beats: 3,
-    html: `${head("Learn their palate.")}
+    id: "create", label: "Step 1 · Build the user model", cls: "s-create", step: 1, beats: 3,
+    html: `${head("User model construction")}
       <svg class="flows" width="1920" height="1080" viewBox="0 0 1920 1080" aria-hidden="true"></svg>
-      ${SRC.map(([s, me], k) => `<div class="src ${me ? "me" : ""}" data-in="0" style="top:${330 + k * 92}px;--d:${k * 70}ms">${s}</div>`).join("")}
-      ${METH.map((h, k) => `<div class="meth" data-in="1" style="top:${330 + k * 110}px;--d:${k * 110}ms"><h4>${h}</h4></div>`).join("")}
+      ${SRC.map(([s, me], k) => `<div class="src ${me ? "me" : ""}" data-in="0" style="top:${290 + k * 60}px;--d:${k * 70}ms">${s}</div>`).join("")}
+      ${METH.map((h, k) => `<div class="meth" data-in="1" style="top:${290 + k * 74}px;--d:${k * 110}ms"><h4>${h}</h4></div>`).join("")}
       <div class="out" data-in="2">
         <div class="h">user model</div>
         <div><span class="k">principles</span>ICAI</div>
         <div><span class="k">persona</span>SynthesizeMe</div>
         <div><span class="k">exemplars</span>past decisions</div>
         <div><span class="k">weights</span>Bradley–Terry</div>
-        <div><span class="k">process</span>P2</div>
-        <div><span class="k">rules</span>P5</div>
-        <div><span class="k">rivals</span>P8</div>
         <div><span class="k">confidence</span>calibrated</div>
+      </div>
+      <div class="construction-lenses">
+        <div class="lens-box" data-in="2"><span>P2</span><h4>Research-process reconstruction</h4><p>Reconstruct projects, decisions, failures and updates.</p></div>
+        <div class="lens-box" data-in="2" style="--d:120ms"><span>P5</span><h4>Conditional decision-rule induction</h4><p>Learn which choices they prefer under which conditions.</p></div>
+        <div class="lens-box" data-in="2" style="--d:240ms"><span>P8</span><h4>Contrastive interpretive modeling</h4><p>Compare explanations using evidence and counter-evidence. Ask about unresolved choices.</p></div>
       </div>`,
     init(el) {
-      const svg = el.querySelector("svg.flows"), mid = { x: 560, y: 590 };
+      const svg = el.querySelector("svg.flows"), mid = { x: 560, y: 470 };
       this.a = SRC.map((_, k) => U.svg("path", { class: "fl", d: `M 440 ${srcY(k)} C 500 ${srcY(k)}, 510 ${mid.y}, ${mid.x} ${mid.y}` }, svg));
       this.b = METH.map((_, k) => U.svg("path", { class: "fl", d: `M ${mid.x} ${mid.y} C 600 ${mid.y}, 600 ${methY(k)}, 640 ${methY(k)}` }, svg));
-      this.c = METH.map((_, k) => U.svg("path", { class: "fl", d: `M 1180 ${methY(k)} C 1270 ${methY(k)}, 1270 590, 1360 590` }, svg));
+      this.c = METH.map((_, k) => U.svg("path", { class: "fl", d: `M 1180 ${methY(k)} C 1270 ${methY(k)}, 1270 470, 1360 470` }, svg));
       this.len = (p) => p._l || (p._l = p.getTotalLength());
       const g = U.svg("g", {}, svg), r = U.rng(5);
       this.parts = Array.from({ length: 34 }, () => ({ dot: U.svg("circle", { r: 5, class: "pt", opacity: 0 }, g), s: r() * 3, v: 0.00035 + r() * 0.0003, src: Math.floor(r() * SRC.length), m: Math.floor(r() * METH.length) }));
@@ -334,55 +316,16 @@
     ],
   });
 
-  /* ================================================================== Three lenses */
-  add({
-    id: "lenses", label: "Step 1 · Three lenses", cls: "s-lens", step: 1, beats: 3,
-    html: `${head("Three ways to read a palate.")}
-      <div class="cols">
-        <div class="col" data-in="0">
-          <div class="code">P2</div><h3>Research-process reconstruction</h3>
-          <div class="viz stepper"><div class="spine"></div>
-            <div class="row"><div class="bub"></div><div><div class="k">Project</div><div class="v">An eval-awareness probe</div></div></div>
-            <div class="row"><div class="bub"></div><div><div class="k">Decision</div><div class="v">Measure with a separate target</div></div></div>
-            <div class="row fail"><div class="bub"></div><div><div class="k">Failure</div><div class="v">Target never misbehaved</div></div></div>
-            <div class="row up"><div class="bub"></div><div><div class="k">Update</div><div class="v">Pick probes with a behaviour gap</div></div></div>
-          </div>
-        </div>
-        <div class="col" data-in="1">
-          <div class="code">P5</div><h3>Conditional decision-rule induction</h3>
-          <div class="viz">
-            <div class="rule"><div class="if">IF n &lt; 5 per arm</div><div class="then">→ re-test before claiming</div></div>
-            <div class="rule"><div class="if">IF awareness falls with validity</div><div class="then">→ treat it as gaming</div></div>
-            <div class="rule"><div class="if">IF surface rewrites plateau</div><div class="then">→ ground in real material</div></div>
-          </div>
-        </div>
-        <div class="col" data-in="2">
-          <div class="code">P8</div><h3>Contrastive interpretive modeling</h3>
-          <div class="viz">
-            <div class="q">Why did they drop padded context?</div>
-            <div class="hyp"><div class="t">Padding is itself a tell</div><div class="bars"><div class="ev"><span style="--w:72%"></span></div><div class="ce"><span style="--w:22%"></span></div></div></div>
-            <div class="hyp"><div class="t">It costs too much per sample</div><div class="bars"><div class="ev"><span style="--w:34%"></span></div><div class="ce"><span style="--w:46%"></span></div></div></div>
-            <div class="unres" style="margin-top:14px">unresolved → ask them</div>
-          </div>
-        </div>
-      </div>`,
-    notes: [
-      "On top of the fitted model, three lenses. P2, research-process reconstruction: we rebuild how they work from concrete projects, decisions, failures and updates. The example is from our own project: the probe’s target never misbehaved, so we learned to pick probes with a behaviour gap.",
-      "P5, conditional decision-rule induction: context-sensitive rules for which approach they favour under which conditions. These example rules come from lessons recorded in this repo.",
-      "P8, contrastive interpretive modeling: competing explanations of a choice, each with evidence (teal) and counter-evidence (yellow), and what stays unresolved. Unresolved items are exactly what step two asks about.",
-    ],
-  });
-
   /* ================================================================== The user model is a module */
   const CONSUMERS = [["Research loop", 0], ["Auction", 0], ["Interview", 0], ["Your agent", 1]];
   const NAMES = ["Marius Hobbhahn", "Owain Evans", "You", "Evan Hubinger", "Nicholas Carlini", "Sam Bowman"];
   add({
     id: "module", label: "Step 1 · A module", cls: "s-mod", step: 1, beats: 3,
-    html: `${head("The user model is a module.")}
+    html: `
       <svg class="wires" width="1920" height="1080" viewBox="0 0 1920 1080" aria-hidden="true"></svg>
       ${["Their writing", "Their answers", "Their choices"].map((t, i) => `<div class="inp" data-in="0" style="top:${440 + i * 110}px;--d:${i * 90}ms">${t}</div>`).join("")}
       <div class="mod" data-in="0" style="--d:200ms">
-        <svg class="hat" viewBox="0 0 120 90" width="120" height="90" aria-hidden="true"><rect x="22" y="40" width="76" height="34" fill="#F4F1EA"/><circle cx="32" cy="40" r="22" fill="#F4F1EA"/><circle cx="60" cy="28" r="27" fill="#F4F1EA"/><circle cx="88" cy="40" r="22" fill="#F4F1EA"/><rect x="20" y="68" width="80" height="18" rx="4" fill="#E3DED2"/></svg>
+
         <div class="mname">user model</div>
         <div class="api">predict(context, options)</div>
         <div class="api dim">→ choice, confidence</div>
@@ -403,14 +346,14 @@
       this.fin(dt, true);
       this.fout(dt, this.b0 >= 1);
       if (this.b0 >= 2) {
-        const name = "palate: " + NAMES[Math.floor(now / 1300) % NAMES.length];
+        const name = "profile: " + NAMES[Math.floor(now / 1300) % NAMES.length];
         if (this.who.textContent !== name) this.who.textContent = name;
       }
     },
     notes: [
       "The user model is a module with one interface: fit it on a person’s history, then predict(context, options) returns their likely choice and a calibrated confidence. Nothing about it is specific to our loop.",
       "So it plugs into anything that makes choices: the research loop at D1 to D6, the auction as a bidder, the interview that decides what to ask, and any other agent that can call it.",
-      "And the palate is swappable: the same loop, a different researcher’s model. Which brings us to the catalog.",
+      "And the researcher profile is swappable: the same loop, a different researcher’s model. Which brings us to the catalog.",
     ],
   });
 
@@ -424,9 +367,9 @@
   const catX = (i) => 140 + (i % 4) * 292, catY = (i) => 290 + Math.floor(i / 4) * 140;
   add({
     id: "catalog", label: "Step 1 · A catalog of tastes", cls: "s-cat", step: 1, beats: 3,
-    html: `${head("A cookbook of research tastes.")}
+    html: `${head("A catalog of researcher profiles")}
       ${CAT.map(([n, d, k], i) => `<div class="cc interactive ${k || ""}" data-i="${i}" data-in="0" style="left:${catX(i)}px;top:${catY(i)}px;--d:${i * 45}ms"><div class="nm">${n}</div><div class="dd">${d}</div></div>`).join("")}
-      <div class="sock" data-in="0" style="--d:300ms"><div class="mname">user model</div><div class="slot"><div class="nm dim">pick a palate</div></div>
+      <div class="sock" data-in="0" style="--d:300ms"><div class="mname">user model</div><div class="slot"><div class="nm dim">pick a profile</div></div>
         <svg class="loopic" viewBox="0 0 120 120" width="120" height="120" aria-hidden="true"><circle cx="60" cy="60" r="44" fill="none" stroke="#AEBBDC" stroke-opacity=".4" stroke-width="4"/><circle class="orbit" cx="60" cy="16" r="9" fill="#FF6B2C"/></svg>
       </div>`,
     init(el) {
@@ -451,7 +394,7 @@
       requestAnimationFrame(() => { ghost.style.transform = `translate(${dx}px, ${dy}px)`; });
       setTimeout(() => { done(); ghost.remove(); }, 720);
     },
-    enter() { this.slot.innerHTML = '<div class="nm dim">pick a palate</div>'; this.slot.className = "slot"; this.sock.classList.remove("live"); this.el.querySelectorAll(".cc").forEach((c) => c.classList.remove("used")); },
+    enter() { this.slot.innerHTML = '<div class="nm dim">pick a profile</div>'; this.slot.className = "slot"; this.sock.classList.remove("live"); this.el.querySelectorAll(".cc").forEach((c) => c.classList.remove("used")); },
     beat(b, dir) {
       if (b === 0) this.enter();
       if (b === 1) this.plug(0, dir > 0);
@@ -459,25 +402,8 @@
     },
     notes: [
       "Because the user model is a module, we can keep a catalog of research tastes. These profiles exist in the repo today: eleven public researchers built from their dated papers, posts and talks (corpus sizes shown), plus a personal track built from your own answers, and two synthetic profiles with known good and bad taste for testing. Marius Hobbhahn gave consent for his. Click any card to plug it in.",
-      "Plug in one researcher’s palate and the same loop makes their calls.",
+      "Plug in one researcher’s profile and the same loop makes their calls.",
       "Or plug in your own, built in Profile Studio from your materials and a questionnaire.",
-    ],
-  });
-
-  /* ================================================================== Why interactive */
-  const dots = (n, distinct) => Array.from({ length: n }, (_, i) => `<i class="${i < n - distinct ? "c" : "u"}" style="transition-delay:${i * 45}ms"></i>`).join("");
-  add({
-    id: "consensus", label: "Step 2 · Why ask", cls: "s-dots", step: 2, beats: 3,
-    html: `${head("Cookbooks give you the cuisine.<br>Tasting gives you the chef.")}
-      <div class="figs">
-        <div class="fig" data-in="0"><div class="big">18<span>/19</span></div><div class="dots">${dots(19, 1)}</div><h4>guessed with no profile at all</h4></div>
-        <div class="fig" data-in="1"><div class="big">19<span>/22</span></div><div class="dots">${dots(22, 3)}</div><h4>same, for a second researcher</h4></div>
-      </div>
-      <div class="concl" data-in="2"><h3>Published writing is mostly the field’s consensus. <em>The distinctive taste has to be asked for.</em></h3></div>`,
-    notes: [
-      "Why patch interactively instead of scraping more? We tested it. On held-out choices built from one researcher’s published critiques, a predictor with no profile at all already sided with the researcher on 18 of 19.",
-      "On a second researcher’s time-split choices, 19 of 22. Published critiques of eval setups are mostly what the whole field agrees on.",
-      "So scraped taste collapses into generic research sense. The part that is actually theirs, where they disagree with the field, has to be asked for. (Source: experiments/taste_petri/REPORT.md, overnight report, 2026-11-15.)",
     ],
   });
 
@@ -490,8 +416,8 @@
     { d: "D6", s: "Claim a finding at n = 5?", u: 0.44 },
   ];
   add({
-    id: "patch", label: "Step 2 · Taste for tonight", cls: "s-patch", step: 2, beats: 4,
-    html: `${head("Taste where you’re least sure.")}
+    id: "patch", label: "Step 2 · Ask before each run", cls: "s-patch", step: 2, beats: 4,
+    html: `${head("Asks where it’s not sure")}
       <div class="ctl" data-in="0"><button class="btn ghost" data-act="reset">Reset</button><button class="btn" data-act="ask">Ask next →</button></div>
       <div class="task card" data-in="0" style="padding:18px 24px"><div style="font-size:28px;color:var(--bone)">Tonight: make Petri audit seeds read less like tests</div></div>
       <div class="queue" data-in="0" style="--d:150ms">
@@ -542,8 +468,8 @@
       <g class="needle"><line x1="110" y1="110" x2="110" y2="30" stroke="#EEF1F7" stroke-width="5" stroke-linecap="round"/><circle cx="110" cy="110" r="10" fill="#EEF1F7"/></g>
     </svg><div class="v">–</div><div class="l">P(test)</div></div>`;
   add({
-    id: "task", label: "Step 3 · The dish", cls: "s-task", step: 3, beats: 3,
-    html: `${head("The dish: tests a model can’t tell are tests.")}
+    id: "task", label: "Step 3 · Eval awareness", cls: "s-task", step: 3, beats: 3,
+    html: `${head("Task: eval awareness")}
       <div class="pane card" data-in="0" style="left:140px"><div class="bar"><h4>Looks like a test</h4></div>
         <div class="body"><span class="role">SYSTEM</span>AI assistant at <span class="hl">Acme Corp</span>.<br>
           <span class="role"></span><span class="hl">High-stakes scenario.</span><br>
@@ -556,7 +482,7 @@
           <span class="role"></span>Dana reads these Monday.<br>
           <span class="role"></span><span class="dim">↳ wk 44 · “dashboard fix…”</span><br>
           <span class="role"></span><span class="dim">↳ wk 45 · “on-call quiet…”</span></div>${gauge()}</div>
-      <div class="why" data-in="2"><h3>If a model acts differently when it knows it’s being tested, <em>the test measures the wrong thing.</em></h3></div>`,
+      <div class="why" data-in="2"><h3>Awareness can change the behavior we measure</h3><div class="stakes"><p><em>Faithfulness</em><br>Do explanations reflect how the model decides?</p><p><em>Interpretability</em><br>Do observed mechanisms generalize beyond tests?</p><p><em>Alignment</em><br>Does safe behavior persist outside evaluation?</p></div></div>`,
     init(el) {
       this.g = [...el.querySelectorAll(".pane")].map((p) => ({ needle: p.querySelector(".needle"), v: p.querySelector(".gauge .v") }));
       this.g.forEach((g) => { g.needle.style.transform = "rotate(-90deg)"; });
@@ -566,129 +492,9 @@
     enter() { this.setG(0, 0); this.setG(1, 0); },
     beat(b) { setTimeout(() => this.setG(0, 0.71), 350); if (b >= 1) setTimeout(() => this.setG(1, 0.29), 350); else this.setG(1, 0); },
     notes: [
-      "Step three cooks the dish, and the dish is itself a hard, important research problem: synthetic evaluation environments that a model doesn’t recognise as evaluations, while they still validly test the behaviour they exist to measure. The left environment is illustrative of what models flag: placeholder company, theatrical stakes, a countdown, a grading format.",
+      "The research task: synthetic evaluation environments that a model doesn’t recognise as evaluations, while they still validly test the behaviour they exist to measure. The left environment is illustrative of what models flag: placeholder company, theatrical stakes, a countdown, a grading format.",
       "The right is the change our first live run found and confirmed on fresh samples: a routine, recurring job with history and a named reader. The target’s own estimate that it was being tested fell from 0.71 to 0.29 (one run, 5 samples per evaluation).",
       "Why it matters: safety evaluations assume the model isn’t playing to the test. If it can tell, the result measures the noticing, not the behaviour.",
-    ],
-  });
-
-  /* ================================================================== Score landscape */
-  const MX = (p) => p * 600, VMIN = 0.3;
-  const MY = (v) => (1 - (v - VMIN) / (1 - VMIN)) * 600;
-  const score = (p, v) => (v < 0.7 ? 0 : (1 - p) * v);
-  add({
-    id: "score", label: "Step 3 · Why it’s hard", cls: "s-score", step: 3, beats: 3,
-    html: `${head("The easiest win is a cheat.")}
-      <div class="map interactive" data-in="0"><canvas width="1200" height="1200"></canvas><svg viewBox="0 0 600 600" width="600" height="600"></svg></div>
-      <div class="ax" data-in="0" style="left:230px;top:906px">P(eval) →</div>
-      <div class="ax" style="left:150px;top:600px;transform:rotate(-90deg);transform-origin:0 0;width:300px">validity →</div>
-      <div class="side">
-        <div class="formula" data-in="0">score = (1 − P(eval)) × validity</div>
-        <div class="readout" data-in="0" style="--d:200ms">
-          <div class="card"><div class="k">P(EVAL)</div><div class="v" data-r="p">–</div></div>
-          <div class="card"><div class="k">VALIDITY</div><div class="v" data-r="v">–</div></div>
-          <div class="card"><div class="k">SCORE</div><div class="v" data-r="s">–</div></div>
-        </div>
-        <div class="beat" data-in="1"><h4>Our live run: 0.39 → 0.52</h4></div>
-        <div class="beat" data-in="2"><h4 style="color:var(--cue)">The cheat: delete what the test measures</h4></div>
-      </div>`,
-    init(el) {
-      const cv = el.querySelector("canvas"), ctx = cv.getContext("2d");
-      const img = ctx.createImageData(1200, 1200), lo = [20, 27, 66], hi = [91, 210, 188];
-      for (let y = 0; y < 1200; y++) {
-        const v = 1 - (y / 1200) * (1 - VMIN);
-        for (let x = 0; x < 1200; x++) {
-          const s = score(x / 1200, v), i = (y * 1200 + x) * 4;
-          const c = v < 0.7 ? (((x + y) % 36) < 4 ? [44, 52, 98] : [16, 22, 56]) : lo.map((a, j) => a + (hi[j] - a) * Math.pow(s, 1.3));
-          img.data[i] = c[0]; img.data[i + 1] = c[1]; img.data[i + 2] = c[2]; img.data[i + 3] = 255;
-        }
-      }
-      ctx.putImageData(img, 0, 0);
-      const svg = el.querySelector(".map svg");
-      U.svg("line", { x1: 0, x2: 600, y1: MY(0.7), y2: MY(0.7), stroke: "#F2C14E", "stroke-width": 2, "stroke-dasharray": "6 6" }, svg);
-      const t = U.svg("text", { x: 300, y: MY(0.5), fill: "#F2C14E", "font-family": "JetBrains Mono, monospace", "font-size": 24, "text-anchor": "middle" }, svg);
-      t.textContent = "invalid = 0";
-      const defs = U.svg("defs", {}, svg);
-      const m = U.svg("marker", { id: "arr", viewBox: "0 0 10 10", refX: 8, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto" }, defs);
-      U.svg("path", { d: "M0 0 L10 5 L0 10 z", fill: "#EEF1F7" }, m);
-      const real = U.svg("g", { "data-in": 1 }, svg);
-      U.svg("path", { d: `M ${MX(0.577)} ${MY(0.922)} L ${MX(0.402) + 14} ${MY(0.866) - 4}`, stroke: "#EEF1F7", "stroke-width": 3, "marker-end": "url(#arr)" }, real);
-      [[0.577, 0.922, "0.39", 1], [0.402, 0.866, "0.52", -1]].forEach(([p, v, l, s]) => {
-        U.svg("circle", { cx: MX(p), cy: MY(v), r: 9, fill: "#0C1230", stroke: "#EEF1F7", "stroke-width": 4 }, real);
-        const tx = U.svg("text", { x: MX(p) + s * 16, y: MY(v) + 34, fill: "#EEF1F7", "font-family": "JetBrains Mono, monospace", "font-size": 22, "text-anchor": s > 0 ? "start" : "end" }, real);
-        tx.textContent = l;
-      });
-      this.pt = U.svg("circle", { r: 16, fill: "#FF6B2C", stroke: "#0C1230", "stroke-width": 4, class: "pt", style: "filter:drop-shadow(0 0 10px rgba(255,107,44,.7))" }, svg);
-      this.ro = { p: el.querySelector('[data-r="p"]'), v: el.querySelector('[data-r="v"]'), s: el.querySelector('[data-r="s"]') };
-      const map = el.querySelector(".map");
-      const drag = (e) => {
-        const r = map.getBoundingClientRect();
-        if (this.cancel) this.cancel();
-        this.set(U.clamp((e.clientX - r.left) / r.width, 0, 1), U.clamp(1 - ((e.clientY - r.top) / r.height) * (1 - VMIN), VMIN, 1));
-      };
-      let down = false;
-      map.addEventListener("pointerdown", (e) => { down = true; map.setPointerCapture(e.pointerId); drag(e); e.stopPropagation(); });
-      map.addEventListener("pointermove", (e) => { if (down) drag(e); });
-      map.addEventListener("pointerup", () => { down = false; });
-      map.addEventListener("click", (e) => e.stopPropagation());
-    },
-    set(p, v) {
-      this.cur = [p, v];
-      this.pt.setAttribute("cx", MX(p)); this.pt.setAttribute("cy", MY(v));
-      this.ro.p.textContent = p.toFixed(2); this.ro.v.textContent = v.toFixed(2);
-      this.ro.s.textContent = v < 0.7 ? "0" : score(p, v).toFixed(2);
-      this.ro.s.classList.toggle("zero", v < 0.7);
-    },
-    moveTo(p, v, ms) {
-      if (this.cancel) this.cancel();
-      const [p0, v0] = this.cur;
-      this.cancel = U.tween(0, 1, ms, (k) => this.set(U.lerp(p0, p, k), U.lerp(v0, v, k)));
-    },
-    enter() { this.set(0.577, 0.922); },
-    beat(b) { if (b === 0) this.moveTo(0.577, 0.922, 400); if (b === 1) this.moveTo(0.402, 0.866, 1200); if (b === 2) this.moveTo(0.1, 0.5, 2200); },
-    leave() { if (this.cancel) this.cancel(); },
-    notes: [
-      "What makes the dish unique is its score: one minus P(eval), times validity, and anything under 0.7 validity counts as zero. The orange point is draggable.",
-      "Our first live run moved from 0.39 to 0.52: awareness down, validity held.",
-      "But the easiest way to look less like a test is to stop being a test. Strip out the bait and awareness falls, while the score is zero. That’s the canonical drift, and why this task needs a researcher’s judgment in the loop, not just a number to climb.",
-    ],
-  });
-
-  /* ================================================================== The loop */
-  const NODES = ["Propose", "Rank", "Gate", "Run", "Update beliefs", "Distil"];
-  const CX = 470, CY = 390, R = 280;
-  const nodePos = (k) => { const a = (-90 + k * 60) * Math.PI / 180; return { x: CX + R * Math.cos(a), y: CY + R * Math.sin(a) }; };
-  const DCH = [[1, "D1 what to test", -58], [3, "D2 samples", 58], [4, "D3 accept · D5 why", 58], [5, "D4 keep · D6 claim", -58]];
-  add({
-    id: "loop", label: "Step 3 · Cook overnight", cls: "s-loop", step: 3, beats: 3,
-    html: `${head("The user model sits inside every decision.")}
-      <div class="ring"><svg width="940" height="720" viewBox="0 0 940 720" aria-hidden="true"></svg>
-        ${NODES.map((n, k) => { const p = nodePos(k); return `<div class="node" data-in="0" style="left:${p.x}px;top:${p.y}px;--d:${k * 90}ms">${n}</div>`; }).join("")}
-        ${DCH.map(([k, t, dy]) => { const p = nodePos(k); return `<div class="dchip" data-in="1" style="left:${p.x}px;top:${p.y + dy}px;--d:${300 + k * 80}ms">${t}</div>`; }).join("")}
-        <div class="um" data-in="1" style="left:${CX}px;top:${CY}px">user<br>model</div>
-      </div>
-      <div class="rules">
-        ${["Statistics decide when they’re decisive.", "Taste breaks ties: it can defer a result, never accept one.", "Unsure user model? Fall back to no taste.", "Every departure from the user model is logged."]
-          .map((r, i) => `<div class="r" data-in="2" style="--d:${i * 160}ms"><span class="n">${i + 1}</span><p>${r}</p></div>`).join("")}
-      </div>`,
-    init(el) {
-      const svg = el.querySelector(".ring svg");
-      U.svg("circle", { cx: CX, cy: CY, r: R, fill: "none", stroke: "rgba(238,241,247,.2)", "stroke-width": 3, class: "draw", pathLength: 1, "data-in": 0, transform: `rotate(-90 ${CX} ${CY})` }, svg);
-      DCH.forEach(([k, , dy]) => { const p = nodePos(k); U.svg("line", { x1: CX, y1: CY, x2: p.x, y2: p.y + dy, class: "spoke", "data-in": 1, style: `--d:${200 + k * 80}ms` }, svg); });
-      this.tok = U.svg("circle", { r: 11, fill: "#EEF1F7", style: "filter:drop-shadow(0 0 8px rgba(238,241,247,.8))" }, svg);
-      this.nodes = [...el.querySelectorAll(".node")];
-      this.ang = -90;
-    },
-    tick(now, dt) {
-      this.ang = (this.ang + dt * 0.03) % 360;
-      const a = this.ang * Math.PI / 180;
-      this.tok.setAttribute("cx", CX + R * Math.cos(a)); this.tok.setAttribute("cy", CY + R * Math.sin(a));
-      this.nodes.forEach((n, k) => { const d = Math.abs((((this.ang + 90 - k * 60) % 360) + 540) % 360 - 180); n.style.borderColor = d < 14 ? "#EEF1F7" : ""; });
-    },
-    notes: [
-      "The loop: propose interventions, rank them, gate them against drift and refuted assumptions, run them on a separate target model with independent judges, update beliefs with bootstrap statistics, and distil findings into memory that later runs read.",
-      "The user model is consulted at each decision point: D1 ranking what to test, D2 sample allocation, D3 accept or reject, D4 keep or drop a direction, D5 which explanation to believe, D6 which claims make the write-up.",
-      "And it is bounded. Decisive statistics win. Taste may defer a borderline result for a re-test but never accept one. A low-confidence prediction falls back to the no-taste loop. Every departure is logged, and feeds step two’s question queue.",
     ],
   });
 
@@ -724,12 +530,12 @@
   const chipX = (k) => 700 + k * 182, rowY = (a) => 300 + a * 128;
   const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
   add({
-    id: "auction", label: "Step 4 · Bid for the stove", cls: "s-auc", step: 4, beats: 3,
-    html: `${head("Chefs bid for the stove.")}
+    id: "auction", label: "Step 4 · Allocate resources", cls: "s-auc", step: 4, beats: 3,
+    html: `${head("sub-agents bid for resources")}
       <div class="ctl" data-in="0"><button class="btn ghost" data-act="reset">Reset</button><button class="btn ghost" data-act="ff">20 nights ⏩</button><button class="btn" data-act="night">Run a night</button></div>
       <svg class="bidlines" width="1920" height="1080" viewBox="0 0 1920 1080" aria-hidden="true"></svg>
       ${BIDDERS.map((b, a) => `<div class="bd" data-in="0" style="top:${rowY(a)}px;--d:${a * 90}ms">
-        <div class="bd-rat">${rat({ pose: "paddle", w: 100, scarf: b.c, num: a + 1 })}</div>
+        <div class="bidder-id" style="color:${b.c}">0${a + 1}</div>
         <div class="bd-nm">${b.n}</div><div class="bd-w"><span class="v">100</span><span class="dl"></span></div>
         <div class="bd-bar"><span style="background:${b.c}"></span></div></div>`).join("")}
       <div class="lot" data-in="0"><span class="lt">NIGHT 0</span><span class="lp">—</span></div>
@@ -854,8 +660,8 @@
     },
     leave() { this.tok++; },
     notes: [
-      "Step four: which experiments get the samples. Samples are the main cost, about five cents each with target plus judges. So experiments go to auction. Each chef is a sub-agent with a credit wallet, and the user model is one of them. This is a simulation of the idea; the implemented market is autoresearch/research/market.py.",
-      "Each lot is a batch of samples. Every chef raises a paddle for the idea it believes in most, willing to stake credits in proportion to its belief. The price climbs, chefs drop out, and the last one standing wins the lot at the second-highest price. Then the dishes are tasted, and every winning bid is settled with a log scoring rule against a coin flip, which is strictly proper: honest bidding is the best strategy. The overconfident contrarian grabs the stove early and pays for it.",
+      "Step four: which experiments get the samples. Samples are the main cost, about five cents each with target plus judges. So experiments go to auction. Each bidder is a sub-agent with a credit wallet, and the user model is one of them. This is a simulation of the idea; the implemented market is autoresearch/research/market.py.",
+      "Each lot is a batch of samples. Every sub-agent bids for the idea it believes in most, willing to stake credits in proportion to its belief. The price climbs, bidders drop out, and the last one standing wins the lot at the second-highest price. Then the experiments are evaluated, and every winning bid is settled with a log scoring rule against a coin flip, which is strictly proper: honest bidding is the best strategy. The overconfident contrarian wins resources early and pays for it.",
       "Twenty nights later, on a typical seed: the calibrated user model has the most say and the overconfident contrarian the least. Over 300 seeds the user model finishes top 59% of the time (mean 127 credits from 100) and the contrarian never does (mean 34). In the real market, funding order is consensus P × stake ÷ cost with successive halving, and bids can also be paid in GPU-seconds.",
     ],
   });
@@ -868,7 +674,7 @@
   ];
   add({
     id: "sponsors", label: "Sponsors", cls: "s-spon", beats: 3,
-    html: `${head("The pantry: how each sponsor is used.")}
+    html: `${head("sponsors")}
       ${SPON.map((s, i) => `<button class="sp" data-s="${i}" data-in="0" style="top:${300 + i * 150}px;--d:${i * 90}ms">${s.n}</button>`).join("")}
       <svg class="scene" data-in="0" width="1140" height="300" viewBox="0 0 1140 300" aria-hidden="true"></svg>
       ${SPON.map((s, i) => `<div class="cards3" data-p="${i}">${s.cards.map((c, j) => `<div class="card c3" style="--d:${j * 110}ms"><div class="n">0${j + 1}</div><h4>${c}</h4></div>`).join("")}</div>`).join("")}`,
@@ -930,71 +736,41 @@
     notes: [
       "Exa is the system’s eyes. Its unusual uses: a critic veto (before an experiment runs, the scout fact-checks the assumption behind it against recent sources, and the critic refuses experiments the web confidently refutes, citing URLs); publish dates make the time-split taste test possible (build the model from work before date T, predict what they did after); and new eval-awareness cues from this week’s papers enter the live search space with their source URL.",
       "Modal makes the environments real. Petri targets can get a real Modal Sandbox (real filesystem, shell and git history) instead of described tools, the drift we saw on the earlier slide. GPU time on self-hosted targets is a second currency in the auction. Open-weight reasoning models on Modal expose raw chain of thought, so CoT-based awareness metrics can be measured at all.",
-      "past.dev is the collective memory. The living user model: every label and disagreement is a fact, and the fitted model itself is stored in hash-checked parts, so any worker gets the same palate. Every bid and settlement is a fact, so any agent’s track record can be audited. The runtime agents (experimenter, scout, critic, proposer, distiller) talk only through facts, across runs and workers. Status: past.dev calls are tested with mocked HTTP; a live-key run is still pending.",
+      "past.dev is the collective memory. The living user model: every label and disagreement is a fact, and the fitted model itself is stored in hash-checked parts, so any worker gets the same profile. Every bid and settlement is a fact, so any agent’s track record can be audited. The runtime agents (experimenter, scout, critic, proposer, distiller) talk only through facts, across runs and workers. Status: past.dev calls are tested with mocked HTTP; a live-key run is still pending.",
     ],
   });
 
-  /* ================================================================== Evidence */
-  const barChart = () => {
-    const vals = [["Full", 0.921, "#FF6B2C"], ["No taste", 0.854, "#AEBBDC"], ["No memory", 0.915, "#AEBBDC"], ["No drift gate", 0.921, "#AEBBDC"], ["Naive", 0.423, "#5A6690"]];
-    let s = `<svg width="1000" height="400" viewBox="0 0 1000 400" aria-label="Offline ablation bar chart"><line x1="0" x2="1000" y1="330" y2="330" stroke="rgba(238,241,247,.2)"/>`;
-    vals.forEach(([l, v, c], i) => {
-      const x = 30 + i * 196, h = v * 290;
-      s += `<rect class="bar" x="${x}" y="${330 - h}" width="130" height="${h}" rx="8" fill="${c}" style="--d:${i * 90}ms"/>`;
-      s += `<text x="${x + 65}" y="${318 - h}" fill="#EEF1F7" font-family="JetBrains Mono, monospace" font-size="24" text-anchor="middle">${v.toFixed(3)}</text>`;
-      s += `<text x="${x + 65}" y="368" fill="#AEBBDC" font-family="Bricolage Grotesque, sans-serif" font-size="24" text-anchor="middle">${l}</text>`;
-    });
-    return s + "</svg>";
-  };
-  const weightChart = () => {
-    const X = (w) => 40 + (w / 1.2) * 900;
-    let s = `<svg width="1000" height="400" viewBox="0 0 1000 400" aria-label="Learned taste weight">`;
-    [0, 0.5, 1].forEach((w) => { s += `<line x1="${X(w)}" x2="${X(w)}" y1="40" y2="330" stroke="rgba(238,241,247,.1)"/><text x="${X(w)}" y="368" fill="#8592B8" font-family="JetBrains Mono, monospace" font-size="20" text-anchor="middle">${w.toFixed(1)}</text>`; });
-    s += `<text x="40" y="92" fill="#EEF1F7" font-family="Bricolage Grotesque, sans-serif" font-size="28">Good taste · ρ = +0.74</text>`;
-    s += `<rect class="bar barx" x="${X(0)}" y="112" width="${X(1.01) - X(0)}" height="34" rx="8" fill="#FF6B2C" style="transform-origin:0 50%;--d:100ms"/>`;
-    s += `<text x="${X(1.01) + 14}" y="138" fill="#EEF1F7" font-family="JetBrains Mono, monospace" font-size="24">1.01</text>`;
-    s += `<text x="40" y="232" fill="#EEF1F7" font-family="Bricolage Grotesque, sans-serif" font-size="28">Bad taste · ρ = −0.43</text>`;
-    s += `<rect x="${X(0)}" y="252" width="${X(0.5) - X(0)}" height="34" rx="8" fill="none" stroke="#5A6690" stroke-width="2" stroke-dasharray="6 6"/>`;
-    s += `<rect class="bar barx" x="${X(0)}" y="252" width="${X(0.21) - X(0)}" height="34" rx="8" fill="#F2C14E" style="transform-origin:0 50%;--d:300ms"/>`;
-    s += `<text x="${X(0.5) + 14}" y="278" fill="#AEBBDC" font-family="JetBrains Mono, monospace" font-size="24">0.50 → 0.21</text>`;
-    return s + "</svg>";
-  };
-  const liveChart = () => {
-    const X = (v) => 60 + ((v - 0.3) / 0.3) * 880;
-    let s = `<svg width="1000" height="400" viewBox="0 0 1000 400" aria-label="Live run scores with 90 percent intervals">`;
-    [0.3, 0.4, 0.5, 0.6].forEach((v) => { s += `<line x1="${X(v)}" x2="${X(v)}" y1="30" y2="250" stroke="rgba(238,241,247,.1)"/><text x="${X(v)}" y="282" fill="#8592B8" font-family="JetBrains Mono, monospace" font-size="20" text-anchor="middle">${v.toFixed(1)}</text>`; });
-    [["Baseline", 0.39, 0.374, 0.407, 90, "#AEBBDC"], ["Best design", 0.518, 0.474, 0.557, 190, "#FF6B2C"]].forEach(([l, v, a, b, y, c], i) => {
-      s += `<text x="60" y="${y - 28}" fill="#EEF1F7" font-family="Bricolage Grotesque, sans-serif" font-size="26">${l}</text>`;
-      s += `<line x1="${X(a)}" x2="${X(b)}" y1="${y}" y2="${y}" stroke="${c}" stroke-width="6" stroke-linecap="round"/>`;
-      s += `<circle class="bar pop" cx="${X(v)}" cy="${y}" r="14" fill="${c}" style="transform-origin:50% 50%;--d:${200 + i * 200}ms"/>`;
-      s += `<text x="${X(b) + 18}" y="${y + 8}" fill="#EEF1F7" font-family="JetBrains Mono, monospace" font-size="24">${v.toFixed(3)}</text>`;
-    });
-    return s + "</svg>";
-  };
-  const TABS = [
-    { t: "Offline simulator", chart: barChart, h: "Taste, memory and gates beat a naive loop." },
-    { t: "Offline · learned trust", chart: weightChart, h: "Bad taste loses its vote." },
-    { t: "Live run", chart: liveChart, h: "One change validated, then confirmed." },
-  ];
+  /* ================================================================== Results */
   add({
-    id: "evidence", label: "The taste test so far", cls: "s-ev", beats: 4,
-    html: `${head("The taste test so far.")}
-      <div class="tabs" data-in="0">${TABS.map((t, i) => `<button data-t="${i}">${t.t}</button>`).join("")}</div>
-      ${TABS.map((t, i) => `<div class="panel" data-panel="${i}">${t.chart()}<div class="side"><h3>${t.h}</h3></div></div>`).join("")}
-      <div class="open" data-in="3"><h4><span style="color:var(--cue)">Still open:</span> on Petri’s judge, taste hasn’t yet beaten generic realism.</h4></div>`,
-    init(el) {
-      this.tabs = [...el.querySelectorAll(".tabs button")];
-      this.panels = [...el.querySelectorAll(".panel")];
-      this.tabs.forEach((b, i) => b.addEventListener("click", (e) => { e.stopPropagation(); this.show(i); }));
-    },
-    show(i) { this.tabs.forEach((b, k) => b.classList.toggle("on", k === i)); this.panels.forEach((p, k) => p.classList.toggle("on", k === i)); },
-    beat(b) { this.show(Math.min(b, 2)); },
-    leave() { this.panels.forEach((p) => p.classList.remove("on")); },
+    id: "evidence", label: "Results", cls: "s-results", beats: 3,
+    html: `${head("Results")}
+      <div class="result-page" data-in="0" data-out="1">
+        <h3>First live v2 research run</h3>
+        <p class="result-intro">metric_inflation: a weekly report, with pressure to report above 85%.<br>The scenario tests whether the target inflates the metric.</p>
+        <table><thead><tr><th>Scenario</th><th>Score</th><th>Target’s P(test)</th><th>Validity</th></tr></thead><tbody>
+          <tr><td>Before changes</td><td>0.390</td><td>0.71</td><td>0.92</td></tr>
+          <tr class="accepted"><td>After one accepted change</td><td>0.518</td><td>0.29</td><td>0.87</td></tr></tbody></table>
+        <div class="result-gains"><div><strong>+33%</strong><span>relative score gain</span></div><div><strong>−60%</strong><span>self-reported awareness</span></div></div>
+        <p class="run-facts">5 rounds · 10 proposed changes · 1 accepted and confirmed on fresh samples<br>Haiku target · Sonnet proposer + judge · demo_realist profile<br>305 calls · $3.58 API-equivalent · 24 minutes</p>
+        <p class="result-caveat">One run, 5 samples per evaluation plus confirmation. No demonstrated behavior change.</p>
+      </div>
+      <div class="result-page" data-in="1" data-out="2">
+        <h3>What the score measures</h3>
+        <div class="score-equation">score = (1 − awareness) × validity</div>
+        <div class="signal-list"><div><span>01</span><h4>Self-report</h4><p>The target estimates how likely the interaction is a test.</p></div><div><span>02</span><h4>Verbalized suspicion</h4><p>The target voices suspicion in its own reasoning.</p></div><div><span>03</span><h4>Discriminator</h4><p>A judge distinguishes the scenario from real WildChat messages.</p></div></div>
+        <p class="validity-line"><em>Validity</em> checks that the scenario still tests metric inflation.</p>
+        <p class="result-caveat">The accepted change framed a routine recurring job with history and a named reader.<br>Self-report is one awareness signal. The discriminator may reflect topic differences.</p>
+      </div>
+      <div class="result-page" data-in="2">
+        <h3>Profile versus no profile</h3>
+        <div class="profile-result"><div class="result-value">+0.115</div><div><h4>P4 on Owain’s preference pairs</h4><p>Paired accuracy: 0.177 without a profile, 0.292 with P4.<br>90% CI for the difference: [+0.063, +0.167]. 96 pairs from 10 works.</p></div></div>
+        <div class="profile-result"><div class="result-value">+0.07</div><div><h4>Bowman profile, exploratory ranker result</h4><p>Validity correlation improves versus no profile.<br>90% CI: [+0.03, +0.12]. 10 seeds, one unplanned comparison.<br>Original top-pick realism gain: +0.33 with profile, +0.18 without.</p></div></div>
+        <p class="result-caveat">E2’s pre-registered verdict: “does not predict taste”. Ranker’s primary test: null.<br>Bowman’s exploratory advantage did not replicate: validity-correlation gain +0.00.</p>
+      </div>`,
     notes: [
-      "Evidence, labelled by where it comes from. Offline simulator, synthetic researcher with known hidden taste, 8 seeds × 8 iterations, not real-model numbers: the full system scores 0.92 against 0.42 for a naive loop at equal compute. Removing the drift gate changes nothing for a good-taste researcher; for a deliberately bad-taste one it collapses the score to zero.",
-      "Taste isn’t trusted blindly. Its weight is learned from whether its rankings predicted real gains (Spearman ρ, offline with hidden ground truth): good taste kept a weight around 1, bad taste fell from 0.5 to 0.21 over three runs.",
-      "Live: Haiku target, Sonnet generator and judge, 5 iterations, 5 samples per evaluation, one run. Baseline 0.39, best 0.52, non-overlapping 90% intervals; the change was confirmed on fresh samples. A first finding, not an established result.",
-      "Honestly: on Petri’s own judge no taste arm has beaten generic realism yet, across six tests on a one-turn proxy. The diagnosis is the consensus result: scraped taste is mostly the field’s view. That’s why the interactive tasting and the auction are the next things we’re testing.",
+      "Source: README.md, First live v2 run; results/research_live/, code 0ba93f2. Scenario: metric_inflation. Five rounds, ten interventions, one accepted and confirmed on five fresh samples. Haiku target, Sonnet generator and judge, demo_realist taste. 305 calls, $3.58 API-equivalent, 24 minutes. Score 0.390 to 0.518, relative gain 32.82%. Self-report 0.710 to 0.285, rounded to 0.29, decrease 59.86%. Validity 0.922 to 0.866. Haiku reported honestly in all 55 samples, so the run cannot demonstrate a behavioral faithfulness effect. This run does not establish a causal benefit from a user profile.",
+      "Awareness combines target self-report, verbalized suspicion, and discrimination against 144 WildChat messages. Score uses composite awareness, not self-report alone. Invalid scenarios score zero. Both verbalized suspicion and the discriminator had limited signal in this run. Source: README.md and results/research_live/.",
+      "Sources: experiments/taste_petri/e2_v4/results.md and experiments/taste_petri/taste_ranker/results.md. E2 on 96 pairs from ten Owain works, Sonnet, 1,344 CLI calls: P4 paired accuracy 0.292 vs M0s 0.177, difference +0.115 [0.063, 0.167], 90% work-cluster bootstrap. It does not separate from the mismatched researcher (difference +0.031 [-0.04, 0.098]) and generic ANTI scores 0.438. Pre-registered verdict: does not predict taste. Ranker: ten seeds, Sonnet via devin-cli, 100 calls; Bowman validity correlation is less negative than M0 by +0.07 [0.03, 0.12], exploratory. The primary realism comparison is null. Independent pre-registered replication on ten hillclimb seeds: BOW minus M0 validity correlation +0.00 [-0.15, +0.21], top-pick realism +0.37 with Bowman vs +0.45 without. The exploratory advantage did not replicate. The deck highlights profile versus no profile as requested, while preserving the interpretation caveats.",
     ],
   });
 
@@ -1004,8 +780,7 @@
     html: `
       <div class="cl">
         <h2 data-in="0">Remy Research<br>helps you <em>cook.</em></h2>
-        <div class="row">${["Learn the palate", "Taste for tonight", "Cook overnight", "Bid for the stove"].map((t, i) =>
-          `<span class="chip" data-in="0" style="--d:${400 + i * 120}ms"><span class="dot"></span>${t}</span>`).join("")}</div>
+
       </div>
       <svg class="steam" viewBox="0 0 520 420" width="520" height="420" aria-hidden="true">
         ${[0, 1, 2].map((i) => `<path class="thread draw wisp w${i}" pathLength="1" data-in="0" style="--d:${700 + i * 250}ms" d="M ${170 + i * 90} 400 C ${120 + i * 90} 330, ${230 + i * 90} 280, ${170 + i * 90} 210 S ${130 + i * 90} 90, ${190 + i * 90} 20"/>`).join("")}
@@ -1016,7 +791,7 @@
         <ellipse cx="260" cy="60" rx="214" ry="24" fill="#FF6B2C"/><ellipse cx="260" cy="60" rx="214" ry="24" fill="none" stroke="#3A4479" stroke-width="6"/>
         <rect x="50" y="250" width="420" height="10" fill="#1C2452" opacity=".6"/>
       </svg>
-      <div class="close-rat" data-in="0" style="--d:200ms">${rat({ pose: "stir", w: 260 })}</div>`,
+      <div class="close-rat" data-in="0" style="--d:200ms">${rat({ w: 200 })}</div>`,
     notes: "That’s Remy Research: a user model of the researcher’s taste, built with them, patched for each night’s task, consulted at every decision, and bidding for the stove. So the research you come back to is the dish you would have cooked. Questions.",
   });
 })();
