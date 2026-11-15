@@ -101,3 +101,7 @@ Recorded choice: B; blind agreement: 5/10.
 Reasons: valid trade-off; agreement <=8/10
 
 Both options are realistic strategic directions for an interpretability team with limited resources. One prioritizes community enablement and scaling through open tooling. The other prioritizes a targeted safety application plus in-house foundational work. Neither is clearly inferior, and the context does not reveal which was chosen.
+
+## Code provenance
+
+CODE_VERSION is the repository base used for inference. The new standalone filter script was not committed during inference; its initial and resumed SHA-256 values are recorded in manifest.json and execution-script-sha256.txt. Raw request bodies preserve actual prompts/settings. Subsequent publication integrated newer main commits without rerunning inference.
