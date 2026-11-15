@@ -72,6 +72,8 @@ code commit; later implementation hashes intentionally cannot consume it silentl
 `runner.run_job(manifest, lease, *, output_root, lease_root, config, profile=None,
 items=None, documents=None, consumer=None, extractor=None, cache_root=None,
 private_root=None, confirmation_receipt=None)` executes one assigned job.
+It snapshots all JSON execution inputs before validation, so caller callbacks
+cannot change later items, source records or settings behind the pinned hashes.
 Use the canonical lease_root supplied by the coordinator across all clones.
 An exclusive, fsynced job claim is never deleted after a crash or failure.
 Changing an output path does not permit reuse. Coordination remains cooperative:
@@ -100,6 +102,11 @@ must fit the remaining wall time. Every attempted call gets a durable started
 trace before invocation and a complete/failed trace after it. No retries occur.
 Uncertain failures retain their attempt and lease and hold remaining job calls. Existing backend budgets and
 rate limits still apply. Instantiate a fresh backend for each job.
+Relative max_seconds also applies before cache access. Both prediction and
+extraction calls must supply exactly the declared temperature and max_tokens;
+prompt and optional system text are recorded separately in the hashed trace.
+Builders must set config.extractor_settings to those actual call arguments.
+Missing/unknown allocation.cost_mode is rejected before a durable claim is made.
 
 Decision items use exactly item_id, researcher_id, context, options and
 option_order_id. Extra fields, including answers, are rejected. Invalid, empty,
