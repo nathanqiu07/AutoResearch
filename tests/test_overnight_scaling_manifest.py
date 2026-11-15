@@ -626,6 +626,46 @@ class ScalingDriverPacketTests(unittest.TestCase):
             expected_manifest_hash=self.manifest['manifest_sha256'], expected_bindings_hash=digest(self.bindings),
             expected_runtime_hash=digest(self.runtime))
 
+    def test_four_mandatory_controls_keep_pending_retrieval_cells_visible(self):
+        from autoresearch.taste.overnight.registry import get_builder
+        spec = copy.deepcopy(self.manifest['design'])
+        for method in ('lexical_retrieval', 'semantic_retrieval'):
+            spec['controls'].append({'method_id': method, 'kind': 'retrieval',
+                'implementation_sha256': get_builder(method).implementation_hash,
+                'config_hash': digest({'method_id': method, 'personalization_cap': 2048, 'top_k': 3})})
+        records = []
+        by_id = {job['profile']['profile_id']: job['profile'] for b in self.bindings for job in b['jobs']}
+        for pin in self.manifest['profile_pins']:
+            records.append({'method_id': pin['method_id'], 'extractor_level': pin['extractor_level'], 'profile': by_id[pin['profile_id']]})
+        manifest = self.scaling.build_manifest(spec, records)
+        old_cells = {c['cell_id']: c for c in self.manifest['cells']}
+        by_cell = {b['cell_id']: b for b in self.bindings}
+        bindings = [copy.deepcopy(by_cell[c['cell_id']]) if c['cell_id'] in old_cells else
+            {'cell_id': c['cell_id'], 'status': 'unavailable', 'reason': 'synthetic exact retrieval bundle pending'}
+            for c in manifest['cells']]
+        compiled = self.scaling.compile_driver_packets(manifest, bindings, runtime=self.runtime,
+            expected_manifest_hash=manifest['manifest_sha256'], expected_bindings_hash=digest(bindings),
+            expected_runtime_hash=digest(self.runtime))
+        self.assertEqual(len(compiled['arms']), 28)
+        self.assertEqual(len(compiled['cells']), 24)
+        self.assertEqual(len(compiled['packets']), 18)
+        pending = [c for c in compiled['cells'] if c['status'] == 'unavailable']
+        self.assertEqual(len(pending), 6)
+        self.assertEqual({a['method_id'] for a in compiled['arms'] if a['study'] == 'A'} &
+            {'no_profile', 'raw_evidence', 'lexical_retrieval', 'semantic_retrieval'},
+            {'no_profile', 'raw_evidence', 'lexical_retrieval', 'semantic_retrieval'})
+        for order in (spec['controls'], list(reversed(spec['controls']))):
+            reordered = self.scaling.build_manifest(dict(spec, controls=order), records)
+            summary = self.scaling.summarize_results(reordered, [], expected_manifest_hash=reordered['manifest_sha256'])
+            fixed = next(a for a in summary['arms'] if a['arm_id'] == 'B/S')
+            self.assertEqual(fixed['personalization_gain']['baseline_arm_id'], 'A/raw_evidence/S')
+        for change in ('drop', 'wrong_kind'):
+            altered = copy.deepcopy(spec)
+            if change == 'drop': altered['controls'].pop()
+            if change == 'wrong_kind': altered['controls'][-1]['kind'] = 'raw_evidence'
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.scaling.build_manifest(altered, records)
+
     def test_packets_match_driver_shapes_and_do_not_grant_authority(self):
         compiled = self.compile()
         self.assertEqual(len(compiled['packets']), 18)
@@ -1089,3 +1129,880 @@ class ScalingPeerDriverTests(unittest.TestCase):
                 self.scaling.compile_driver_packets(manifest, changed, runtime=runtime,
                     expected_manifest_hash=manifest['manifest_sha256'], expected_bindings_hash=digest(changed),
                     expected_runtime_hash=digest(runtime))
+
+
+class ScalingSelectionBuildHelperTests(unittest.TestCase):
+    def setUp(self):
+        import importlib.util
+        import tempfile
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.manifest, self.bindings, self.runtime, _ = driver_fixture(Path(self.temp.name))
+        path = ROOT / 'docs/overnight/gio-profile-20261115/scaling/selected_scaling_bindings_v1.py'
+        self.assertTrue(path.exists(), 'selected scaling build helper must exist')
+        loader = importlib.util.spec_from_file_location('selected_scaling_helper_test', path)
+        self.helper = importlib.util.module_from_spec(loader)
+        loader.loader.exec_module(self.helper)
+        from autoresearch.taste.overnight.runner import job_id
+        binding = next(b for b in self.bindings if b['jobs'][0]['profile']['method_id'] == 'P1')
+        profile = binding['jobs'][0]['profile']
+        config = copy.deepcopy(profile['config'])
+        self.original = {'schema_version': 'overnight-packet-v1', 'release': binding['release_ref'],
+            'item_ids': [], 'profile': None, 'config': config, 'registration': binding['jobs'][0]['registration'],
+            'backend': {'model': 'gpt-6-luna', 'reasoning': 'medium', 'max_calls': 1, 'max_seconds': 240, 'max_usd': .04, 'timeout': 180},
+            'lease': {'lease_id': 'old-authority'}, 'manifest': {'schema_version': 'overnight-job-v1',
+                'campaign_id': 'gio-profile-20261115', 'stage': 'dev', 'kind': 'build',
+                'method_id': 'P1', 'code_sha': self.runtime['code_sha'], 'config_hash': digest(config),
+                'contract_sha256': self.manifest['design']['contract_sha256'], 'source_manifest_hash': profile['allowed_source_manifest_hash'],
+                'documents_hash': profile['documents_hash'], 'items_hash': digest([]), 'option_order_schedule': [],
+                'personalization_cap': profile['personalization_cap'], 'replicate_id': profile['replicate_id'],
+                'extractor': profile['extractor'], 'consumer': None, 'profile_hash': None,
+                'deadline': '2026-11-15T17:00:00Z', 'retry_policy': {'max_attempts': 1, 'retry_uncertain': False},
+                'parent_job_ids': [], 'expected_outputs': ['profile.json', 'result.json'],
+                'allocation': {'authorization_source': 'old-authorization', 'max_calls': 1, 'max_seconds': 240,
+                    'max_usd': .04, 'cost_mode': 'priced_api'}}}
+        self.original['manifest']['job_id'] = job_id(self.original['manifest'])
+        self.limits = {'max_calls': 1, 'max_seconds': 240, 'max_usd': 2.0, 'timeout': 180}
+
+    def build(self, original=None, target=None):
+        original = self.original if original is None else original
+        from autoresearch.taste.overnight.registry import get_builder
+        from autoresearch.taste.overnight.consumer import implementation_hash
+        builder = get_builder('P1')
+        return self.helper.new_extractor_build_draft(original,
+            target_identity=target or self.manifest['design']['models'][1]['identity'], limits=self.limits,
+            expected_runtime_sha=self.runtime['code_sha'], expected_origin_job_id=self.original['manifest']['job_id'],
+            selection_sha256='a' * 64, index_sha256='b' * 64, selection_cell_id='synthetic-selected-cell',
+            expected_build_pins={'method_implementation_hash': builder.implementation_hash,
+                'profile_prompt_version': builder.prompt_version, 'profile_prompt_sha256': builder.prompt_sha256,
+                'renderer_implementation_hash': implementation_hash()})
+
+    def test_new_build_preserves_config_and_replaces_execution_identity_without_authority(self):
+        before = copy.deepcopy(self.original)
+        packet = self.build()
+        self.assertEqual(self.original, before)
+        self.assertEqual(packet['config'], before['config'])
+        self.assertEqual(packet['manifest']['config_hash'], before['manifest']['config_hash'])
+        self.assertEqual(packet['manifest']['extractor']['model'], 'gpt-6-sol')
+        self.assertNotIn('job_id', packet['manifest'])
+        self.assertIsNone(packet['lease'])
+        self.assertIsNone(packet['manifest']['allocation']['authorization_source'])
+        self.assertIsNone(packet['profile'])
+        self.assertEqual(packet['manifest']['parent_job_ids'], [before['manifest']['job_id']])
+        self.assertEqual(packet['config']['extractor_settings'], before['config']['extractor_settings'])
+
+    def test_rejects_stale_source_identity_or_reextracting_luna(self):
+        from autoresearch.taste.overnight.runner import job_id
+        for change in ('config', 'runtime', 'replicate', 'luna', 'identity'):
+            source = copy.deepcopy(self.original)
+            target = copy.deepcopy(self.manifest['design']['models'][1]['identity'])
+            if change == 'config': source['config']['extractor_settings']['max_tokens'] += 1
+            if change == 'runtime': source['manifest']['code_sha'] = 'f' * 40
+            if change == 'replicate': source['config']['replicate_id'] = 1
+            if change == 'luna': target = self.manifest['design']['models'][0]['identity']
+            if change == 'identity': target['enforced_settings']['temperature'] = 0.0
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.build(source, target)
+
+    def test_required_replicates_do_not_fall_back_to_r0_and_failures_have_no_fake_profiles(self):
+        rows = [{'cell_id': 'cell', 'replicate_id': 0, 'dispatch_status': 'invalid', 'job_id': 'c' * 64}]
+        pending = self.helper.lookup_required_instance(rows, cell_id='cell', replicate_id=1)
+        self.assertEqual(pending['status'], 'missing-required-instance')
+        failed = self.helper.lookup_required_instance(rows, cell_id='cell', replicate_id=0)
+        self.assertEqual(failed['status'], 'invalid')
+        self.assertNotIn('profile', failed)
+        with self.assertRaises(ValueError):
+            self.helper.lookup_required_instance(rows + rows, cell_id='cell', replicate_id=0)
+
+    def test_replica_bool_or_float_cannot_match_an_integer(self):
+        for replica in (True, 1.0):
+            with self.subTest(replica=repr(replica)), self.assertRaises(ValueError):
+                self.helper.lookup_required_instance([{'cell_id': 'cell', 'replicate_id': replica,
+                    'dispatch_status': 'complete', 'profile': {'path': '/synthetic', 'sha256': 'a' * 64}}],
+                    cell_id='cell', replicate_id=1)
+
+    def test_runtime_method_prompt_and_renderer_pins_must_match_approved_values(self):
+        from autoresearch.taste.overnight.registry import get_builder
+        from autoresearch.taste.overnight.consumer import implementation_hash
+        builder = get_builder('P1')
+        expected = {'method_implementation_hash': builder.implementation_hash,
+            'profile_prompt_version': builder.prompt_version, 'profile_prompt_sha256': builder.prompt_sha256,
+            'renderer_implementation_hash': implementation_hash()}
+        for key in expected:
+            wrong = dict(expected, **{key: 'wrong-version' if key == 'profile_prompt_version' else '0' * 64})
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'runtime.*pins'):
+                self.helper.new_extractor_build_draft(self.original,
+                    target_identity=self.manifest['design']['models'][1]['identity'], limits=self.limits,
+                    expected_runtime_sha=self.runtime['code_sha'], expected_origin_job_id=self.original['manifest']['job_id'],
+                    selection_sha256='a' * 64, index_sha256='b' * 64, selection_cell_id='cell', expected_build_pins=wrong)
+
+    def test_new_sol_and_astra_builds_pass_existing_driver_preparation_without_calls(self):
+        import importlib.util
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+        from autoresearch.taste.overnight import backends
+        path = ROOT / 'docs/overnight/gio-profile-20261115/control/run_batch.py'
+        loader = importlib.util.spec_from_file_location('selected_scaling_build_driver', path)
+        driver = importlib.util.module_from_spec(loader)
+        loader.loader.exec_module(driver)
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2026, 11, 15, 9, 0, tzinfo=timezone.utc)
+        ledger = backends.DollarLedger(Path(self.temp.name) / 'build-test-ledger.sqlite', max_usd=10,
+                                      deadline='2099-01-01T00:00:00Z')
+        batch = {'campaign_id': 'gio-profile-20261115', 'code_sha': self.runtime['code_sha'],
+            'deadline': '2026-11-15T17:00:00Z', 'release_schema_version': self.runtime['release_schema_version'],
+            'release_scope': self.runtime['release_scope'], 'contract': {'sha256': self.manifest['design']['contract_sha256']},
+            'ledger': {'max_usd': 10}}
+        ids = []
+        with patch('urllib.request.urlopen', side_effect=AssertionError('no HTTP')) as http, \
+                patch.object(backends.OpenAIResponsesBackend, 'complete', side_effect=AssertionError('no calls')) as complete:
+            for model in self.manifest['design']['models'][1:]:
+                draft = self.build(target=model['identity'])
+                packet = copy.deepcopy(draft)
+                packet['lease'] = {'lease_id': 'synthetic-test-only', 'owner': 'test', 'expires_at': batch['deadline']}
+                packet['manifest']['allocation']['authorization_source'] = 'synthetic-test-only'
+                with patch.object(driver, 'datetime', Clock), patch('autoresearch.taste.overnight.runner.datetime', Clock):
+                    prepared = driver._prepare_packet(packet, batch, ledger)
+                ids.append(prepared['manifest']['job_id'])
+                self.assertEqual(prepared['config'], self.original['config'])
+                self.assertIsNone(draft['lease'])
+                self.assertIsNone(draft['manifest']['allocation']['authorization_source'])
+            self.assertEqual(http.call_count + complete.call_count + ledger.summary()['attempts'], 0)
+        self.assertEqual(len(set(ids + [self.original['manifest']['job_id']])), 3)
+
+
+class ScalingDescriptiveSelectionContractTests(unittest.TestCase):
+    """Synthetic receipts exercise validation without opening referenced artifacts."""
+
+    def setUp(self):
+        import importlib.util
+        path = ROOT / 'docs/overnight/gio-profile-20261115/scaling/selected_scaling_bindings_v1.py'
+        loader = importlib.util.spec_from_file_location('descriptive_selection_helper_test', path)
+        self.helper = importlib.util.module_from_spec(loader)
+        loader.loader.exec_module(self.helper)
+        self.contract_ref = self.ref('coordinator-contract')
+        self.index_ref = self.ref('original-index')
+        self.index = {'schema_version': 'phase2-profile-extraction-coverage-v1',
+            'runtime_sha': 'f6cd4fb5a7c9bc2fdf1f154f6ad4fda18df174ca',
+            'private_labels_included': False, 'cells': []}
+        configs = []
+        # Deliberately nonalphabetical: the validator must not choose or rank.
+        for method in ('P2', 'P1', 'P3'):
+            mappings = []
+            for researcher in ('chris_olah', 'neel_nanda'):
+                cell_id = '%s-%s-rep0' % (method, researcher)
+                row = {'cell_id': cell_id, 'replicate_id': 0, 'method': method,
+                    'researcher_id': researcher, 'cap': 512, 'evidence_policy': 'explicit-only',
+                    'dispatch_status': 'complete', 'job_id': digest(cell_id + '-job'),
+                    'original_prepared': self.ref(cell_id + '-prepared'),
+                    'build_packet': self.ref(cell_id + '-packet'), 'result': self.ref(cell_id + '-result'),
+                    'release': self.ref(researcher + '-release'),
+                    'source_manifest_hash': digest(researcher + '-sources'),
+                    'items_sha256': digest(researcher + '-items-with-context-and-order'),
+                    'target_bundle_sha256': digest(researcher + '-target-bundle'),
+                    'profile': self.ref(cell_id + '-profile'), 'profile_id': digest(cell_id + '-profile-body'),
+                    'selected': False}
+                self.index['cells'].append(row)
+                mappings.append({'researcher_id': researcher, 'status': 'complete', 'cell_id': cell_id,
+                    'build_prepared': copy.deepcopy(row['original_prepared']),
+                    'build_packet': copy.deepcopy(row['build_packet']), 'build_result': copy.deepcopy(row['result']),
+                    'release': copy.deepcopy(row['release']), 'source_manifest_hash': row['source_manifest_hash'],
+                    'profile': copy.deepcopy(row['profile']), 'profile_id': row['profile_id'],
+                    'items_sha256': row['items_sha256'], 'target_bundle_sha256': row['target_bundle_sha256']})
+            configs.append({'config_id': method + '-c512-explicit-only', 'method_id': method,
+                'personalization_cap': 512, 'evidence_policy': 'explicit-only',
+                'instance_replicate_id': 0, 'researcher_mappings': mappings})
+        self.selection = {'schema_version': 'development-scaling-selection-v1',
+            'status': 'frozen_descriptive_selection', 'campaign_id': 'gio-profile-20261115',
+            'runtime_sha': self.index['runtime_sha'], 'contract': copy.deepcopy(self.contract_ref),
+            'selection_policy': copy.deepcopy(self.contract_ref), 'promotion_policy': self.ref('promotion-policy'),
+            'three_replicate_score_receipt': self.ref('aggregate-receipt'),
+            'original_complete_index': copy.deepcopy(self.index_ref),
+            'sparse_completion_index': self.ref('sparse-completion'),
+            'replicate_build_completion_index': self.ref('replicate-builds'),
+            'replicate_prediction_completion_index': self.ref('replicate-predictions'),
+            'common_personalization_cap': 512, 'primary_config_id': 'P2-c512-explicit-only',
+            'selected_configs': configs,
+            'models': [{'level': 'S', 'model': 'gpt-6-luna'}, {'level': 'M', 'model': 'gpt-6-sol'},
+                       {'level': 'L', 'model': 'gpt-6-astra'}],
+            'extractor_settings': {'reasoning': 'medium', 'max_tokens': 16384, 'temperature': 0.0,
+                                   'effective_temperature': 'not_sent', 'timeout': 180},
+            'consumer_settings': {'reasoning': 'medium', 'max_tokens': 8192, 'temperature': 0.0,
+                                  'effective_temperature': 'not_sent', 'timeout': 60},
+            'controls': ['no_profile', 'raw_evidence', 'lexical_retrieval', 'semantic_retrieval'],
+            'control_inputs': self.ref('sparse-controls'), 'semantic_index': self.ref('semantic-bundles'),
+            'studies': {
+                'A': 'all selected configs and controls at3models; joint extraction+consumer, explicit futureSol/Astra dependencies',
+                'B': 'primary config saved exact Luna rep0 profile perresearcher across3consumers',
+                'C': 'primary config S/Lextractor x S/Lconsumer; exact existingA/Bcells referenced once',
+                'D': 'only evaluator source-defined answer-known subset/withholding receipt if supplied; fixed raw evidence, no profile. Missing receipt => explicit unavailable, no invented label/subset.'},
+            'diagnostic_panel': None, 'source_condition': 'original_sparse_fit_v2', 'max_usd': 80,
+            'deadline': '2026-11-15T17:00:00Z', 'max_concurrent': 2,
+            'execution_authorized': False, 'confirmation_authorized': False,
+            'fidelity_winner_claim': False, 'finalists_frozen': False}
+        # All payloads and hashes are synthetic; only the public receipt schema is reproduced.
+        self.contract = {'schema_version': 'development-scaling-selection-contract-v1',
+                         'final_receipt_shape': copy.deepcopy(self.selection)}
+
+    @staticmethod
+    def ref(name):
+        return {'path': '/synthetic/' + name + '.json', 'sha256': digest(name)}
+
+    def validate(self, selection=None, index=None):
+        return self.helper.validate_descriptive_selection(
+            self.selection if selection is None else selection, self.contract,
+            self.index if index is None else index, contract_ref=self.contract_ref, index_ref=self.index_ref)
+
+    def test_accepts_two_or_three_explicit_families_without_ranking_or_mutating_inputs(self):
+        for count in (2, 3):
+            selection = copy.deepcopy(self.selection)
+            selection['selected_configs'] = selection['selected_configs'][:count]
+            before = copy.deepcopy((selection, self.contract, self.index))
+            result = self.validate(selection)
+            with self.subTest(count=count):
+                self.assertEqual(result['status'], 'accepted-descriptive-selection')
+                self.assertEqual([r['config_id'] for r in result['selected_instances']],
+                    ['P2-c512-explicit-only'] * 2 + ['P1-c512-explicit-only'] * 2
+                    + (['P3-c512-explicit-only'] * 2 if count == 3 else []))
+                self.assertEqual([r['researcher_id'] for r in result['selected_instances']],
+                                 ['chris_olah', 'neel_nanda'] * count)
+                self.assertEqual(result['unselected_index_cells'], 6 - 2 * count)
+                self.assertEqual(result['selection_authority'], 'coordinator-receipt-only-no-ranking-performed')
+                self.assertEqual((selection, self.contract, self.index), before)
+                self.assertEqual(result['selected_instances'][0]['origin_job_id'], self.index['cells'][0]['job_id'])
+
+    def test_less_than_two_explicit_families_stays_insufficient_without_filling_from_index(self):
+        for count in (0, 1):
+            selection = copy.deepcopy(self.selection)
+            selection['selected_configs'] = selection['selected_configs'][:count]
+            result = self.validate(selection)
+            with self.subTest(count=count):
+                self.assertEqual(result['status'], 'insufficient-planned-panel')
+                self.assertEqual(len(result['selected_instances']), 2 * count)
+                self.assertEqual(result['unselected_index_cells'], 6 - 2 * count)
+
+    def test_invalid_empty_and_missing_profiles_remain_unavailable(self):
+        for dispatch, expected in (('invalid', 'invalid'), ('empty', 'empty'),
+                                   ('complete', 'missing-profile-reference')):
+            selection, index = copy.deepcopy(self.selection), copy.deepcopy(self.index)
+            row, mapping = index['cells'][0], selection['selected_configs'][0]['researcher_mappings'][0]
+            row.update(dispatch_status=dispatch, error_code='synthetic-error' if dispatch == 'invalid' else None,
+                       profile=None, profile_id=None)
+            mapping.update(status='unavailable_rep0', profile=None, profile_id=None)
+            result = self.validate(selection, index)
+            actual = result['selected_instances'][0]
+            with self.subTest(dispatch=dispatch):
+                self.assertEqual(actual['status'], expected)
+                self.assertIsNone(actual['profile'])
+                self.assertIsNone(actual['profile_id'])
+                self.assertEqual(actual['error_code'], row['error_code'])
+                self.assertEqual(len(result['selected_instances']), 6)
+
+    def test_unavailable_original_instance_cannot_borrow_another_saved_profile(self):
+        selection, index = copy.deepcopy(self.selection), copy.deepcopy(self.index)
+        index['cells'][0].update(dispatch_status='invalid', profile=None, profile_id=None)
+        mapping = selection['selected_configs'][0]['researcher_mappings'][0]
+        mapping['profile'] = copy.deepcopy(index['cells'][1]['profile'])
+        mapping['profile_id'] = index['cells'][1]['profile_id']
+        with self.assertRaises(ValueError):
+            self.validate(selection, index)
+
+    def test_only_integer_rep0_instances_can_be_bound(self):
+        for value in (1, 2, True, False, 0.0, 1.0):
+            for location in ('selection', 'index'):
+                selection, index = copy.deepcopy(self.selection), copy.deepcopy(self.index)
+                if location == 'selection':
+                    selection['selected_configs'][0]['instance_replicate_id'] = value
+                else:
+                    index['cells'][0]['replicate_id'] = value
+                with self.subTest(value=repr(value), location=location), self.assertRaises(ValueError):
+                    self.validate(selection, index)
+
+    def test_mismatched_original_references_and_item_context_pins_reject(self):
+        fields = ('build_prepared', 'build_packet', 'build_result', 'release', 'profile',
+                  'profile_id', 'source_manifest_hash', 'items_sha256', 'target_bundle_sha256')
+        for field in fields:
+            selection = copy.deepcopy(self.selection)
+            mapping = selection['selected_configs'][0]['researcher_mappings'][0]
+            mapping[field] = self.ref('changed-' + field) if isinstance(mapping[field], dict) else digest('changed-' + field)
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.validate(selection)
+
+    def test_common_cap_and_exact_config_identity_cannot_be_changed(self):
+        for change in ('common', 'config', 'index', 'bool', 'float', 'id', 'policy'):
+            selection, index = copy.deepcopy(self.selection), copy.deepcopy(self.index)
+            config = selection['selected_configs'][0]
+            if change == 'common': selection['common_personalization_cap'] = 2048
+            if change == 'config': config['personalization_cap'] = 2048
+            if change == 'index': index['cells'][0]['cap'] = 2048
+            if change == 'bool': selection['common_personalization_cap'] = True
+            if change == 'float': config['personalization_cap'] = 512.0
+            if change == 'id': config['config_id'] = 'P2-c2048-explicit-only'
+            if change == 'policy': config['evidence_policy'] = 'marked-inference'
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.validate(selection, index)
+
+    def test_missing_duplicate_or_foreign_researcher_is_not_a_complete_panel(self):
+        for change in ('missing', 'duplicate', 'foreign', 'cell', 'primary'):
+            selection = copy.deepcopy(self.selection)
+            mappings = selection['selected_configs'][0]['researcher_mappings']
+            if change == 'missing': mappings.pop()
+            if change == 'duplicate': mappings[1] = copy.deepcopy(mappings[0])
+            if change == 'foreign': mappings[1]['researcher_id'] = 'unreleased_person'
+            if change == 'cell': mappings[0]['cell_id'] = 'unknown-cell'
+            if change == 'primary': selection['primary_config_id'] = 'P8-c512-explicit-only'
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.validate(selection)
+
+    def test_duplicate_families_or_more_than_three_configs_reject(self):
+        for change in ('duplicate', 'four'):
+            selection = copy.deepcopy(self.selection)
+            if change == 'duplicate': selection['selected_configs'][1] = copy.deepcopy(selection['selected_configs'][0])
+            else: selection['selected_configs'].append(copy.deepcopy(selection['selected_configs'][0]))
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.validate(selection)
+
+    def test_authority_flags_and_ceilings_cannot_be_escalated(self):
+        for field in ('execution_authorized', 'confirmation_authorized', 'fidelity_winner_claim', 'finalists_frozen'):
+            for value in (True, 0, None):
+                selection = copy.deepcopy(self.selection)
+                selection[field] = value
+                with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                    self.validate(selection)
+        for value in (81, 0, -1, True, float('nan'), float('inf')):
+            selection = copy.deepcopy(self.selection)
+            selection['max_usd'] = value
+            with self.subTest(ceiling=value), self.assertRaises(ValueError):
+                self.validate(selection)
+        selection = copy.deepcopy(self.selection)
+        selection['max_usd'] = 20
+        self.assertEqual(self.validate(selection)['status'], 'accepted-descriptive-selection')
+
+    def test_malformed_refs_and_changed_frozen_index_hashes_reject(self):
+        for field in ('promotion_policy', 'three_replicate_score_receipt', 'replicate_prediction_completion_index',
+                      'control_inputs', 'semantic_index', 'diagnostic_panel'):
+            for value in ({'path': 'relative.json', 'sha256': 'a' * 64},
+                          {'path': '/synthetic/file.json', 'sha256': 'not-a-hash'},
+                          {'path': '/synthetic/file.json', 'sha256': 'a' * 64, 'authorized': True}):
+                selection = copy.deepcopy(self.selection)
+                selection[field] = value
+                with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                    self.validate(selection)
+        for field in ('contract', 'selection_policy', 'original_complete_index',
+                      'sparse_completion_index', 'replicate_build_completion_index'):
+            selection = copy.deepcopy(self.selection)
+            selection[field] = self.ref('changed-index')
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.validate(selection)
+
+    def test_changed_settings_controls_runtime_and_source_condition_reject(self):
+        changes = (('consumer_settings', 'reasoning', 'high'), ('extractor_settings', 'max_tokens', 8192),
+                   ('consumer_settings', 'effective_temperature', 'sent'),
+                   ('consumer_settings', 'max_tokens', '8192'), ('extractor_settings', 'timeout', 60))
+        for section, field, value in changes:
+            selection = copy.deepcopy(self.selection)
+            selection[section][field] = value
+            with self.subTest(section=section, field=field), self.assertRaises(ValueError):
+                self.validate(selection)
+        for field, value in (('runtime_sha', '0' * 40), ('controls', ['raw_evidence']),
+                             ('source_condition', 'different-peer-condition'), ('max_concurrent', 3)):
+            selection = copy.deepcopy(self.selection)
+            selection[field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.validate(selection)
+
+    def test_numeric_settings_types_cannot_masquerade_as_contract_values(self):
+        for section, field, value in (('consumer_settings', 'max_tokens', 8192.0),
+                                      ('extractor_settings', 'temperature', False),
+                                      ('extractor_settings', 'timeout', 180.0)):
+            selection = copy.deepcopy(self.selection)
+            selection[section][field] = value
+            with self.subTest(section=section, field=field), self.assertRaises(ValueError):
+                self.validate(selection)
+
+    def test_missing_or_undeclared_receipt_fields_reject(self):
+        for change in ('missing', 'extra', 'private-labels'):
+            selection, index = copy.deepcopy(self.selection), copy.deepcopy(self.index)
+            if change == 'missing': selection.pop('consumer_settings')
+            if change == 'extra': selection['execute_now'] = True
+            if change == 'private-labels': index['private_labels_included'] = True
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.validate(selection, index)
+
+
+class ScalingSelectedPredictionPacketTests(unittest.TestCase):
+    def setUp(self):
+        import importlib.util
+        import tempfile
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.manifest, self.bindings, self.runtime, self.ledger = driver_fixture(Path(self.temp.name))
+        path = ROOT / 'docs/overnight/gio-profile-20261115/scaling/selected_scaling_bindings_v1.py'
+        loader = importlib.util.spec_from_file_location('selected_prediction_helper_test', path)
+        self.helper = importlib.util.module_from_spec(loader)
+        loader.loader.exec_module(self.helper)
+        self.binding = next(b for b in self.bindings if b['jobs'][0]['profile']['method_id'] == 'P1')
+        self.identities = [copy.deepcopy(m['identity']) for m in self.manifest['design']['models']]
+        self.settings = {'temperature': 0.0, 'max_tokens': 128}
+
+    def packet(self, binding=None, **overrides):
+        binding = self.binding if binding is None else binding
+        job = binding['jobs'][0]
+        kwargs = {'profile_ref': job['profile_ref'], 'release_ref': binding['release_ref'],
+            'origin_job_id': job['origin_job_id'], 'identity': self.identities[0], 'settings': self.settings,
+            'timeout': 60, 'logical_cap': 2048, 'runtime': self.runtime,
+            'contract_sha256': self.manifest['design']['contract_sha256'], 'registration': job['registration'],
+            'selection_sha256': digest('synthetic-selected-receipt'), 'index_sha256': digest('synthetic-index'),
+            'selected_cell_id': binding['cell_id'], 'studies': ['B', 'A', 'B']}
+        kwargs.update(overrides)
+        return self.helper.prediction_packet(job['profile'], binding['release'], **kwargs)
+
+    def test_three_consumers_preserve_saved_profile_and_emit_unleased_distinct_requests(self):
+        from unittest.mock import patch
+        from autoresearch.taste.overnight import backends
+        original = copy.deepcopy(self.binding)
+        with patch.object(backends.OpenAIResponsesBackend, 'complete', side_effect=AssertionError('no model calls')), \
+                patch('urllib.request.urlopen', side_effect=AssertionError('no HTTP')), \
+                patch.object(backends.DollarLedger, 'reserve', side_effect=AssertionError('no reservations')):
+            packets = [self.packet(identity=identity) for identity in self.identities]
+        self.assertEqual(self.binding, original)
+        self.assertEqual(len({p['manifest']['scaling_execution_identity_sha256'] for p in packets}), 3)
+        self.assertEqual(self.ledger.summary()['attempts'], 0)
+        for packet, identity in zip(packets, self.identities):
+            with self.subTest(model=identity['model']):
+                manifest = packet['manifest']
+                self.assertEqual(packet['profile'], original['jobs'][0]['profile_ref'])
+                self.assertEqual(manifest['profile_hash'], original['jobs'][0]['profile']['profile_id'])
+                self.assertEqual(manifest['extractor'], original['jobs'][0]['profile']['extractor'])
+                self.assertEqual(manifest['consumer'], identity)
+                self.assertEqual(manifest['documents_hash'], digest(original['release']['sources']['documents']))
+                self.assertEqual(manifest['source_manifest_hash'], original['release']['sources']['allowed_source_manifest_hash'])
+                self.assertEqual(packet['config']['settings'], self.settings)
+                self.assertEqual(manifest['config_hash'], digest(packet['config']))
+                self.assertEqual(manifest['scaling_studies'], ['A', 'B'])
+                self.assertEqual(manifest['parent_job_ids'], [original['jobs'][0]['origin_job_id']])
+                self.assertEqual(packet['backend']['max_calls'], 2)
+                self.assertEqual(packet['backend']['reasoning'], 'medium')
+                self.assertIsNone(packet['lease'])
+                self.assertIsNone(manifest['allocation']['authorization_source'])
+                self.assertNotIn('job_id', manifest)
+        self.assertLess(packets[0]['backend']['max_usd'], packets[1]['backend']['max_usd'])
+        self.assertLess(packets[1]['backend']['max_usd'], packets[2]['backend']['max_usd'])
+
+    def test_actual_ordered_items_and_settings_are_execution_identity_inputs(self):
+        ordinary = self.packet()
+        reversed_order = self.packet(item_ids=['synthetic-item-2', 'synthetic-item-1'])
+        self.assertEqual(reversed_order['item_ids'], ['synthetic-item-2', 'synthetic-item-1'])
+        self.assertEqual(reversed_order['manifest']['option_order_schedule'], [
+            {'item_id': 'synthetic-item-2', 'option_order_id': 'ba'},
+            {'item_id': 'synthetic-item-1', 'option_order_id': 'ab'}])
+        self.assertEqual([p['item_sha256'] for p in reversed_order['manifest']['scaling_payload_pins']],
+                         [digest(i) for i in reversed(self.binding['release']['items'])])
+        different_settings = self.packet(settings={'temperature': 0.0, 'max_tokens': 256})
+        changed = copy.deepcopy(self.binding)
+        changed['release']['items'][0]['context'] += ' Additional synthetic context.'
+        changed['release']['items_sha256'] = digest(changed['release']['items'])
+        different_context = self.packet(changed)
+        changed = copy.deepcopy(self.binding)
+        changed['release']['items'][0]['options'].reverse()
+        changed['release']['items'][0]['option_order_id'] = 'ba-changed'
+        changed['release']['items_sha256'] = digest(changed['release']['items'])
+        different_options = self.packet(changed)
+        packets = [ordinary, reversed_order, different_settings, different_context, different_options]
+        self.assertEqual(len({p['manifest']['scaling_execution_identity_sha256'] for p in packets}), 5)
+        for different in packets[1:]:
+            self.assertEqual(different['manifest']['profile_hash'], ordinary['manifest']['profile_hash'])
+        self.assertNotEqual(different_settings['manifest']['scaling_payload_pins'][0]['wire_request_sha256'],
+                            ordinary['manifest']['scaling_payload_pins'][0]['wire_request_sha256'])
+
+    def test_saved_profile_and_source_record_tampering_rejects(self):
+        for change in ('profile-content', 'source-record', 'source-manifest', 'source-hash', 'researcher', 'runtime'):
+            binding, runtime = copy.deepcopy(self.binding), copy.deepcopy(self.runtime)
+            if change == 'profile-content': binding['jobs'][0]['profile']['content']['prose'] = 'changed'
+            if change == 'source-record': binding['release']['sources']['documents'][0]['permitted_spans'][0]['end'] -= 1
+            if change == 'source-manifest': binding['release']['sources']['source_manifest'][0]['content_sha256'] = '0' * 64
+            if change == 'source-hash': binding['release']['sources']['allowed_source_manifest_hash'] = '0' * 64
+            if change == 'researcher': binding['release']['researcher_id'] = 'foreign'
+            if change == 'runtime': runtime['code_sha'] = '0' * 40
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.packet(binding, runtime=runtime)
+
+    def test_label_free_item_hash_and_unique_schedule_are_required(self):
+        for change in ('hash', 'label', 'duplicate', 'researcher'):
+            binding = copy.deepcopy(self.binding)
+            item = binding['release']['items'][0]
+            if change == 'hash': item['context'] += ' changed'
+            if change == 'label': item['chosen'] = 'synthetic-forbidden'
+            if change == 'duplicate': binding['release']['items'].append(copy.deepcopy(item))
+            if change == 'researcher': item['researcher_id'] = 'foreign'
+            if change != 'hash': binding['release']['items_sha256'] = digest(binding['release']['items'])
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.packet(binding)
+        for ids in ([], ['missing'], ['synthetic-item-1', 'synthetic-item-1']):
+            with self.subTest(ids=ids), self.assertRaises(ValueError):
+                self.packet(item_ids=ids)
+
+    def test_only_intentionally_empty_no_profile_may_alias_another_cap(self):
+        empty = next(b for b in self.bindings if b['jobs'][0]['profile']['method_id'] == 'no_profile')
+        canonical, alias = self.packet(empty), self.packet(empty, logical_cap=512)
+        self.assertEqual(alias['manifest']['personalization_cap'], 2048)
+        self.assertEqual(alias['manifest']['scaling_logical_cap'], 512)
+        self.assertEqual(alias['profile'], canonical['profile'])
+        self.assertEqual(alias['manifest']['profile_hash'], canonical['manifest']['profile_hash'])
+        self.assertEqual(alias['manifest']['scaling_payload_pins'], canonical['manifest']['scaling_payload_pins'])
+        self.assertEqual(alias['manifest']['scaling_execution_identity_sha256'], canonical['manifest']['scaling_execution_identity_sha256'])
+        self.assertIn('scaling_empty_control_alias', alias['manifest'])
+        self.assertNotIn('scaling_empty_control_alias', canonical['manifest'])
+        for method in ('P1', 'raw_evidence'):
+            binding = next(b for b in self.bindings if b['jobs'][0]['profile']['method_id'] == method)
+            with self.subTest(method=method), self.assertRaises(ValueError):
+                self.packet(binding, logical_cap=512)
+        changed = copy.deepcopy(empty)
+        profile = changed['jobs'][0]['profile']
+        profile['intentional_empty'] = False
+        profile.pop('profile_id')
+        profile['profile_id'] = digest(profile)
+        with self.assertRaises(ValueError):
+            self.packet(changed, logical_cap=512)
+
+    def test_retrieval_profile_requires_its_exact_consumer_and_decision(self):
+        from autoresearch.taste.overnight.contracts import build_profile
+        original = next(b for b in self.bindings if b['jobs'][0]['profile']['method_id'] == 'raw_evidence')
+        binding = copy.deepcopy(original)
+        config = copy.deepcopy(binding['jobs'][0]['profile']['config'])
+        item = binding['release']['items'][0]
+        config.update(method_id='lexical_retrieval', top_k=1,
+                      decision={k: item[k] for k in ('context', 'options')}, consumer_identity=self.identities[0])
+        class NoCalls:
+            def complete(self, *args, **kwargs):
+                raise AssertionError('lexical fixture cannot call a model')
+        backend = NoCalls()
+        backend._overnight_identity = self.identities[0]
+        binding['jobs'][0]['profile'] = build_profile(binding['release']['sources']['documents'], config, backend).to_dict()
+        packet = self.packet(binding, item_ids=[item['item_id']])
+        self.assertEqual(packet['backend']['max_calls'], 1)
+        self.assertEqual(packet['manifest']['method_id'], 'lexical_retrieval')
+        with self.assertRaisesRegex(ValueError, 'consumer binding'):
+            self.packet(binding, item_ids=[item['item_id']], identity=self.identities[1])
+        with self.assertRaisesRegex(ValueError, 'decision'):
+            self.packet(binding, item_ids=['synthetic-item-2'])
+
+    def test_context_bound_rejects_oversized_payload_before_any_execution(self):
+        binding = copy.deepcopy(self.binding)
+        binding['release']['items'][0]['context'] = 'x' * 272000
+        binding['release']['items_sha256'] = digest(binding['release']['items'])
+        with self.assertRaisesRegex(ValueError, 'context bound'):
+            self.packet(binding)
+
+    def test_consumer_settings_malformed_identity_and_timeout_reject(self):
+        for settings in ({'temperature': False, 'max_tokens': 128}, {'temperature': float('nan'), 'max_tokens': 128},
+                         {'temperature': 0.0, 'max_tokens': True}, {'temperature': 0.0, 'max_tokens': 128.0},
+                         {'temperature': 0.0, 'max_tokens': 0}, {'temperature': 0.0, 'max_tokens': 65537}):
+            with self.subTest(settings=settings), self.assertRaises(ValueError):
+                self.packet(settings=settings)
+        for timeout in (0, True, float('inf'), 601):
+            with self.subTest(timeout=timeout), self.assertRaises(ValueError):
+                self.packet(timeout=timeout)
+        for field, value in (('model', 'unapproved-model'), ('class', 'ForeignBackend'),
+                             ('endpoint', 'https://invalid.example/v1/responses'), ('label', 'foreign-label')):
+            identity = copy.deepcopy(self.identities[0])
+            identity[field] = value
+            with self.subTest(identity_field=field), self.assertRaises(ValueError):
+                self.packet(identity=identity)
+        identity = copy.deepcopy(self.identities[0])
+        identity['enforced_settings']['temperature'] = 'sent'
+        with self.assertRaises(ValueError):
+            self.packet(identity=identity)
+
+    def test_peer_proof_preserves_lineage_and_rejects_changed_parent_or_policy(self):
+        from autoresearch.taste.overnight import scaling
+        _, bindings, runtime, _ = peer_driver_fixture(Path(self.temp.name))
+        binding = next(b for b in bindings if b['status'] == 'ready')
+        packet = self.packet(binding, runtime=runtime, compiler=scaling,
+                             peer_parent_releases=binding['peer_parent_releases'])
+        self.assertIn('scaling_peer_evidence', packet['manifest'])
+        for field in ('approved_peer_sources', 'peer_policy', 'parent_releases'):
+            self.assertEqual(packet['config'][field], binding['release'][field])
+        with self.assertRaisesRegex(ValueError, 'peer parent proof'):
+            self.packet(binding, runtime=runtime, compiler=scaling)
+        for change in ('bytes', 'policy', 'profile-policy'):
+            changed = copy.deepcopy(binding)
+            if change == 'bytes': changed['peer_parent_releases'][0]['release_json'] += ' '
+            if change == 'policy': changed['release']['peer_policy']['peer_researcher_ids'] = ['foreign-peer']
+            if change == 'profile-policy':
+                profile = changed['jobs'][0]['profile']
+                profile['config']['peer_policy']['purpose'] = 'changed'
+                profile['config_id'] = digest(profile['config'])
+                profile.pop('profile_id')
+                profile['profile_id'] = digest(profile)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.packet(changed, runtime=runtime, compiler=scaling,
+                            peer_parent_releases=changed['peer_parent_releases'])
+        ordinary = copy.deepcopy(self.binding)
+        ordinary['release']['approved_peer_sources'] = True
+        with self.assertRaisesRegex(ValueError, 'peer declarations'):
+            self.packet(ordinary)
+
+
+class ScalingReservationCeilingTests(unittest.TestCase):
+    def setUp(self):
+        import importlib.util
+        path = ROOT / 'docs/overnight/gio-profile-20261115/scaling/selected_scaling_bindings_v1.py'
+        loader = importlib.util.spec_from_file_location('scaling_reservation_helper_test', path)
+        self.helper = importlib.util.module_from_spec(loader)
+        loader.loader.exec_module(self.helper)
+
+    def test_model_specific_uncached_bounds_do_not_reuse_luna_prices(self):
+        # Hand-calculated from frozen input/output USD-per-million rates.
+        for model, expected in (('gpt-6-luna', .0002), ('gpt-6-sol', .004), ('gpt-6-astra', .02)):
+            with self.subTest(model=model):
+                self.assertEqual(self.helper.reservation_ceiling(model, 200, 1000), expected)
+                self.assertGreater(self.helper.reservation_ceiling(model, 200), expected)
+
+    def test_context_limit_is_strict_and_default_bound_is_the_largest_admitted(self):
+        for model in ('gpt-6-luna', 'gpt-6-sol', 'gpt-6-astra'):
+            self.assertEqual(self.helper.reservation_ceiling(model, 8192),
+                             self.helper.reservation_ceiling(model, 8192, 263807))
+            with self.subTest(model=model), self.assertRaises(ValueError):
+                self.helper.reservation_ceiling(model, 8192, 263808)
+        for bound in (-1, True, 10.0):
+            with self.subTest(bound=bound), self.assertRaises(ValueError):
+                self.helper.reservation_ceiling('gpt-6-luna', 128, bound)
+        for output in (0, -1, True, 1.0, 65537):
+            with self.subTest(output=output), self.assertRaises(ValueError):
+                self.helper.reservation_ceiling('gpt-6-luna', output)
+        with self.assertRaises(ValueError):
+            self.helper.reservation_ceiling('unknown-model', 128)
+
+
+class ScalingContinuationProofTests(unittest.TestCase):
+    ref = staticmethod(ScalingDescriptiveSelectionContractTests.ref)
+
+    def setUp(self):
+        ScalingDescriptiveSelectionContractTests.setUp(self)
+
+    def continuation_fixture(self, change=None):
+        """Rehash changed synthetic evidence so tests reach semantic checks."""
+        import hashlib
+        from autoresearch.taste.overnight.runner import job_id
+        row = copy.deepcopy(self.index['cells'][0])
+        mapping = copy.deepcopy(self.selection['selected_configs'][0]['researcher_mappings'][0])
+        raw_payloads = {}
+        def save(name, body):
+            raw = json.dumps(body, sort_keys=True) + '\n'
+            path = '/synthetic/continuation/' + name + '.json'
+            raw_payloads[path] = raw
+            return {'path': path, 'sha256': hashlib.sha256(raw.encode()).hexdigest()}
+        release = {'schema_version': 'synthetic-source-metadata-v1',
+                   'source_manifest_hash': row['source_manifest_hash'], 'items_sha256': row['items_sha256']}
+        old_release, actual_release = save('old-release', release), save('actual-release', release)
+        config = {'method_id': 'P2', 'personalization_cap': 512, 'replicate_id': 0,
+                  'extractor_settings': {'temperature': 0.0, 'max_tokens': 16384},
+                  'allowed_source_manifest_hash': row['source_manifest_hash']}
+        manifest = {'schema_version': 'overnight-job-v1', 'campaign_id': 'gio-profile-20261115',
+            'stage': 'dev', 'kind': 'build', 'method_id': 'P2', 'code_sha': self.index['runtime_sha'],
+            'contract_sha256': self.contract_ref['sha256'], 'config_hash': digest(config),
+            'source_manifest_hash': row['source_manifest_hash'], 'documents_hash': digest('synthetic-source-records'),
+            'items_hash': digest([]), 'profile_hash': None, 'personalization_cap': 512, 'replicate_id': 0,
+            'extractor': {'model': 'gpt-6-luna'}, 'consumer': None, 'option_order_schedule': [],
+            'allocation': {'max_calls': 1, 'max_usd': 1, 'max_seconds': 240},
+            'retry_policy': {'max_attempts': 1, 'retry_uncertain': False}, 'parent_job_ids': [],
+            'expected_outputs': ['profile.json', 'result.json']}
+        manifest['job_id'] = job_id(manifest)
+        row.update(job_id=manifest['job_id'], documents_hash=manifest['documents_hash'], release=old_release)
+        mapping['release'] = actual_release
+        old = {'schema_version': 'overnight-packet-v1', 'manifest': copy.deepcopy(manifest),
+            'config': copy.deepcopy(config), 'backend': {'model': 'gpt-6-luna', 'reasoning': 'medium',
+                'max_calls': 1, 'max_tokens': 16384, 'timeout': 180},
+            'registration': {'module': 'autoresearch.taste.overnight.profiles_summary', 'function': 'register_summary_builders'},
+            'item_ids': [], 'profile': None, 'release': old_release,
+            'lease': {'lease_id': 'synthetic-old-lease', 'owner': 'coordinator', 'expires_at': '2026-11-15T17:00:00Z'}}
+        actual = copy.deepcopy(old)
+        actual.update(release=actual_release, lease={'lease_id': 'synthetic-new-lease',
+                      'owner': 'coordinator', 'expires_at': '2026-11-15T17:00:00Z'})
+        if change == 'old-manifest': old['manifest']['personalization_cap'] = 2048
+        if change == 'old-manifest-type': old['manifest']['replicate_id'] = False
+        if change == 'old-config-type': old['config']['extractor_settings']['temperature'] = False
+        if change == 'backend-type': actual['backend']['max_calls'] = True
+        if change == 'actual-manifest': actual['manifest']['personalization_cap'] = 2048
+        if change == 'actual-config': actual['config']['extractor_settings']['max_tokens'] = 8192
+        if change == 'both-config':
+            old['config']['extractor_settings']['max_tokens'] = 8192
+            actual['config']['extractor_settings']['max_tokens'] = 8192
+        if change == 'backend': actual['backend']['model'] = 'gpt-6-sol'
+        if change == 'registration': actual['registration']['module'] = 'foreign.module'
+        if change == 'item-order': actual['item_ids'] = ['extra-item']
+        if change == 'profile': actual['profile'] = self.ref('borrowed-profile')
+        if change == 'source-pin': row['source_manifest_hash'] = digest('changed-sources')
+        if change == 'document-pin': row['documents_hash'] = digest('changed-records')
+        if change == 'job-id': row['job_id'] = digest('changed-job')
+        if change == 'release-content':
+            actual_release = save('actual-release', dict(release, items_sha256=digest('different-items')))
+            actual['release'] = mapping['release'] = actual_release
+        row['build_packet'] = save('old-packet', old)
+        mapping['build_packet'] = save('actual-packet', actual)
+        row['original_prepared'] = save('old-prepared', {'prepared': True, 'jobs': [row['build_packet']]})
+        evidence = {'schema_version': 'unattempted-rebind-evidence-v1', 'old_prepared': row['original_prepared'],
+            'no_retry': True, 'manifest_and_job_ids_unchanged': True, 'claims_and_outputs_preserved': True,
+            'calls_performed': 0, 'ledger_mutations': 0,
+            'mappings': [{'job_id': row['job_id'], 'old_packet': row['build_packet'],
+                'manifest_sha256': digest(actual['manifest']), 'old_lease_id': old['lease']['lease_id'],
+                'new_lease_id': actual['lease']['lease_id']}],
+            'evidence': [{'job_id': row['job_id'], 'runner_claim_absent': True,
+                'output_and_started_traces_absent': True, 'execution_listings': []}]}
+        if change == 'evidence-calls': evidence['calls_performed'] = 1
+        if change == 'evidence-bool': evidence['calls_performed'] = False
+        if change == 'evidence-float': evidence['ledger_mutations'] = 0.0
+        if change == 'evidence-retry': evidence['no_retry'] = False
+        if change == 'evidence-preserved': evidence['claims_and_outputs_preserved'] = False
+        if change == 'record-missing': evidence['mappings'] = []
+        if change == 'record-duplicate': evidence['mappings'] *= 2
+        if change == 'record-manifest': evidence['mappings'][0]['manifest_sha256'] = digest('changed-manifest')
+        if change == 'record-old-packet': evidence['mappings'][0]['old_packet'] = self.ref('foreign-old-packet')
+        if change == 'record-old-lease': evidence['mappings'][0]['old_lease_id'] = 'foreign-old-lease'
+        if change == 'record-new-lease': evidence['mappings'][0]['new_lease_id'] = 'foreign-new-lease'
+        if change == 'absence-missing': evidence['evidence'] = []
+        if change == 'absence-duplicate': evidence['evidence'] *= 2
+        if change == 'claim-existed': evidence['evidence'][0]['runner_claim_absent'] = False
+        if change == 'trace-existed': evidence['evidence'][0]['output_and_started_traces_absent'] = False
+        if change == 'listings-missing': evidence['evidence'][0].pop('execution_listings')
+        evidence_ref = save('rebind-evidence', evidence)
+        prepared = {'prepared': True, 'jobs': [mapping['build_packet']],
+                    'rebound_from': row['original_prepared'], 'rebind_evidence': evidence_ref}
+        if change == 'prepared-packet': prepared['jobs'] = []
+        if change == 'rebound-missing': prepared.pop('rebound_from')
+        if change == 'rebound-wrong': prepared['rebound_from'] = self.ref('different-prepared')
+        if change == 'evidence-missing': prepared.pop('rebind_evidence')
+        mapping['build_prepared'] = save('actual-prepared', prepared)
+        claim = {'status': 'claimed', 'manifest': copy.deepcopy(actual['manifest']), 'lease': copy.deepcopy(actual['lease'])}
+        if change == 'claim-status': claim['status'] = 'unknown'
+        if change == 'claim-manifest': claim['manifest']['personalization_cap'] = 2048
+        if change == 'claim-manifest-type': claim['manifest']['replicate_id'] = False
+        if change == 'claim-lease': claim['lease']['lease_id'] = 'foreign-lease'
+        claim_ref = save('actual-claim', claim)
+        case = {'cell_id': row['cell_id'], 'status': 'complete', 'actual_claim_matches': True,
+            'original_semantic_identity_unchanged': True,
+            'changed_reference_fields': ['build_prepared', 'build_packet', 'release'],
+            'profile_id': row['profile_id'], 'original_index_packet': row['build_packet'],
+            'original_index_prepared': row['original_prepared'], 'actual_packet': mapping['build_packet'],
+            'actual_prepared': mapping['build_prepared'], 'actual_result': mapping['build_result'],
+            'actual_claim': claim_ref, 'rebind_evidence': evidence_ref}
+        return case, row, mapping, raw_payloads
+
+    def test_exact_listed_continuation_preserves_original_execution_and_saved_profile(self):
+        case, row, mapping, payloads = self.continuation_fixture()
+        before = copy.deepcopy((case, row, mapping, payloads))
+        result = self.helper.validate_continuation_case(case, row, mapping, payloads)
+        self.assertEqual((case, row, mapping, payloads), before)
+        self.assertEqual(result['origin_job_id'], row['job_id'])
+        self.assertEqual(result['original_packet'], row['build_packet'])
+        self.assertEqual(result['actual_packet'], mapping['build_packet'])
+        self.assertEqual(result['actual_claim'], case['actual_claim'])
+        self.assertEqual(result['rebind_evidence'], case['rebind_evidence'])
+        self.assertEqual(mapping['profile_id'], row['profile_id'])
+        self.assertEqual(mapping['release']['sha256'], row['release']['sha256'])
+        self.assertNotEqual(mapping['release']['path'], row['release']['path'])
+
+    def test_every_read_evidence_reference_requires_its_exact_bytes(self):
+        for field in ('original_index_packet', 'actual_packet', 'actual_claim', 'original_index_prepared',
+                      'actual_prepared', 'rebind_evidence'):
+            for mode in ('missing', 'changed'):
+                case, row, mapping, payloads = self.continuation_fixture()
+                if mode == 'missing': payloads.pop(case[field]['path'])
+                else: payloads[case[field]['path']] += ' '
+                with self.subTest(field=field, mode=mode), self.assertRaisesRegex(ValueError, 'evidence bytes'):
+                    self.helper.validate_continuation_case(case, row, mapping, payloads)
+
+    def test_rehashed_semantic_packet_and_source_identity_changes_reject(self):
+        for change in ('old-manifest', 'old-manifest-type', 'old-config-type', 'backend-type',
+                       'actual-manifest', 'actual-config', 'both-config', 'backend', 'registration', 'item-order', 'profile', 'source-pin', 'document-pin', 'job-id', 'release-content'):
+            args = self.continuation_fixture(change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.helper.validate_continuation_case(*args)
+
+    def test_rehashed_claim_and_preparation_lineage_changes_reject(self):
+        for change in ('claim-status', 'claim-manifest', 'claim-manifest-type', 'claim-lease', 'prepared-packet',
+                       'rebound-missing', 'rebound-wrong', 'evidence-missing'):
+            args = self.continuation_fixture(change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.helper.validate_continuation_case(*args)
+
+    def test_rebind_proof_requires_zero_calls_exact_lease_mapping_and_unique_absence_record(self):
+        for change in ('evidence-calls', 'evidence-bool', 'evidence-float', 'evidence-retry', 'evidence-preserved',
+                       'record-missing', 'record-duplicate', 'record-manifest', 'record-old-packet',
+                       'record-old-lease', 'record-new-lease', 'absence-missing', 'absence-duplicate',
+                       'claim-existed', 'trace-existed', 'listings-missing'):
+            args = self.continuation_fixture(change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.helper.validate_continuation_case(*args)
+
+    def test_case_cannot_relabel_profile_cell_or_allow_other_changed_references(self):
+        for field, value in (('cell_id', 'another-cell'), ('profile_id', digest('another-profile')),
+                             ('actual_claim_matches', 1), ('original_semantic_identity_unchanged', False),
+                             ('changed_reference_fields', ['build_prepared', 'build_packet', 'release', 'profile']),
+                             ('changed_reference_fields', ['build_prepared', 'build_packet'])):
+            case, row, mapping, payloads = self.continuation_fixture()
+            case[field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                self.helper.validate_continuation_case(case, row, mapping, payloads)
+
+    def test_selection_accepts_changed_refs_only_with_exact_listed_continuation_proof(self):
+        case, row, mapping, payloads = self.continuation_fixture()
+        selection, index = copy.deepcopy(self.selection), copy.deepcopy(self.index)
+        selection['selected_configs'][0]['researcher_mappings'][0] = mapping
+        index['cells'][0] = row
+        proof = {'schema_version': 'scaling-continuation-compatibility-v1',
+                 'original_index': self.index_ref, 'cases': [case]}
+        kwargs = {'contract_ref': self.contract_ref, 'index_ref': self.index_ref,
+                  'continuation_proof': proof, 'continuation_payloads': payloads}
+        result = self.helper.validate_descriptive_selection(selection, self.contract, index, **kwargs)
+        self.assertEqual(result['status'], 'accepted-descriptive-selection')
+        self.assertEqual(result['selected_instances'][0]['continuation']['actual_packet'], mapping['build_packet'])
+        self.assertIsNone(result['selected_instances'][1]['continuation'])
+        for change in ('missing-proof', 'unlisted-case', 'additional-ref', 'subset-ref', 'duplicate-case', 'wrong-index'):
+            changed, arguments = copy.deepcopy(selection), copy.deepcopy(kwargs)
+            if change == 'missing-proof': arguments.pop('continuation_proof')
+            if change == 'unlisted-case': arguments['continuation_proof']['cases'] = []
+            if change == 'additional-ref': changed['selected_configs'][0]['researcher_mappings'][0]['build_result'] = self.ref('foreign-result')
+            if change == 'subset-ref': changed['selected_configs'][0]['researcher_mappings'][0]['release'] = row['release']
+            if change == 'duplicate-case': arguments['continuation_proof']['cases'] *= 2
+            if change == 'wrong-index': arguments['continuation_proof']['original_index'] = self.ref('foreign-index')
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.helper.validate_descriptive_selection(changed, self.contract, index, **arguments)
+
+
+class ScalingFuturePredictionBoundTests(unittest.TestCase):
+    def setUp(self):
+        ScalingReservationCeilingTests.setUp(self)
+
+    def test_future_bound_covers_nested_json_escaping_and_unicode(self):
+        from autoresearch.taste.overnight.contracts import canonical_json, render_content
+        from autoresearch.taste.overnight.consumer import SYSTEM, INSTRUCTION
+        item = {'item_id': 'synthetic-order', 'context': 'Context with "quotes" and 雪',
+                'options': ['backslash \\ option', 'line\nbreak option']}
+        settings = {'temperature': 0.0, 'max_tokens': 8192}
+        for content in ('\\' * 220, '"' * 220, '\x00' * 70, '\n' * 220, '雪' * 150, {'key': ['\\"' * 90]}):
+            rendered = render_content(content)
+            self.assertLessEqual(len(rendered.encode()), 512)
+            for model in ('gpt-6-luna', 'gpt-6-sol', 'gpt-6-astra'):
+                body = {'model': model, 'instructions': SYSTEM,
+                    'input': INSTRUCTION + '\nINPUT_JSON:\n' + canonical_json({'context': item['context'], 'options': item['options'], 'personalization': rendered}),
+                    'max_output_tokens': 8192, 'reasoning': {'effort': 'medium'}, 'store': False,
+                    'service_tier': 'default', 'prompt_cache_options': {'mode': 'implicit', 'ttl': '30m'}}
+                actual = len(json.dumps(body, ensure_ascii=False, allow_nan=False).encode()) + 1024
+                bound = self.helper.future_prediction_bounds([item], model, settings, 512)[0]
+                with self.subTest(content_type=type(content).__name__, model=model):
+                    self.assertGreaterEqual(bound['input_bound'], actual)
+                    self.assertGreaterEqual(bound['max_usd'], self.helper.reservation_ceiling(model, 8192, actual))
+
+    def test_future_bound_preserves_each_item_and_rejects_context_overflow(self):
+        items = [{'item_id': 'order-b', 'context': 'short', 'options': ['a', 'b']},
+                 {'item_id': 'order-a', 'context': 'x' * 300, 'options': ['a', 'b']}]
+        bounds = self.helper.future_prediction_bounds(items, 'gpt-6-astra', {'max_tokens': 8192}, 8192)
+        self.assertEqual([b['item_id'] for b in bounds], ['order-b', 'order-a'])
+        self.assertGreater(bounds[1]['max_usd'], bounds[0]['max_usd'])
+        items[0]['context'] = 'x' * 272000
+        with self.assertRaises(ValueError):
+            self.helper.future_prediction_bounds(items, 'gpt-6-astra', {'max_tokens': 8192}, 8192)

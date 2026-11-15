@@ -204,8 +204,8 @@ def _validate_design(spec):
     if (spec['fixed_profile']['method_id'] not in methods or
             spec['fixed_profile']['extractor_level'] not in LEVELS):
         raise ValueError('fixed profile must name a selected method and extractor')
-    if not isinstance(spec['controls'], list) or len(spec['controls']) != 2:
-        raise ValueError('declare no-profile and one matched raw/retrieval control')
+    if not isinstance(spec['controls'], list) or len(spec['controls']) not in (2, 4):
+        raise ValueError('declare the historical matched pair or all four mandatory controls')
     kinds = set()
     for control in spec['controls']:
         _fields(control, {'method_id', 'kind', 'implementation_sha256', 'config_hash'}, 'control')
@@ -216,7 +216,11 @@ def _validate_design(spec):
         kinds.add(control['kind'])
         _hash(control['implementation_sha256'], 'control implementation')
         _hash(control['config_hash'], 'control config')
-    if kinds not in ({'no_profile', 'raw_evidence'}, {'no_profile', 'retrieval'}):
+    four_controls = {('no_profile', 'no_profile'), ('raw_evidence', 'raw_evidence'),
+                     ('lexical_retrieval', 'retrieval'), ('semantic_retrieval', 'retrieval')}
+    valid_controls = ({(c['method_id'], c['kind']) for c in spec['controls']} == four_controls
+                      if len(spec['controls']) == 4 else kinds in ({'no_profile', 'raw_evidence'}, {'no_profile', 'retrieval'}))
+    if not valid_controls:
         raise ValueError('required matched controls missing')
     diagnostic = spec['diagnostic']
     _fields(diagnostic, DIAGNOSTIC_FIELDS | ({'raw_control_config_hash', 'raw_implementation_sha256', 'documents_hash'}
@@ -493,7 +497,10 @@ def summarize_results(manifest, results, *, expected_manifest_hash):
     cells = {cell['cell_id']: cell for cell in manifest['cells']}
     by_cell = {result['cell_id']: result for result in results}
     by_arm = {arm['arm_id']: arm for arm in inventory}
-    baseline = next(c['method_id'] for c in manifest['design']['controls'] if c['kind'] != 'no_profile')
+    controls = manifest['design']['controls']
+    baseline = next((c['method_id'] for c in controls if c['kind'] == 'raw_evidence'), None)
+    if baseline is None:  # Historical two-control manifests may use one retrieval baseline.
+        baseline = next(c['method_id'] for c in controls if c['kind'] == 'retrieval')
 
     def item_rows(arm):
         expected = (cells[arm['cell_id']]['common']['items'] if arm['cell_id'] else
