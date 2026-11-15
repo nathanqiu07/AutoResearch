@@ -731,6 +731,30 @@ class E4PreregTests(unittest.TestCase):
         self.assertNotEqual([s.source_id for s in dev_h], ["it0", "it1"])
 
 
+class TasteDataTests(unittest.TestCase):
+    def test_r1_arms_refuse_a_researcher_without_taste_data(self):
+        """A personal track with only seed answers (before `trackp fit`) has nothing for R1 to use;
+        running would label a no-taste run R1-P."""
+        from autoresearch import cli
+        tmp = tempfile.mkdtemp()
+        os.makedirs(os.path.join(tmp, "newbie"))
+        open(os.path.join(tmp, "newbie", "seed_choices.jsonl"), "w").write('{"chosen": "a"}\n')
+        from autoresearch.taste import researcher as rmod
+        real = rmod.load_researcher
+        cli.load_researcher = lambda slug: real(slug, root=tmp)
+        try:
+            for mode in ("model", "prompt"):
+                with self.assertRaises(SystemExit) as ctx:
+                    cli._require_taste_data("newbie", "R1-P", mode)
+                self.assertIn("trackp fit", str(ctx.exception))
+            with open(os.path.join(tmp, "newbie", "history.jsonl"), "w") as f:   # after the fit
+                f.write(json.dumps({"context": "c", "a_text": "x", "b_text": "y", "chosen": "a"}) + "\n")
+            cli._require_taste_data("newbie", "R1-P-prompt", "prompt")
+        finally:
+            cli.load_researcher = real
+        cli._require_taste_data("demo_realist", "R1-demo_realist", "model")   # has profile.json
+
+
 class SpendCapTests(unittest.TestCase):
     def test_loop_stops_cleanly_when_budget_is_exhausted(self):
         from autoresearch.llm import Budget

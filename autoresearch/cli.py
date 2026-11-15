@@ -34,6 +34,24 @@ def _profile(args, llm):
     return prof, judge
 
 
+def _require_taste_data(slug: str, arm: str, taste_mode: str) -> None:
+    """An R1 arm must have taste data behind it. Without any, `model` would build an
+    empty profile and `prompt` would paste nothing: the run would be labelled R1 but
+    carry no taste, so it is refused instead."""
+    from .research.advisor import history_text
+    r = load_researcher(slug)
+    if taste_mode == "prompt":
+        ok = bool(history_text(r.root, max_chars=1))
+        what = "no history for the prompt (history.jsonl, history_timesplit.jsonl, choices.jsonl or corpus/)"
+    else:
+        ok = (os.path.exists(os.path.join(r.root, "usermodel.json")) or r.cached_profile() is not None
+              or any(True for _ in r.docs()) or bool(r.choices()))
+        what = "no user model or taste data (usermodel.json, profile.json, corpus/ or choices.jsonl)"
+    if not ok:
+        raise SystemExit(f"{arm}: researcher '{slug}' has {what} yet. Fit the user model first "
+                         "(WS B: python3 -m autoresearch.taste.trackp fit) or choose another researcher.")
+
+
 def cmd_researchers(args):
     for s in list_researchers():
         print(s)
@@ -234,6 +252,8 @@ def cmd_research(args):
                     **({'max_cost_usd': args.max_cost} if args.max_cost is not None else {}))
     models = _build_models(args, budget)
     prof = None
+    if slug and args.taste_mode in ("model", "prompt"):
+        _require_taste_data(slug, arm, args.taste_mode)
     if slug and args.taste_mode == "model":
         prof, _ = _profile(args, models.judge)
     from .research.measure import SCENARIOS, load_probe_questions
