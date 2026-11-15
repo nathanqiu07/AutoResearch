@@ -20,7 +20,7 @@ Not here: `runs/` (gitignored run outputs, e.g. `runs/<run_id>/decisions.jsonl`)
 | `labels/` | Hand labels for the A1 judge (`<name>.jsonl`) and their `transcripts.jsonl` | labels raw (human), transcripts derived | `autoresearch calibrate --dump-transcripts`, `autoresearch label-transcripts` | C1 | See its README |
 | `real_corpus/` | `wildchat_sample.jsonl`, 200 first user turns | raw (external) | `python3 -m autoresearch corpus --n 200` | C1 | allenai/WildChat-1M, ODC-BY; see its README |
 | `petri/` | `seeds_v2.jsonl`, `stock_auditor_prompt.txt` | raw (upstream Petri, edited by hand) | by hand | C2 | Upstream Petri |
-| `realism/` | Real-world grounding for Petri seed rewrites: `scaffolds/` (open-source agent system prompts and tool schemas), `trajectories/` (public coding-agent runs), `substrate/<category>/` (public domain documents per dev seed) | raw (external) | data-retrieval session, 2026-11-15 | C2 | Open licences or public records only; per-item source and licence in each subfolder's README |
+| `realism/` | Real-world grounding for Petri seed rewrites: `scaffolds/` (open-source agent system prompts and tool schemas), `trajectories/` (public coding-agent runs), `trajectories_ops/` (public non-coding tool-use runs: tau-bench, tau2, AgentDojo, APIGen-MT, ToolBench, WildChat business chats), `substrate/<category>/` (public domain documents per dev seed) | raw (external) | data-retrieval session, 2026-11-15 | C2 | Open licences or public records only; per-item source and licence in each subfolder's README |
 
 ## A researcher's folder: `researchers/<slug>/`
 
