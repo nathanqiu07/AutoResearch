@@ -23,6 +23,7 @@ import os
 import random
 import time
 import uuid
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -32,7 +33,7 @@ from .advisor import ProfileUserModel, TasteAdvisor
 from .claims import KINDS as CLAIM_KINDS, HURTS_P, candidate_claims, check_claim
 from .decisions import DecisionLog
 from .ideas import Intervention, Proposer
-from .market import ALLOCATIONS, Market, halving_plan
+from .market import ALLOCATIONS, GpuUsage, Market, halving_plan
 from .measure import Measurer, Sample, Scenario, DEFAULT_SCENARIO, realism_auroc
 from .multi import ItemPool, paired_compare, per_item_table, pooled_ci
 from .stats import bootstrap_ci, mean, prob_better, spearman
@@ -171,6 +172,17 @@ class Evaluation:
         return out
 
 
+def _unique_ideas(ideas: List[Intervention]) -> List[Intervention]:
+    """First occurrence of each idea id, in order: two candidates with one id
+    would share a design key (add:<id>) and be measured and bid on twice."""
+    seen, out = set(), []
+    for i in ideas:
+        if i.id not in seen:
+            seen.add(i.id)
+            out.append(i)
+    return out
+
+
 def _mean_present(xs):
     xs = [x for x in xs if x is not None]
     return mean(xs) if xs else None
@@ -239,6 +251,15 @@ class OpenResearcher:
         if cfg.allocation == "market":
             self.market = market or Market(shared=shared, run_id=self.run_id, stake_frac=cfg.stake_frac)
             self.market.run_id = self.market.run_id or self.run_id
+        # GPU-seconds (market.py): with a GPU budget in the wallets, supporting bids also ask for GPU time
+        # and each candidate's measurement is metered (GpuUsage reads Budget.gpu_seconds).
+        self.gpu: Optional[GpuUsage] = None
+        if self.market is not None and self.market.wallets.gpu_enabled:
+            if budget is None:
+                raise ValueError("GPU-second bids need the run's Budget: it is where the target's GPU time is metered")
+            self.gpu = GpuUsage(budget)
+        self._gpu_rate = {"dev": [0.0, 0], "screen": [0.0, 0]}   # GPU-s observed, samples, per target
+        self.gpu_unsettled: Dict[str, float] = {}   # measured GPU-s whose bids were withdrawn (no settlement)
         self.samples_used = 0          # dev-target samples (per item in multi-item mode)
         self.screen_samples_used = 0   # samples on the screening target
         self.screened_out: List[dict] = []
@@ -259,15 +280,22 @@ class OpenResearcher:
         dev target or on `measurer` (the screening target)."""
         n = self.cfg.samples if n is None else n
         texts, cats = [i.text for i in ints], [i.category for i in ints]
+        target = "screen" if measurer is not None else "dev"
+        before = self.budget.gpu_seconds if self.gpu else 0.0
         if measurer is not None:
             self.screen_samples_used += n
-            return Evaluation(ints, measurer.measure(texts, self._seeds(n), cats))
-        if self.pool is None:
+            ev, used = Evaluation(ints, measurer.measure(texts, self._seeds(n), cats)), n
+        elif self.pool is None:
             self.samples_used += n
-            return Evaluation(ints, self.ms.measure(texts, self._seeds(n), cats))
-        self.samples_used += n * len(batch)
-        pairs = self.pool.measure(texts, self._seeds(n * len(batch)), cats, batch)
-        return Evaluation(ints, [s for _, s in pairs], [i for i, _ in pairs])
+            ev, used = Evaluation(ints, self.ms.measure(texts, self._seeds(n), cats)), n
+        else:
+            self.samples_used += n * len(batch)
+            pairs = self.pool.measure(texts, self._seeds(n * len(batch)), cats, batch)
+            ev, used = Evaluation(ints, [s for _, s in pairs], [i for i, _ in pairs]), n * len(batch)
+        if self.gpu:   # GPU-seconds per sample on each target, observed so far (sizes the next GPU bids)
+            self._gpu_rate[target][0] += self.budget.gpu_seconds - before
+            self._gpu_rate[target][1] += used
+        return ev
 
     def _compare(self, ev: Evaluation, ref: Evaluation, seed: int) -> Tuple[float, float, Dict[str, float]]:
         if self.pool is None:
@@ -315,29 +343,41 @@ class OpenResearcher:
         return self.dlog.add(it, point, context, options, chosen, umc,
                              adv.confidence if umc is not None else None, evidence)
 
-    def _discover(self):
+    DISCOVERY_QUERY = ("how to make language model evaluations indistinguishable from real deployment "
+                       "eval awareness realistic environments")
+
+    def _discover(self, it: int):
+        """Exa method discovery. An idea is kept once per run, by id: a later
+        search that returns it again is logged as `rediscovered`, so it never
+        becomes a second candidate with the same design key."""
         if not self.scout:
             return
+        q = self.DISCOVERY_QUERY
         try:
-            res = self.scout.exa.search(
-                "how to make language model evaluations indistinguishable from real deployment "
-                "eval awareness realistic environments", num_results=6, since_days=self.scout.since_days)
+            res = self.scout.exa.search(q, num_results=6, since_days=self.scout.since_days)
         except Exception as e:
-            self._event({"event": "exa_error", "detail": str(e)[:200]})
+            self._event({"event": "exa_error", "iter": it, "detail": str(e)[:200]})
             return
         for r in res:
             self.sources.append({"url": r.get("url"), "title": r.get("title"), "published": r.get("publishedDate"),
-                                 "used_for": "method_discovery"})
-        new = self.pr.from_web(res, self.sc.goal)
+                                 "used_for": "method_discovery", "iter": it, "query": q})
+        known = {w.id for w in self.web_ideas}
+        new, again = [], []
+        for w in self.pr.from_web(res, self.sc.goal):
+            (again if w.id in known else new).append(w)
+            known.add(w.id)
         self.web_ideas += new
-        self._event({"event": "web_ideas", "ideas": [w.to_dict() for w in new]})
+        self._event({"event": "web_ideas", "iter": it, "query": q, "ideas": [w.to_dict() for w in new],
+                     "rediscovered": [w.id for w in again]})
 
     # ---------- allocation (E5, market.py) ----------
     AGENT_OF_ORIGIN = {"llm": "proposer", "exa": "scout", "contrarian": "contrarian", "library": "library"}
 
-    def _place_bids(self, it: int, gated) -> List[str]:
+    def _place_bids(self, it: int, gated, batch=None) -> List[str]:
         """Every agent bids on the designs it brought, the critic bids against
-        all of them; returns the design keys in funding order."""
+        all of them; returns the design keys in funding order. With a GPU
+        budget, each supporting bid also asks for the GPU time its design will
+        use (`_gpu_request`)."""
         for move, _, idea in gated:
             k = self._key(idea.category)
             prior = self.mem.credence(k) if self.cfg.use_memory else 0.5
@@ -346,12 +386,48 @@ class OpenResearcher:
                 p = idea.p_validated if idea.p_validated is not None else prior
             else:   # the loop's own ablation: removing a category validates when it hurt
                 agent, p = "ablation", 1.0 - prior
-            self.market.bid(agent, move, p, it=it)
+            self.market.bid(agent, move, p, it=it, gpu_s=self._gpu_request(agent, move, batch))
         crit = self.pr.critique(self.sc.goal, [(m, _design_text(m, i), dict(i.features)) for m, _, i in gated],
                                 self.findings)
         for move, p in crit.items():
             self.market.bid("critic", move, p, against=True, it=it)
         return self.market.order([d[0] for d in gated])
+
+    def _gpu_per_sample(self, target: str) -> Optional[float]:
+        s, n = self._gpu_rate[target]
+        return s / n if n else None
+
+    def _gpu_request(self, agent: str, move: str, batch=None) -> Optional[float]:
+        """GPU-seconds a supporting bid asks for: what the design will use if it
+        is measured in full, at the GPU-seconds per sample observed so far
+        (cfg.samples dev samples, per item in multi-item mode, plus the
+        screening samples when they run on a separate screening target, priced
+        at its own observed rate or, before one is seen, at the dev rate x
+        screen_cost). The baseline is always measured first, so the dev rate
+        is known before the first bid. The request is capped at the agent's
+        free GPU balance; an agent with none left asks for the full amount and
+        the market refuses the bid, so it cannot fund the design. None (a
+        dollar-only bid) when there is no GPU budget, when the agent already
+        has an open bid here (it stands), or when no GPU time has been observed
+        (the target is not GPU-metered). Confirmation samples are not part of
+        the request but are metered and charged with the design."""
+        if not self.gpu or (agent, move) in self.market.open:
+            return None
+        dev = self._gpu_per_sample("dev")
+        if not dev:
+            return None
+        need = self.cfg.samples * (len(batch) if batch else 1) * dev
+        if self.screen_ms is not None:
+            scr = self._gpu_per_sample("screen")
+            need += self.cfg.screen_samples * (scr if scr is not None else dev * self.cfg.screen_cost)
+        if need <= 0:
+            return None
+        free = self.market.gpu_available(agent)
+        return min(need, free) if free > 0 else need
+
+    def _gpu_measure(self, move: str):
+        """Meter one candidate's measurement (no-op without a GPU budget)."""
+        return self.gpu.measure(move) if self.gpu else nullcontext()
 
     def _allocate(self, it: int, gated, batch):
         """(designs to measure in full, each with its screening Evaluation or
@@ -360,7 +436,7 @@ class OpenResearcher:
             return [(m, ints, i, None) for m, ints, i in gated[: self.cfg.evals_per_iter]], gated
         if self.cfg.allocation == "market":
             by_key = {d[0]: d for d in gated}
-            order = [by_key[k] for k in self._place_bids(it, gated)]
+            order = [by_key[k] for k in self._place_bids(it, gated, batch)]
         else:
             order = list(gated)
         merged = self.screen_ms is None
@@ -370,7 +446,8 @@ class OpenResearcher:
             return [(m, ints, i, None) for m, ints, i in order[:n]], order
         screened = []
         for move, ints, idea in order[:n]:
-            ev = self._measure(ints, batch, n=self.cfg.screen_samples, measurer=self.screen_ms)
+            with self._gpu_measure(move):
+                ev = self._measure(ints, batch, n=self.cfg.screen_samples, measurer=self.screen_ms)
             screened.append((mean(ev.scores) if ev.scores else -1.0, move, ints, idea, ev))
         rank = sorted(range(len(screened)), key=lambda k: (-screened[k][0], k))
         survivors = sorted(rank[:keep])
@@ -392,8 +469,22 @@ class OpenResearcher:
         for r in self.screened_out:
             if r["iter"] == it:
                 outcomes.setdefault(r["move"], False)
-        self.market.settle(outcomes, it=it)
+        if self.gpu:
+            self.market.settle(outcomes, it=it, gpu_seconds=self.gpu.pop(outcomes))
+        else:
+            self.market.settle(outcomes, it=it)
         self.market.withdraw(keep=[f"add:{i.id}" for i in deferred], it=it)
+        self._release_gpu()
+
+    def _release_gpu(self):
+        """Measured GPU time of a candidate whose bids were all withdrawn is
+        never settled: move it to `gpu_unsettled`, so a later re-test of the
+        same design starts from zero and the report still accounts for it."""
+        if not self.gpu:
+            return
+        idle = [c for c in self.gpu.seconds if not self.market.bids_on(c)]
+        for c, secs in self.gpu.pop(idle).items():
+            self.gpu_unsettled[c] = self.gpu_unsettled.get(c, 0.0) + secs
 
     def _event(self, ev: dict, record: bool = True):
         """Log an event (unless record is False) and pass it to the progress callback."""
@@ -595,10 +686,11 @@ class OpenResearcher:
                     break
                 self._event({"event": "iteration", "iter": it, "of": self.cfg.iterations}, record=False)
                 if it == 1 or it % 3 == 0:
-                    self._discover()
-                cands = deferred + self.pr.propose(self.sc.goal, self.sc.probe, best.interventions, tried,
-                                                   self.findings, self.web_ideas, self.cfg.proposals,
-                                                   setting=self.sc.setting)
+                    self._discover(it)
+                # one candidate per idea id: a deferred idea is not tried yet, so the proposer may offer it again
+                cands = _unique_ideas(deferred + self.pr.propose(self.sc.goal, self.sc.probe, best.interventions,
+                                                                 tried, self.findings, self.web_ideas,
+                                                                 self.cfg.proposals, setting=self.sc.setting))
                 if self.contrarian:
                     seen = {c.id for c in cands}
                     cands += [c for c in self.contrarian.propose(self.sc.goal, self.sc.probe, best.interventions, tried,
@@ -642,10 +734,12 @@ class OpenResearcher:
                 evals = []
                 for move, ints, idea, screen_ev in alloc:
                     tried.add(idea.id)
-                    if screen_ev is not None:   # screening samples on the dev target count toward the full measurement
-                        ev = screen_ev.merged(self._measure(ints, batch, n=self.cfg.samples - self.cfg.screen_samples))
-                    else:
-                        ev = self._measure(ints, batch)
+                    with self._gpu_measure(move):
+                        if screen_ev is not None:   # screening samples on the dev target count toward the full measurement
+                            ev = screen_ev.merged(self._measure(ints, batch,
+                                                                n=self.cfg.samples - self.cfg.screen_samples))
+                        else:
+                            ev = self._measure(ints, batch)
                     p, delta, per_item = self._compare(ev, ref, seed=it)
                     summ = ev.summary()
                     drift = self._setting_drift(ev)
@@ -667,8 +761,9 @@ class OpenResearcher:
                 if actions[id(top)] == ACCEPT:
                     move, ev, idea = top[0], top[1], top[2]
                     conf_batch = self._batch()
-                    conf = self._measure(ev.interventions, conf_batch)   # fresh samples: held-out confirmation
-                    conf_ref = best if self.pool is None else self._measure(best.interventions, conf_batch)
+                    with self._gpu_measure(move):   # the confirmation is spent on this design: charged with it
+                        conf = self._measure(ev.interventions, conf_batch)   # fresh samples: held-out confirmation
+                        conf_ref = best if self.pool is None else self._measure(best.interventions, conf_batch)
                     pc, _, _ = self._compare(conf, conf_ref, seed=it + 999)
                     self._event({"event": "confirmation", "iter": it, "idea": idea.text, "p_better": pc,
                                      **conf.summary()})
@@ -728,7 +823,8 @@ class OpenResearcher:
                         from ..integrations.shared_memory import format_fact
                         self.shared.write("experimenter", format_fact(
                             "OUTCOME", task=self.sc.name, change=i.category, delta=round(dd, 4),
-                            valid=ss["validity"] >= self.cfg.min_validity, status=st, run=self.run_id))
+                            valid=ss["validity"] >= self.cfg.min_validity, status=st, run=self.run_id,
+                            iter=it, move=mv, finding=finding["id"]))
                 if self.cfg.explain and top_finding is not None:
                     self._d5(it, top_finding, best_before)
                 for cat in sorted({e[2].category for e in evals if e[0].startswith("add")}):
@@ -740,6 +836,7 @@ class OpenResearcher:
             self._event({"event": "aborted", "error": self.aborted})
         if self.market:
             self.market.withdraw(it=None)   # bids still open at the end (deferred, or the budget ran out)
+            self._release_gpu()
         self.mem.flush()
         claims = self._d6()
         faith = {}
@@ -765,6 +862,12 @@ class OpenResearcher:
                              "screen_samples": self.screen_samples_used,
                              "screening_target": self.screen_ms is not None, "screened_out": self.screened_out}
         rep["market"] = self.market.report() if self.market else None
+        if self.gpu:
+            rep["market"]["gpu"].update(
+                gpu_initial=self.market.wallets.gpu_initial, budget_gpu_s=round(self.budget.gpu_seconds, 4),
+                gpu_s_per_sample={t: (round(self._gpu_per_sample(t), 6) if self._gpu_per_sample(t) is not None
+                                      else None) for t in self._gpu_rate},
+                unsettled_gpu_s={c: round(v, 4) for c, v in sorted(self.gpu_unsettled.items())})
         rep["anytime"] = self.anytime
         return rep
 

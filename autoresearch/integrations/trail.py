@@ -14,11 +14,16 @@ runs found under RUN_DIR, this rebuilds the chain
 
 It reads only what the run recorded: run reports (`<task>_<run>.json`), the
 shared-memory JSONL (past.dev's local fallback), decision logs and
-`assumptions.json`. Steps are joined on recorded keys (run id, change, URL,
-iteration, delta). A step that cannot be joined from recorded data is marked
-MISSING with the field that would have linked it; nothing is inferred beyond
-what the loop's own code fixes (for example the credence weight
-0.5 x confidence in `loop.Researcher._critic_allows`, labelled as a rule).
+`assumptions.json`. Runs recorded with the link fields (EVIDENCE `id`/`iter`,
+Source `fact_id`/`iteration`/`query`, the veto's weighed facts, the report's
+`config` and `credence_log`, OUTCOME `iter`/`move`/`finding`, decision options'
+`vetoed`, the v2 `web_ideas` event's `iter`/`query`) are joined on those exact
+keys. Older runs fall back to joins on change, URL, write order and delta. A
+step that cannot be joined from recorded data is marked MISSING with the field
+that would have linked it; nothing is inferred beyond what the loop's own code
+fixes (for example the credence weight 0.5 x confidence in
+`loop.Researcher._critic_allows`, labelled as a rule, for runs without a
+credence log).
 
 Two loops write different artifacts:
   v1 (`autoresearch/loop.py`): the scout fact-checks each candidate and writes
@@ -185,18 +190,29 @@ def _missing(key: str) -> dict:
     return {"field": key, "where": where, "why": why}
 
 
+def _int(v) -> Optional[int]:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def _evidence_view(f: dict, run_id: str, iters: Dict[str, int]) -> dict:
-    return {"ref": f["_ref"], "author": f.get("_author"), "run": f.get("run"), "this_run": f.get("run") == run_id,
+    recorded = _int(f.get("iter")) is not None
+    return {"ref": f["_ref"], "id": f.get("id"), "author": f.get("_author"), "run": f.get("run"),
+            "this_run": f.get("run") == run_id,
             "change": f.get("change"), "stance": f.get("stance"), "confidence": _num(f.get("confidence")),
             "urls": _urls(f.get("urls")), "iter": iters.get(f["_ref"]),
-            "iter_from": "write order (local JSONL)" if f["_ref"] in iters else None}
+            "iter_from": "recorded" if recorded else "write order (local JSONL)" if f["_ref"] in iters else None}
 
 
 def _evidence_iters(facts: List[dict], run_id: str) -> Dict[str, int]:
-    """Iteration of each of this run's EVIDENCE facts, from write order: in v1
-    every iteration writes its EVIDENCE facts before its single OUTCOME fact.
-    Only within one local file, where line order is write order."""
-    out: Dict[str, int] = {}
+    """Iteration of each EVIDENCE fact: its recorded `iter` when present (any
+    run); otherwise, for this run's facts, write order: in v1 every iteration
+    writes its EVIDENCE facts before its single OUTCOME fact. Write order is
+    only used within one local file, where line order is write order."""
+    out: Dict[str, int] = {f["_ref"]: _int(f["iter"]) for f in facts
+                           if f["kind"] == "EVIDENCE" and _int(f.get("iter")) is not None}
     by_file: Dict[str, List[dict]] = {}
     for f in facts:
         if f.get("run") == run_id and f["kind"] in ("EVIDENCE", "OUTCOME"):
@@ -205,14 +221,15 @@ def _evidence_iters(facts: List[dict], run_id: str) -> Dict[str, int]:
         it = 1
         for f in sorted(rows, key=lambda x: x["_pos"][1]):
             if f["kind"] == "EVIDENCE":
-                out[f["_ref"]] = it
+                out.setdefault(f["_ref"], it)
             else:
                 it += 1
     return out
 
 
 def _outcome_view(f: dict) -> dict:
-    keep = ("task", "change", "delta", "valid", "status", "p_eval", "validity", "run", "worker")
+    keep = ("task", "change", "delta", "valid", "status", "p_eval", "validity", "run", "worker", "iter", "move",
+            "finding")
     return {"ref": f["_ref"], **{k: f[k] for k in keep if k in f}}
 
 
@@ -227,23 +244,42 @@ def _v1_trails(path: str, rep: dict, art: Artifacts) -> dict:
     sources = rep.get("sources") or []
     dec = {r["iter"]: r for _, r in art.decisions if r.get("run_id") == run_id and isinstance(r.get("chosen"), str)}
     drift = rep.get("drift_events") or []
+    config = rep.get("config") or {}
+    refute_conf = (config.get("loop") or {}).get("refute_confidence")
+    # exact links recorded by the loop (absent in runs from before they were added)
+    src_linked = any("fact_id" in s for s in sources if s.get("used_for") == "fact_check")
+    cred_log = rep.get("credence_log")
+    cred_by_fact = {c.get("fact_id"): c for c in cred_log or [] if c.get("fact_id")}
+    outcome_iters = any(f.get("run") == run_id and _int(f.get("iter")) is not None for f in outcomes)
     run_missing = set()
     if not any(f.get("run") == run_id for f in facts):
         run_missing.add("shared.memory_file")
     if not dec:
         run_missing.add("v1.decisions_file")
-    run_missing.add("veto.refute_confidence")
+    if refute_conf is None:
+        run_missing.add("veto.refute_confidence")
 
-    def source_rows(change: str, urls: Iterable[str]) -> List[dict]:
-        rows, want = [], list(dict.fromkeys(urls))
+    def source_rows(change: str, urls: Iterable[str], fact_ids: Iterable[str] = ()) -> List[dict]:
+        """One row per URL. With recorded fact ids, a URL links to a Source only
+        through the EVIDENCE fact that cited it (`fact_id`); otherwise on
+        (change, URL, used_for=fact_check)."""
+        rows, want, ids = [], list(dict.fromkeys(urls)), {i for i in fact_ids if i}
         for u in want:
-            hits = [s for s in sources if s.get("url") == u and s.get("used_for") == "fact_check"
-                    and s.get("detail") == change]
+            if src_linked:
+                hits = [s for s in sources if s.get("url") == u and s.get("fact_id") in ids]
+                join = "fact_id"
+            else:
+                hits = [s for s in sources if s.get("url") == u and s.get("used_for") == "fact_check"
+                        and s.get("detail") == change]
+                join = "change+url"
             if hits:
                 s = hits[0]
                 rows.append({"url": u, "title": s.get("title"), "published": s.get("published"),
                              "used_for": s.get("used_for"), "detail": s.get("detail"), "linked": True,
-                             "times_returned": len(hits)})
+                             "times_returned": len(hits), "join": join,
+                             "fact_ids": sorted({h["fact_id"] for h in hits if h.get("fact_id")}),
+                             "iterations": sorted({h["iteration"] for h in hits if h.get("iteration") is not None}),
+                             "query": s.get("query")})
             else:
                 other = [s for s in sources if s.get("url") == u]
                 rows.append({"url": u, "linked": False, "title": other[0].get("title") if other else None,
@@ -256,8 +292,13 @@ def _v1_trails(path: str, rep: dict, art: Artifacts) -> dict:
     def outcome_of(it: int, change: str) -> Tuple[Optional[dict], List[dict]]:
         h = history.get(it)
         mine = [f for f in outcomes if f.get("run") == run_id and f.get("change") == change]
-        if h is None:
-            return None, [_outcome_view(f) for f in mine]
+        if outcome_iters:   # OUTCOME facts record their iteration: an exact join
+            mine = [f for f in mine if _int(f.get("iter")) == it]
+        if h is None or outcome_iters:
+            return (None if h is None else
+                    {"iter": it, "change": h.get("change"), "score": h.get("score"), "delta": h.get("delta"),
+                     "accepted": h.get("accepted"), "valid": h.get("valid"), "metrics": h.get("metrics")},
+                    [_outcome_view(f) for f in mine])
         d = h.get("delta")
         match = [f for f in mine if d is not None and _num(f.get("delta")) is not None
                  and abs(_num(f.get("delta")) - round(d, 4)) < 1e-6]
@@ -268,15 +309,26 @@ def _v1_trails(path: str, rep: dict, art: Artifacts) -> dict:
     def considered_at(change: str) -> List[int]:
         return sorted(i for i, r in dec.items() if any(o.get("change") == change for o in r.get("options", [])))
 
+    def update_of(f: dict) -> dict:
+        """The credence change one EVIDENCE fact caused: from the run's credence
+        log when it recorded one (exact before/after), else the loop's rule."""
+        c = _num(f.get("confidence")) or 0.0
+        u = {"evidence": f["_ref"], "fact_id": f.get("id"), "direction": "+" if f["stance"] == "support" else "-",
+             "weight": round(FACT_CHECK_WEIGHT * c, 4), "iter": iters.get(f["_ref"]),
+             "rule": "weight = 0.5 x confidence (loop.Researcher._critic_allows)"}
+        logged = cred_by_fact.get(f.get("id"))
+        if logged:
+            u.update(weight=round(logged["weight"], 4), rule="recorded (credence_log)",
+                     before={"alpha": logged["alpha_before"], "beta": logged["beta_before"],
+                             "credence": round(logged["credence_before"], 4)},
+                     after={"alpha": logged["alpha_after"], "beta": logged["beta_after"],
+                            "credence": round(logged["credence_after"], 4)})
+        return u
+
     def credence(change: str) -> dict:
         key = f"{task}:{change}"
-        ups = []
-        for f in evidence:
-            if f.get("run") == run_id and f.get("change") == change and f.get("stance") in ("support", "refute"):
-                c = _num(f.get("confidence")) or 0.0
-                ups.append({"evidence": f["_ref"], "direction": "+" if f["stance"] == "support" else "-",
-                            "weight": round(FACT_CHECK_WEIGHT * c, 4), "iter": iters.get(f["_ref"]),
-                            "rule": "weight = 0.5 x confidence (loop.Researcher._critic_allows)"})
+        ups = [update_of(f) for f in evidence if f.get("run") == run_id and f.get("change") == change
+               and f.get("stance") in ("support", "refute")]
         a = art.assumptions.get(key)
         final = None
         if a:
@@ -305,19 +357,36 @@ def _v1_trails(path: str, rep: dict, art: Artifacts) -> dict:
         ev_rows = [f for f in evidence if f.get("change") == change and f.get("_author") != "critic"]
         if kind == "web_refuted":
             cited = _urls(m.group("urls"))
-            t["veto"] = {"by": "critic (drift monitor)", "cited_urls": cited,
+            t["veto"] = {"by": "critic (drift monitor)", "cited_urls": cited, "refute_confidence": refute_conf,
                          "rule": "vetoed when refuting EVIDENCE (confidence >= refute_confidence) outnumbers "
                                  "supporting EVIDENCE for this change, across runs"}
             views = [_evidence_view(f, run_id, iters) for f in ev_rows]
-            for v in views:
-                v["cited_by_veto"] = v["stance"] == "refute" and v["urls"] == cited
+            weighed = ev.get("evidence")
+            if weighed is not None:   # the veto recorded every fact it weighed: an exact join on fact id
+                w_ids = {w.get("id") for w in weighed if w.get("id")}
+                c_ids = {w.get("id") for w in weighed if w.get("id") and w.get("counted") and w.get("stance") == "refute"}
+                t["veto"].update(n_refute=ev.get("n_refute"), n_support=ev.get("n_support"),
+                                 refute_confidence=ev.get("refute_confidence", refute_conf), weighed=weighed)
+                for v in views:
+                    v["weighed_by_veto"] = v["id"] in w_ids
+                    v["cited_by_veto"] = v["id"] in c_ids
+                if len([v for v in views if v["weighed_by_veto"]]) != len(w_ids):
+                    t["evidence_link"] = ("MISSING: the veto weighed EVIDENCE facts that are not in the recorded "
+                                          "shared memory")
+            else:
+                for v in views:
+                    v["cited_by_veto"] = v["stance"] == "refute" and v["urls"] == cited
+                miss.add("veto.evidence_refs")
             t["evidence"] = views
             t["evidence_counts"] = {s: sum(v["stance"] == s for v in views) for s in ("refute", "support", "none")}
             if not any(v["cited_by_veto"] for v in views):
                 t["evidence_link"] = "MISSING: no recorded EVIDENCE fact matches the URLs the veto cites"
             urls = cited + [u for v in views for u in v["urls"] if u not in cited]
-            t["sources"] = source_rows(change, urls)
-            miss |= {"veto.evidence_refs", "source.iter", "source.fact_ref"}
+            t["sources"] = source_rows(change, urls, [v["id"] for v in views if v["this_run"]])
+            if not src_linked:
+                miss |= {"source.iter", "source.fact_ref"}
+            if refute_conf is None and weighed is None:
+                miss.add("veto.refute_confidence")
             if any(v["this_run"] and v["iter"] is None for v in views):
                 miss.add("evidence.iter")
         else:
@@ -328,13 +397,15 @@ def _v1_trails(path: str, rep: dict, art: Artifacts) -> dict:
             fact_checked = [f for f in evidence if f"{task}:{f.get('change')}" == key
                             and f.get("stance") in ("support", "refute")]
             t["evidence"] = [_evidence_view(f, run_id, iters) for f in fact_checked]
-            t["sources"] = source_rows(change, [u for f in fact_checked for u in _urls(f.get("urls"))])
+            t["sources"] = source_rows(change, [u for f in fact_checked for u in _urls(f.get("urls"))],
+                                       [f.get("id") for f in fact_checked if f.get("run") == run_id])
             if not fact_checked:
                 t["evidence_link"] = ("no fact-check moved this assumption in the recorded memory: its credence "
                                       "comes from experiment outcomes")
-            miss.add("credence.before_after")
+            if cred_log is None:
+                miss.add("credence.before_after")
         t["credence"] = credence(change)
-        if t["credence"]["updates"]:
+        if t["credence"]["updates"] and any("before" not in u for u in t["credence"]["updates"]):
             miss.add("credence.before_after")
         t["considered_at_iters"] = considered_at(change)
         d = dec.get(it)
@@ -342,12 +413,17 @@ def _v1_trails(path: str, rep: dict, art: Artifacts) -> dict:
         t["decision"] = ({"iter": it, "options": [o.get("change") for o in d.get("options", [])],
                           "chosen": d.get("chosen"), "ref": "v1 decisions.jsonl"} if d else None)
         if d:
-            miss.add("decision.vetoed")
+            opts = d.get("options", [])
+            if opts and all("vetoed" in o for o in opts):
+                t["decision"]["vetoed"] = {o.get("change"): o["vetoed"] for o in opts if o.get("vetoed")}
+                t["decision"]["fallback"] = d.get("fallback")
+            else:
+                miss.add("decision.vetoed")
         hist, outs = outcome_of(it, ran) if ran else (None, [])
         t["ran_instead"] = hist
         t["veto_overridden"] = bool(ran and ran == change)   # everything gated: the loop fell back to ranked[0]
         t["ran_instead_outcomes"] = outs
-        if outs:
+        if outs and not outcome_iters:
             miss.add("outcome.iter")
         t["same_iter_events"] = [e for e in drift if e.get("iteration") == it and e is not ev]
         t["vetoed_change_elsewhere"] = {
@@ -365,12 +441,17 @@ def _v1_trails(path: str, rep: dict, art: Artifacts) -> dict:
         it = iters.get(f["_ref"])
         c = _num(f.get("confidence")) or 0.0
         hist, outs = outcome_of(it, (history.get(it) or {}).get("change")) if it is not None else (None, [])
-        miss = {"credence.before_after", "source.iter", "source.fact_ref"} | ({"evidence.iter"} if it is None else set())
+        u = update_of(f)
+        miss = ({"evidence.iter"} if it is None else set()) | ({"credence.before_after"} if "before" not in u else set())
+        if not src_linked:
+            miss |= {"source.iter", "source.fact_ref"}
+        if outs and not outcome_iters:
+            miss.add("outcome.iter")
         cred_updates.append({
             "loop": "v1", "run_id": run_id, "evidence": _evidence_view(f, run_id, iters),
-            "sources": source_rows(change, _urls(f.get("urls"))),
-            "assumption": f"{task}:{change}", "direction": "+" if f["stance"] == "support" else "-",
-            "weight": round(FACT_CHECK_WEIGHT * c, 4), "rule": "weight = 0.5 x confidence (loop.Researcher._critic_allows)",
+            "sources": source_rows(change, _urls(f.get("urls")), [f.get("id")]),
+            "assumption": f"{task}:{change}", "direction": u["direction"],
+            "weight": u["weight"], "rule": u["rule"], "before": u.get("before"), "after": u.get("after"),
             "final": credence(change)["final"], "iter": it,
             "vetoed": (it, change) in vetoed if it is not None else None,
             "experiment_at_iter": hist, "experiment_outcomes": outs,
@@ -404,6 +485,15 @@ def _v2_trails(path: str, rep: dict, art: Artifacts) -> dict:
     run_missing = {"v2.fact_check"}
     if not any(f.get("run") == run_id for f in art.facts):
         run_missing.add("shared.memory_file")
+    # discovery events with their iteration and query (absent in runs from before they were recorded)
+    discoveries = [e for e in log if e.get("event") == "web_ideas" and "iter" in e]
+    outcome_moves = any("finding" in f for f in outcomes)
+
+    def discovered(idea_id) -> List[dict]:
+        return [{"iter": e["iter"], "query": e.get("query"),
+                 "first": any(w.get("id") == idea_id for w in e.get("ideas") or [])}
+                for e in discoveries if any(w.get("id") == idea_id for w in e.get("ideas") or [])
+                or idea_id in (e.get("rediscovered") or [])]
 
     def decisions_about(text: str) -> List[dict]:
         out = []
@@ -420,6 +510,8 @@ def _v2_trails(path: str, rep: dict, art: Artifacts) -> dict:
         return out
 
     def finding_outcomes(fd: dict) -> List[dict]:
+        if outcome_moves:   # OUTCOME records its finding id: an exact join
+            return [_outcome_view(f) for f in outcomes if f.get("finding") == fd.get("id")]
         return [_outcome_view(f) for f in outcomes if f.get("change") == fd.get("category")
                 and f.get("status") == fd.get("status") and _num(f.get("delta")) is not None
                 and abs(_num(f.get("delta")) - round(fd.get("delta", 0.0), 4)) < 1e-6]
@@ -429,15 +521,28 @@ def _v2_trails(path: str, rep: dict, art: Artifacts) -> dict:
         text = _design_text(move, idea)
         miss = set()
         url = idea.get("source_url")
+        found = discovered(idea.get("id")) if idea.get("id") else []
+        first = next((d for d in found if d["first"]), None)
         src = [s for s in sources if url and s.get("url") == url]
+        join = "url"
+        if first is not None and any("iter" in s for s in src):
+            # exact: the source returned by the search that first produced this idea
+            src = [s for s in src if s.get("iter") == first["iter"] and s.get("query") == first["query"]]
+            join = "url+iter+query"
         t = {"loop": "v2", "run_id": run_id, "report": path, "kind": kind, "iter": it, "move": move,
              "idea": {k: idea.get(k) for k in ("id", "text", "category", "origin", "source_url", "p_validated")}}
+        if found:
+            t["idea"]["discovered"] = found
         if url:
             t["sources"] = ([{"url": url, "title": src[0].get("title"), "published": src[0].get("published"),
-                              "used_for": src[0].get("used_for"), "linked": True, "times_returned": len(src)}]
+                              "used_for": src[0].get("used_for"), "linked": True, "times_returned": len(src),
+                              "join": join, "iter": src[0].get("iter"), "query": src[0].get("query")}]
                             if src else [{"url": url, "linked": False,
                                           "missing": "the idea's source_url is not among this run's recorded sources"}])
-            miss |= {"web_ideas.iter", "source.query"}
+            if first is None:
+                miss.add("web_ideas.iter")
+            if not any("query" in s for s in src):
+                miss.add("source.query")
         else:
             t["sources"] = []
             t["source_link"] = f"none: origin '{idea.get('origin')}' (not from Exa)"
@@ -451,7 +556,7 @@ def _v2_trails(path: str, rep: dict, art: Artifacts) -> dict:
         t["findings"] = [{k: f.get(k) for k in ("id", "iter", "status", "delta", "p_better", "validity", "n")}
                          for f in fds]
         t["outcomes"] = [o for f in fds for o in finding_outcomes(f)]
-        if fds and outcomes:
+        if fds and outcomes and not outcome_moves:
             miss.add("v2.outcome_move")
         t["decisions"] = decisions_about(text)
         t["in_best_design"] = any(b.get("id") == idea.get("id") for b in rep.get("best_design") or [])
@@ -470,13 +575,14 @@ def _v2_trails(path: str, rep: dict, art: Artifacts) -> dict:
                                      for f in findings if f.get("iter") == e.get("iter")]
             trails.append(t)
     exa: Dict[str, dict] = {}
-    for w in rep.get("web_ideas") or []:   # the same idea can be discovered by several searches
+    for w in rep.get("web_ideas") or []:   # older runs list an idea once per search that returned it
         if w.get("origin") == "exa":
             exa.setdefault(w.get("id") or w.get("text"), {**w, "times_discovered": 0})["times_discovered"] += 1
     source_trails = []
     for w in exa.values():
         t = idea_trail(w, "exa_idea")
-        t["idea"]["times_discovered"] = w["times_discovered"]
+        # runs that deduplicate ideas at discovery log each later return as `rediscovered`
+        t["idea"]["times_discovered"] = len(t["idea"]["discovered"]) if t["idea"].get("discovered") else w["times_discovered"]
         source_trails.append(t)
     return {"run_id": run_id, "loop": "v2", "report": path, "task": rep.get("scenario"),
             "code_version": rep.get("code_version"), "offline": _offline(rep), "n_sources": len(sources),
@@ -573,7 +679,7 @@ def render_markdown(data: dict) -> str:
             if cr:
                 L.append(f"- Assumption `{cr['assumption']}`: " + ("; ".join(
                     f"{u['direction']}{u['weight']} from `{u['evidence']}` (iter {u['iter'] if u['iter'] is not None else 'MISSING'})"
-                    for u in cr["updates"]) or "no fact-check update in this run")
+                    + _before_after(u) for u in cr["updates"]) or "no fact-check update in this run")
                     + (f"; final credence {cr['final']['credence']} ({cr['final']['note']})" if cr.get("final") else ""))
             L += ["", "**4. What ran instead.**"]
             ri = t.get("ran_instead")
@@ -602,7 +708,7 @@ def render_markdown(data: dict) -> str:
             e = u["evidence"]
             L += ["", f"### Credence update {k}: `{u['assumption']}` {u['direction']}{u['weight']}", ""]
             L += [_src_line(s) for s in u["sources"]] + [_ev_line(e)]
-            L.append(f"- Rule: {u['rule']}; vetoed this iteration: {u['vetoed']}; "
+            L.append(f"- Rule: {u['rule']}{_before_after(u)}; vetoed this iteration: {u['vetoed']}; "
                      f"final credence: {u['final']['credence'] if u.get('final') else 'not found (no assumptions.json)'}.")
             x = u.get("experiment_at_iter")
             L.append(f"- Experiment at iter {u['iter']}: `{x['change']}`, delta {x['delta']:+.4f}, accepted {x['accepted']}."
@@ -624,6 +730,11 @@ def render_markdown(data: dict) -> str:
     L += ["", "## Fields the loop does not record", ""]
     L += [f"- `{m['field']}` ({m['where']}): {m['why']}" for m in data["missing_fields"]] or ["- none"]
     return "\n".join(L) + "\n"
+
+
+def _before_after(u: dict) -> str:
+    b, a = u.get("before"), u.get("after")
+    return f", credence {b['credence']} -> {a['credence']}" if b and a else ""
 
 
 def _bid_text(b: dict) -> str:
@@ -717,7 +828,7 @@ def _veto_html(t: dict) -> str:
     if cr:
         body.append(f"assumption <code>{_e(cr['assumption'])}</code>: " + (", ".join(
             f"{_e(u['direction'])}{_e(u['weight'])} (iter {_e(u['iter'] if u['iter'] is not None else 'MISSING')})"
-            for u in cr["updates"]) or "no fact-check update this run")
+            + _e(_before_after(u)) for u in cr["updates"]) or "no fact-check update this run")
             + (f"; final credence {_e(cr['final']['credence'])}" if cr.get("final") else ""))
     steps.append(_li("3. Veto / credence change", True, body))
     ri, d = t.get("ran_instead"), t.get("decision")
@@ -753,7 +864,7 @@ def _update_html(u: dict) -> str:
     steps = [_li("1. Exa source", any(s.get("linked") for s in u["sources"]), [_src_html(s) for s in u["sources"]]),
              _li("2. Evidence fact", True, [_ev_html(u["evidence"])]),
              _li("3. Credence change", True, [f"<code>{_e(u['assumption'])}</code> {_e(u['direction'])}{_e(u['weight'])}; "
-                                             f"{_e(u['rule'])}" + (f"; final credence {_e(u['final']['credence'])}"
+                                             f"{_e(u['rule'])}{_e(_before_after(u))}" + (f"; final credence {_e(u['final']['credence'])}"
                                                                     if u.get("final") else "")]),
              _li("4. Experiment at that iteration", bool(x),
                  [f"<code>{_e(x['change'])}</code> delta {x['delta']:+.4f}, accepted {_e(x['accepted'])}"]

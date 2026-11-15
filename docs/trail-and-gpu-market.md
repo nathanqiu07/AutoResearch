@@ -33,42 +33,42 @@ writes `<memory>/shared.jsonl`, and its report already contains its decision rec
 
 The HTML page is static and self-contained: inline CSS, no scripts, no external assets.
 
-**Joins.** Every link uses only keys the run recorded:
+**Joins.** Every link uses only keys the run recorded. Runs written by the current loops record exact link
+fields; reports and facts from earlier runs lack them, and the trail falls back to the older joins (right
+column), listing each fallback as a missing field.
 
-| Link | Join key | Notes |
+| Link | Exact key (current runs) | Fallback (older runs) |
 |---|---|---|
-| Source to EVIDENCE | `Source.detail == EVIDENCE.change`, URL in `EVIDENCE.urls`, `used_for == fact_check` | A cited URL with no Source record shows as MISSING |
-| EVIDENCE iteration | Write order in a local JSONL: each v1 iteration writes its EVIDENCE before its one OUTCOME | Not available from past.dev recall, so it shows as MISSING |
-| EVIDENCE to veto | `web_refuted` detail `"<change> refuted by <urls>"`; the fact with `stance=refute` and exactly those URLs is marked `cited_by_veto` | The other EVIDENCE facts for the change are listed with stance counts |
-| Credence change | Assumption `<task>:<change>`, weight `0.5 x confidence` (the rule in `loop.Researcher._critic_allows`) | The final credence comes from `assumptions.json` if present, labelled as covering the whole run |
-| What ran instead | v1 decision record and history entry at the veto's iteration | `veto_overridden` means everything was gated and the loop fell back to the vetoed change |
-| OUTCOME | `(run, change, round(delta, 4))` against the history entry | |
-| v2 Exa idea | `web_ideas[].source_url` against `sources[].url`; bids by `add:<idea id>`; findings by move; OUTCOME by `(run, category, delta, status)`; decisions by design text | |
+| Source to EVIDENCE | `Source.fact_id == EVIDENCE.id` (and `Source.iteration`, `Source.query`) | `Source.detail == EVIDENCE.change`, URL in `EVIDENCE.urls`, `used_for == fact_check` |
+| EVIDENCE iteration | `EVIDENCE.iter` | Write order in a local JSONL (each v1 iteration writes its EVIDENCE before its one OUTCOME); none from past.dev recall |
+| EVIDENCE to veto | the `web_refuted` drift event's `evidence` list: every fact the critic weighed (id, run, iter, stance, confidence, URLs, `counted`), with `n_refute`, `n_support`, `refute_confidence` | detail `"<change> refuted by <urls>"`: the refuting fact with exactly those URLs |
+| Veto threshold | report `config.loop.refute_confidence` (also `config.scout`, `config.drift`) | none |
+| Credence change | report `credence_log` (alpha/beta and credence before and after, per EVIDENCE id) | Assumption `<task>:<change>`, weight `0.5 x confidence` (the loop's rule); final credence from `assumptions.json` |
+| What ran instead | v1 decision record (options carry `vetoed`: the veto kind, or null; the record has `fallback`) and history entry at the veto's iteration | the same records without `vetoed` |
+| OUTCOME | v1: `(run, change, iter)`; v2: `OUTCOME.finding == finding id` (also `iter`, `move`) | v1 `(run, change, round(delta, 4))`; v2 `(run, category, delta, status)` |
+| v2 Exa idea | the `web_ideas` event (`iter`, `query`, new `ideas`, `rediscovered` ids) and `sources[]` with the same `iter` and `query` | `web_ideas[].source_url` against `sources[].url` |
+
+`veto_overridden` means everything was gated and the loop fell back to the vetoed change. In v2, bids join by
+`add:<idea id>`, findings by move and decisions by design text, in every run.
 
 The v2 loop has no fact-check step. It writes no EVIDENCE, so no web-based veto exists in v2 runs. The
 trail reports this (`v2.fact_check`) and instead traces each `exa`-origin idea to its bids, the critic's
 bids against it, its findings, OUTCOME facts, D1/D3/D5 records and the final design. The only v2 veto,
-`gated_refuted_category`, comes from memory and is traced the same way.
+`gated_refuted_category`, comes from memory and is traced the same way. The v2 loop keeps each Exa idea
+once per run, by id: a later search that returns it again is logged in that `web_ideas` event's
+`rediscovered` list (the trail counts these as `times_discovered`), so one idea never becomes two
+candidates with the same design key.
 
-**Fields the loops do not record.** Each trail lists these links as missing, and the page ends with this
-table. Adding the fields would close the links. Those files are owned by other workstreams, so the
-changes are not made here:
-
-| Field | Where it would go | Effect today |
-|---|---|---|
-| `source.iter`, `source.fact_ref` | `exa.Source` (iteration, id of the EVIDENCE fact it fed) | Sources join EVIDENCE on (change, URL) only, so repeated checks of one change cannot be told apart |
-| `evidence.iter` | EVIDENCE fact in `loop._critic_allows` | Recovered from write order only for a local JSONL |
-| `veto.evidence_refs` | `DriftEvent("web_refuted")` | The veto keeps only the first refuting fact's URLs, not the facts it weighed or their counts |
-| `veto.refute_confidence` | v1 `RunReport` (no config) | Which refutations counted toward the veto cannot be checked |
-| `credence.before_after` | `ResearchMemory.update` | Only the final alpha/beta are saved |
-| `outcome.iter` | v1 OUTCOME fact | Joined to history on delta |
-| `decision.vetoed` | v1 `record_decision` | Ranked options do not say which ones were vetoed |
-| `web_ideas.iter`, `source.query` | v2 `_discover` | An idea joins its source by URL only |
-| `v2.outcome_move` | v2 OUTCOME fact (`change=<category>`) | Joined to the finding on (category, delta, status) |
+**Fields older runs do not record.** For runs written before the link fields were added, each trail lists
+the fallback links as missing, and the page ends with a table of them (`source.iter`, `source.fact_ref`,
+`evidence.iter`, `veto.evidence_refs`, `veto.refute_confidence`, `credence.before_after`, `outcome.iter`,
+`decision.vetoed`, `web_ideas.iter`, `source.query`, `v2.outcome_move`). A current run lists none of them;
+only `v2.fact_check` remains for every v2 run, because the v2 loop has no fact-check step.
 
 **Committed results today.** No committed run under `results/` records a web veto or any Exa source:
-every report's `sources` is empty or absent. So `demo.py --trail` reports the
-fifth moment as MISSING. A live run with `EXA_API_KEY` and shared memory on is needed to fill it.
+every report's `sources` is empty or absent, and all were written before the link fields. So
+`demo.py --trail` reports the fifth moment as MISSING. A live run with `EXA_API_KEY` and shared memory on
+is needed to fill it.
 
 ## 2. Market bids in GPU time (Modal + past.dev)
 
@@ -135,17 +135,34 @@ The checks are:
 For wallets carried over from earlier runs, use `--carried-over` (`initial=None`), which takes each
 agent's first balance as given. A local JSONL is read in file order, which is write order. past.dev
 `recall` order is not, so only the per-fact checks apply there (`ordered=False`). Withdrawals write no
-fact, so a BID with no SETTLE is not counted as an error.
+fact, so a BID with no SETTLE is not counted as an error, and in write order a SETTLE is paired with the
+agent's latest BID on that candidate (an earlier one was withdrawn; the v2 loop re-bids on an unfunded
+candidate in a later iteration).
 
-**Config wiring.** There is no CLI flag yet. `grid.py` passes pre-registration options through as
-`research` CLI flags, and `cli.py` builds `Market(Wallets(...))`. GPU bidding needs these changes, which
-belong to the CLI/loop owners and are not made here:
+**In the v2 loop.** `autoresearch research --allocation market --gpu-budget-s 3600 --target-llm openai-compat
+...` gives every agent wallet 3600 GPU-seconds (`Wallets(..., gpu_initial=3600)`). A pre-registration sets it
+with `"gpu_budget_s": 3600` (grid.py maps it to the flag like any other `research` option). The CLI refuses
+the flag without `--allocation market`, with `--setting agentic` (the Petri harness runs the target in its
+own process, where this run cannot meter it), or when the target is not GPU-metered (no `llm.GpuMeter`).
+Without the flag, the run is unchanged (same wallets file, ledger, facts and report).
 
-1. `cli.py research`: add `--gpu-budget-s`, giving `Wallets(..., gpu_initial=...)`. After that a
-   pre-registration can set `"gpu_budget_s"` through the existing option mapping in `grid.py`.
-2. `research/loop.py`: when the dev target is `OpenAICompatLLM`, place bids with `gpu_s=`, for example
-   from each agent's expected samples x seconds per sample. Wrap each candidate's `_measure` in
-   `GpuUsage.measure(move)`, and pass `usage.pop(...)` to `market.settle(..., gpu_seconds=...)` in `_settle`.
+With a GPU budget the loop (`research/loop.py`):
+
+* sizes each **supporting** bid's `gpu_s` as the GPU time the design will use if it is measured in full,
+  at the GPU-seconds per sample observed so far: `samples` (x items in multi-item mode) x the dev
+  target's rate, plus `screen_samples` x the screening target's rate when screening runs on a separate
+  target (before a screening sample is seen: dev rate x `screen_cost`). The baseline is measured first,
+  so the rate is known before the first bid. The request is capped at the agent's free GPU balance
+  (`Market.gpu_available`); an agent with none left asks for the full amount, the market refuses it, and
+  the agent cannot fund the design. The critic's bids against never ask for GPU time. If no GPU time has
+  been observed (the target is not metered), bids stay dollar-only;
+* wraps each candidate's screening, full measurement and, when it is accepted, its confirmation in
+  `GpuUsage.measure(move)`, so a design is charged everything spent on it (confirmation is not part of
+  the request);
+* passes the measured seconds to `market.settle(..., gpu_seconds=...)`. A candidate whose bids are all
+  withdrawn (not funded, or still deferred at the end) is not settled: its measured time moves to
+  `report["market"]["gpu"]["unsettled_gpu_s"]`, so a later re-test starts from zero. The report also gives
+  `gpu_initial`, `budget_gpu_s` (all GPU time this run, including the baseline) and `gpu_s_per_sample`.
 
 ## Tests
 
@@ -155,6 +172,10 @@ python3 -m unittest discover -s tests -t .
 ```
 
 `tests/test_trail.py` runs the real v1 loop (with a stand-in fact-checking scout and a local shared
-memory) and the real v2 loop (with an Exa-origin idea), then checks each link of the trail, the
-missing-field reporting, the HTML and the demo's fifth moment. The GPU and audit tests in
-`tests/test_market.py` use a fake-clock `GpuMeter`, so they measure no real GPU time.
+memory) and the real v2 loop (with an Exa-origin idea), then checks that every link of the trail is
+joined on its exact key with nothing missing, that the same artifacts stripped of the link fields fall
+back to the older joins and list them as missing, the HTML and the demo's fifth moment.
+`tests/test_market_loop.py` runs the v2 loop with a GPU budget and a fake GPU-metered target (a
+fake-clock `GpuMeter`), checks that BID/SETTLE facts carry the requested and measured GPU-seconds and that
+`python3 -m autoresearch.research.market audit` passes on the ledger, and that a run without a budget is
+unchanged. The GPU and audit tests measure no real GPU time.

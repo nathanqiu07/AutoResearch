@@ -350,6 +350,23 @@ class TestLedgerAudit(unittest.TestCase):
                 self.assertFalse(rep["ok"], key)
                 self.assertIn(check, {p["check"] for p in rep["problems"]}, (key, rep["problems"][:3]))
 
+    def test_a_withdrawn_bid_then_a_new_bid_on_the_same_candidate(self):
+        """The v2 loop withdraws unfunded bids and bids again next iteration with a
+        stake from the new balance; withdrawals write no fact, so the settled bid
+        is the latest BID, not the first."""
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "s.jsonl")
+            m = Market(Wallets(os.path.join(d, "w.json"), gpu_initial=100), shared=LocalSharedMemory(path), run_id="r")
+            m.bid("a", "x", 0.7, gpu_s=10)
+            m.bid("a", "y", 0.9, gpu_s=10)
+            m.settle({"y": True}, gpu_seconds={"y": 4.0})   # the balance, so the next stake, changes
+            m.withdraw()                                     # x was not funded
+            m.bid("a", "x", 0.6, gpu_s=20)
+            m.settle({"x": False}, gpu_seconds={"x": 7.0})
+            rep = audit_ledger(ledger_facts(path)[0], gpu_initial=100, wallets=m.wallets.summary())
+            self.assertTrue(rep["ok"], rep["problems"])
+            self.assertEqual(rep["agents"]["a"]["n_bids"], 3)
+
     def test_settle_without_bid_and_wallet_mismatch(self):
         from autoresearch.integrations.shared_memory import format_fact
         f = parse_fact(format_fact("SETTLE", agent="a", candidate="x", outcome=True, p=0.7, payoff=0.3, balance=100.3,

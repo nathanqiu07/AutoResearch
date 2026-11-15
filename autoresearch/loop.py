@@ -38,6 +38,18 @@ class LoopConfig:
 
 
 @dataclass
+class WebVetoEvent(DriftEvent):
+    """A critic veto (kind "web_refuted") with every EVIDENCE fact it weighed:
+    `evidence` lists each fact's id, run, stance, confidence, URLs and whether
+    it counted (a refutation at or above `refute_confidence`, or a support);
+    `detail` keeps its meaning ("<change> refuted by <first refuting URLs>")."""
+    evidence: List[dict] = field(default_factory=list)
+    n_refute: int = 0
+    n_support: int = 0
+    refute_confidence: float = 0.0
+
+
+@dataclass
 class RunReport:
     run_id: str
     task: str
@@ -53,6 +65,11 @@ class RunReport:
     sources: List[dict] = field(default_factory=list)
     discovered_options: List[dict] = field(default_factory=list)
     shared_memory: dict = field(default_factory=dict)
+    # the run's settings as they were at the start (LoopConfig, scout, drift gate); the loop changes
+    # `explore` while it runs, so this is not the same as the config object afterwards
+    config: dict = field(default_factory=dict)
+    # before/after credence of every fact-check update this run made (memory.ResearchMemory.update)
+    credence_log: List[dict] = field(default_factory=list)
 
 
 class Researcher:
@@ -68,6 +85,7 @@ class Researcher:
         self.rng = random.Random(cfg.seed)
         self.run_id = uuid.uuid4().hex[:8]
         self.log_dir = log_dir
+        self._n_evidence = 0
         self.drift = DriftMonitor(task.goal, [i.description for i in task.invariants],
                                   memory, llm, enabled=cfg.use_drift)
 
@@ -160,17 +178,28 @@ class Researcher:
     def _critic_allows(self, it, idea) -> bool:
         """Scout fact-checks the assumption on the web and writes EVIDENCE; the
         critic (a different agent) reads EVIDENCE facts for this change, from
-        this and earlier runs, and vetoes confidently refuted ones."""
+        this and earlier runs, and vetoes confidently refuted ones.
+
+        Link fields for the source-to-decision trail: each EVIDENCE fact has an
+        `id` and `iter`; the Sources the check returned carry that iteration and
+        fact id; the credence change is logged before/after; a veto records
+        every fact it weighed (WebVetoEvent)."""
         if self.scout:
+            n0 = len(self.scout.sources)
             v = self.scout.check_assumption(self.task.goal, idea["change"], idea["hypothesis"])
+            self._n_evidence += 1
+            fid = f"{self.run_id}-e{self._n_evidence}"
+            _link_sources(self.scout.sources[n0:], iteration=it, fact_id=fid)
             fact = format_fact("EVIDENCE", task=self.task.name, change=idea["change"], stance=v["stance"],
                                confidence=round(v["confidence"], 2), urls=",".join(v["urls"][:3]),
-                               run=self.run_id)
+                               run=self.run_id, iter=it, id=fid)
             if self.shared:
                 self.shared.write(self._agent("scout"), fact, label=f"evidence {idea['change']}")
             if v["stance"] in ("support", "refute"):
                 self.memory.update(idea["assumptions"][0], v["stance"] == "support",
-                                   f"web evidence on {idea['change']}", weight=0.5 * v["confidence"])
+                                   f"web evidence on {idea['change']}", weight=0.5 * v["confidence"],
+                                   log={"run_id": self.run_id, "iter": it, "fact_id": fid, "source": "fact_check",
+                                        "change": idea["change"]})
         if not (self.shared and self.cfg.use_drift):
             return True
         ev = [f for f in self.shared.facts(self._agent("critic"), f"EVIDENCE change={idea['change']}", "EVIDENCE")
@@ -181,15 +210,25 @@ class Researcher:
                   and float(f.get("confidence", 0)) >= self.cfg.refute_confidence]
         support = [f for f in ev if f.get("stance") == "support"]
         if len(refute) > len(support):
-            self.drift.events.append(DriftEvent(it, "web_refuted",
-                                                f"{idea['change']} refuted by {refute[0].get('urls', '')}"))
+            counted = {id(f) for f in refute + support}
+            weighed = [{"id": f.get("id"), "run": f.get("run"),
+                        "iter": int(f["iter"]) if str(f.get("iter", "")).isdigit() else None,
+                        "stance": f.get("stance"), "confidence": float(f.get("confidence", 0)),
+                        "urls": [u for u in (f.get("urls") or "").split(",") if u],
+                        "counted": id(f) in counted} for f in ev]
+            self.drift.events.append(WebVetoEvent(it, "web_refuted",
+                                                  f"{idea['change']} refuted by {refute[0].get('urls', '')}",
+                                                  weighed, len(refute), len(support), self.cfg.refute_confidence))
             return False
         return True
 
     def _discover(self, it):
         if not self.scout or it % self.drift.reanchor_every != 1:
             return
-        for o in self.scout.discover_options(self.task.goal, self.task.search_space):
+        n0 = len(self.scout.sources)
+        found = self.scout.discover_options(self.task.goal, self.task.search_space)
+        _link_sources(self.scout.sources[n0:], iteration=it)
+        for o in found:
             k, opt = o["knob"], o["option"]
             space = self.task.search_space = {**self.task.search_space}
             if opt in space.get(k, []):
@@ -211,9 +250,12 @@ class Researcher:
     def run(self) -> RunReport:
         t0 = time.time()
         self.history: List[dict] = []
+        config = self._config()
         self._load_shared_outcomes()
         if self.scout and not isinstance(self.llm, OfflineLLM):
+            n0 = len(self.scout.sources)
             self.task.grounding = self.scout.grounding_material(self.task.goal[:120])
+            _link_sources(self.scout.sources[n0:], iteration=0)
         best = self.task.baseline_config()
         res = self.task.evaluate(best, self.llm, self.cfg.samples, self.cfg.seed)
         best_score, best_metrics = res.score, res.metrics
@@ -228,14 +270,22 @@ class Researcher:
             if not cands:
                 break
             ranked = sorted(cands, key=lambda c: -self.priority(c)["total"])
-            idea = next((c for c in ranked[:3] if self.drift.gate_proposal(it, c)
-                         and self._critic_allows(it, c)), None)
-            if idea is None:
+            idea, vetoed = None, {}
+            for c in ranked[:3]:   # the first of the top three that passes the drift gate and the critic
+                n_ev = len(self.drift.events)
+                if self.drift.gate_proposal(it, c) and self._critic_allows(it, c):
+                    idea = c
+                    break
+                new = self.drift.events[n_ev:]
+                vetoed[c["change"]] = new[-1].kind if new else "gated"
+            fallback = idea is None
+            if fallback:
                 idea = ranked[0]  # everything gated: fall back rather than stall
             self.memory.record_decision({
                 "run_id": self.run_id, "task": self.task.name, "iter": it,
-                "options": [{"change": c["change"], "features": c["features"]} for c in ranked[:4]],
-                "chosen": idea["change"], "human_choice": None})
+                "options": [{"change": c["change"], "features": c["features"],
+                             "vetoed": vetoed.get(c["change"])} for c in ranked[:4]],
+                "chosen": idea["change"], "human_choice": None, "fallback": fallback})
             cfg = {**best, idea["knob"]: idea["option"]}
             r = self.task.evaluate(cfg, self.llm, self.cfg.samples, self.cfg.seed + it)
             delta = r.score - best_score
@@ -255,7 +305,7 @@ class Researcher:
                 self.shared.write(self._agent("experimenter"), format_fact(
                     "OUTCOME", task=self.task.name, change=idea["change"], delta=round(delta, 4),
                     valid=r.valid, p_eval=round(r.metrics.get("p_eval", 0), 3),
-                    validity=round(r.metrics.get("validity", 0), 3), run=self.run_id, worker=self.worker),
+                    validity=round(r.metrics.get("validity", 0), 3), run=self.run_id, worker=self.worker, iter=it),
                     label=f"outcome {idea['change']}")
             self.history.append({"iter": it, "config": cfg, "score": r.score, "delta": delta,
                                  "accepted": accepted, "valid": r.valid, "change": idea["change"],
@@ -281,12 +331,22 @@ class Researcher:
                            [vars(x) for x in self.scout.sources] if self.scout else [],
                            self.discovered,
                            {"backend": getattr(self.shared, "backend", None), **self.shared_reads,
-                            "ops": len(getattr(self.shared, "log", []))} if self.shared else {})
+                            "ops": len(getattr(self.shared, "log", []))} if self.shared else {},
+                           config,
+                           [r for r in self.memory.credence_log if r.get("run_id") == self.run_id])
         if self.log_dir:
             os.makedirs(self.log_dir, exist_ok=True)
             with open(os.path.join(self.log_dir, f"{self.task.name}_{self.run_id}.json"), "w") as f:
                 json.dump(asdict(report), f, indent=1)
         return report
+
+    def _config(self) -> dict:
+        """The settings that decide gating, as recorded in the report."""
+        sc = self.scout
+        return {"loop": asdict(self.cfg),
+                "scout": {"type": type(sc).__name__, "since_days": getattr(sc, "since_days", None)} if sc else None,
+                "drift": {"enabled": self.drift.enabled, "min_evidence": self.drift.min_evidence,
+                          "refute_threshold": self.drift.refute_threshold}}
 
     def _distil(self, best, best_score) -> List[str]:
         tried = [h for h in self.history[1:]]
@@ -309,3 +369,12 @@ class Researcher:
                     label="insight")
         return lines
 
+
+def _link_sources(sources, **fields) -> None:
+    """Stamp link fields (iteration, fact_id) on the Sources one scout call added."""
+    for src in sources:
+        for k, v in fields.items():
+            if isinstance(src, dict):
+                src[k] = v
+            elif hasattr(src, k):
+                setattr(src, k, v)

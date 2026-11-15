@@ -27,6 +27,7 @@ class ResearchMemory:
         self.assumptions: Dict[str, dict] = {}
         self.insights: List[dict] = []
         self.decisions: List[dict] = []
+        self.credence_log: List[dict] = []   # opt-in per-update before/after records (update(..., log=...))
         if root:
             os.makedirs(root, exist_ok=True)
             self.experiments = self._load_jsonl("experiments.jsonl")
@@ -71,11 +72,26 @@ class ResearchMemory:
         a = self.assumptions.get(key)
         return a["alpha"] + a["beta"] - 2 if a else 0.0
 
-    def update(self, key: str, supported: bool, statement: str = "", weight: float = 1.0):
+    def update(self, key: str, supported: bool, statement: str = "", weight: float = 1.0,
+               log: Optional[dict] = None) -> dict:
+        """Add `weight` of evidence for (supported) or against the assumption.
+        Returns the change: alpha/beta and credence before and after. With
+        `log` (context such as run, iteration, fact id), the change is also
+        appended to `credence_log`, so a caller can record exactly what one
+        piece of evidence did; without it nothing is kept beyond the totals."""
         a = self._get(key, statement)
         if statement and not a["statement"]:
             a["statement"] = statement
+        before = (a["alpha"], a["beta"])
         a["alpha" if supported else "beta"] += weight
+        change = {"key": key, "supported": bool(supported), "weight": weight,
+                  "alpha_before": before[0], "beta_before": before[1],
+                  "credence_before": before[0] / (before[0] + before[1]),
+                  "alpha_after": a["alpha"], "beta_after": a["beta"],
+                  "credence_after": a["alpha"] / (a["alpha"] + a["beta"])}
+        if log is not None:
+            self.credence_log.append({**log, **change})
+        return change
 
     def expected_gain(self, task, knob, option, features: Dict[str, float]) -> float:
         """Memory's prior on whether a change helps, in [-0.5, 0.5]."""
