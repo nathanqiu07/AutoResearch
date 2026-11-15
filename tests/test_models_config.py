@@ -2,7 +2,7 @@
 import unittest
 
 from autoresearch.llm import split_spec
-from autoresearch.research.models_config import config_warnings, load_models_config, research_args
+from autoresearch.research.models_config import check_roles, config_warnings, load_models_config, research_args
 from autoresearch.research.petri_measure import spec_to_inspect
 
 
@@ -16,7 +16,11 @@ class ModelsConfigTest(unittest.TestCase):
         self.assertEqual(r["heldout_targets"], ["anthropic:claude-sonnet-4-5+thinking", "openai:gpt-5+thinking"])
         self.assertEqual(r["dev_judge"], "anthropic:claude-haiku-4-5")
         self.assertEqual(r["heldout_judges"], ["openai:gpt-5.1"])
-        self.assertEqual(config_warnings(self.cfg), [])
+        self.assertEqual(r["generator"], "openai:gpt-6-luna")
+        res = check_roles(self.cfg)
+        self.assertEqual(res["failed"], [])
+        self.assertEqual(len(res["waived"]), 1)                    # Nathan's named waiver, reported, not silent
+        self.assertIn("WAIVED [heldout_judge_generator_family]", res["waived"][0])
         for spec in [r["generator"], r["dev_target"], r["dev_judge"]] + r["heldout_targets"] + r["heldout_judges"]:
             self.assertIsNotNone(split_spec(spec)[0], f"{spec} must name a backend")
 
@@ -34,6 +38,10 @@ class ModelsConfigTest(unittest.TestCase):
         self.assertEqual(fin[fin.index("--heldout-target") + 1], "openai:gpt-5+thinking")
         with self.assertRaises(ValueError):
             research_args(self.cfg, "final", "openai:gpt-4")
+
+    def test_waiver_needs_its_check_id(self):
+        cfg = dict(self.cfg, waivers=[])
+        self.assertTrue(any("shares the generator's family" in w for w in config_warnings(cfg)))
 
     def test_warnings(self):
         cfg = {"roles": {"generator": "anthropic:claude-x", "dev_target": "claude-cli:haiku",

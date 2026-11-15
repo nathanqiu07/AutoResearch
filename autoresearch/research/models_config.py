@@ -29,31 +29,51 @@ def _list(x) -> List[str]:
     return list(x) if isinstance(x, list) else ([x] if x else [])
 
 
+def check_roles(cfg: Dict) -> Dict[str, List[str]]:
+    """{"failed": [...], "waived": [...]}: each problem from `config_warnings`
+    whose check id is listed in cfg["waivers"] (with a reason) is reported as
+    WAIVED instead of failing; the check itself always runs."""
+    waivers = {w["check"]: w for w in cfg.get("waivers", []) if isinstance(w, dict) and w.get("check")}
+    out = {"failed": [], "waived": []}
+    for check_id, msg in _problems(cfg):
+        if check_id in waivers:
+            w = waivers[check_id]
+            out["waived"].append(f"WAIVED [{check_id}] {msg} (by {w.get('by', '?')}: {w.get('reason', 'no reason')})")
+        else:
+            out["failed"].append(msg)
+    return out
+
+
 def config_warnings(cfg: Dict) -> List[str]:
+    """Problems that are not waived (see check_roles)."""
+    return check_roles(cfg)["failed"]
+
+
+def _problems(cfg: Dict):
     """Missing roles; held-out judges from the generator's family; held-out
     targets without a cross-family judge; targets running through claude-cli
     (the CLI passes harness context to the model, a confound for eval awareness).
     Petri's own judge is a cross-check only, so its family is not checked."""
     roles = cfg.get("roles", {})
-    out = [f"configs/models.json: role {r!r} missing" for r in ROLES if not roles.get(r)]
+    out = [("missing_role", f"configs/models.json: role {r!r} missing") for r in ROLES if not roles.get(r)]
     gen = roles.get("generator", "")
     gen_fam = model_family(gen) if gen else "other"
     judges = _list(roles.get("heldout_judges"))
     for j in judges:
         if gen_fam != "other" and model_family(j) == gen_fam:
-            out.append(f"held-out judge {j} shares the generator's family ({gen_fam})")
+            out.append(("heldout_judge_generator_family", f"held-out judge {j} shares the generator's family ({gen_fam})"))
     for t in [roles.get("dev_target", "")] + _list(roles.get("heldout_targets")):
         if t.startswith("claude-cli:"):
-            out.append(f"target {t} runs through claude-cli: use an API backend (harness-context confound)")
+            out.append(("target_on_claude_cli", f"target {t} runs through claude-cli: use an API backend (harness-context confound)"))
     scorers = judges + _list(roles.get("dev_judge"))   # the headline judge is the first cross-family one
     for t in _list(roles.get("heldout_targets")):
         if scorers and all(model_family(j) == model_family(t) for j in scorers):
-            out.append(f"held-out target {t} has no judge from another family (no headline judge)")
+            out.append(("no_headline_judge", f"held-out target {t} has no judge from another family (no headline judge)"))
     for mode in ("dev", "final"):
         p = cfg.get("petri", {}).get(mode, {})
         for r in ("targets" if mode == "final" else "target", "auditor", "judge"):
             if not p.get(r):
-                out.append(f"configs/models.json: petri.{mode}.{r} missing")
+                out.append(("missing_role", f"configs/models.json: petri.{mode}.{r} missing"))
     return out
 
 
@@ -80,8 +100,11 @@ if __name__ == "__main__":  # python3 -m autoresearch.research.models_config [pa
     cfg = load_models_config(sys.argv[1] if len(sys.argv) > 1 else None)
     for role, spec in cfg.get("roles", {}).items():
         print(f"{role:16s} " + ", ".join(f"{s} [{model_family(s)}]" for s in _list(spec)))
-    problems = config_warnings(cfg)
-    print("\n".join("warning: " + p for p in problems) or "no problems")
+    res = check_roles(cfg)
+    problems = res["failed"]
+    for w in res["waived"]:
+        print(w)
+    print("\n".join("warning: " + p for p in problems) or "no unwaived problems")
     print("dev flags:   " + " ".join(research_args(cfg)))
     for t in _list(cfg["roles"].get("heldout_targets")):
         print("final flags: " + " ".join(research_args(cfg, "final", t)))
