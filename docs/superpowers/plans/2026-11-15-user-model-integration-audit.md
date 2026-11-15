@@ -981,3 +981,20 @@
   reconstruction, and passes the scoped check excluding only the raw patch.
   The frozen054 bytes remain intact; no runtime or test source changed. Future
   dependent publication steps inspect every prior exit result explicitly.
+
+## Bounded morning review and new local preservation
+
+- Audit056 finds no correction needed in the morning draft at `32714e96` for
+  integration, source-publication and retained-byte claims. Root binds the three
+  public source blobs and two review files. No private archive metadata is used
+  and no campaign science, accounting or full replay is assessed.
+- The first required repository test run fails on denied localhost binding in
+  `tests.test_studio.ServerTest.setUpClass`; the permitted rerun passes 675 tests
+  with two skipped. Both results and logs are preserved in056.
+- A separate precise local preservation authorization now covers 1,814 newly
+  enumerated closed scaling/ownswap tuples, excluding 15. The audit is preparing
+  a bounded standard-library copier, independent partition review and independent
+  destination verifier. All seven authorized control identities are hash-verified;
+  original payloads have not yet been read or copied. Old archive access, reuse
+  and metadata transfer are expressly excluded. The previously rejected transfer
+  remains held with its user question pending. History analysis stays owner-led.

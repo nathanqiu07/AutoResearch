@@ -570,3 +570,10 @@ Six static profiles serve 14 rows each; 28 lexical IDs contain ten distinct cont
 hashes. All 635 checks and relocated/root repeats pass. Human-judgment/source
 independence remains unverified; no scoring, confidence intervals or phase2
 outcome claims follow.
+
+[20261115-056](../../../results/integration-audit/20261115-056/README.md)
+reviews the morning draft at `32714e96` only for integration, source-publication
+and retained-byte claims. No correction is needed in that scope; three public
+blobs and both authored review files pass independent binding. No campaign
+science or full replayability is assessed. The sandbox test failure and permitted
+675-pass/two-skip rerun are retained separately.
