@@ -1,4 +1,4 @@
-"""Track S time split (PLAN 12.2): a researcher's dated public work becomes binary
+"""The public track's time split (PLAN 12.2): a researcher's dated public work becomes binary
 preference pairs, split at a cutoff T so held-out pairs test prediction, not recall.
 How each stage works, with real counts: docs/track-s-extraction.md.
 
@@ -59,6 +59,7 @@ DECISIONS = os.path.join("extraction", "decisions.jsonl")
 REJECTED = os.path.join("extraction", "rejected.jsonl")
 CHECKED = os.path.join("extraction", "checked.jsonl")
 DISTRACTORS = os.path.join("extraction", "distractors.jsonl")
+IDENTITY = "identity.json"
 _DECISION = {"type": "object", "properties": {
     "point": {"type": "string", "enum": ["D1", "D2", "D3", "D4", "D5", "D6"]},
     "problem": {"type": "string"}, "did": {"type": "string"},
@@ -76,6 +77,26 @@ SUMMARY_QUERY = (
     "state a claim. For each give the problem faced, what they did, any alternatives the text names, "
     "the reason the text states, and a verbatim quote of 20-300 characters from the document that "
     "shows the decision. Also list each idea named as future or follow-up work, with a verbatim quote.")
+
+
+def load_identity(researcher: Researcher) -> dict:
+    """identity.json in the researcher's dir: {"name", "banned" (strings no pair may contain),
+    "exclude_text", "exclude_domains" (keep his own work out of distractor searches)}. Written by
+    hand per researcher, so a missing file is an error rather than a guess."""
+    path = os.path.join(researcher.root, IDENTITY)
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"{path} is missing; write {{\"name\", \"banned\", \"exclude_text\", "
+                                f"\"exclude_domains\"}} for {researcher.slug}")
+    with open(path) as f:
+        identity = json.load(f)
+    missing = [k for k in ("name", "banned", "exclude_text", "exclude_domains") if k not in identity]
+    if missing or not identity["banned"]:
+        raise ValueError(f"{path} needs a non-empty banned list and every field; missing {missing}")
+    return identity
+
+
+def banned_pattern(researcher: Researcher) -> re.Pattern:
+    return re.compile("|".join(map(re.escape, load_identity(researcher)["banned"])), re.IGNORECASE)
 
 
 def read_doc(path: str) -> Tuple[Optional[datetime.date], str]:
@@ -290,12 +311,8 @@ def check_decisions(researcher: Researcher, llm: LLM, chunk_chars: int = 150_000
 
 # ---- stage 4: distractors -------------------------------------------------------
 
-SOURCES = ("named", "own_future_work", "contemporaneous", "generated")
-FUTURE_PROMPT = (
-    "A researcher faced the problem below and made the decision shown. Earlier, they named the "
-    "candidate ideas listed as future work. Pick the candidate that is a plausible alternative answer "
-    "to the same problem and that none of their later work listed below pursued. Return JSON "
-    "{\"index\": <candidate index, or null if none fits>}.\n\n")
+# Not his own future-work ideas: those are things he would do, so as decoys they mislabel his taste.
+SOURCES = ("named", "contemporaneous", "generated")
 CONTEMP_PROMPT = (
     "A researcher faced the problem below. Here is work by other groups from around the same time. "
     "Pick the result that took a different approach to the same problem, and state that approach "
@@ -312,15 +329,6 @@ def _describe(d: dict) -> str:
     return f"Problem: {d.get('problem', '')}\nDecision: {d.get('did', '')}\n"
 
 
-def _future_candidates(researcher: Researcher, before: datetime.date) -> List[str]:
-    out = []
-    for row in _read_jsonl(os.path.join(researcher.root, EXA_EXTRACT)):
-        date, _ = read_doc(os.path.join(researcher.root, "corpus", row["doc"]))
-        if date and date < before:
-            out += [w["idea"] for w in row.get("future_work") or [] if isinstance(w, dict) and w.get("idea")]
-    return out
-
-
 def next_distractor(decision: dict, researcher: Researcher, llm: LLM, client, cutoff: str,
                     after: Optional[str] = None) -> Optional[dict]:
     """The first distractor available from SOURCES, starting after `after`. A decision dated
@@ -332,27 +340,18 @@ def next_distractor(decision: dict, researcher: Researcher, llm: LLM, client, cu
             alts = [a for a in decision.get("alternatives_named") or [] if a and a != decision.get("did")]
             if alts:
                 return {"text": alts[0], "source": source, "evidence_url": decision.get("url")}
-        elif source == "own_future_work":
-            ideas = _future_candidates(researcher, date)
-            if not ideas:
-                continue
-            later = [d["did"] for d in _read_jsonl(os.path.join(researcher.root, DECISIONS))
-                     if d.get("date") and (horizon is None or d["date"] < cutoff)]
-            out = extract_json(llm.complete(
-                FUTURE_PROMPT + _describe(decision) + "Candidates:\n" +
-                "".join(f"[{i}] {c}\n" for i, c in enumerate(ideas)) +
-                "Their work:\n" + "".join(f"- {w}\n" for w in later), temperature=0.0))
-            i = out.get("index") if isinstance(out, dict) else None
-            if isinstance(i, int) and 0 <= i < len(ideas):
-                return {"text": ideas[i], "source": source, "evidence_url": None}
         elif source == "contemporaneous" and client is not None:
             end = date + HALF_YEAR
             if horizon:
                 end = min(end, horizon - datetime.timedelta(days=1))
+            identity = load_identity(researcher)
+            own = [t.lower() for t in identity["exclude_text"]]
             results = [r for r in client.search(decision.get("problem") or decision["did"], num_results=8,
                                                 start_date=(date - HALF_YEAR).isoformat(), end_date=end.isoformat(),
-                                                exclude_text=["Hobbhahn"], exclude_domains=["apolloresearch.ai"])
-                       if "hobbhahn" not in (str(r.get("author") or "") + str(r.get("highlights") or "")).lower()
+                                                exclude_text=identity["exclude_text"],
+                                                exclude_domains=identity["exclude_domains"])
+                       if not any(t in (str(r.get("author") or "") + str(r.get("highlights") or "")).lower()
+                                  for t in own)
                        and r.get("publishedDate") and r["publishedDate"][:10] <= end.isoformat()]
             if not results:
                 continue
@@ -389,25 +388,42 @@ def find_distractors(researcher: Researcher, llm: LLM, client, cutoff: str) -> d
 
 # ---- stage 5: pairs and the time split ---------------------------------------------
 
-PAIR_PROMPT_VERSION = "pair-v1"
+PAIR_PROMPT_VERSION = "pair-v2"
+# The rewriter sees the two options in shuffled order with no hint which was taken, and both come
+# out in one fixed form, so neither its wording nor its grammar can give the real one away.
 PAIR_PROMPT = (
-    "Turn this research decision into one neutral binary choice. Write the context as the situation "
-    "the researchers faced at the moment of decision: the problem and what they knew then, and for a "
-    "decision about accepting, interpreting or claiming a result, the result itself. Do not reveal "
-    "which option was taken, and do not name any person, lab or organisation, or any later paper. "
-    "Then restate the decision taken and the alternative as two options of similar length (within "
-    "20%) and the same style. Return JSON {\"context\": str, \"did\": str, \"alternative\": str}.\n\n")
-BANNED = re.compile(r"hobbhahn|marius|apollo", re.IGNORECASE)
+    "Turn this research decision into one neutral binary choice. Below are the problem a research team "
+    "faced and two options, in random order; they took one of them. Write the context in neutral third "
+    "person as the situation the team faced at the moment of decision: the problem and what they knew "
+    "then, and for a decision about accepting, interpreting or claiming a result, the result itself. "
+    "Do not reveal or hint which option was taken, and do not name any person, lab or organisation, or "
+    "any later paper. Then restate both options in the same fixed form, keeping each one's meaning: "
+    "exactly one sentence, imperative, present tense (\"Run ...\", \"Drop ...\"), no first person (we, "
+    "our, us, I, my, me), no hedges, and of similar length (within 20%). Include paper-specific numbers "
+    "or method names only if both options carry the same kind; otherwise describe them in general terms. "
+    "Return JSON {\"context\": str, \"option_1\": <Option 1 restated>, \"option_2\": <Option 2 restated>}.\n\n")
 ANON_USER = "subject"
+FIRST_PERSON = re.compile(r"\b(?:[Ww]e|[Oo]ur|[Uu]s|I|[Mm]y|[Mm]e)\b")
+# A sentence end is . ! or ? followed by more text; these abbreviations are not one.
+ABBREVIATIONS = re.compile(r"\b(?:e\.g|i\.e|vs|etc|et al|cf)\.", re.IGNORECASE)
+SENTENCE_BREAK = re.compile(r"[.!?]+\s+\S")
 
 
-def check_pair(pair: dict, later_titles: List[str]) -> List[str]:
-    """Problems with a written pair; empty when it is fine."""
+def check_pair(pair: dict, later_titles: List[str], banned: re.Pattern) -> List[str]:
+    """Problems with a written pair; empty when it is fine. `banned` matches the researcher's names
+    (banned_pattern). The form checks catch an option whose grammar alone marks it as the real one."""
     problems = []
-    lengths = sorted((len(pair["a_text"]), len(pair["b_text"])))
+    options = (pair["a_text"], pair["b_text"])
+    lengths = sorted(map(len, options))
     if not lengths[0] or lengths[1] / lengths[0] > 1.2:
         problems.append("the two options differ in length by more than 20%")
-    if any(BANNED.search(pair[k]) for k in ("context", "a_text", "b_text")):
+    if any(SENTENCE_BREAK.search(ABBREVIATIONS.sub("", o.strip())) for o in options):
+        problems.append("each option must be exactly one sentence")
+    if len({bool(re.search(r"\d", o)) for o in options}) > 1:
+        problems.append("numbers appear in one option but not the other")
+    if any(FIRST_PERSON.search(o) for o in options):
+        problems.append("an option uses the first person (we, our, us, I, my, me)")
+    if any(banned.search(pair[k]) for k in ("context", "a_text", "b_text")):
         problems.append("names the researcher or his organisation")
     ctx = pair["context"].lower()
     problems += [f"mentions later work: {t}" for t in later_titles if len(t) >= 8 and t.lower() in ctx]
@@ -426,18 +442,24 @@ def _corpus_meta(root: str) -> List[Tuple[Optional[datetime.date], str, dict]]:
     return out
 
 
-def render_pair(d: dict, alternative: str, llm: LLM, later_titles: List[str]) -> Tuple[Optional[dict], List[str]]:
-    """(context/a_text/b_text with a_text the decision taken, problems). One rewrite on failure."""
-    prompt = (PAIR_PROMPT + f"Problem: {_one_line(d.get('problem'))}\nDecision: {_one_line(d['did'])}\n"
-              f"Alternative: {_one_line(alternative)}\nReason they gave: {_one_line(d.get('stated_reason'))}\n")
+def render_pair(d: dict, alternative: str, llm: LLM, later_titles: List[str], banned: re.Pattern,
+                seed: int = 0) -> Tuple[Optional[dict], List[str]]:
+    """(context/a_text/b_text with a_text the decision taken, problems). One rewrite on failure.
+    The stated reason is left out of the prompt: it would say which option was taken."""
+    taken_first = random.Random(f"{seed}:{d['decision_id']}").random() < 0.5
+    one, two = (d["did"], alternative) if taken_first else (alternative, d["did"])
+    prompt = (PAIR_PROMPT + f"Problem: {_one_line(d.get('problem'))}\nOption 1: {_one_line(one)}\n"
+              f"Option 2: {_one_line(two)}\n")
     pair, problems = None, ["no answer"]
     for attempt in range(2):
         out = extract_json(llm.complete(prompt + ("" if attempt == 0 else "Fix these problems: "
                                                   + "; ".join(problems) + "\n"), temperature=0.0))
-        if not (isinstance(out, dict) and out.get("context") and out.get("did") and out.get("alternative")):
+        if not (isinstance(out, dict) and out.get("context") and out.get("option_1") and out.get("option_2")):
             continue
-        pair = {"context": str(out["context"]), "a_text": str(out["did"]), "b_text": str(out["alternative"])}
-        problems = check_pair(pair, later_titles)
+        one, two = str(out["option_1"]), str(out["option_2"])
+        pair = {"context": str(out["context"]), "a_text": one if taken_first else two,
+                "b_text": two if taken_first else one}
+        problems = check_pair(pair, later_titles, banned)
         if not problems:
             return pair, []
     return None, problems
@@ -473,6 +495,7 @@ def write_pairs(researcher: Researcher, llm: LLM, cutoff: str, seed: int = 0) ->
     if stale:
         raise ValueError(f"distractors were chosen for cutoff {sorted(map(str, stale))}, not {cutoff}; "
                          f"delete {DISTRACTORS} and rerun distract")
+    banned = banned_pattern(researcher)
     docs = _corpus_meta(root)
     meta = {name: fm for _, name, fm in docs}
     # Pairs are appended to a partial file as they are written, so a crash loses at most one.
@@ -483,7 +506,7 @@ def write_pairs(researcher: Researcher, llm: LLM, cutoff: str, seed: int = 0) ->
         alt = distractors.get(d["decision_id"])
         if not alt or not d.get("date") or d["decision_id"] in done:
             continue
-        pair, _ = render_pair(d, alt["text"], llm, _later_titles(docs, d["date"]))
+        pair, _ = render_pair(d, alt["text"], llm, _later_titles(docs, d["date"]), banned, seed)
         if pair is None:
             failed += 1
             continue
@@ -507,17 +530,18 @@ def regenerate_pair(researcher: Researcher, pair: dict, llm: LLM, client) -> Opt
     if alt is None:
         return None
     docs = _corpus_meta(researcher.root)
-    rendered, _ = render_pair(d, alt["text"], llm, _later_titles(docs, d["date"]))
+    seed = pair.get("seed", 0)
+    rendered, _ = render_pair(d, alt["text"], llm, _later_titles(docs, d["date"]), banned_pattern(researcher), seed)
     if rendered is None:
         return None
-    row = _pair_row(researcher, d, alt, rendered, pair["cutoff"], pair.get("seed", 0),
-                    {name: fm for _, name, fm in docs})
+    row = _pair_row(researcher, d, alt, rendered, pair["cutoff"], seed, {name: fm for _, name, fm in docs})
     return dict(row, regenerated_from=pair["pair_id"])
 
 
 def write_choice_files(researcher: Researcher) -> None:
     """Rewrite history and held-out Choice rows from the pairs, minus rejected pairs."""
     rejected = {r["pair_id"] for r in _read_jsonl(os.path.join(researcher.root, REVIEW)) if not r["ok"]}
+    banned = banned_pattern(researcher)
     rows = {"history": [], "heldout": []}
     for p in _read_jsonl(os.path.join(researcher.root, PAIRS)):
         if p["pair_id"] in rejected:
@@ -526,7 +550,7 @@ def write_choice_files(researcher: Researcher) -> None:
         # anonymous user id, a hashed source URL, and no reason that names him or his lab.
         c = Choice(user_id=ANON_USER, context=p["context"], a_text=p["a_text"], b_text=p["b_text"],
                    chosen=p["chosen"], decision_point=p["decision_point"],
-                   reason="" if BANNED.search(p["reason"]) else p["reason"], timestamp=p["date"],
+                   reason="" if banned.search(p["reason"]) else p["reason"], timestamp=p["date"],
                    source="timesplit", example_id=p["pair_id"], group_id=digest([p["url"]])[:12])
         rows[p["split"]].append(asdict(c))
     _write_jsonl(os.path.join(researcher.root, HISTORY), rows["history"])
@@ -559,7 +583,7 @@ EXA_CACHE = os.path.join("runs", "track_s", "cache", "exa")
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description="Track S: a researcher's dated work to time-split binary pairs")
+    p = argparse.ArgumentParser(description="The public track: a researcher's dated work to time-split binary pairs")
     p.add_argument("--root", default=DEFAULT_ROOT)
     sub = p.add_subparsers(dest="command", required=True)
     for name, helptext in (("harvest", "find, check and date his work with Exa"),

@@ -1,4 +1,4 @@
-"""WS B Track S harvest: only his own work is kept, each item once, with the best date."""
+"""WS B public-track harvest: only his own work is kept, each item once, with the best date."""
 import glob
 import json
 import os

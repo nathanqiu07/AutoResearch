@@ -1,4 +1,4 @@
-"""Track S evaluation (E2): does a model fit on a researcher's pairs from before the cutoff T
+"""Public-track evaluation (E2): does a model fit on a researcher's pairs from before the cutoff T
 predict his choices after T better than the baselines?
 
 Arms, all scored on the held-out pairs:
@@ -64,8 +64,8 @@ def _bounds(stats: List[float], level: float) -> Tuple[float, float]:
     return stats[int((1 - level) / 2 * n)], stats[min(n - 1, int((1 + level) / 2 * n))]
 
 
-def cluster_ci(by_group: Dict[str, List[bool]], level=0.9, n=2000, seed=0) -> Tuple[float, float, float]:
-    """(accuracy, low, high), resampling groups with replacement."""
+def cluster_ci(by_group: Dict[str, List[float]], level=0.9, n=2000, seed=0) -> Tuple[float, float, float]:
+    """(mean score, low, high), resampling groups with replacement. Scores are bools or floats."""
     groups = sorted(by_group)
     acc = sum(sum(v) for v in by_group.values()) / sum(len(v) for v in by_group.values())
     rng = random.Random(seed)
@@ -137,10 +137,36 @@ def blind_judge(choices: List[Choice], llm: LLM, cache_dir: Optional[str] = None
     return {c.example_id: paired_correct(judge, c) for c in choices}
 
 
+class StyleJudge(NoHistory):
+    def predict(self, context, options):
+        return super().predict("Which option was paraphrased from a published paper, and which was invented? "
+                               "Pick the paraphrased one.\n" + context, options)
+
+
+def style_scores(choices: List[Choice], llm: LLM, cache_dir: Optional[str] = None) -> Dict[str, float]:
+    """example_id -> share of the two orders in which a blind judge calls his option the published
+    one. A judge that can't tell, or always picks one position, scores 0.5."""
+    judge = StyleJudge(llm, cache_dir=cache_dir)
+    flip = {"a": "b", "b": "a"}
+    return {c.example_id: ((judge.predict(c.context, [c.a_text, c.b_text]).choice == c.chosen)
+                           + (judge.predict(c.context, [c.b_text, c.a_text]).choice == flip[c.chosen])) / 2
+            for c in choices}
+
+
+def style_leak(choices: List[Choice], scores: Dict[str, float]) -> dict:
+    """Style-leak probe summary; flagged when the interval sits wholly above chance."""
+    by_group: Dict[str, List[float]] = {}
+    for c in choices:
+        by_group.setdefault(c.group_id or c.example_id, []).append(scores[c.example_id])
+    rate, lo, hi = cluster_ci(by_group)
+    return {"rate": rate, "ci_low": lo, "ci_high": hi, "n_pairs": len(choices), "flagged": lo > 0.5}
+
+
 def distractor_gate(researcher: Researcher, judge_llm: LLM, regenerate: Callable[[dict], Optional[dict]],
                     threshold: float = GATE_THRESHOLD, cache_dir: Optional[str] = None) -> dict:
     """If a blind judge spots his option on more than `threshold` of held-out pairs, rebuild each
-    spotted pair once with the next distractor source and judge it again. Runs once per pair set."""
+    spotted pair once with the next distractor source and judge it again. Runs once per pair set.
+    Then runs the style-leak probe on the final held-out pairs; it reports only, changing no pair."""
     root = researcher.root
     if os.path.exists(os.path.join(root, GATE)):
         raise FileExistsError(f"{GATE} exists; the gate runs once per pair set")
@@ -160,12 +186,15 @@ def distractor_gate(researcher: Researcher, judge_llm: LLM, regenerate: Callable
     new_ids = {v["pair_id"] for v in replaced.values()}
     after = blind_judge([c for c in load_choices(os.path.join(root, timesplit.HELDOUT)) if c.example_id in new_ids],
                         judge_llm, cache_dir)
+    heldout = load_choices(os.path.join(root, timesplit.HELDOUT))
+    style = style_scores(heldout, judge_llm, cache_dir)
     rows = [{"pair_id": k, "flagged_before": v, "regenerated_to": replaced[k]["pair_id"] if k in replaced else None,
-             "flagged_after": after[replaced[k]["pair_id"]] if k in replaced else v} for k, v in before.items()]
+             "flagged_after": after[replaced[k]["pair_id"]] if k in replaced else v,
+             "style_leak": style[replaced[k]["pair_id"] if k in replaced else k]} for k, v in before.items()]
     timesplit._write_jsonl(os.path.join(root, GATE), rows)
     return {"heldout": len(before), "flagged_before": len(flagged), "regenerated": len(replaced),
             "flagged_after": sum(r["flagged_after"] for r in rows), "threshold": threshold,
-            "judge": judge_llm.label}
+            "judge": judge_llm.label, "style_leak": style_leak(heldout, style)}
 
 
 def split_by_document(choices: List[Choice], share: float = 0.8) -> Tuple[List[Choice], List[Choice]]:
@@ -268,7 +297,7 @@ def final_model(researcher: Researcher, llm: LLM, selected: str, cache_dir: Opti
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description="Track S E2 (PLAN 12.2)")
+    p = argparse.ArgumentParser(description="Public-track E2 (PLAN 12.2)")
     p.add_argument("--root", default=DEFAULT_ROOT)
     sub = p.add_subparsers(dest="command", required=True)
     for name in ("gate", "select", "e2", "final"):

@@ -1,6 +1,7 @@
-"""WS B Track S: no document dated at or after the cutoff T may enter the profile."""
+"""WS B, the public track: no document dated at or after the cutoff T may enter the profile."""
 import json
 import os
+import re
 import tempfile
 import unittest
 
@@ -21,6 +22,18 @@ class RecordingLLM(LLM):
     def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
         self.prompts.append(prompt)
         return json.dumps({"principles": ["measure carefully"], "weights": {}})
+
+
+MARIUS = {"name": "Marius Hobbhahn", "banned": ["hobbhahn", "marius", "apollo"], "exclude_text": ["Hobbhahn"],
+          "exclude_domains": ["apolloresearch.ai"]}
+OWAIN = {"name": "Owain Evans", "banned": ["owain", "evans"], "exclude_text": ["Owain Evans"],
+         "exclude_domains": ["owainevans.github.io"]}
+
+
+def write_identity(root, identity):
+    os.makedirs(root, exist_ok=True)
+    with open(os.path.join(root, timesplit.IDENTITY), "w") as f:
+        json.dump(identity, f)
 
 
 def write_doc(root, name, published, body):
@@ -63,17 +76,21 @@ class TimeSplitLeakageTest(unittest.TestCase):
 
 
 class PairLLM(LLM):
-    """Writes each pair from the decision and distractor it is shown; can be told to leak his name."""
+    """Echoes the two options it is shown as the rewrite; keeps every prompt; can be told to leak his name."""
 
     def __init__(self, name_in_context=False):
         super().__init__()
-        self.name_in_context = name_in_context
+        self.name_in_context, self.prompts = name_in_context, []
 
     def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
-        did = prompt.split("Decision: ")[1].splitlines()[0]
-        alt = prompt.split("Alternative: ")[1].splitlines()[0]
+        self.prompts.append(prompt)
+        one = prompt.split("Option 1: ")[1].splitlines()[0]
+        two = prompt.split("Option 2: ")[1].splitlines()[0]
         context = "Marius Hobbhahn had to choose." if self.name_in_context else "A team had to choose a next step."
-        return json.dumps({"context": context, "did": did, "alternative": alt})
+        return json.dumps({"context": context, "option_1": one, "option_2": two})
+
+
+BANNED_MARIUS = re.compile("hobbhahn|marius|apollo", re.IGNORECASE)
 
 
 class TimeSplitPairsTest(unittest.TestCase):
@@ -94,6 +111,7 @@ class TimeSplitPairsTest(unittest.TestCase):
         for fname, rows in ((timesplit.DECISIONS, decisions), (timesplit.DISTRACTORS, distractors)):
             with open(os.path.join(self.root, fname), "w") as f:
                 f.writelines(json.dumps(r) + "\n" for r in rows)
+        write_identity(self.root, MARIUS)
         self.researcher = Researcher("marius_test", self.root)
 
     def build(self, llm=None, seed=0):
@@ -166,14 +184,53 @@ class TimeSplitPairsTest(unittest.TestCase):
         report = self.build(PairLLM(name_in_context=True))
         self.assertEqual((report["pairs"], report["failed_checks"]), (0, 10))
 
+    def test_rewrite_prompt_never_says_which_option_was_taken(self):
+        d = dict(decision("q" * 20, did="TAKEN_OPTION"), stated_reason="SECRET_REASON", decision_id="x1")
+        positions = set()
+        for seed in range(8):
+            llm = PairLLM()
+            pair, _ = timesplit.render_pair(d, "OTHER_OPTION", llm, [], BANNED_MARIUS, seed=seed)
+            [prompt] = llm.prompts
+            for leak in ("Decision:", "Alternative:", "SECRET_REASON"):
+                self.assertNotIn(leak, prompt)
+            positions.add(prompt.split("Option 1: ")[1].splitlines()[0])
+            self.assertEqual((pair["a_text"], pair["b_text"]), ("TAKEN_OPTION", "OTHER_OPTION"))
+        self.assertEqual(positions, {"TAKEN_OPTION", "OTHER_OPTION"})
+
     def test_unequal_option_lengths_fail_the_check(self):
         pair = {"context": "A team had to choose.", "a_text": "x" * 15, "b_text": "y" * 10}
-        self.assertTrue(timesplit.check_pair(pair, []))
+        self.assertTrue(timesplit.check_pair(pair, [], BANNED_MARIUS))
 
     def test_context_naming_a_later_title_fails_the_check(self):
         pair = {"context": "After Frontier Models Scheme, a team had to choose.", "a_text": "x" * 10, "b_text": "y" * 10}
-        self.assertTrue(timesplit.check_pair(pair, ["Frontier Models Scheme"]))
-        self.assertEqual(timesplit.check_pair(pair, []), [])
+        self.assertTrue(timesplit.check_pair(pair, ["Frontier Models Scheme"], BANNED_MARIUS))
+        self.assertEqual(timesplit.check_pair(pair, [], BANNED_MARIUS), [])
+
+    def test_options_whose_form_reveals_the_real_one_fail_the_check(self):
+        good = {"context": "A team had to choose.", "a_text": "Run a simple baseline first, e.g. logistic.",
+                "b_text": "Train a large probe directly on activations."}
+        self.assertEqual(timesplit.check_pair(good, [], BANNED_MARIUS), [])
+        cases = [("Run a simple baseline. Then stop.", "Train a large probe on all of it.", "one sentence"),
+                 ("Run 3 baseline seeds before probing.", "Train a large probe before testing.", "numbers")]
+        cases += [("Run a simple baseline on activations.", f"Train {p} a large probe on activations.", "first person")
+                  for p in ("We", "our", "us", "I", "my", "me")]
+        for a_text, b_text, rule in cases:
+            with self.subTest(a_text=a_text, b_text=b_text):
+                [problem] = timesplit.check_pair(dict(good, a_text=a_text, b_text=b_text), [], BANNED_MARIUS)
+                self.assertIn(rule, problem)
+
+    def test_banned_names_come_from_each_researchers_identity_file(self):
+        root = os.path.join(self.base, "owain_test")
+        write_identity(root, OWAIN)
+        banned = timesplit.banned_pattern(Researcher("owain_test", root))
+        pair = {"context": "Owain Evans had to choose.", "a_text": "x" * 10, "b_text": "y" * 10}
+        self.assertTrue(timesplit.check_pair(pair, [], banned))
+        self.assertEqual(timesplit.check_pair(dict(pair, context="Marius Hobbhahn had to choose."), [], banned), [])
+
+    def test_missing_identity_file_is_an_error(self):
+        os.remove(os.path.join(self.root, timesplit.IDENTITY))
+        with self.assertRaisesRegex(FileNotFoundError, "identity.json"):
+            self.build()
 
     def test_build_refuses_to_overwrite_existing_pairs(self):
         self.build()
@@ -373,16 +430,14 @@ class CheckTest(unittest.TestCase):
 
 
 class DistractorLLM(LLM):
-    """Answers the three distractor prompts; records every prompt."""
+    """Answers the distractor prompts; records every prompt."""
 
-    def __init__(self, future_index=0):
+    def __init__(self):
         super().__init__()
-        self.prompts, self.future_index = [], future_index
+        self.prompts = []
 
     def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
         self.prompts.append(prompt)
-        if prompt.startswith(timesplit.FUTURE_PROMPT):
-            return json.dumps({"index": self.future_index})
         if prompt.startswith(timesplit.CONTEMP_PROMPT):
             return json.dumps({"index": 0, "alternative": "OTHER_GROUP_ALTERNATIVE"})
         return json.dumps({"alternative": "GENERATED_ALTERNATIVE"})
@@ -402,19 +457,8 @@ class DistractorTest(unittest.TestCase):
 
     def setUp(self):
         self.root = tempfile.mkdtemp()
-        self.researcher = Researcher("marius_test", self.root)
-        write_url_doc(self.root, "research__early.txt", "2023-01-01", "https://ex.org/early", "early")
-        write_url_doc(self.root, "research__mid.txt", "2024-03-01", "https://ex.org/mid", "mid")
-        write_url_doc(self.root, "research__late.txt", "2025-01-01", "https://ex.org/late", "late")
-        os.makedirs(os.path.join(self.root, "extraction"), exist_ok=True)
-        with open(os.path.join(self.root, timesplit.EXA_EXTRACT), "w") as f:
-            f.writelines(json.dumps({"doc": doc, "url": "u", "decisions": [], "exa_error": None,
-                                     "future_work": [{"idea": idea, "quote": "q"}]}) + "\n"
-                         for doc, idea in (("research__early.txt", "EARLY_IDEA"), ("research__late.txt", "LATE_IDEA")))
-        with open(os.path.join(self.root, timesplit.DECISIONS), "w") as f:
-            f.write(json.dumps(dict(decision("q" * 20, did="LATE_WORK"), doc="research__late.txt",
-                                    url="https://ex.org/late", date="2025-01-01", tag="exa_verified",
-                                    decision_id="late1")) + "\n")
+        write_identity(self.root, OWAIN)
+        self.researcher = Researcher("owain_test", self.root)
 
     def mid_decision(self, alternatives=()):
         return dict(decision("q" * 20, did="MID_WORK"), alternatives_named=list(alternatives),
@@ -425,30 +469,32 @@ class DistractorTest(unittest.TestCase):
                                         None, self.CUTOFF)
         self.assertEqual((out["text"], out["source"]), ("NAMED_ALT", "named"))
 
-    def test_own_future_work_is_used_when_not_pursued(self):
-        out = timesplit.next_distractor(self.mid_decision(), self.researcher, DistractorLLM(), None, self.CUTOFF)
-        self.assertEqual((out["text"], out["source"]), ("EARLY_IDEA", "own_future_work"))
-
-    def test_own_future_work_is_skipped_when_he_pursued_it_later(self):
-        out = timesplit.next_distractor(self.mid_decision(), self.researcher, DistractorLLM(future_index=None),
-                                        None, self.CUTOFF)
+    def test_his_own_future_work_is_never_a_distractor(self):
+        os.makedirs(os.path.join(self.root, "extraction"))
+        write_url_doc(self.root, "research__early.txt", "2023-01-01", "https://ex.org/early", "early")
+        with open(os.path.join(self.root, timesplit.EXA_EXTRACT), "w") as f:
+            f.write(json.dumps({"doc": "research__early.txt", "url": "u", "decisions": [], "exa_error": None,
+                                "future_work": [{"idea": "EARLY_IDEA", "quote": "q"}]}) + "\n")
+        llm = DistractorLLM()
+        out = timesplit.next_distractor(self.mid_decision(), self.researcher, llm, None, self.CUTOFF)
         self.assertEqual(out["source"], "generated")
+        self.assertNotIn("EARLY_IDEA", "\n".join(llm.prompts))
 
     def test_history_decision_never_sees_material_from_after_cutoff(self):
-        llm, exa = DistractorLLM(future_index=None), SearchRecorder([])
-        timesplit.next_distractor(self.mid_decision(), self.researcher, llm, exa, self.CUTOFF)
-        self.assertNotIn("LATE", "\n".join(llm.prompts))
+        exa = SearchRecorder([])
+        timesplit.next_distractor(self.mid_decision(), self.researcher, DistractorLLM(), exa, self.CUTOFF)
         self.assertLess(exa.calls[0]["end_date"], self.CUTOFF)
 
     def test_contemporaneous_search_excludes_his_own_work(self):
-        exa = SearchRecorder([{"url": "https://ex.org/his", "author": "Marius Hobbhahn", "title": "his",
+        exa = SearchRecorder([{"url": "https://ex.org/his", "author": "Owain Evans", "title": "his",
                                "publishedDate": "2024-02-01"},
                               {"url": "https://ex.org/undated", "author": "Jane Doe", "title": "undated"},
                               {"url": "https://ex.org/other", "author": "Jane Doe", "title": "other",
                                "publishedDate": "2024-02-01"}])
-        llm = DistractorLLM(future_index=None)
+        llm = DistractorLLM()
         out = timesplit.next_distractor(self.mid_decision(), self.researcher, llm, exa, self.CUTOFF)
-        self.assertEqual(exa.calls[0]["exclude_text"], ["Hobbhahn"])
+        self.assertEqual((exa.calls[0]["exclude_text"], exa.calls[0]["exclude_domains"]),
+                         (["Owain Evans"], ["owainevans.github.io"]))
         self.assertEqual((out["source"], out["evidence_url"]), ("contemporaneous", "https://ex.org/other"))
         self.assertNotIn("his:", llm.prompts[-1])
         self.assertNotIn("undated:", llm.prompts[-1])
@@ -456,7 +502,7 @@ class DistractorTest(unittest.TestCase):
     def test_next_distractor_after_a_source_starts_at_the_following_one(self):
         out = timesplit.next_distractor(self.mid_decision(["NAMED_ALT"]), self.researcher, DistractorLLM(),
                                         None, self.CUTOFF, after="named")
-        self.assertEqual(out["source"], "own_future_work")
+        self.assertEqual(out["source"], "generated")
 
 
 if __name__ == "__main__":

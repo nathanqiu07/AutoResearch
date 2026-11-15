@@ -314,7 +314,7 @@ their own directory, time split and E2 result.
 | Data | How collected | Held-out test |
 |---|---|---|
 | Corpus (papers, posts, talks, code), with dates | Exa harvest (`taste/scrape.py` + `integrations/exa.py`) | **Time split**: build the user model from work before date T, then predict which of two options they pursued after T: the direction they actually took, or a plausible distractor |
-| Choices inferred from the corpus | Directions the researcher took vs ones they named but didn't take ("future work" sections, follow-ups) turned into pairwise choices, which the selected method then consumes | Same time split |
+| Choices inferred from the corpus | The direction the researcher took vs a distractor, turned into pairwise choices, which the selected method then consumes. Distractors, in order: **named** (the alternative he rejected in the paper), then **contemporaneous** (other groups on the same problem, ±6 months), then **generated** (backup only). Not his own "future work" ideas: he would do those, so as decoys they mislabel his preference (Ethan, 2026-11-15) | Same time split |
 
 For each track, compare M0, M1 (raw history or raw documents in the prompt) and the
 selected method on that track's held-out test. **Transfer holds** if the selected method
@@ -570,7 +570,8 @@ past.dev, and run Taste-Bench (E7).
    * Run the existing `scrape --arxiv` for papers as well.
 2. **Time split.** `taste/timesplit.py`:
    * Choose a cutoff T. Build the profile from documents before T only.
-   * Make held-out pairs from work after T: "the direction they actually took" vs "a plausible distractor". Distractors come from earlier "future work" ideas they didn't pursue, or from LLM-generated alternatives on the same topic.
+   * Make held-out pairs from work after T: "the direction they actually took" vs "a plausible distractor". Distractors, in order: named (the alternative he rejected in the paper), then contemporaneous (other groups, same problem, ±6 months), then LLM-generated (backup only). Not his own "future work" ideas, since he would do those (Ethan, 2026-11-15).
+   * Both options are rewritten blind (the rewriter isn't told which was taken) into a fixed one-sentence imperative template. Code checks: one sentence, digits in both or neither, no first person; a style-leak probe runs beside the distractor gate.
    * **A person checks ~20 pairs**, to make sure the distractor isn't obviously wrong.
    * Output: `data/researchers/<slug>/heldout_timesplit.jsonl`.
 3. **History pairs** from before T, built the same way, are the "choices" the selected method fits on.

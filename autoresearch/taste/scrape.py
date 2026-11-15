@@ -71,7 +71,7 @@ def import_x_archive(tweets_js: str, root: str):
     return out
 
 
-# ---- Exa harvest (Track S) -------------------------------------------------
+# ---- Exa harvest (public track) ---------------------------------------------
 # Each item is checked as his own work and dated, then written with front matter that
 # taste/timesplit.read_doc understands. See docs/track-s-extraction.md.
 

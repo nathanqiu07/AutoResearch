@@ -1,4 +1,4 @@
-"""WS B Track S E2: paired-order scoring, document-clustered intervals, baselines that see
+"""WS B public-track E2: paired-order scoring, document-clustered intervals, baselines that see
 nothing after the cutoff, and the distractor gate."""
 import json
 import os
@@ -43,6 +43,12 @@ def choice(k, group, date="2025-01-01", context="A team had to choose."):
     return Choice(user_id="marius_test", context=context, a_text=f"TAKEN_{k}", b_text=f"OTHER_{k}",
                   chosen="a", decision_point="D1", timestamp=date, source="timesplit",
                   example_id=f"p{k}", group_id=group)
+
+
+def write_identity(root):
+    with open(os.path.join(root, timesplit.IDENTITY), "w") as f:
+        json.dump({"name": "Marius Hobbhahn", "banned": ["hobbhahn", "marius", "apollo"],
+                   "exclude_text": ["Hobbhahn"], "exclude_domains": ["apolloresearch.ai"]}, f)
 
 
 def write_corpus(root, name, published, body):
@@ -109,6 +115,7 @@ class GateTest(unittest.TestCase):
                  "author_position": "last", "cutoff": "2024-06-01", "seed": 0} for k in range(10)]
         with open(os.path.join(root, timesplit.PAIRS), "w") as f:
             f.writelines(json.dumps(r) + "\n" for r in rows)
+        write_identity(root)
         researcher = Researcher("marius_test", root)
         timesplit.write_choice_files(researcher)
         return researcher
@@ -139,6 +146,23 @@ class GateTest(unittest.TestCase):
         ids = {c.example_id for c in track_eval.load_choices(os.path.join(researcher.root, timesplit.HELDOUT))}
         self.assertIn("p0r", ids)
         self.assertNotIn("p0", ids)
+
+    def test_gate_report_has_the_style_leak_probe(self):
+        report = track_eval.distractor_gate(self.setup_pairs(0), self.judge(), self.regenerate([]))
+        self.assertEqual(set(report["style_leak"]), {"rate", "ci_low", "ci_high", "n_pairs", "flagged"})
+        self.assertEqual(report["style_leak"]["n_pairs"], 10)
+
+
+class StyleLeakTest(unittest.TestCase):
+    def test_judge_that_spots_the_real_option_is_flagged(self):
+        choices = [choice(k, f"g{k % 3}") for k in range(6)]
+        leak = track_eval.style_leak(choices, track_eval.style_scores(choices, OptionLLM(taken_option)))
+        self.assertEqual((leak["rate"], leak["flagged"]), (1.0, True))
+
+    def test_position_biased_judge_sits_at_chance(self):
+        choices = [choice(k, f"g{k % 3}") for k in range(6)]
+        leak = track_eval.style_leak(choices, track_eval.style_scores(choices, OptionLLM(first_option)))
+        self.assertEqual((leak["rate"], leak["flagged"]), (0.5, False))
 
 
 class FakeMethod:
@@ -172,6 +196,7 @@ class SelectAndE2Test(unittest.TestCase):
                 for k in range(8)]
         with open(os.path.join(root, timesplit.PAIRS), "w") as f:
             f.writelines(json.dumps(r) + "\n" for r in rows)
+        write_identity(root)
         timesplit.write_choice_files(researcher)
         llm = OptionLLM(taken_option)
         report = track_eval.run_e2(researcher, llm, "Marius Hobbhahn", "m1",
