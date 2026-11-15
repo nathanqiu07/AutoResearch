@@ -67,7 +67,7 @@ Files: `taste/methods/m7_confident.py`, `scripts/schema_search.py`, docs and met
 
 - [x] Test separate tuning/calibration conversations, finite probabilities and
   conservative uncalibrated fallback with too little calibration data.
-- [x] Implement regularized Platt scaling and bounded dev-only schema search.
+- [x] Implement regularized Platt scaling and bounded dev-only schema search (schema search removed 2026-11-14).
 - [x] Run full suite, fresh review, commit/push. Report actual live-run status.
 
 ### Task 5: Live development and final comparison (Gio's decision gate)

@@ -28,9 +28,7 @@ PRISM = [
     ("3", "fidelity", "Fit and predict M0–M7", "each user: fit on their history, predict their test choices",
      "taste fidelity · codex-cli (--backend, --model)", "built",
      ["runs/fidelity/dev/predictions.jsonl", "runs/fidelity/dev/report.json"]),
-    ("4", "schema", "Search feature schemas (optional)", "development users only",
-     "scripts/schema_search.py", "built", []),
-    ("5", "E1", "E1: proof of concept, pick a method", "user-macro accuracy and Brier; must beat M1, CI above 0",
+    ("4", "E1", "E1: proof of concept, pick a method", "user-macro accuracy and Brier; must beat M1, CI above 0",
      "on the final-test users, once", "built", ["selected method + config", "posted to the team"]),
 ]
 PRISM_TERMINAL = ("Output: the selected method", "no winner yet; the two tracks take it by hand",

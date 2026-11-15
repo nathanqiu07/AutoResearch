@@ -280,11 +280,6 @@ only. **Test users are touched once**, at the end, for the reported number.
 | M6 | M5 + **verification filter**: keep a principle only if it improves that user's validation accuracy | ours, combining both papers' "verify" steps |
 | M7 | M6 + uncertainty: the model outputs a confidence, so the loop knows when *not* to trust taste | ours, needed by §7.2 |
 
-**Schema search.** We spend a bounded time (**[decide]**, suggest one day) varying the schema:
-principle count, persona length, exemplar count, structured vs free-text. This is an inner
-research loop, and it may itself run as an R0-style loop with the dev-user validation
-accuracy as its metric (it dogfoods our own system).
-
 **Metrics.** Held-out pairwise accuracy on PRISM; calibration (Brier score) for M7; cost per user model. Bootstrap CIs over
 users.
 
@@ -539,8 +534,7 @@ PersonalRewardBench options are text.
    * Reports accuracy with a bootstrap CI over users (`research/stats.bootstrap_ci`), Brier score, and $ per user model.
    * Results go to `results/fidelity/<method>_<dataset>.json`.
    * `--users test` requires `--final` and writes `results/fidelity/TEST_USED`. **Test users are used once**, enforced by the code, not by memory.
-5. **Schema search** (time-boxed, §6.2): `scripts/schema_search.py` runs a grid over (principle count, persona length, exemplar count, structured vs free text) for M5–M7 on dev users only, and logs every configuration it tries.
-6. `artifacts()` → `TasteArtifacts` (principles, feature weights, assumptions with credences, exemplars). This is the hand-off to WS B and WS D (§6.4). It includes an adapter to `TasteProfile`, so `Researcher.ablation_report` keeps working (AGENTS.md §6).
+5. `artifacts()` → `TasteArtifacts` (principles, feature weights, assumptions with credences, exemplars). This is the hand-off to WS B and WS D (§6.4). It includes an adapter to `TasteProfile`, so `Researcher.ablation_report` keeps working (AGENTS.md §6).
 
 **Model and cost.** Use a cheap judge (Haiku-class) for every method so the comparison is
 fair, and cache every call. ~8 methods × ~100 test users × 20 pairs ≈ 16k judgments
@@ -551,7 +545,7 @@ fair, and cache every call. ~8 methods × ~100 test users × 20 pairs ≈ 16k ju
 * The E1 table is committed.
 * The selected method's name and config are posted to the team with `agentctl post`.
 
-**Board tasks to add:** `prefdata-loader`, `usermodel-interface`, `methods-m0-m7`, `fidelity-cli`, `schema-search`, `e1-final`.
+**Board tasks to add:** `prefdata-loader`, `usermodel-interface`, `methods-m0-m7`, `fidelity-cli`, `e1-final`.
 
 ---
 
@@ -840,7 +834,7 @@ Duration isn't stated in the specs **[decide]**, so phases are ordered with gate
 |---|---|---|
 | **P0: Foundations** | Pick the personal-track team member and the public-track researcher (with consent); confirm sponsors and models; freeze the dev/held-out task and seed splits; agree interfaces; load EvalAwareBench, EvalDetectBench, Petri, PersonalRewardBench (Taste-Bench dropped 2026-11-14); API-backend target | Interfaces merged; splits committed |
 | **P1: Measurement you can trust** | A1 judge with human agreement on ~100 transcripts; topic-matched pool; baseline numbers on dev for EvalAwareBench (original vs minimal-cue) and Petri (v1 vs v2); Modal reasoning target and sandbox running | Judge agreement acceptable (suggest κ ≥ 0.6); minimal-cue and Petri v2 baselines reproduced |
-| **P1 in parallel: User models** | M0–M7 on dev users; schema search; seed choices from the researcher | Method selected on dev users |
+| **P1 in parallel: User models** | M0–M7 on dev users; seed choices from the researcher | Method selected on dev users |
 | **P2: Loop integration** | Decision logging; R1 taste at D1–D6; market v1; smoke runs (offline, then 1 cheap live seed per arm) | All arms run end to end; costs match estimates |
 | **P3: Main experiments** | E1 (test users, once), E2 (E4, E5 archived and E7 dropped 2026-11-14, §9) | Pre-registration committed *before* launch |
 | **P4: Held-out evaluation** | E3b on held-out seeds, targets and judge (E3a, E4b, E6 archived 2026-11-14, §9) | All numbers in `results/` with `CODE_VERSION` |
@@ -861,12 +855,12 @@ metrics, either taste track, and the M1 / prompt baselines (I15).
 * Every fitted user model is also kept in shared memory (past.dev when `PAST_API_KEY` is set).
 * Metrics: two co-primaries, raw-CoT awareness (A1) and the direct question (A2, as mean P(eval) and AUROC with 0.5 as the target).
 
+**Decided 2026-11-14 (Ethan):** every team member does a personal track, each with their own dataset (`trackp start`); Ethan is the first.
+
 **Still open:**
-1. Which team member is the personal track (§6.3); not Ethan.
-2. Full sponsor list (§10).
-3. Model list and GPU budget (§4.4, §11).
-4. Project timeline (§13).
-5. Time-box for the user-model schema search (§6.2).
+1. Full sponsor list (§10).
+2. Model list and GPU budget (§4.4, §11).
+3. Project timeline (§13).
 
 ## 15. Main risks
 

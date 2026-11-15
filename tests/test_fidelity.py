@@ -111,36 +111,3 @@ class FidelityTests(unittest.TestCase):
             result = json.loads(output.getvalue())
             self.assertEqual(result["n_users"], 2)
             self.assertEqual(result["n_predictions"], 8)
-
-    def test_schema_search_is_bounded_and_dev_only(self):
-        from scripts.schema_search import run_search
-        from tests.test_taste_methods import ColorOracle
-        with tempfile.TemporaryDirectory() as d:
-            p = Path(d)
-            write_manifest(p / "split.json", build_manifest(records()))
-            configs = [{"id": "small", "method": "m5", "config": {"max_history": 1}}]
-            summary = run_search(records(), p / "split.json", configs, ColorOracle(), p / "search", "prism")
-            self.assertEqual(summary["selected_config_id"], "small")
-            registration = json.loads((p / "search" / "small" / "registration.json").read_text())
-            self.assertEqual(registration["user_partition"], "dev")
-            self.assertNotIn("prism:sealed", registration["user_ids"])
-            with self.assertRaises(ValueError):
-                run_search(records(), p / "split.json", configs * 9, ColorOracle(), p / "bad", "prism")
-
-    def test_incomplete_search_cannot_select_an_early_budget_survivor(self):
-        from scripts.schema_search import run_search
-        from tests.test_taste_methods import ColorOracle
-        rows = [r for r in records() if r.choice.user_id == "prism:one" and r.choice_split == "test"]
-        with tempfile.TemporaryDirectory() as d:
-            p = Path(d)
-            write_manifest(p / "split.json", build_manifest(rows))
-            configs = [{"id": name, "method": "m5", "config": {}} for name in ("first", "second")]
-            llm = ColorOracle()
-            llm.budget.max_calls = 1
-            summary = run_search(rows, p / "split.json", configs, llm,
-                                 p / "search", "prism", max_calls=1)
-            self.assertEqual(summary["trials"][0]["failures"], 0)
-            self.assertEqual(summary["trials"][1]["failures"], 1)
-            self.assertIsNone(summary["selected_config_id"])
-            self.assertEqual(summary["status"], "incomplete")
-            self.assertEqual(json.loads((p / "search" / "search.json").read_text()), summary)

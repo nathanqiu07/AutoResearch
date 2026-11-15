@@ -2,8 +2,8 @@
 
 ## Current state
 
-All eight methods, the shared interface, PRISM splits, the fidelity runner and
-bounded schema search are implemented. Foundation commit: `fd00fe6`. Method commit:
+All eight methods, the shared interface, PRISM splits and the fidelity runner
+are implemented. (The bounded schema search was removed on 2026-11-14, with Gio's agreement.) Foundation commit: `fd00fe6`. Method commit:
 `9c72e05`. Dataset/runner commit: `ee7a308`. See [the guide](README.md) for commands
 and [the design](design.md) for assumptions.
 

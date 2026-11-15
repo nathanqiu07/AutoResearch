@@ -82,7 +82,7 @@ What it writes, all under ignored `runs/prefdata/`:
 
 - `runs/prefdata/raw/prism/`: cached pages (about 200 MB).
 - `runs/prefdata/prism.jsonl`: the 16,693 normalized choices (about 40 MB) that
-  `fidelity` and `schema_search` read by default.
+  `fidelity` reads by default.
 
 If the download stops (HTTP 429 rate limit or a 5xx error after the built-in
 retries), run the same command again: cached pages are kept, so it resumes. If it
@@ -183,22 +183,6 @@ output path does not grant a second attempt. Never delete the marker to tune aga
 
 Final registration covers PRISM, the only dataset. The final launch remains Gio's
 decision after model access, budget, dev results and method settings are frozen.
-
-## Bounded schema search
-
-Write a JSON list of up to eight explicit `{id, method, config}` objects (methods
-m5–m7), then run:
-
-```bash
-python3 -m scripts.schema_search --configs configs.json --dataset prism \
-  --n-users 3 --max-calls 100 --output runs/schema-search/01
-```
-
-This command always uses development users, shares one call budget across all
-configurations and logs every trial. It selects a configuration only when **all**
-declared trials finish without errors. An exhausted budget or failed trial leaves
-the search incomplete, with no winner. It has no final-test switch. A dev winner
-still needs the held-out comparison.
 
 ## Verification and limits
 
