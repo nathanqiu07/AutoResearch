@@ -26,6 +26,7 @@ Stop: modal app stop autoresearch-vllm   (and autoresearch-auditor)
 """
 import os
 import subprocess
+import threading
 
 import modal
 
@@ -39,7 +40,9 @@ APP = os.environ.get("APP", "autoresearch-vllm")   # a second server (e.g. the P
 
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .pip_install("vllm==0.10.1.1", "huggingface_hub[hf_transfer]")
+    # vllm 0.10.1.1 asks for transformers>=4.55 with no upper bound; 5.x removed
+    # all_special_tokens_extended, which its tokenizer cache reads (auditor crash-looped 2026-11-14)
+    .pip_install("vllm==0.10.1.1", "transformers==4.55.4", "huggingface_hub[hf_transfer]")
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "MODEL": MODEL, "GPU": GPU, "PARSER": PARSER,
           "TOOL_PARSER": TOOL_PARSER, "MAX_MODEL_LEN": MAX_LEN, "APP": APP})
 )
@@ -61,7 +64,20 @@ def serve_command(model=MODEL, n_gpu=N_GPU, parser=PARSER, tool_parser=TOOL_PARS
 @modal.concurrent(max_inputs=64)
 @modal.web_server(port=8000, startup_timeout=30 * 60)
 def serve():
-    subprocess.Popen(serve_command(key=os.environ["VLLM_API_KEY"]))
+    proc = subprocess.Popen(serve_command(key=os.environ["VLLM_API_KEY"]))
+    threading.Thread(target=exit_when_done, args=(proc,), daemon=True).start()
+
+
+EXIT_MARKER = "vllm exited with code"   # scripts/c2_pilot.sh watches the app log for this
+
+
+def exit_when_done(proc, _exit=os._exit):
+    """End the container as soon as vLLM exits. Without this, a vLLM that dies at startup (a bad
+    dependency pin, out of memory) leaves Modal waiting startup_timeout (30 min) for a port that
+    never opens, with every GPU billed (2026-11-14: the auditor crash-looped for 12 min)."""
+    code = proc.wait()
+    print(f"{EXIT_MARKER} {code}; stopping the container", flush=True)
+    _exit(1)
 
 
 if __name__ == "__main__":

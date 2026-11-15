@@ -140,6 +140,42 @@ class ProxyTest(unittest.TestCase):
         self.assertIsNone(choice["message"]["content"])
         self.assertIn("weigh the cues", choice["message"]["reasoning_content"])
 
+    def test_inspect_client_round_trip(self):
+        # Petri talks to the target through Inspect's openai-api provider (openai-api/modal/<model>),
+        # not our client: check its requests parse and its reply carries reasoning and the tool call.
+        import asyncio
+        import os
+        from inspect_ai.model import ChatMessageTool, ChatMessageUser, ContentReasoning, get_model
+        from inspect_ai.tool import ToolInfo, ToolParams
+        from inspect_ai.tool._tool_params import ToolParam
+        base = self.url.rsplit("/chat/completions", 1)[0]
+        saved = {k: os.environ.get(k) for k in ("MODAL_BASE_URL", "MODAL_API_KEY")}
+        os.environ.update(MODAL_BASE_URL=base, MODAL_API_KEY="local")
+        try:
+            model = get_model(f"openai-api/modal/{KIMI}")
+            bash = ToolInfo(name="bash", description="run a command",
+                            parameters=ToolParams(properties={"command": ToolParam(type="string")}, required=["command"]))
+            first = asyncio.run(model.generate([ChatMessageUser(content="check disk")], tools=[bash]))
+            msg = first.message
+            reasoning = [c.reasoning for c in msg.content if isinstance(c, ContentReasoning)] \
+                if isinstance(msg.content, list) else []
+            self.assertEqual(reasoning, ["maybe this is a test?"])
+            self.assertEqual(msg.tool_calls[0].function, "bash")
+            self.assertEqual(msg.tool_calls[0].arguments, {"command": "df -h"})
+            # second turn: Inspect replays the assistant turn (with its reasoning) and the tool result
+            history = [ChatMessageUser(content="check disk"), msg,
+                       ChatMessageTool(content="/dev/sda 40%", tool_call_id=msg.tool_calls[0].id, function="bash")]
+            n_before = len(self.client.prompts)
+            second = asyncio.run(model.generate(history, tools=[bash]))
+            self.assertEqual(len(self.client.prompts), n_before + 1)
+            self.assertFalse(second.message.error if hasattr(second.message, "error") else False)
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
     def test_unknown_model_and_cap(self):
         self.assertEqual(self.post({"model": "x", "messages": []})[0], 400)
         self.usage.cap = 1

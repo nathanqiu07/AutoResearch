@@ -59,16 +59,18 @@ GPUS=0
 [ "$step" != smoke ] && GPUS=$((GPUS + 4))
 [ "$target" = qwen ] && GPUS=$((GPUS + 1))
 RUN_ID="c2-$step-$(date +%Y%m%dT%H%M%S)-$$"
-PROXY_PID=""; WATCHDOG=""; MODAL_POOL_LABEL=""; PICK_TS=""
+PROXY_PID=""; WATCHDOG=""; MODAL_POOL_LABEL=""; PICK_TS=""; DEPLOY_TS=""; LOG_PIDS=""
 cleanup() {
   [ -n "$WATCHDOG" ] && kill "$WATCHDOG" 2>/dev/null || true
   [ -n "$PROXY_PID" ] && kill "$PROXY_PID" 2>/dev/null || true
+  for p in $LOG_PIDS; do kill "$p" 2>/dev/null || true; done
   if [ "$GPUS" -gt 0 ]; then
-    "$MODAL" app stop autoresearch-vllm >/dev/null 2>&1 || true
-    "$MODAL" app stop autoresearch-auditor >/dev/null 2>&1 || true
+    "$MODAL" app stop -y autoresearch-vllm >/dev/null 2>&1 || true   # -y: without a TTY it asks and aborts
+    "$MODAL" app stop -y autoresearch-auditor >/dev/null 2>&1 || true
   fi
   if [ -n "$MODAL_POOL_LABEL" ]; then
-    mins=$(awk -v s="$PICK_TS" -v e="$(date +%s)" 'BEGIN { printf "%.2f", (e - s) / 60 }')
+    # GPUs bill from the first deploy (containers start on the first request); nothing deployed, $0
+    mins=0; [ -n "$DEPLOY_TS" ] && mins=$(awk -v s="$DEPLOY_TS" -v e="$(date +%s)" 'BEGIN { printf "%.2f", (e - s) / 60 }')
     python3 scripts/modal_pool.py close --run-id "$RUN_ID" --label "$MODAL_POOL_LABEL" --gpus "$GPUS" --minutes "$mins" || true
   fi
   [ -f runs/petri/tinker_usage.json ] && echo "Tinker usage this run: $(tr -d '\n ' < runs/petri/tinker_usage.json)"
@@ -97,6 +99,24 @@ deploy() {  # app model gpu parser maxlen -> base URL
   [ -n "$url" ] || { echo "deploy of $1 failed. Modal said:" >&2; printf '%s\n' "$out" | tail -5 >&2; exit 1; }
   echo "$url/v1"
 }
+# Poll the server until it answers, so audits never start against a server that is still loading or
+# has died. vLLM exiting is caught from the app log (harness/modal_vllm.py prints the marker and ends
+# the container), so a crash costs a minute or two of GPUs, not the 30-minute startup timeout.
+wait_ready() {  # app base_url minutes
+  local app="$1" url="$2" deadline=$(( $(date +%s) + $3 * 60 )) log="runs/petri/$1_$RUN_ID.log"
+  "$MODAL" app logs "$app" > "$log" 2>&1 & LOG_PIDS="$LOG_PIDS $!"
+  echo "waiting for $app to load (up to $3 min; log $log)..."
+  while :; do
+    curl -sf -m 15 -H "Authorization: Bearer $VLLM_KEY" "$url/models" >/dev/null 2>&1 && { echo "$app ready"; return 0; }
+    if grep -q "vllm exited with code" "$log" 2>/dev/null; then
+      echo "$app: vLLM crashed while starting. Last lines of its log:" >&2; grep -v '^[[:space:]]*$' "$log" | tail -15 >&2; exit 1
+    fi
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      echo "$app not ready after $3 min. Last lines of its log:" >&2; grep -v '^[[:space:]]*$' "$log" | tail -15 >&2; exit 1
+    fi
+    sleep 20
+  done
+}
 mkdir -p runs/petri
 if [ "$target" = kimi ]; then
   [ -f "$POOL_FILE" ] || : "${TINKER_API_KEY:?TINKER_API_KEY not set (Kimi runs on Tinker)}"
@@ -114,7 +134,8 @@ if [ "$target" = kimi ]; then
 else
   T_MODEL=Qwen/Qwen3-30B-A3B
   echo "deploying target (Qwen3-30B-A3B, 1xH100)..."
-  T_URL=$(deploy autoresearch-vllm "$T_MODEL" H100:1 qwen3 32768); T_KEY="$VLLM_KEY"
+  T_URL=$(deploy autoresearch-vllm "$T_MODEL" H100:1 qwen3 32768); T_KEY="$VLLM_KEY"; DEPLOY_TS=$(date +%s)
+  wait_ready autoresearch-vllm "$T_URL" "${READY_MINUTES:-30}"
   export OPENAI_COMPAT_USD_PER_HOUR=$H100_PER_HOUR
 fi
 export OPENAI_COMPAT_BASE_URL="$T_URL" OPENAI_COMPAT_API_KEY="$T_KEY" MODAL_BASE_URL="$T_URL" MODAL_API_KEY="$T_KEY"
@@ -123,6 +144,9 @@ stamp=$(date +%Y-%m-%d)
 auditor() {
   echo "deploying auditor (Qwen3-235B-A22B-Instruct-2507-FP8, 4xH100) in Modal workspace $MODAL_POOL_LABEL..."
   A_URL=$(deploy autoresearch-auditor Qwen/Qwen3-235B-A22B-Instruct-2507-FP8 H100:4 none 65536)
+  [ -n "$DEPLOY_TS" ] || DEPLOY_TS=$(date +%s)
+  # first load in a workspace downloads ~240 GB of weights; later loads read the hf-cache volume
+  wait_ready autoresearch-auditor "$A_URL" "${READY_MINUTES:-40}"
   export MODALAUD_BASE_URL="$A_URL" MODALAUD_API_KEY="$VLLM_KEY"
 }
 E3B=(--split dev --limit "$n" --epochs 1 --tools simulated --target "$T_SPEC" --judge openai:gpt-5.1

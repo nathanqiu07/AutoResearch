@@ -6,7 +6,7 @@ Sample.reasoning and (2) the A1 judge can read it. Writes
 results/smoke/c2_target_<date>.json. Paid (Modal GPU time plus judge calls):
 run only with the user's OK (AGENTS.md rule 5).
 
-    python3 scripts/c2_smoke_target.py --n 5 --target openai-compat:Qwen/Qwen3-30B-A3B --judge anthropic:claude-haiku-4-5
+    python3 scripts/c2_smoke_target.py --n 5 --target openai-compat:Qwen/Qwen3-30B-A3B --judge openai:gpt-5.1
     python3 scripts/c2_smoke_target.py --offline      # free plumbing check
 """
 import argparse
@@ -27,7 +27,7 @@ def main(argv=None):
     ap.add_argument("--n", type=int, default=5)
     ap.add_argument("--target", default="openai-compat:moonshotai/Kimi-K2.6")
     ap.add_argument("--generator", default="openai:gpt-6-luna")
-    ap.add_argument("--judge", default="anthropic:claude-haiku-4-5")
+    ap.add_argument("--judge", default="openai:gpt-5.1")   # no Anthropic API in the lineup (Nathan)
     ap.add_argument("--max-cost", type=float, default=5.0)
     ap.add_argument("--offline", action="store_true")
     ap.add_argument("--out", default=None)

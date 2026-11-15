@@ -458,7 +458,9 @@ def list_models(key_envs: Dict[str, Optional[str]]) -> int:
     import tinker
     for label, key_env in key_envs.items():
         try:
-            caps = make_service(tinker, key_env).get_server_capabilities()
+            # RestClient, not ServiceClient.get_server_capabilities (deprecated in tinker 0.39)
+            caps = tinker.RestClient(api_key=os.environ[key_env or "TINKER_API_KEY"]).get_server_capabilities()
+            caps = caps.result() if hasattr(caps, "result") else caps
             names = sorted(getattr(m, "model_name", str(m)) for m in caps.supported_models)
             print(f"[{label}] {len(names)} models: " + ", ".join(names))
         except Exception as e:  # noqa: BLE001 - report every account, then fail
