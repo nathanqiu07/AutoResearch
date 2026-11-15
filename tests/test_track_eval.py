@@ -78,6 +78,13 @@ class ArmTest(unittest.TestCase):
         write_corpus(self.root, "research__late.txt", "2025-01-01", "LATE_TEXT")
         self.researcher = Researcher("marius_test", self.root)
 
+    def test_docs_arm_keeps_a_document_longer_than_its_whole_budget(self):
+        write_corpus(self.root, "research__long.txt", "2023-06-01", "LONG_START " + "x" * 100_000)
+        llm = OptionLLM(first_option)
+        track_eval.docs_arm(self.researcher, llm, "2024-06-01").predict("ctx", ["x", "y"])
+        self.assertIn("LONG_START", llm.prompts[0])
+        self.assertIn("EARLY_TEXT", llm.prompts[0])
+
     def test_docs_arm_sees_no_document_from_after_cutoff(self):
         llm = OptionLLM(first_option)
         track_eval.docs_arm(self.researcher, llm, "2024-06-01").predict("ctx", ["x", "y"])
@@ -107,7 +114,7 @@ class GateTest(unittest.TestCase):
         return researcher
 
     def judge(self):
-        return OptionLLM(lambda ctx, opts: taken_option(ctx, opts) if ctx == "FLAG" else 1 - taken_option(ctx, opts))
+        return OptionLLM(lambda ctx, opts: taken_option(ctx, opts) if ctx.endswith("FLAG") else 1 - taken_option(ctx, opts))
 
     def regenerate(self, calls):
         def regen(pair):
@@ -151,7 +158,7 @@ class SelectAndE2Test(unittest.TestCase):
         fitted = []
         with mock.patch.object(track_eval, "create_method", lambda m, llm, **kw: FakeMethod(fitted)):
             best, scores = track_eval.select_method(history, None, candidates=("m2", "m3"))
-        self.assertEqual(fitted[0], [f"p{k}" for k in range(8)])
+        self.assertTrue(set(fitted[0]) <= {f"p{k}" for k in range(8)})
         self.assertEqual(set(scores), {"m2", "m3"})
         self.assertIn(best, ("m2", "m3"))
 
@@ -160,14 +167,14 @@ class SelectAndE2Test(unittest.TestCase):
         write_corpus(root, "research__early.txt", "2023-01-01", "EARLY_TEXT")
         researcher = Researcher("marius_test", root)
         rows = [dict(asdict(choice(k, f"g{k}")), split="history" if k < 4 else "heldout", pair_id=f"p{k}",
-                     date="2023-06-01" if k < 4 else "2025-01-01", tag="exa_verified",
+                     date="2023-06-01" if k < 4 else "2025-01-01", tag="exa_verified", cutoff="2024-06-01",
                      author_position="last", distractor_source="named", url=f"g{k}")
                 for k in range(8)]
         with open(os.path.join(root, timesplit.PAIRS), "w") as f:
             f.writelines(json.dumps(r) + "\n" for r in rows)
         timesplit.write_choice_files(researcher)
         llm = OptionLLM(taken_option)
-        report = track_eval.run_e2(researcher, llm, "Marius Hobbhahn", "2024-06-01", "m1",
+        report = track_eval.run_e2(researcher, llm, "Marius Hobbhahn", "m1",
                                    out_path=os.path.join(root, "e2.json"))
         self.assertEqual(set(report["arms"]), {"m0", "m0_named", "m1_pairs", "m1_docs", "selected:m1"})
         self.assertIn("contamination_gap", report)

@@ -45,6 +45,7 @@ from ..llm import LLM, extract_json
 from .extract import profile_from_texts
 from .profile import TasteProfile
 from .researcher import DEFAULT_ROOT, Researcher, load_researcher
+from .scrape import canonical_url
 from .usermodel import Choice, digest
 
 PAIRS, REVIEW = "pairs_timesplit.jsonl", "review_timesplit.jsonl"
@@ -135,7 +136,7 @@ def _read_jsonl(path: str) -> List[dict]:
 
 # ---- stage 2: Exa structured extraction -----------------------------------------
 
-def exa_extract(researcher: Researcher, client, batch: int = 10) -> dict:
+def exa_extract(researcher: Researcher, client, batch: int = 5) -> dict:
     """One row per corpus document in extraction/exa.jsonl with Exa's structured summary of its
     decisions. Rows are appended as they finish, and documents already there are skipped, so a
     crashed run resumes where it stopped."""
@@ -151,10 +152,11 @@ def exa_extract(researcher: Researcher, client, batch: int = 10) -> dict:
     summary = {"query": SUMMARY_QUERY, "schema": DECISION_SCHEMA}
     for i in range(0, len(todo), batch):
         chunk = todo[i:i + batch]
-        by_url = {r.get("url"): r for r in client.contents([u for _, u in chunk], text_chars=1, summary=summary)}
+        by_url = {canonical_url(r.get("url", "")): r
+                  for r in client.contents([u for _, u in chunk], text_chars=1, summary=summary)}
         with open(path, "a") as f:
             for doc, url in chunk:
-                r = by_url.get(url, {})
+                r = by_url.get(canonical_url(url), {})
                 raw = r.get("summary")
                 try:
                     out = json.loads(raw) if isinstance(raw, str) else raw
@@ -336,7 +338,8 @@ def next_distractor(decision: dict, researcher: Researcher, llm: LLM, client, cu
             results = [r for r in client.search(decision.get("problem") or decision["did"], num_results=8,
                                                 start_date=(date - HALF_YEAR).isoformat(), end_date=end.isoformat(),
                                                 exclude_text=["Hobbhahn"], exclude_domains=["apolloresearch.ai"])
-                       if "hobbhahn" not in (str(r.get("author") or "") + str(r.get("highlights") or "")).lower()]
+                       if "hobbhahn" not in (str(r.get("author") or "") + str(r.get("highlights") or "")).lower()
+                       and r.get("publishedDate") and r["publishedDate"][:10] <= end.isoformat()]
             if not results:
                 continue
             out = extract_json(llm.complete(
@@ -366,7 +369,7 @@ def find_distractors(researcher: Researcher, llm: LLM, client, cutoff: str) -> d
         report[out["source"] if out else "none"] += 1
         if out:
             with open(path, "a") as f:
-                f.write(json.dumps(dict(out, decision_id=d["decision_id"]), ensure_ascii=False) + "\n")
+                f.write(json.dumps(dict(out, decision_id=d["decision_id"], cutoff=cutoff), ensure_ascii=False) + "\n")
     return report
 
 
@@ -381,6 +384,7 @@ PAIR_PROMPT = (
     "Then restate the decision taken and the alternative as two options of similar length (within "
     "20%) and the same style. Return JSON {\"context\": str, \"did\": str, \"alternative\": str}.\n\n")
 BANNED = re.compile(r"hobbhahn|marius|apollo", re.IGNORECASE)
+ANON_USER = "subject"
 
 
 def check_pair(pair: dict, later_titles: List[str]) -> List[str]:
@@ -451,19 +455,30 @@ def write_pairs(researcher: Researcher, llm: LLM, cutoff: str, seed: int = 0) ->
     if os.path.exists(os.path.join(root, PAIRS)):
         raise FileExistsError(f"{PAIRS} exists for {researcher.slug}; delete it to rebuild")
     distractors = {r["decision_id"]: r for r in _read_jsonl(os.path.join(root, DISTRACTORS))}
+    stale = {r.get("cutoff") for r in distractors.values()} - {cutoff}
+    if stale:
+        raise ValueError(f"distractors were chosen for cutoff {sorted(map(str, stale))}, not {cutoff}; "
+                         f"delete {DISTRACTORS} and rerun distract")
     docs = _corpus_meta(root)
     meta = {name: fm for _, name, fm in docs}
-    pairs, failed = [], 0
+    # Pairs are appended to a partial file as they are written, so a crash loses at most one.
+    partial = os.path.join(root, PAIRS + ".partial")
+    done = {r["decision_id"] for r in _read_jsonl(partial)}
+    failed = 0
     for d in _read_jsonl(os.path.join(root, DECISIONS)):
         alt = distractors.get(d["decision_id"])
-        if not alt or not d.get("date"):
+        if not alt or not d.get("date") or d["decision_id"] in done:
             continue
         pair, _ = render_pair(d, alt["text"], llm, _later_titles(docs, d["date"]))
         if pair is None:
             failed += 1
             continue
-        pairs.append(_pair_row(researcher, d, alt, pair, cutoff, seed, meta))
+        with open(partial, "a") as f:
+            f.write(json.dumps(_pair_row(researcher, d, alt, pair, cutoff, seed, meta), ensure_ascii=False) + "\n")
+    pairs = _read_jsonl(partial)
     _write_jsonl(os.path.join(root, PAIRS), pairs)
+    if os.path.exists(partial):
+        os.remove(partial)
     write_choice_files(researcher)
     return {"pairs": len(pairs), "failed_checks": failed, "cutoff": cutoff,
             "history": sum(p["split"] == "history" for p in pairs),
@@ -493,9 +508,12 @@ def write_choice_files(researcher: Researcher) -> None:
     for p in _read_jsonl(os.path.join(researcher.root, PAIRS)):
         if p["pair_id"] in rejected:
             continue
-        c = Choice(user_id=researcher.slug, context=p["context"], a_text=p["a_text"], b_text=p["b_text"],
-                   chosen=p["chosen"], decision_point=p["decision_point"], reason=p["reason"],
-                   timestamp=p["date"], source="timesplit", example_id=p["pair_id"], group_id=p["url"])
+        # Every field of a Choice can reach a user model's prompt, so none may name him: an
+        # anonymous user id, a hashed source URL, and no reason that names him or his lab.
+        c = Choice(user_id=ANON_USER, context=p["context"], a_text=p["a_text"], b_text=p["b_text"],
+                   chosen=p["chosen"], decision_point=p["decision_point"],
+                   reason="" if BANNED.search(p["reason"]) else p["reason"], timestamp=p["date"],
+                   source="timesplit", example_id=p["pair_id"], group_id=digest([p["url"]])[:12])
         rows[p["split"]].append(asdict(c))
     _write_jsonl(os.path.join(researcher.root, HISTORY), rows["history"])
     _write_jsonl(os.path.join(researcher.root, HELDOUT), rows["heldout"])

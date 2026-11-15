@@ -10,7 +10,7 @@ class ExaClientBodyTest(unittest.TestCase):
     def setUp(self):
         self.sent = []
 
-        def fake_post(url, body, headers):
+        def fake_post(url, body, headers, timeout=60):
             self.sent.append((url, body))
             return {"results": [], "output": {"content": {"items": []}}, "costDollars": {"total": 0.01}}
 

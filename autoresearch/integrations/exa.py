@@ -56,7 +56,8 @@ class ExaClient:
                 (path + json.dumps(body, sort_keys=True)).encode()).hexdigest()[:24] + ".json")
             if os.path.exists(ck):
                 return json.load(open(ck))
-        out = post_json(BASE + path, body, {"x-api-key": self.key})
+        # Deep search and long-page fetches can take minutes; the default 60s would pay twice.
+        out = post_json(BASE + path, body, {"x-api-key": self.key}, timeout=300)
         self.calls += 1
         self.cost += float((out.get("costDollars") or {}).get("total", 0.0))
         if ck:

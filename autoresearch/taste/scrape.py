@@ -119,10 +119,20 @@ def fetch_arxiv_meta(arxiv_ids):
     return out
 
 
+def _name_pattern(name: str) -> str:
+    first, last = (re.escape(p) for p in (name.split()[0], name.split()[-1]))
+    return rf"(?:\b{first}\s+(?:\w\.?\s+)?{last}\b|\b{first[0]}\.?\s+{last}\b|\b{last},\s*{first[0]})"
+
+
 def _is_him(text: str, name: str) -> bool:
-    parts = name.lower().split()
-    t = text.lower()
-    return parts[-1] in t and (parts[0][0] in t.replace(parts[-1], "") or "".join(parts) in t)
+    """An author string names him: "Marius Hobbhahn", "M. Hobbhahn" or "Hobbhahn, M"."""
+    return re.search(_name_pattern(name), text, re.IGNORECASE) is not None
+
+
+def _byline(text: str, name: str) -> bool:
+    """A line near the top that starts with his name, optionally after "By" or "Authors:"."""
+    return re.search(rf"(?:^|\n)\s*(?:by\s+|written\s+by\s+|authors?:\s*)?{_name_pattern(name)}",
+                     text[:500], re.IGNORECASE) is not None
 
 
 def author_position(authors, name):
@@ -159,9 +169,9 @@ def _authorship(item, name, meta):
     if m and m.group(1) in meta:
         authors = meta[m.group(1)]["authors"]
     elif item.get("author"):
-        authors = [a.strip() for a in re.split(r",| and ", item["author"]) if a.strip()]
+        authors = [a.strip() for a in re.split(r"[,;]| and ", item["author"]) if a.strip()]
     elif ((_kind(url) == "tweet" and "".join(name.lower().split()) in url.lower())
-          or _is_him((item.get("text") or "")[:500], name)):
+          or _byline(item.get("text") or "", name)):
         authors = [name]
     else:
         return [], None, "no_author_evidence"
@@ -219,13 +229,30 @@ def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch
 
     urls = [v["url"] for v in found.values()]
     items = {}
-    for i in range(0, len(urls), 100):
-        for r in client.contents(urls[i:i + 100], text_chars=200_000):
+    for i in range(0, len(urls), 20):
+        for r in client.contents(urls[i:i + 20], text_chars=200_000):
             items.setdefault(canonical_url(r.get("url", "")), r)
     meta = arxiv_meta([m.group(1) for u in items for m in [ARXIV_ID.search(u)] if m])
 
+    # One piece of work posted in several places (arXiv, LessWrong, his lab's blog) is one
+    # document, dated by its earliest copy, so a decision can't land on both sides of T.
+    by_title = {}
+    for curl, item in items.items():
+        title = re.sub(r"[^a-z0-9]+", " ", (item.get("title") or "").lower()).strip()
+        if _kind(curl) != "tweet" and len(title) >= 12:
+            by_title.setdefault(title, []).append(curl)
+    crossposts = {}
+    for urls in by_title.values():
+        if len(urls) > 1:
+            urls.sort(key=lambda u: (_date(dict(items[u], url=u), meta)[0] or "9999", _kind(u) != "paper", u))
+            crossposts.update({u: urls[0] for u in urls[1:]})
+
     manifest, kept, tweets = [], 0, {}
     for curl, item in sorted(items.items()):
+        if curl in crossposts:
+            manifest.append({"url": curl, "title": item.get("title", ""), "reason": "crosspost_of",
+                             "kept_as": crossposts[curl]})
+            continue
         item = dict(item, url=curl)
         authors, pos, reason = _authorship(item, name, meta)
         date, date_source = _date(item, meta)
@@ -256,6 +283,6 @@ def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch
         f.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in manifest)
     dropped = {}
     for r in manifest:
-        if not r["reason"].startswith("kept"):
+        if not r["reason"].startswith("kept") and r["reason"] != "crosspost_of":
             dropped[r["reason"]] = dropped.get(r["reason"], 0) + 1
     return {"kept": kept, "dropped": dropped, "candidates": len(found), "exa_cost": round(client.cost, 4)}

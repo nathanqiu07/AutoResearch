@@ -83,6 +83,24 @@ class HarvestTest(unittest.TestCase):
         self.harvest([page("https://example.org/anon", "2025-02-01", None, text="No byline anywhere.")])
         self.assertEqual(self.manifest()[0]["reason"], "no_author_evidence")
 
+    def test_mention_without_author_field_is_not_a_byline(self):
+        self.harvest([page("https://example.org/news", "2025-02-01", None,
+                           text="A recent paper by Hobbhahn and colleagues models scheming.")])
+        self.assertEqual(self.manifest()[0]["reason"], "no_author_evidence")
+
+    def test_semicolon_separated_authors_give_his_real_position(self):
+        self.harvest([page("https://www.lesswrong.com/posts/Qq1/x", "2025-02-01", "Jane Doe; Marius Hobbhahn")])
+        self.assertEqual(self.front_matter(self.corpus()[0])["author_position"], "last")
+
+    def test_crosspost_under_the_same_title_is_one_document_with_the_earliest_date(self):
+        self.harvest([page("https://arxiv.org/abs/2505.23836", "2025-05-28", "Marius Hobbhahn",
+                           title="Large Language Models Often Know When They Are Being Evaluated"),
+                      page("https://www.apolloresearch.ai/blog/eval-awareness", "2025-06-02", "Marius Hobbhahn",
+                           title="Large language models often know when they are being evaluated")])
+        files = self.corpus()
+        self.assertEqual(len(files), 1)
+        self.assertEqual(self.front_matter(files[0])["publishedDate"], "2025-05-28")
+
     def test_byline_in_text_counts_when_author_field_is_missing(self):
         self.harvest([page("https://www.apolloresearch.ai/blog/x", "2025-02-01", None,
                            text="By Marius Hobbhahn\n\nWe think evals need a science.")])

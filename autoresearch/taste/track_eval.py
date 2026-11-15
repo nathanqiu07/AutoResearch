@@ -15,7 +15,7 @@ The selected method succeeds if its gain over both m1 arms has a 90% interval ab
 
     python3 -m autoresearch.taste.track_eval gate   --researcher <slug> --max-usd 10
     python3 -m autoresearch.taste.track_eval select --researcher <slug> --max-usd 40
-    python3 -m autoresearch.taste.track_eval e2     --researcher <slug> --name "<Full Name>" --cutoff YYYY-MM-DD --selected m5 --max-usd 40
+    python3 -m autoresearch.taste.track_eval e2     --researcher <slug> --name "<Full Name>" --selected m5 --max-usd 40
     python3 -m autoresearch.taste.track_eval final  --researcher <slug> --selected m5 --max-usd 10
 """
 from __future__ import annotations
@@ -36,6 +36,7 @@ from .usermodel import Choice, UserModel
 
 GATE = "gate_timesplit.jsonl"
 GATE_THRESHOLD = 0.75
+CACHE = os.path.join("runs", "track_s", "cache", "usermodel")
 
 
 def load_choices(path: str) -> List[Choice]:
@@ -107,36 +108,43 @@ class DocsInPrompt(UserModel):
 
     def __init__(self, llm: LLM, docs: List[Tuple[str, str]], max_chars: int = 60_000, **kw):
         super().__init__(llm, **kw)
+        # Each document gets at most a quarter of the space, so one long paper can't crowd out the rest.
         kept, used = [], 0
         for _, text in reversed(docs):
-            if used + len(text) > max_chars:
+            piece = text[:min(max_chars // 4, max_chars - used)]
+            if not piece:
                 break
-            kept.append(text)
-            used += len(text)
+            kept.append(piece)
+            used += len(piece)
         self.persona = "Their writing from before this decision, oldest first:\n\n" + "\n\n---\n\n".join(reversed(kept))
 
     def predict(self, context, options):
         return self._predict_with(context, options, persona=self.persona)
 
 
-def docs_arm(researcher: Researcher, llm: LLM, cutoff: str) -> DocsInPrompt:
-    return DocsInPrompt(llm, timesplit.docs_before(researcher, cutoff))
+def docs_arm(researcher: Researcher, llm: LLM, cutoff: str, cache_dir: Optional[str] = None) -> DocsInPrompt:
+    return DocsInPrompt(llm, timesplit.docs_before(researcher, cutoff), cache_dir=cache_dir)
 
 
-def blind_judge(choices: List[Choice], llm: LLM) -> Dict[str, bool]:
-    """example_id -> a model with no history picks his option in both orders."""
-    judge = NamedNoHistory(llm, None)
+class BlindJudge(NoHistory):
+    def predict(self, context, options):
+        return super().predict("Which of these is the better research decision?\n" + context, options)
+
+
+def blind_judge(choices: List[Choice], llm: LLM, cache_dir: Optional[str] = None) -> Dict[str, bool]:
+    """example_id -> a model with no history picks his option as better research in both orders."""
+    judge = BlindJudge(llm, cache_dir=cache_dir)
     return {c.example_id: paired_correct(judge, c) for c in choices}
 
 
 def distractor_gate(researcher: Researcher, judge_llm: LLM, regenerate: Callable[[dict], Optional[dict]],
-                    threshold: float = GATE_THRESHOLD) -> dict:
+                    threshold: float = GATE_THRESHOLD, cache_dir: Optional[str] = None) -> dict:
     """If a blind judge spots his option on more than `threshold` of held-out pairs, rebuild each
     spotted pair once with the next distractor source and judge it again. Runs once per pair set."""
     root = researcher.root
     if os.path.exists(os.path.join(root, GATE)):
         raise FileExistsError(f"{GATE} exists; the gate runs once per pair set")
-    before = blind_judge(load_choices(os.path.join(root, timesplit.HELDOUT)), judge_llm)
+    before = blind_judge(load_choices(os.path.join(root, timesplit.HELDOUT)), judge_llm, cache_dir)
     flagged = [k for k, v in before.items() if v]
     pairs = timesplit._read_jsonl(os.path.join(root, timesplit.PAIRS))
     replaced = {}
@@ -151,7 +159,7 @@ def distractor_gate(researcher: Researcher, judge_llm: LLM, regenerate: Callable
         timesplit.write_choice_files(researcher)
     new_ids = {v["pair_id"] for v in replaced.values()}
     after = blind_judge([c for c in load_choices(os.path.join(root, timesplit.HELDOUT)) if c.example_id in new_ids],
-                        judge_llm)
+                        judge_llm, cache_dir)
     rows = [{"pair_id": k, "flagged_before": v, "regenerated_to": replaced[k]["pair_id"] if k in replaced else None,
              "flagged_after": after[replaced[k]["pair_id"]] if k in replaced else v} for k, v in before.items()]
     timesplit._write_jsonl(os.path.join(root, GATE), rows)
@@ -160,25 +168,38 @@ def distractor_gate(researcher: Researcher, judge_llm: LLM, regenerate: Callable
             "judge": judge_llm.label}
 
 
-def _fit(method: str, llm: LLM, history: List[Choice]):
-    model = create_method(method, llm, seed=0)
-    model.fit(history, [])
-    return model
-
-
-def select_method(history: List[Choice], llm: LLM, candidates=("m2", "m3", "m4", "m5", "m6", "m7")):
-    """Fit each candidate on the earliest 80% of history's documents and score it on the rest."""
+def split_by_document(choices: List[Choice], share: float = 0.8) -> Tuple[List[Choice], List[Choice]]:
+    """(earliest `share` of source documents, the rest); no document is on both sides."""
     first_seen: Dict[str, str] = {}
-    for c in history:
+    for c in choices:
         g = c.group_id or c.example_id
         first_seen[g] = min(first_seen.get(g, c.timestamp), c.timestamp)
     order = sorted(first_seen, key=lambda g: (first_seen[g], g))
-    train_groups = set(order[:max(1, int(0.8 * len(order)))])
-    train = [c for c in history if (c.group_id or c.example_id) in train_groups]
-    val = [c for c in history if (c.group_id or c.example_id) not in train_groups]
+    early = set(order[:max(1, int(share * len(order)))])
+    return ([c for c in choices if (c.group_id or c.example_id) in early],
+            [c for c in choices if (c.group_id or c.example_id) not in early])
+
+
+def _fit(method: str, llm: LLM, history: List[Choice], cache_dir: Optional[str] = None):
+    """m1 sees every history pair. The other methods get up to 50 pairs (the most they accept)
+    and a validation set of the latest documents, which some use to check or calibrate."""
+    if method == "m1":
+        model = create_method(method, llm, seed=0, cache_dir=cache_dir)
+        model.fit(history, [])
+        return model
+    train, val = split_by_document(history)
+    model = create_method(method, llm, seed=0, max_history=50, cache_dir=cache_dir)
+    model.fit(train, val)
+    return model
+
+
+def select_method(history: List[Choice], llm: LLM, candidates=("m2", "m3", "m4", "m5", "m6", "m7"),
+                  cache_dir: Optional[str] = None):
+    """Fit each candidate on the earliest 80% of history's documents and score it on the rest."""
+    train, val = split_by_document(history)
     scores = {}
     for m in candidates:
-        model = _fit(m, llm, train)
+        model = _fit(m, llm, train, cache_dir)
         scores[m] = sum(paired_correct(model, c) for c in val) / max(1, len(val))
     best = max(candidates, key=lambda m: scores[m])
     return best, scores
@@ -189,14 +210,19 @@ def _summary(by_group: Dict[str, Dict[str, bool]]) -> dict:
     return {"accuracy": acc, "ci90": [lo, hi]}
 
 
-def run_e2(researcher: Researcher, llm: LLM, name: str, cutoff: str, selected: str,
-           out_path: Optional[str] = None) -> dict:
+def run_e2(researcher: Researcher, llm: LLM, name: str, selected: str,
+           out_path: Optional[str] = None, cache_dir: Optional[str] = None) -> dict:
     root = researcher.root
+    cutoffs = {p["cutoff"] for p in timesplit._read_jsonl(os.path.join(root, timesplit.PAIRS))}
+    if len(cutoffs) != 1:
+        raise ValueError(f"pairs carry cutoffs {sorted(cutoffs)}; expected exactly one")
+    cutoff = cutoffs.pop()
     history = load_choices(os.path.join(root, timesplit.HISTORY))
     heldout = load_choices(os.path.join(root, timesplit.HELDOUT))
-    arms = {"m0": NamedNoHistory(llm, None), "m0_named": NamedNoHistory(llm, name),
-            "m1_pairs": _fit("m1", llm, history), "m1_docs": docs_arm(researcher, llm, cutoff),
-            f"selected:{selected}": _fit(selected, llm, history)}
+    arms = {"m0": NamedNoHistory(llm, None, cache_dir=cache_dir),
+            "m0_named": NamedNoHistory(llm, name, cache_dir=cache_dir),
+            "m1_pairs": _fit("m1", llm, history, cache_dir), "m1_docs": docs_arm(researcher, llm, cutoff, cache_dir),
+            f"selected:{selected}": _fit(selected, llm, history, cache_dir)}
     scored = {arm: score(model, heldout) for arm, model in arms.items()}
     flat = {arm: {k: v for g in s.values() for k, v in g.items()} for arm, s in scored.items()}
     lists = {arm: {g: list(v.values()) for g, v in s.items()} for arm, s in scored.items()}
@@ -218,7 +244,7 @@ def run_e2(researcher: Researcher, llm: LLM, name: str, cutoff: str, selected: s
         "arms": {arm: _summary(s) for arm, s in scored.items()},
         "selected_minus": {b: {"diff": d, "ci90": [lo, hi]} for b, (d, lo, hi) in diffs.items()},
         "success": all(lo > 0 for _, lo, _ in diffs.values()),
-        "contamination_gap": (sum(flat["m0_named"].values()) - sum(flat["m0"].values())) / max(1, len(heldout)),
+        "contamination_gap": dict(zip(("diff", "ci_low", "ci_high"), cluster_diff_ci(lists["m0_named"], lists["m0"]))),
         "selected_by": breakdown,
         "selected_without_still_flagged": {"n": len(unflagged),
                                            "accuracy": sum(unflagged) / len(unflagged) if unflagged else None},
@@ -231,13 +257,13 @@ def run_e2(researcher: Researcher, llm: LLM, name: str, cutoff: str, selected: s
     return report
 
 
-def final_model(researcher: Researcher, llm: LLM, selected: str) -> str:
+def final_model(researcher: Researcher, llm: LLM, selected: str, cache_dir: Optional[str] = None) -> str:
     """Fit the selected method on every pair (history and held-out) and save usermodel.json."""
     root = researcher.root
     pairs = (load_choices(os.path.join(root, timesplit.HISTORY))
              + load_choices(os.path.join(root, timesplit.HELDOUT)))
     path = os.path.join(root, "usermodel.json")
-    _fit(selected, llm, pairs).save(path)
+    _fit(selected, llm, pairs, cache_dir).save(path)
     return path
 
 
@@ -258,7 +284,6 @@ def main(argv=None):
             c.add_argument("--selected", required=True)
         if name == "e2":
             c.add_argument("--name", required=True)
-            c.add_argument("--cutoff", required=True)
             c.add_argument("--out", default=None)
     args = p.parse_args(argv)
     from ..llm import Budget, get_llm
@@ -270,16 +295,17 @@ def main(argv=None):
         client = ExaClient(cache_dir=timesplit.EXA_CACHE)
         judge = get_llm(args.llm, args.judge_model, budget)
         report = distractor_gate(researcher, judge,
-                                 lambda pair: timesplit.regenerate_pair(researcher, pair, llm, client))
+                                 lambda pair: timesplit.regenerate_pair(researcher, pair, llm, client), cache_dir=CACHE)
         report["exa_cost"] = round(client.cost, 4)
     elif args.command == "select":
-        best, scores = select_method(load_choices(os.path.join(researcher.root, timesplit.HISTORY)), llm)
+        best, scores = select_method(load_choices(os.path.join(researcher.root, timesplit.HISTORY)), llm,
+                                     cache_dir=CACHE)
         report = {"selected": best, "scores": scores}
     elif args.command == "e2":
         out = args.out or os.path.join("results", "track_s", f"E2_{researcher.slug}.json")
-        report = run_e2(researcher, llm, args.name, args.cutoff, args.selected, out_path=out)
+        report = run_e2(researcher, llm, args.name, args.selected, out_path=out, cache_dir=CACHE)
     else:
-        report = {"saved": final_model(researcher, llm, args.selected)}
+        report = {"saved": final_model(researcher, llm, args.selected, CACHE)}
     print(json.dumps(dict(report, llm_cost=round(budget.cost_usd, 4)), indent=2))
 
 

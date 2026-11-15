@@ -90,7 +90,7 @@ class TimeSplitPairsTest(unittest.TestCase):
             decisions.append(dict(decision("q" * 20, did=f"TAKEN_{name}"), doc=f"research__{name}.txt",
                                   url=f"https://ex.org/{name}", date=date, tag="exa_verified", decision_id=name))
             distractors.append({"decision_id": name, "text": f"OTHER_{name}", "source": "generated",
-                                "evidence_url": None})
+                                "evidence_url": None, "cutoff": "2024-01-01"})
         for fname, rows in ((timesplit.DECISIONS, decisions), (timesplit.DISTRACTORS, distractors)):
             with open(os.path.join(self.root, fname), "w") as f:
                 f.writelines(json.dumps(r) + "\n" for r in rows)
@@ -125,10 +125,42 @@ class TimeSplitPairsTest(unittest.TestCase):
         self.build(seed=3)
         self.assertEqual([c.chosen for c in self.read_choices(timesplit.HELDOUT)], first)
 
-    def test_choice_rows_carry_decision_point_reason_and_group_id(self):
+    def test_choice_rows_carry_decision_point_reason_and_a_group_per_source(self):
         self.build()
         c = self.read_choices(timesplit.HISTORY)[0]
-        self.assertEqual((c.decision_point, c.reason, c.group_id), ("D1", "cheap", "https://ex.org/EARLY"))
+        self.assertEqual((c.decision_point, c.reason), ("D1", "cheap"))
+        self.assertEqual(len({x.group_id for x in self.read_choices(timesplit.HELDOUT)}), 8)
+
+    def test_choice_rows_never_name_him_in_any_field(self):
+        self.build()
+        rows = ""
+        for name in (timesplit.HISTORY, timesplit.HELDOUT):
+            with open(os.path.join(self.root, name)) as f:
+                rows += f.read()
+        self.assertNotIn("marius", rows.lower())
+        self.assertNotIn("ex.org", rows)
+
+    def test_distractors_chosen_for_another_cutoff_are_refused(self):
+        with self.assertRaises(ValueError):
+            timesplit.write_pairs(self.researcher, PairLLM(), "2023-01-01")
+
+    def test_rerun_after_a_crash_keeps_pairs_already_written(self):
+        class CrashingLLM(PairLLM):
+            def __init__(self, crash_on):
+                super().__init__()
+                self.calls, self.crash_on = 0, crash_on
+
+            def complete(self, prompt, **kw):
+                self.calls += 1
+                if self.calls == self.crash_on:
+                    raise RuntimeError("cli died")
+                return super().complete(prompt, **kw)
+
+        with self.assertRaises(RuntimeError):
+            self.build(CrashingLLM(crash_on=4))
+        second = CrashingLLM(crash_on=None)
+        report = self.build(second)
+        self.assertEqual((report["pairs"], second.calls), (10, 7))
 
     def test_context_never_names_him(self):
         report = self.build(PairLLM(name_in_context=True))
@@ -379,13 +411,17 @@ class DistractorTest(unittest.TestCase):
         self.assertLess(exa.calls[0]["end_date"], self.CUTOFF)
 
     def test_contemporaneous_search_excludes_his_own_work(self):
-        exa = SearchRecorder([{"url": "https://ex.org/his", "author": "Marius Hobbhahn", "title": "his"},
-                              {"url": "https://ex.org/other", "author": "Jane Doe", "title": "other"}])
+        exa = SearchRecorder([{"url": "https://ex.org/his", "author": "Marius Hobbhahn", "title": "his",
+                               "publishedDate": "2024-02-01"},
+                              {"url": "https://ex.org/undated", "author": "Jane Doe", "title": "undated"},
+                              {"url": "https://ex.org/other", "author": "Jane Doe", "title": "other",
+                               "publishedDate": "2024-02-01"}])
         llm = DistractorLLM(future_index=None)
         out = timesplit.next_distractor(self.mid_decision(), self.researcher, llm, exa, self.CUTOFF)
         self.assertEqual(exa.calls[0]["exclude_text"], ["Hobbhahn"])
         self.assertEqual((out["source"], out["evidence_url"]), ("contemporaneous", "https://ex.org/other"))
-        self.assertNotIn("ex.org/his", llm.prompts[-1])
+        self.assertNotIn("his:", llm.prompts[-1])
+        self.assertNotIn("undated:", llm.prompts[-1])
 
     def test_next_distractor_after_a_source_starts_at_the_following_one(self):
         out = timesplit.next_distractor(self.mid_decision(["NAMED_ALT"]), self.researcher, DistractorLLM(),
