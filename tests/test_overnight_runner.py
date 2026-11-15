@@ -168,6 +168,23 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(result["usage"]["attempted_calls"], 1)
         self.assertEqual(result["predictions"][1]["error_code"], "deadline_or_lease_expired")
 
+    def test_build_manifest_binds_full_document_permissions(self):
+        case = fixture.ContractTests()
+        case.setUp()
+        documents = case.docs
+        config = case.config
+        manifest = self.manifest(kind="build", config_hash=self.digest(config),
+                                 source_manifest_hash=config["allowed_source_manifest_hash"],
+                                 extractor=self.identity(self.consumer), profile_hash=None,
+                                 documents_hash=self.digest(documents), items_hash=self.digest([]),
+                                 option_order_schedule=[], code_sha=config["code_sha"])
+        documents[0]["permitted_spans"] = [{"start": 0, "end": 2}]
+        lease = {"job_id": manifest["job_id"], "lease_id": "one", "owner": "fixture", "expires_at": "2099-01-01T00:00:00+00:00"}
+        with self.assertRaisesRegex(ValueError, "document"):
+            self.runner.run_job(manifest, lease, output_root=self.root / "outputs", lease_root=self.root / "leases",
+                                config=config, documents=documents, extractor=self.consumer)
+        self.assertEqual(self.consumer.prompts, [])
+
 
 if __name__ == "__main__":
     unittest.main()

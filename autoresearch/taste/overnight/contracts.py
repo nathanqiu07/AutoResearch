@@ -161,6 +161,7 @@ def build_profile(documents, config, extractor):
     body = {"schema_version": SCHEMA_VERSION, "researcher_id": config["researcher_id"],
             "method_id": builder.method_id, "config_id": digest(config), "config": config,
             "allowed_source_manifest_hash": config["allowed_source_manifest_hash"],
+            "documents_hash": digest(documents),
             "extractor": backend_identity(extractor), "extractor_settings": config["extractor_settings"],
             "replicate_id": config["replicate_id"], "content": content, "content_sha256": digest(content),
             "status": status, "error_code": error, "intentional_empty": builder.allows_empty and not rendered,
