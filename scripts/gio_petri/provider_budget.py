@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import threading
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from budget import RATES
@@ -19,6 +20,23 @@ from budget import RATES
 
 PROVIDERS = {'judge': 'openai', 'auditor': 'openrouter', 'target': 'openrouter'}
 NANOS = 1_000_000_000
+CAMPAIGN_DEADLINE_UTC = datetime(2026, 11, 15, 17, tzinfo=timezone.utc)
+
+
+def parse_lease_expiry(expires_at: str) -> datetime:
+    """Require an aware lease deadline no later than this campaign's hard stop."""
+    if not isinstance(expires_at, str) or not expires_at:
+        raise ValueError('Coordinator lease requires an aware expires_at timestamp')
+    try:
+        expiry = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+    except ValueError as exc:
+        raise ValueError('Coordinator lease expires_at must be a valid ISO timestamp') from exc
+    if expiry.tzinfo is None or expiry.utcoffset() is None:
+        raise ValueError('Coordinator lease expires_at must include a timezone')
+    expiry = expiry.astimezone(timezone.utc)
+    if expiry > CAMPAIGN_DEADLINE_UTC:
+        raise ValueError('Coordinator lease expires_at exceeds campaign deadline 2026-11-15T17:00:00Z')
+    return expiry
 
 
 def _canonical(value):
@@ -74,6 +92,7 @@ class ProviderBudget:
         self._limits = {provider: _cap(value) for provider, value in allocations.items()}
         if not isinstance(lease, dict) or not isinstance(lease.get('provider_allocations_usd'), dict):
             raise ValueError('Coordinator receipt must identify provider allocations')
+        self.expires_at = parse_lease_expiry(lease.get('expires_at'))
         leased = lease['provider_allocations_usd']
         for provider, amount in self._limits.items():
             if provider not in leased or amount > _cap(leased[provider]):
@@ -86,6 +105,7 @@ class ProviderBudget:
         self._arms = {}
         self.lock = threading.RLock()
         self.halted = False
+        self.halt_reason = None
         _write(self.path, self.summary(), exclusive=True)
 
     @property
@@ -103,7 +123,7 @@ class ProviderBudget:
                 'remaining_usd': max(0, limit-self._provider_held(provider))/NANOS}
                 for provider, limit in self._limits.items()}
             return json.loads(_canonical({'providers': providers, 'charged_or_reserved_usd': self.held,
-                'entries': self.entries, 'halted': self.halted,
+                'entries': self.entries, 'halted': self.halted, 'halt_reason': self.halt_reason,
                 'arms': {name: {'halted': arm.halted} for name, arm in self._arms.items()},
                 'lease': self.lease, 'lease_sha256': self.lease_sha256,
                 'scope': 'local_suballocation_not_global_project_ledger',
@@ -165,6 +185,11 @@ class ArmLedger:
         amount = _price(role, RATES[role][2], max_tokens)
         parent = self.provider_budget
         with self.lock:
+            if datetime.now(timezone.utc) >= parent.expires_at:
+                parent.halted = True
+                parent.halt_reason = 'lease_expired'
+                parent.save()
+                raise RuntimeError('Coordinator lease expired; no call made')
             if self.halted or parent.halted:
                 raise RuntimeError('Ledger halted after previous failure')
             if parent._provider_held(provider)+amount > parent._limits[provider]:

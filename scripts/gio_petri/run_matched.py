@@ -80,8 +80,9 @@ def validate_execution_lease(lease,packet,settings):
     if lease.get('owner_chat')!='01a1de1f-bcb8-74a3-8076-0a3f9a27340a':raise ValueError('Wrong lease owner')
     if lease.get('packet_checksums_sha256')!=sha(packet/'checksums.json'):raise ValueError('Lease is not bound to this packet')
     if not isinstance(lease.get('lease_id'),str) or not lease['lease_id'].strip():raise ValueError('Missing lease ID')
-    expires=datetime.fromisoformat(lease['expires_at'].replace('Z','+00:00'))
-    if expires.tzinfo is None or expires<=datetime.now(timezone.utc):raise ValueError('Expired lease')
+    from provider_budget import parse_lease_expiry
+    expires=parse_lease_expiry(lease.get('expires_at'))
+    if expires<=datetime.now(timezone.utc):raise ValueError('Expired lease')
     caps=lease.get('provider_allocations_usd',{})
     requested=settings.get('provider_allocations_usd',caps)
     for name in ('openai','openrouter'):

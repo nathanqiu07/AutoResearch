@@ -5,8 +5,10 @@ import json
 from pathlib import Path
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from budget import attach
 from provider_budget import ArmLedger, ProviderBudget
@@ -17,10 +19,15 @@ class ProviderBudgetTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        clock_patch = patch('provider_budget.datetime', wraps=datetime)
+        self.clock = clock_patch.start()
+        self.addCleanup(clock_patch.stop)
+        self.clock.now.return_value = datetime(2026, 11, 15, 12, tzinfo=timezone.utc)
 
     def make_budget(self, openai=2, openrouter=1):
         allocations = {'openai': openai, 'openrouter': openrouter}
-        lease = {'lease_id': 'offline-fixture', 'provider_allocations_usd': allocations.copy()}
+        lease = {'lease_id': 'offline-fixture', 'provider_allocations_usd': allocations.copy(),
+                 'expires_at': '2026-11-15T17:00:00Z'}
         return ProviderBudget(self.root/'providers.json', allocations, lease)
 
     def arm(self, budget, name='baseline'):
@@ -35,10 +42,12 @@ class ProviderBudgetTests(unittest.TestCase):
     def test_local_cap_cannot_exceed_or_omit_leased_provider(self):
         with self.assertRaises(ValueError):
             ProviderBudget(self.root/'providers.json', {'openai': 15, 'openrouter': 5},
-                           {'provider_allocations_usd': {'openai': 1, 'openrouter': 5}})
+                           {'provider_allocations_usd': {'openai': 1, 'openrouter': 5},
+                            'expires_at': '2026-11-15T17:00:00Z'})
         with self.assertRaises(ValueError):
             ProviderBudget(self.root/'providers.json', {'openai': 1},
-                           {'provider_allocations_usd': {'openai': 1, 'openrouter': 5}})
+                           {'provider_allocations_usd': {'openai': 1, 'openrouter': 5},
+                            'expires_at': '2026-11-15T17:00:00Z'})
 
     def test_provider_caps_do_not_borrow_from_each_other(self):
         parent = self.make_budget(openai=.8, openrouter=5)
@@ -122,7 +131,8 @@ class ProviderBudgetTests(unittest.TestCase):
             directory = self.root/str(index)
             directory.mkdir()
             parent = ProviderBudget(directory/'providers.json', {'openai': 2, 'openrouter': 1},
-                {'provider_allocations_usd': {'openai': 2, 'openrouter': 1}})
+                {'provider_allocations_usd': {'openai': 2, 'openrouter': 1},
+                 'expires_at': '2026-11-15T17:00:00Z'})
             arm = ArmLedger(directory/'baseline.json', parent, 'baseline')
             i = arm.reserve('judge', 32000)
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
@@ -133,7 +143,8 @@ class ProviderBudgetTests(unittest.TestCase):
 
     def test_existing_budget_cannot_be_reset_and_lease_is_frozen(self):
         allocations = {'openai': 2, 'openrouter': 1}
-        lease = {'provider_allocations_usd': allocations.copy(), 'lease_id': 'fixture'}
+        lease = {'provider_allocations_usd': allocations.copy(), 'lease_id': 'fixture',
+                 'expires_at': '2026-11-15T17:00:00Z'}
         parent = ProviderBudget(self.root/'providers.json', allocations, lease)
         original = json.dumps(lease, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
         lease['provider_allocations_usd']['openai'] = 999
@@ -154,6 +165,92 @@ class ProviderBudgetTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             arm.reserve('other', 100)
         self.assertEqual(arm.entries, [])
+
+    def test_expiry_is_required_aware_valid_and_within_campaign(self):
+        allocations = {'openai': 2, 'openrouter': 1}
+        invalid = [None, '', 123, True, {}, 'not-a-date', '2026-11-15',
+                   '2026-11-15T17:00:00', '2026-11-15T17:00:00.000001Z',
+                   '2026-11-15T18:00:00+00:00']
+        for value in invalid:
+            lease = {'provider_allocations_usd': allocations.copy(), 'expires_at': value}
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                ProviderBudget(self.root/'providers.json', allocations, lease)
+            self.assertFalse((self.root/'providers.json').exists())
+        with self.assertRaises(ValueError):
+            ProviderBudget(self.root/'providers.json', allocations,
+                           {'provider_allocations_usd': allocations.copy()})
+
+    def test_offset_expiry_is_compared_as_an_instant(self):
+        allocations = {'openai': 2, 'openrouter': 1}
+        parent = ProviderBudget(self.root/'providers.json', allocations,
+            {'provider_allocations_usd': allocations.copy(),
+             'expires_at': '2026-11-15T08:30:00-08:00'})
+        arm = self.arm(parent)
+        self.clock.now.return_value = datetime(2026, 11, 15, 16, 30, tzinfo=timezone.utc)
+        with self.assertRaisesRegex(RuntimeError, 'expired'):
+            arm.reserve('target', 100)
+        self.assertEqual(parent.entries, [])
+
+    def test_each_role_can_reserve_immediately_before_expiry(self):
+        parent = self.make_budget()
+        arm = self.arm(parent)
+        self.clock.now.return_value = (datetime(2026, 11, 15, 17, tzinfo=timezone.utc)
+                                      - timedelta(microseconds=1))
+        for role, maximum in [('judge', 32000), ('auditor', 4096), ('target', 16384)]:
+            arm.reserve(role, maximum)
+        self.assertEqual(len(parent.entries), 3)
+        self.assertFalse(parent.halted)
+
+    def test_exact_and_after_expiry_halt_all_roles_before_api_or_entries(self):
+        for offset in (0, 1):
+            directory = self.root/str(offset)
+            allocations = {'openai': 2, 'openrouter': 1}
+            parent = ProviderBudget(directory/'providers.json', allocations,
+                {'provider_allocations_usd': allocations.copy(),
+                 'expires_at': '2026-11-15T17:00:00Z'})
+            arm = ArmLedger(directory/'baseline.json', parent, 'baseline')
+            self.clock.now.return_value = (datetime(2026, 11, 15, 17, tzinfo=timezone.utc)
+                                          + timedelta(microseconds=offset))
+            calls = []
+            async def generate(*args):
+                calls.append(args)
+                raise AssertionError('Expired lease reached API')
+            for role, maximum in [('judge', 32000), ('auditor', 4096), ('target', 16384)]:
+                model = SimpleNamespace(api=SimpleNamespace(generate=generate),
+                                        config=SimpleNamespace(max_tokens=maximum))
+                attach(model, role, arm, directory)
+                with self.subTest(offset=offset, role=role), self.assertRaisesRegex(RuntimeError, 'expired'):
+                    asyncio.run(model.api.generate([], [], 'auto', model.config))
+            self.assertEqual(calls, [])
+            self.assertEqual(parent.entries, [])
+            self.assertEqual(arm.entries, [])
+            self.assertEqual(parent.held, 0)
+            saved = json.loads(parent.path.read_text())
+            self.assertTrue(saved['halted'])
+            self.assertEqual(saved['halt_reason'], 'lease_expired')
+            self.assertEqual(saved['entries'], [])
+
+    def test_expiry_preserves_holds_and_admitted_call_can_settle(self):
+        parent = self.make_budget()
+        admitted = self.arm(parent)
+        pending = admitted.reserve('judge', 32000)
+        uncertain = self.arm(parent, 'uncertain')
+        unknown = uncertain.reserve('auditor', 4096)
+        with self.assertRaises(RuntimeError):
+            uncertain.settle(unknown, None)
+        prior_entries = json.loads(json.dumps(parent.entries))
+        prior_held = parent.held
+        self.clock.now.return_value = datetime(2026, 11, 15, 18, tzinfo=timezone.utc)
+        late_arm = self.arm(parent, 'late')
+        with self.assertRaisesRegex(RuntimeError, 'expired'):
+            late_arm.reserve('target', 100)
+        self.assertEqual(parent.entries, prior_entries)
+        self.assertEqual(parent.held, prior_held)
+        admitted.settle(pending, SimpleNamespace(input_tokens=1000, output_tokens=100))
+        self.assertEqual(parent.entries[0]['status'], 'usage_estimate')
+        self.assertEqual(parent.entries[1], prior_entries[1])
+        self.assertTrue(parent.halted)
+        self.assertEqual(parent.summary()['halt_reason'], 'lease_expired')
 
 
 if __name__ == '__main__':

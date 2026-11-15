@@ -41,6 +41,26 @@ class RunnerBoundaryTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'already claimed'):
                     runner.claim_execution_lease(b,lease,root/'run2')
 
+    def test_execution_lease_rejects_expiry_outside_campaign_or_without_timezone(self):
+        from datetime import datetime, timezone
+        class FrozenDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2026, 11, 15, 12, 0, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as d:
+            packet=Path(d)
+            (packet/'checksums.json').write_text('{}')
+            lease={'status':'issued','owner_chat':'01a1de1f-bcb8-74a3-8076-0a3f9a27340a',
+                   'lease_id':'offline-expiry-fixture','packet_checksums_sha256':runner.sha(packet/'checksums.json'),
+                   'provider_allocations_usd':{'openai':5,'openrouter':1}}
+            with patch('datetime.datetime', FrozenDateTime):
+                for expiry in ('2026-11-15T17:00:01Z','2026-11-16T00:00:00Z',
+                               '2026-11-15T17:00:00','invalid',None,'2026-11-15T12:00:00Z'):
+                    with self.subTest(expiry=expiry), self.assertRaises(ValueError):
+                        runner.validate_execution_lease({**lease,'expires_at':expiry}, packet, lease)
+                self.assertEqual(runner.validate_execution_lease(
+                    {**lease,'expires_at':'2026-11-15T17:00:00Z'},packet,lease),lease['provider_allocations_usd'])
+
     def test_execution_rejects_ten_turns_and_unbound_committed_runtime(self):
         settings=json.loads((Path(__file__).parents[2]/'results/gio-baseline-review-02/packet/settings.json').read_text())
         expected=settings['code_version']
