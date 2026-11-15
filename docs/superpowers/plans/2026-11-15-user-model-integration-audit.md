@@ -908,3 +908,29 @@
 - The audit-branch suite independently exits zero with 677 run, 675 passed and
   two skipped. Its invocation and full log are retained; proposed sources/tests
   are not executed by the suite. No model/settings/wakeup changes.
+
+## Reporting navigation and closed-retention handoff
+
+- The previous turn made concrete progress: audits 050/051 were published at
+  `ee249761` and 052 at remote-verified `0dbcf0536f2b0ea747e9ff7b9cfb20b4397391d5`.
+  The source-copy decision was delivered; no coordinator copy was claimed then.
+- Current thread snapshots show the downstream accounting handoff completed
+  and the coordinator handling a further reference stop with existing owners.
+  Paired-history input/control reviews remain separately owned. This audit does
+  not duplicate incident reconstruction, dispatch, input review or scoring.
+- Audit 053 appends five bounded later developments to the existing findings
+  index using eight exact public owned sources at `0dbcf053`. The historical
+  index prefix remains byte-identical. Root verifies every source pin and the
+  exact appended text. This is evidence navigation, not a new scientific result
+  or a competing campaign morning summary. Repository checks pass 675 with two
+  skipped, separately from the document/source checks.
+- A finite reconstruction dependency was raised for the exact ownswap terminal
+  receipt used in 050, without inferring absent custody elsewhere. The coordinator
+  has assigned closed scaling404/ownswap28 inventory to existing09, including that
+  receipt, and closed reference inventory to existing10 after its scheduler work.
+  This audit supplies existing042/044 schema/layout references only. Typed custody
+  remains with04; exact copy authorization and named copier remain with coordinator.
+  No new private copying or payload publication is authorized by this handoff.
+- The old049 verifier has fixed046/snapshot/count/schema assumptions and cannot
+  check052 unchanged. Preserve it and use the actual later published destination
+  inventory for a bounded check; do not infer a copy from the eligibility decision.

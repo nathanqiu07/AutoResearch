@@ -10,7 +10,9 @@ jobs. No model/inference-setting changes or production adviser edits were made.
 [What the audit found and changed](FINDINGS.md) is a compact navigation index of
 the material findings, independently retested repairs, historical limits and
 remaining uncertainties. Its sources are pinned separately from this evolving
-overview.
+overview. [Audit 053](../../../results/integration-audit/20261115-053/README.md)
+adds later verified developments through 052 while preserving the original index
+and its historical source cutoff.
 
 | Question | Supported conclusion | Remaining limit |
 |---|---|---|
