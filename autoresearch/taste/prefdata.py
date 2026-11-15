@@ -44,7 +44,95 @@ def normalize_row(row, dataset, outer_split, seed=0) -> PreferenceRecord:
                             inner[row["split"]], outer_split)
 
 
-def build_manifest(records, seed=0):
+def _content_key(record):
+    c = record.choice
+    return digest([c.user_id, c.context, sorted([c.a_text, c.b_text])])
+
+
+def deduplicate_records(records):
+    """Remove only agreeing repeats within one partition; retain an occurrence audit.
+
+    Option order and input order do not determine which record survives. Labels are
+    compared by selected text because an A/B reversal changes the label letter.
+    """
+    records = list(records)
+    grouped, identities, conversations = {}, {}, {}
+    for record in records:
+        content = _content_key(record)
+        c = record.choice
+        if c.identity in identities and identities[c.identity] != content:
+            raise ValueError("preference ID reused for different content")
+        identities[c.identity] = content
+        boundary = (record.dataset, record.user_split, record.choice_split, record.upstream_split)
+        if c.group_id:
+            if c.group_id in conversations and conversations[c.group_id] != boundary:
+                raise ValueError("conversation crosses a dataset or partition boundary")
+            conversations[c.group_id] = boundary
+        grouped.setdefault(content, []).append(record)
+    unique, removed = [], []
+    duplicate_groups = 0
+    for content, repeats in sorted(grouped.items()):
+        boundaries = {(r.dataset, r.user_split, r.choice_split, r.upstream_split) for r in repeats}
+        if len(boundaries) != 1:
+            raise ValueError("duplicate preference content crosses a dataset or partition boundary")
+        selected = {r.choice.a_text if r.choice.chosen == "a" else r.choice.b_text for r in repeats}
+        if len(selected) != 1:
+            raise ValueError("duplicate preference content has conflicting chosen text")
+        ordered = sorted(repeats, key=lambda r: (r.choice.identity, r.choice.group_id, digest(asdict(r))))
+        kept = ordered[0]
+        unique.append(kept)
+        duplicate_groups += int(len(ordered) > 1)
+        for record in ordered[1:]:
+            removed.append({"content_digest": content, "kept_id": kept.choice.identity,
+                            "removed_id": record.choice.identity,
+                            "kept_group_id": kept.choice.group_id,
+                            "removed_group_id": record.choice.group_id,
+                            "user_id": kept.choice.user_id, "dataset": kept.dataset,
+                            "user_split": kept.user_split, "choice_split": kept.choice_split,
+                            "upstream_split": kept.upstream_split})
+    audit = {"version": 1, "policy": "agreeing_content_within_partition",
+             "input_count": len(records), "retained_count": len(unique),
+             "removed_count": len(removed), "duplicate_group_count": duplicate_groups,
+             "removed": removed}
+    return unique, audit
+
+
+def _validate_deduplication(audit, records):
+    if (not isinstance(audit, dict) or audit.get("version") != 1 or
+            audit.get("policy") != "agreeing_content_within_partition"):
+        raise ValueError("invalid deduplication audit format")
+    for key in ("input_count", "retained_count", "removed_count", "duplicate_group_count"):
+        if type(audit.get(key)) is not int or audit[key] < 0:
+            raise ValueError("deduplication audit counts must be nonnegative integers")
+    removed = audit.get("removed")
+    if (not isinstance(removed, list) or audit["retained_count"] != len(records) or
+            audit["removed_count"] != len(removed) or
+            audit["input_count"] != len(records) + len(removed)):
+        raise ValueError("deduplication audit counts do not match retained records")
+    retained = {r.choice.identity: r for r in records}
+    contents = set()
+    for entry in removed:
+        if not isinstance(entry, dict) or not isinstance(entry.get("kept_id"), str):
+            raise ValueError("invalid deduplication audit entry")
+        kept = retained.get(entry["kept_id"])
+        if kept is None:
+            raise ValueError("deduplication audit references a missing retained ID")
+        expected = {"content_digest": _content_key(kept), "kept_group_id": kept.choice.group_id,
+                    "user_id": kept.choice.user_id, "dataset": kept.dataset,
+                    "user_split": kept.user_split, "choice_split": kept.choice_split,
+                    "upstream_split": kept.upstream_split}
+        if any(entry.get(key) != value for key, value in expected.items()):
+            raise ValueError("deduplication audit disagrees with retained content or partition")
+        if (not isinstance(entry.get("removed_id"), str) or not entry["removed_id"] or
+                not isinstance(entry.get("removed_group_id"), str) or
+                (entry["removed_id"] in retained and entry["removed_id"] != entry["kept_id"])):
+            raise ValueError("invalid removed occurrence in deduplication audit")
+        contents.add(entry["content_digest"])
+    if audit["duplicate_group_count"] != len(contents):
+        raise ValueError("deduplication audit duplicate-group count does not match removals")
+
+
+def build_manifest(records, seed=0, deduplication=None, provenance=None):
     records = list(records)
     users, seen, groups, content_groups = {}, set(), {}, {}
     for r in records:
@@ -77,6 +165,11 @@ def build_manifest(records, seed=0):
     result = {"version": 1, "seed": seed, "policy": "upstream_users_and_conversations",
               "sources": DATASETS, "source_digest": source_digest,
               "users": dict(sorted(users.items())), "n_examples": len(seen)}
+    if deduplication is not None:
+        _validate_deduplication(deduplication, records)
+        result["deduplication"] = json.loads(json.dumps(deduplication, allow_nan=False))
+    if provenance is not None:
+        result["provenance"] = json.loads(json.dumps(provenance, allow_nan=False))
     result["manifest_id"] = digest(result)
     return result
 
@@ -112,7 +205,7 @@ def load_records(path):
     return records
 
 
-def download_dataset(dataset, cache_root, seed=0, fetch=None):
+def download_dataset(dataset, cache_root, seed=0, fetch=None, allow_duplicates=False):
     """Fetch public rows with page caching; refuse truncated or incomplete records.
 
     The older corpus helper discards row truncation metadata and stops by row count;
@@ -159,5 +252,9 @@ def download_dataset(dataset, cache_root, seed=0, fetch=None):
             offset += len(page["rows"])
     if not records:
         raise ValueError("empty preference dataset")
-    build_manifest(records, seed)  # validate before the caller persists any split
+    if allow_duplicates:
+        unique, audit = deduplicate_records(records)
+        build_manifest(unique, seed, audit)
+    else:
+        build_manifest(records, seed)  # validate before the caller persists any split
     return records
