@@ -1,0 +1,6 @@
+- (D3) "Similarly, as models become capable of recognizing when and how they are being evaluated, we will need evaluation-integrity safety cases that show that our frontier risk evaluation runs are reliable at identifying the risk factors that they are designed to catch."
+- (D3) "AI systems will be able to do nontrivial (if not wildly superhuman) strategic reasoning, without chain-of-thought style *thinking out loud*, potentially allowing them to strategically influence the outcomes of any evaluation that they can identify as an evaluation."
+- (D3) "If our evaluations for some risk factor trigger, we'll want clear evidence (ideally in the form of unequivocal 'smoking gun' results) that the risk factor demands immediate attention."
+- (D3) "simply observing that an LLM fails at a task in some setting is not reliable evidence that that LLM doesn’t have the skills or knowledge to do that task."
+- (D3) "observing that an LLM performs a task successfully in one instance is not strong evidence that the LLM is capable of performing that task in general, especially if that example was cherry-picked as part of a demonstration"
+- (D3) "It seems likely that issues like these played some role in the bizarre, manipulative behavior that early versions of [ORG] [MODEL] Chat showed, despite the system having been tested extensively before launch"

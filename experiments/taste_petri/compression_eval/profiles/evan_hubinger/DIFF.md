@@ -1,0 +1,8 @@
+- Unlike peers, grades evidence on a realism ladder (capability exists, special circumstances, normal training, robustness to anti-training), so evidence strength depends on how much unrealistic steering was needed.
+- Unlike peers, starts with maximal spoonfeeding and removes it progressively, treating the remaining steering as a measure of how far a failure mode is from arising naturally.
+- Unlike peers, requires causal intervention on the chain of thought to confirm that the dangerous behavior is downstream of the reasoning step, and does not treat the scratchpad alone as evidence of true motives.
+- Unlike peers, filters generated fine-tuning data to keep only samples that verifiably exhibit the target behavior, rather than assuming the behavior is present.
+- Unlike peers, delivers situational facts through fine-tuning on synthetic pretraining-like documents rather than the system prompt, removing salient in-prompt cues.
+- Unlike peers, probes for hidden behavior with conditional framings, such as offering a chance to come clean or switching the audience from outsiders to in-group, because deception may surface only when incentives appear to change.
+- Unlike peers, builds honeypots where revealing a hidden goal is the model's optimal move, while acknowledging that real auditors lack this prior knowledge of the goal.
+- Unlike peers, holds out more natural model organisms as a test set rather than iterating on every artificial one, because repeated iteration on the same examples risks overfitting.

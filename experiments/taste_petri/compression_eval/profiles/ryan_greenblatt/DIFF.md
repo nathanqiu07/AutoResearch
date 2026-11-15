@@ -1,0 +1,8 @@
+- Unlike peers, prefers eval settings that are openly recognisable as evals, since validity does not require hiding the test from the model.
+- Unlike peers, makes synthetic inputs match real surface features like theming and named characters, and distorts real observations toward synthetic ones to shrink the detection gap.
+- Unlike peers, builds fake opportunities by modifying real incoming inputs and slips them into the normal work stream instead of announcing tests.
+- Unlike peers, makes the model believe it is already inside a genuine escape, using signals AIs use among themselves, rather than offering an isolated opportunity.
+- Unlike peers, treats concrete intentional bad actions at far-above-baseline rates as the core evidence, not model organisms or psychological evidence.
+- Unlike peers, withholds scaffolding cues such as current time, pause status, and KV-cache side channels, and tests whether a model can infer it is being rerun or paused.
+- Unlike peers, requires very high confidence before counting a catch, and distrusts apparent catches that a scheming model could stage to induce false security.
+- Unlike peers, counts a single failure as decisive, judging oversight by the worst policies it fails to reject rather than by average behaviour.

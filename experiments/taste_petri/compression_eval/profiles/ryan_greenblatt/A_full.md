@@ -1,0 +1,15 @@
+- For control/capability evals, prefers designs whose validity survives the model knowing it is in an eval over designs that require indistinguishability from deployment
+- Prefers assuming the model knows it is being tested over hoping it is naive
+- Prefers synthetic inputs that match the surface features of real ones (flavor text, named characters) over dry task descriptions
+- Prefers building fake inputs by modifying or censoring real inputs over writing them from scratch
+- Prefers measuring realism as a discrimination gap between proxy and real inputs over assuming realism
+- Prefers realistic-but-rare/abnormal test scenarios over typical inputs
+- Prefers in-world plausible cues (free vs paid tier) and documents-style delivery of facts over explicit "you are being tested" statements or bare system-prompt assertions
+- Prefers system prompts that read like plausible developer instructions and never name the target behaviour over cueing it
+- Prefers a priori plausible beliefs and normal-looking setups over unusual scenarios
+- Prefers evidence that is egregious, consistent and not salience-primed over demonstrations where the scenario makes the behaviour salient
+- Prefers many ablations and matched controls over trusting a single prompt
+- Prefers causal manipulation of eval awareness or in-context evidence over passive observation
+- Prefers delivering context via environment artifacts or tool results the model must read or infer over stating it in the prompt
+- Prefers behaviour-grounded evidence over internals-only or self-report evidence
+- Prefers claiming that realism is helpful but insufficient over treating it as a solution

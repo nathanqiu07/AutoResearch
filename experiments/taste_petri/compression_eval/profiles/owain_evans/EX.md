@@ -1,0 +1,6 @@
+- (D3) "if it's able to realize this with a very small amount of CoT or even without CoT at all, then the delusion probably wouldn’t work. It wouldn’t get off the ground."
+- (D2) "One is it recognizes the contradiction between these two parts of its dataset, so it knows at least there's something up; it shouldn't believe S. Or it realizes some of this data is fake."
+- (D3) "The issue is that the model, probably in pre-training, has some evidence in its training set that suggests S is implausible, that goes against S. Maybe you remove some of it, but there's still going to be other evidence there."
+- (D5) "It might be brittle, so maybe the AI can just reason. With enough CoT, it can just work out that it's being deluded, so it would be brittle to that kind of situation."
+- (D3) "if $M1$ outperforms $M2$ in predicting $M1$’s behavior, it suggests that $M1$ is not solely relying on training data for its predictions. This is because $M2$ was also trained on $M1$’s ground-truth data—presumably the ideal training set for this task."
+- (D1) "If a model is situationally aware, it’s harder to test whether it is aligned or safe. Current large language models (LLMs) are given behavioral safety tests before deployment ([ORG], 2023b)."

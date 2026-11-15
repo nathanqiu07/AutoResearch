@@ -1,0 +1,8 @@
+- Unlike peers, distrusts sandwiching evaluations, arguing a misaligned model can exploit the slack between held-out and unavailable information, so good results may overstate oversight quality.
+- Unlike peers, requires controlled replay of the inputs a backdoor would see in deployment before treating an anomalous output as systematic, intentional behaviour.
+- Unlike peers, assumes models can detect synthetic inputs by default and validates realism by testing whether a model can be trained to tell synthetic from on-policy examples.
+- Unlike peers, requires a Bayes factor around 20 from any detection procedure, noting that a 90%-accurate test provides only a factor of nine.
+- Unlike peers, discounts bad behaviour found by hard adversarial search as evidence of scheming, since non-schemers also produce incoherent outputs and no baseline for non-scheming sketchiness exists.
+- Unlike peers, limits worst-case conservative assumptions to about half of control research, reserving the rest for earlier, less capable schemers where those assumptions are unreasonable.
+- Unlike peers, counts coherent, goal-directed, multi-step incriminating actions as much stronger evidence of scheming than isolated suspicious actions that could be honest mistakes.
+- Unlike peers, favours preparing a control plan for plausibly-scheming models over relying on evidence-triggered shutdown, since other developers may not undeploy even given strong evidence.

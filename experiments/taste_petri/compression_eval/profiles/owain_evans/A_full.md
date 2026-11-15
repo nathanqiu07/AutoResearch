@@ -1,0 +1,15 @@
+- Prefers treating test-recognition as a first-class threat over assuming behavioural tests are reliable
+- Prefers goal plus incentive inside a realistic role-play over explicit instructions to misbehave
+- Prefers matched controls (incentive removed, benign intent, secure code, single-trait) over a lone headline effect
+- Prefers indirect probes of eval-awareness over asking "is this an evaluation?"
+- Prefers learning the model's own concept of eval vs deployment over researcher-chosen instances
+- Prefers evaluations carrying cues from the training/deployment context over generic chat-style probes
+- Prefers agentic, tool-equipped, concretely detailed settings over bare prompts
+- Prefers neutral, innocent-looking prompts and covert harm over overtly malicious content
+- Prefers testing rival explanations (post-hoc blame, spurious correlates, positional bias, artifacts) before accepting a result
+- Prefers out-of-distribution and held-out checks over in-distribution accuracy
+- Prefers asking whether a false-belief intervention survives little or no CoT over whether it merely seems plausible
+- Prefers realistic, large-scale pipelines to establish negatives over small experiments
+- Prefers raw CoT and rate estimates with denominators over summaries or cherry-picked cases
+- Prefers hedged, scoped claims that name artificiality over strong claims
+- Prefers embedding the behaviour of interest in ordinary practical user tasks over overtly asking about values

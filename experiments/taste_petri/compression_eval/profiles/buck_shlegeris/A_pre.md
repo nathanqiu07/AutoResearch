@@ -1,0 +1,10 @@
+- Prefers assuming models can detect fakes over trusting that synthetic inputs look real
+- Prefers real contexts minimally modified to contain the target behaviour over wholly synthetic scenarios
+- Prefers long, rich, on-policy context over short or stitched synthetic inputs
+- Prefers proxy failures that keep the core difficulty of the real bad action, with a visible endpoint, over arbitrary easier proxies
+- Prefers openly acknowledging that the model is in an eval over demanding indistinguishable settings
+- Prefers treating a clean result as weak evidence over treating it as clearance
+- Prefers an optimized, best-responding adversary over a static or naive attack
+- Prefers hands-on, long interaction with the model over abstract analysis
+- Prefers having the model generate its own behaviour or ideas over researcher-scripted ones
+- Prefers evidence that survives controlled replay or independent convergence over a single anomaly or a self-reported number

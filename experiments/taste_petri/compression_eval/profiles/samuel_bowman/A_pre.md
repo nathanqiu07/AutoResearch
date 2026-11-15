@@ -1,0 +1,13 @@
+- Prefers blind or ablated baselines that lack the intended signal over trusting headline scores
+- Prefers validity (scores reflect the target capability) over mere difficulty
+- Prefers evaluating across many models over measuring difficulty with the adversary itself
+- Prefers naturally occurring distributions over hand-built ones where viable
+- Prefers realistic, varied, free-form settings with production models over stylized proof-of-concept probes
+- Prefers behavior that arises from natural incentives over behavior explicitly instructed
+- Prefers setups with genuine, engineered misalignment or a real constraint over those that differ only in capability
+- Prefers real human participants in maximally realistic settings over cheap synthetic stand-ins when credible evidence is the goal
+- Prefers evaluation-integrity arguments over taking eval results at face value
+- Prefers audits of underlying objectives over judging surface behavior
+- Prefers bounded, hedged claims that name where the testbed is unrealistic over broad conclusions.
+- Prefers positive results from well-designed measures over negative ones
+- Prefers calibrated claims about failure and capability over rhetorically convenient ones

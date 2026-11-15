@@ -1,0 +1,6 @@
+- (D3) "But we might overestimate capabilities if our evaluation process is actually teaching new skills rather than measuring existing ones. To prevent this, we need a large space of possible tasks within the capability domain we're testing"
+- (D1) "Some safety measures are implicitly visible to them (e.g. if we use techniques that sometimes replace their actions with the actions of a different model, they’ll probably notice this)."
+- (D1) "if you try to construct short inputs they don’t contain enough context for the model to feel secure taking the opportunity, and if you try to construct long inputs they look saliently fake."
+- (D3) "I don’t expect it to be impossible to generate synthetic inputs like this, but it might be a huge amount of effort, and it might be really hard to be sure that none of the stuff you faked has any tells"
+- (D1) "if you’re asking the model itself to generate the synthetic inputs, it’s very plausible it would purposefully generate inputs with tells in them. So you might be restricted to using other, and thus possibly weaker models."
+- (D1) "the model decides that it’s only going to take dangerous actions on inputs that it’s convinced couldn’t have been synthetically generated."

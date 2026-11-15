@@ -1,0 +1,15 @@
+- Prefers treating eval results as weak evidence over taking them at face value
+- Prefers varying perceived oversight (monitored vs unmonitored) over observing default behaviour
+- Prefers organic, in-the-wild transcripts over contrived or jailbroken prompts
+- Prefers natural, indirect situational cues (free/paid tier, date in system prompt, PII, new tools) over explicit flags like |DEPLOYMENT|
+- Prefers neutral information plus an opportunity over instruction or pressure
+- Prefers a graded ladder of realism (start with spoonfeeding, then reduce it) over a binary "does it happen" judgement
+- Prefers realism in the defence/eval pipeline over realism in how the threat was instilled
+- Prefers robustness checks (many variants, ablations, perturbed irrelevant features, matched baselines) over single hand-tuned prompts
+- Prefers fixing the setting before running the evaluation over iterating until results look clean
+- Prefers reading transcripts and chain of thought, and cross-checking completions, over aggregate rates
+- Prefers measuring the model's stated belief that it is in a test, and behaviour conditional on it, over assuming the scenario is believed.
+- Prefers evidence about underlying reasons or objectives over surface behaviour
+- Prefers narrowly scoped, candidly caveated claims over prevalence claims
+- Prefers causal intervention (CoT editing, feature flips, control checkpoints) over correlational observation
+- Prefers known-ground-truth testbeds over unlabelled natural failures

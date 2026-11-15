@@ -1,0 +1,8 @@
+- Unlike peers, treats test descriptions leaked into pretraining data as a route by which a model infers it is being tested, so eval details resembling public write-ups are avoided.
+- Unlike peers, treats a model's privileged introspective access as a risk, since it could infer how it is evaluated and game those evaluations.
+- Unlike peers, judges a false-belief intervention by whether the model detects it with little or no chain-of-thought, because easily detected delusions never get off the ground.
+- Unlike peers, treats current LLM experiments as direct evidence about future AGI-level systems and studies how far the current paradigm extends.
+- Unlike peers, uses toy grid-worlds with fictitious entities and known ground-truth preferences, so the measured capability is isolated from prior knowledge.
+- Unlike peers, scales a measurable building-block ability such as out-of-context reasoning to forecast emergence before full situational awareness appears.
+- Unlike peers, treats a null result as possibly an elicitation failure, since success appeared only with paraphrase augmentation under the same setup.
+- Unlike peers, weights frozen-weight out-of-distribution generalisation above in-distribution accuracy as convincing evidence, because deployments involve unknown models, topics, and elicitation methods.

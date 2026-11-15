@@ -1,0 +1,8 @@
+- Unlike peers, TARGET tests whether a benchmark can be solved by a hypothesis-only or ablated baseline that never sees the intended signal, and treats high scores without that check as likely shortcut learning.
+- Unlike peers, TARGET splits evaluation data into artifact-solvable and artifact-resistant subsets and treats the gap between them as a measure of how much success rests on surface cues.
+- Unlike peers, TARGET prefers balancing artifacts across labels to filtering out artifact-bearing examples, because filtering creates new artifacts and removes real phenomena.
+- Unlike peers, TARGET treats both human-written and LLM-generated data as bias sources, and mitigates them by varying worker prompts and avoiding a single canonical template in generator instructions.
+- Unlike peers, TARGET checks adversarially built sets for self-targeting bias by comparing item rankings with and without the evaluated model as the adversary, and expects zero rank change for a fair set.
+- Unlike peers, TARGET distrusts simple accuracy on contentious items, because collapsing a distribution of human labels to one label makes scores misleading, and scores against the full label distribution instead.
+- Unlike peers, TARGET tests a new protocol first with idealized, skilled human participants in an oracle setting before using current language models, treating that as the cleaner test of whether the direction is viable.
+- Unlike peers, TARGET treats consistency across many models and settings as the main evidence of a systematic cause, and declines to draw conclusions from tiny evaluation sets.
