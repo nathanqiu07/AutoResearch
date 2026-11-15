@@ -13,3 +13,29 @@ Primary reporting is paired user-macro planned accuracy, counting failures/unava
 The reference contains human-rating-derived pairwise preference labels with model-based filtering. It is not necessarily direct binary elicitation, model-generated target labels, researcher taste, or research utility. All methods are existing adaptations, not paper reproductions.
 
 Validation covers preserved donor provenance, scope and request identity, exact withholding, fresh caches, explicit replication authority, finite lease limits, copied-packet replay, and native failure handling. Review captures expose selected fit histories and label-free target projections only; target labels and result predictions remain with the reference custodian.
+
+## Completed study, November 15, 2026
+
+Correct-user M1 history showed no clear accuracy advantage over the fixed wrong-user reassignment on this previously studied development panel. The primary own-minus-wrong difference was **−1.83 percentage points**, with a descriptive, conditional 95% interval of **[−5.75, +2.08] points**. This is not an equivalence test or evidence that personalization generally fails.
+
+All 64 packets finished. Each arm retained all 516 planned targets; failures and the one predeclared unavailable request counted as wrong. Accuracy first averages within each user and then gives all 64 users equal weight. The counts below are supplementary totals, not the denominator used to average user accuracy.
+
+| Arm | User-macro planned accuracy | Correct / planned cells | Valid outputs / planned cells | Valid-only user-macro Brier |
+|---|---:|---:|---:|---:|
+| Own history | 50.1621% | 256 / 516 | 514 / 516 | 0.288024 |
+| Wrong history | 51.9881% | 264 / 516 | 515 / 516 | 0.276953 |
+
+There were two new invalid-JSON outputs, one in each arm, plus the predeclared own-history withholding. All remain in planned denominators. There were 1,031 new wrapper attempts and 1,031 observed HTTP events, with 1,029 valid outputs. Estimated new usage was **$0.4189835**, with no new uncertain-cost holds. This is an estimate from closed accounting, not an invoice; historical uncertain requests remain held and excluded.
+
+| Delivery-conditioned sensitivity | Retained users / targets | Own minus wrong | Descriptive conditional 95% interval |
+|---|---:|---:|---:|
+| Joint-valid target pairs | 64 / 513 | −1.83 points | [−5.78, +2.11] points |
+| Users with every planned output valid | 61 / 480 | −2.04 points | [−6.10, +2.10] points |
+
+Both sensitivities condition on successful delivery; they do not explain the primary difference causally. The joint-valid user-macro Brier difference was +0.011834 (own minus wrong; lower is better), which does not establish calibration. Own-first users had a +2.03-point accuracy contrast and wrong-first users a −5.68-point contrast. Those strata contain different fixed users, so this is not an identified execution-order effect.
+
+The scientific runtime was commit `63e11c950fcba271d231a5e7eade045c750e6521`. Both arms used OpenAI `gpt-6-luna`, reasoning `none`, no tools, a 2,048-token output limit, and the native M1 prompt. Selected history sizes were five examples for 62 users and four for two users. Wrong histories followed fixed 62-user and two-user donor cycles; source identities and labels were preserved. A fresh cache supported explicitly declared known-valid replication. Original baseline missingness and the separate recovery source remain distinct historical aliases, adding no observations or usage to this paired study.
+
+The interval uses 2,000 user-cluster bootstrap draws with seed 0. Deterministic donor cycles create cross-user dependence that this bootstrap does not fully model, so it is descriptive and conditional rather than randomized-assignment inference or an independent-population bound. Only history example count was matched: topic, task mix, content, length, and history-label distribution were not. The study therefore tests correct-history association, not isolated latent taste. It was frozen before these new outcomes but selected after earlier work on the same development cohort. No final test users were accessed, and this result does not establish researcher taste or downstream research utility.
+
+The compiler was reviewed before scoring, and the terminal run was scored once under the frozen protocol. A separate evaluator reproduced the primary and sensitivity statistics, counts, coverage, Brier values, order strata, and accounting from safe per-user aggregates to numerical tolerance. That review did not reopen raw labels or probabilities; raw correctness and label reconciliation remain the reference custodian's evidence. Private inputs, per-user statistics, controls, caches, and retention records are kept outside this repository.
