@@ -76,11 +76,6 @@
           <p class="muted small rs-foot">* Ethan: 7 seeds paired with stock.</p>
           <div class="rs-callout">${dd("arrow", { size: 34, color: "clay", tilt: 160 })}<span class="hand">Hobbhahn works on eval awareness, and his profile nearly erased it: <b>−94%</b> vs stock.</span></div>
         </article>
-        <article class="card rise" style="--i:4">
-          <div class="rs-ch"><span class="rs-n mono">2</span><div><h3>First live loop: before and after</h3><p class="muted small">Haiku target, five rounds, one change accepted and confirmed on fresh samples.</p></div>
-            <div class="rs-legend mono small"><span><i class="before"></i>before</span><span><i class="after"></i>after</span></div></div>
-          ${grouped()}
-        </article>
         <p class="muted small rs-src">Sources: results/e3b/final_report_all.md (strong-awareness subset); README.md first live v2 run (results/research_live/).</p>
       </section>`;
     app.querySelectorAll(".rs-stat b[data-to]").forEach((b, k) => {
