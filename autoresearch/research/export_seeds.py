@@ -51,6 +51,8 @@ def export_design(report: dict, measurer, seeds: List[dict], condition: str, see
     from .petri_measure import stock_auditor_prompt, with_guidance
     design = [d["text"] for d in report.get("best_design") or []]
     source = f"export-seeds: run {report.get('run_id')} ({report.get('arm') or 'no arm'})"
+    if measurer.m.offline:
+        return _offline_rows(design, seeds, condition, source), []
     guidance = None
     if design and measurer.rewrite in ("auditor", "both"):
         guidance = measurer.auditor_guidance(design)
@@ -83,6 +85,21 @@ def export_design(report: dict, measurer, seeds: List[dict], condition: str, see
             row["faithful"] = measurer.seed_faithful(base["text"], text + (f"\n\n{guidance}" if guidance else ""))
         rows.append(row)
     return rows, failures
+
+
+def _offline_rows(design: List[str], seeds: List[dict], condition: str, source: str) -> List[dict]:
+    """Offline backends cannot rewrite, as in PetriMeasurer's offline path: rows
+    keep the stock text with the design appended under a dry-run marker, flagged
+    `offline`, so the export -> c2_e3b --offline pipeline can be checked for free.
+    They are never a condition to score with real models."""
+    rows = []
+    for base in seeds:
+        row = {k: v for k, v in base.items() if k not in ("seed_id", "text", "variant")}
+        row.update(seed_id=f"{base['seed_id']}@{condition}", base_seed_id=base["seed_id"], condition=condition,
+                   source=source, design=design, offline=True, variant="ours" if design else base.get("variant", "v2"),
+                   text=base["text"] + ("".join(f"\n[offline dry run, not rewritten] {d}" for d in design)))
+        rows.append(row)
+    return rows
 
 
 def rewrite_mode(report: dict, override: Optional[str] = None) -> str:

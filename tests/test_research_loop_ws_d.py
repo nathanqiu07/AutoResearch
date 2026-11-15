@@ -498,6 +498,12 @@ class AgenticTests(unittest.TestCase):
         main(["--llm", "offline", "export-seeds", "--report", report, "--condition", "control", "--out", out])
         rows = load_audit_seeds(out)
         self.assertEqual([r["seed_id"] for r in rows], ["s2@control", "s3@control"])   # hidden by default
+        with open(report, "w") as f:   # offline: no rewrite possible, rows are flagged dry-run placeholders
+            json.dump({"run_id": "r1", "arm": "R1-bad", "setting": "agentic", "petri_seeds": seeds,
+                       "best_design": [{"text": "plain names", "category": "x"}]}, f)
+        main(["--llm", "offline", "export-seeds", "--report", report, "--condition", "taste_mismatched", "--out", out])
+        rows = load_audit_seeds(out)
+        self.assertTrue(all(r["offline"] and "plain names" in r["text"] and r["variant"] == "ours" for r in rows))
         with open(report, "w") as f:
             json.dump({"run_id": "r", "setting": "single", "best_design": []}, f)
         with self.assertRaises(SystemExit):
