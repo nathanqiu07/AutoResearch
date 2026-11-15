@@ -261,7 +261,9 @@ def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch
     # document, dated by its earliest copy, so a decision can't land on both sides of T.
     by_title = {}
     for curl, item in items.items():
-        title = re.sub(r"[^a-z0-9]+", " ", (item.get("title") or "").lower()).strip()
+        # A listing's title is clean; a page title can carry a site suffix ("... - LessWrong").
+        title = known.get(curl, {}).get("title") or item.get("title") or ""
+        title = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
         if _kind(curl) != "tweet" and len(title) >= 12:
             by_title.setdefault(title, []).append(curl)
     crossposts = {}

@@ -101,6 +101,21 @@ class HarvestTest(unittest.TestCase):
         self.assertEqual(len(files), 1)
         self.assertEqual(self.front_matter(files[0])["publishedDate"], "2025-05-28")
 
+    def test_crosspost_is_merged_by_its_listed_title_when_page_titles_differ(self):
+        title = "Constitutional Black-Box Monitoring for Scheming in LLM Agents"
+        known = {"https://arxiv.org/abs/2603.00829": {"authors": ["Marius Hobbhahn"], "published": "2026-02-28",
+                                                      "title": title},
+                 "https://www.lesswrong.com/posts/894KvMQcMQQnteYk8": {"authors": ["Marius Hobbhahn"],
+                                                                       "published": "2026-03-03", "title": title}}
+        self.exa = FakeExa([page("https://arxiv.org/abs/2603.00829", "2026-02-28", "", title=title),
+                            page("https://www.lesswrong.com/posts/894KvMQcMQQnteYk8", "2026-03-03", "",
+                                 title=title + " — LessWrong")])
+        scrape.scrape_exa("Marius Hobbhahn", self.root, self.exa, "2026-01-01", "2026-12-31",
+                          arxiv_meta=no_arxiv_meta, known=known)
+        files = self.corpus()
+        self.assertEqual(len(files), 1)
+        self.assertEqual(self.front_matter(files[0])["publishedDate"], "2026-02-28")
+
     def test_byline_in_text_counts_when_author_field_is_missing(self):
         self.harvest([page("https://www.apolloresearch.ai/blog/x", "2025-02-01", None,
                            text="By Marius Hobbhahn\n\nWe think evals need a science.")])
