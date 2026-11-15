@@ -5,7 +5,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from ...llm import LLM
-from .contracts import build_profile, digest, sha256_text
+from .contracts import backend_identity, build_profile, digest, sha256_text, ProfileArtifact
 from .consumer import PROMPT_VERSION, implementation_hash, predict_profile, prepare_payload
 from .registry import register_builder
 
@@ -57,8 +57,33 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     fixture = sub.add_parser("fixture")
     fixture.add_argument("--output", type=Path, required=True)
+    job_fixture = sub.add_parser("job-fixture")
+    job_fixture.add_argument("--output-root", type=Path, required=True)
     args = parser.parse_args()
     result = make_fixture()
+    if args.command == "job-fixture":
+        from .runner import job_id, run_job, public_handoff
+        profile = ProfileArtifact.from_dict(result["profile"])
+        backend = FixtureBackend()
+        items = [{"item_id": "synthetic-dev-1", "researcher_id": "synthetic",
+                  "context": result["prepared"]["payload"]["context"],
+                  "options": result["prepared"]["payload"]["options"], "option_order_id": "ab"}]
+        manifest = {"schema_version": "overnight-job-v1", "campaign_id": "offline-fixture",
+                    "stage": "offline", "kind": "predict", "contract_sha256": "0b42ad9e75a5cc729978b1b000ff901646f91f8813e1abb2fb6415fb604cfd43",
+                    "config_hash": digest(result["prediction_config"]), "source_manifest_hash": profile.allowed_source_manifest_hash,
+                    "items_hash": digest(items), "profile_hash": profile.profile_id, "method_id": profile.method_id,
+                    "extractor": profile.extractor, "consumer": backend_identity(backend),
+                    "personalization_cap": profile.personalization_cap, "option_order_schedule": [{"item_id": "synthetic-dev-1", "option_order_id": "ab"}],
+                    "replicate_id": 0, "code_sha": "offline-fixture-not-a-live-run",
+                    "allocation": {"max_calls": 1, "max_seconds": 30, "max_usd": 0, "cost_mode": "offline", "authorization_source": "offline-fixture"},
+                    "retry_policy": {"max_attempts": 1, "retry_uncertain": False}, "parent_job_ids": [], "expected_outputs": ["result.json", "traces"]}
+        manifest["job_id"] = job_id(manifest)
+        lease = {"job_id": manifest["job_id"], "lease_id": "offline-fixture", "owner": "offline-fixture", "expires_at": "2099-01-01T00:00:00+00:00"}
+        completed = run_job(manifest, lease, output_root=args.output_root / "outputs", lease_root=args.output_root / "leases",
+                            cache_root=args.output_root / "cache", profile=profile, items=items,
+                            config=result["prediction_config"], consumer=backend)
+        print(json.dumps(public_handoff(completed), indent=2))
+        return
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x") as stream:
         json.dump(result, stream, indent=2, ensure_ascii=False, allow_nan=False)
