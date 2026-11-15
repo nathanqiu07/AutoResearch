@@ -56,6 +56,12 @@ python3 scripts/agentctl.py status        # pulls, then shows open tasks, claims
 python3 scripts/agentctl.py inbox         # read messages addressed to you or to all
 ```
 
+**Every turn.** `python3 scripts/agentctl.py brief` fetches (it never touches your working tree),
+prints unread messages, including ones not yet pulled, and says if your checkout is behind origin. It
+prints nothing when there is nothing new. In Claude Code the hook in `.claude/settings.json` runs it
+on every prompt, and its output arrives as context. Other harnesses: run it at the start of each turn.
+When it says you're behind, run `status` before editing shared files.
+
 **Pick up work.** Claim one task, then lock the paths you will edit:
 ```bash
 python3 scripts/agentctl.py task list --status open

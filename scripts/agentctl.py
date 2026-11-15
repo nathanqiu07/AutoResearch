@@ -17,6 +17,8 @@ concurrent agents never produce merge conflicts:
   agentctl.py lock PATH... --reason "..."  /  unlock PATH...
   agentctl.py post "subject" "body" [--to NAME|all] [--task SLUG]
   agentctl.py inbox [--all]                messages to you or to all, unread first
+  agentctl.py brief                        fetch only; print unread messages and if behind origin
+                                           (run every prompt by the hook in .claude/settings.json)
   agentctl.py heartbeat                    refresh your claims/locks (stale after 2h)
 
 Your agent name comes from $AGENT_NAME or `register` (stored, untracked, in
@@ -93,8 +95,30 @@ class Ctl:
         return name
 
     # ---------- git ----------
-    def _git(self, *args, check=True):
-        return subprocess.run(["git", "-C", GIT_ROOT, *args], capture_output=True, text=True, check=check)
+    def _git(self, *args, check=True, timeout=None):
+        return subprocess.run(["git", "-C", GIT_ROOT, *args], capture_output=True, text=True, check=check,
+                              timeout=timeout)
+
+    def fetch(self):
+        """Fetch without touching the working tree; return how many commits HEAD is behind upstream."""
+        if not self.use_git:
+            return 0
+        try:
+            self._git("fetch", "--quiet", check=False, timeout=15)
+        except subprocess.TimeoutExpired:
+            return 0
+        r = self._git("rev-list", "--count", "HEAD..@{u}", check=False)
+        return int(r.stdout.strip()) if r.returncode == 0 else 0
+
+    def upstream_messages(self):
+        """Messages already pushed to upstream but not yet pulled into this checkout."""
+        rel = os.path.relpath(os.path.join(self.root, "messages"), GIT_ROOT)
+        r = self._git("ls-tree", "--name-only", "@{u}", rel + "/", check=False)
+        out = []
+        for path in r.stdout.split():
+            if path.endswith(".json") and not os.path.exists(os.path.join(GIT_ROOT, path)):
+                out.append(json.loads(self._git("show", f"@{{u}}:{path}").stdout))
+        return out
 
     def sync(self):
         if not self.use_git:
@@ -270,13 +294,12 @@ class Ctl:
         self._commit(f"{me} -> {to}: {subject[:50]}", [f"messages/{name}"])
         return name[:-5]
 
-    def messages(self, me=None, include_read=False):
+    def messages(self, me=None, include_read=False, extra=()):
         me = me or self.me()
         read_p = self._path(f".read-{me}")
         seen = set(open(read_p).read().split()) if os.path.exists(read_p) else set()
         out = []
-        for f in self._ls("messages"):
-            m = self._read_json(f"messages/{f}")
+        for m in [self._read_json(f"messages/{f}") for f in self._ls("messages")] + list(extra):
             if m["to"] in ("all", me) and m["from"] != me and (include_read or m["id"] not in seen):
                 out.append(m)
         return out
@@ -306,6 +329,7 @@ def main(argv=None):
     po = sub.add_parser("post"); po.add_argument("subject"); po.add_argument("body")
     po.add_argument("--to", default="all"); po.add_argument("--task", default="")
     ib = sub.add_parser("inbox"); ib.add_argument("--all", action="store_true")
+    sub.add_parser("brief")
     a = p.parse_args(argv)
     ctl = Ctl(use_git=not a.no_git)
 
@@ -342,6 +366,21 @@ def main(argv=None):
         ctl.mark_read([m["id"] for m in ms])
         if not ms:
             print("no new messages")
+    elif a.cmd == "brief":
+        # Runs from a per-prompt hook, so it must never touch the working tree and stays silent when idle.
+        if not (os.environ.get("AGENT_NAME") or os.path.exists(ctl._path(".me"))):
+            print("agentctl: you are not registered. See AGENTS.md section 4 "
+                  "(`python3 scripts/agentctl.py register <name> --role ...`).")
+            return
+        behind = ctl.fetch()
+        ms = ctl.messages(extra=ctl.upstream_messages() if behind else ())
+        for m in ms:
+            print(f"agentctl message from {m['from']} to {m['to']}" + (f" [task {m['task']}]" if m["task"] else "")
+                  + f": {m['subject']}\n    {m['body']}")
+        ctl.mark_read([m["id"] for m in ms])
+        if behind:
+            print(f"agentctl: this checkout is {behind} commit(s) behind origin (new tasks, claims or locks "
+                  "may be waiting). Run `python3 scripts/agentctl.py status` before editing shared files.")
     elif a.cmd == "status":
         ctl.sync()
         me = os.environ.get("AGENT_NAME") or (open(ctl._path(".me")).read().strip() if os.path.exists(ctl._path(".me")) else None)
