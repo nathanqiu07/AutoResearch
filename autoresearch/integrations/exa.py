@@ -60,8 +60,10 @@ class ExaClient:
         out = post_json(BASE + path, body, {"x-api-key": self.key}, timeout=300)
         self.calls += 1
         self.cost += float((out.get("costDollars") or {}).get("total", 0.0))
-        if ck:
-            json.dump(out, open(ck, "w"))
+        # A failed URL (e.g. a crawl timeout) may succeed later, so its response is not replayed.
+        if ck and all(st.get("status") == "success" for st in out.get("statuses") or []):
+            with open(ck, "w") as f:
+                json.dump(out, f)
         return out
 
     def search(self, query, num_results=5, since_days=None, highlights_query=None,
@@ -99,7 +101,8 @@ class ExaClient:
         return self._post("/search", body)
 
     def contents(self, urls, text_chars=4000, *, summary=None, max_age_hours=None, subpages=0,
-                 subpage_target=None):
+                 subpage_target=None, with_statuses=False):
+        """Results; with_statuses=True returns (results, Exa's per-URL statuses)."""
         body = {"urls": urls, "text": {"maxCharacters": text_chars}}
         if summary:
             body["summary"] = summary
@@ -109,7 +112,8 @@ class ExaClient:
             body["subpages"] = subpages
         if subpage_target:
             body["subpageTarget"] = subpage_target
-        return self._post("/contents", body).get("results", [])
+        out = self._post("/contents", body)
+        return (out.get("results", []), out.get("statuses") or []) if with_statuses else out.get("results", [])
 
     def answer(self, query):
         out = self._post("/answer", {"query": query, "model": "exa"})

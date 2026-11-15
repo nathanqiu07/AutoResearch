@@ -142,12 +142,16 @@ def exa_extract(researcher: Researcher, client, batch: int = 5) -> dict:
     crashed run resumes where it stopped."""
     path = os.path.join(researcher.root, EXA_EXTRACT)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    done = {r["doc"] for r in _read_jsonl(path)}
+    # Crawl timeouts are retried: the rows are dropped here and the documents fetched again.
+    rows = [r for r in _read_jsonl(path) if r.get("exa_error") != "CRAWL_TIMEOUT"]
+    with open(path, "w") as f:
+        f.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in rows)
+    done = {r["doc"] for r in rows}
     todo = []
     for p in sorted(glob.glob(os.path.join(researcher.root, "corpus", "*.txt"))):
-        url = front_matter(p).get("url")
-        if url and os.path.basename(p) not in done:
-            todo.append((os.path.basename(p), url))
+        fm = front_matter(p)
+        if fm.get("url") and os.path.basename(p) not in done:
+            todo.append((os.path.basename(p), fm["url"], fm.get("fetched_url") or fm["url"]))
     report = {"done": 0, "skipped_existing": len(done), "errors": 0}
     summary = {"query": SUMMARY_QUERY, "schema": DECISION_SCHEMA}
 
@@ -158,17 +162,21 @@ def exa_extract(researcher: Researcher, client, batch: int = 5) -> dict:
 
     for i in range(0, len(todo), batch):
         chunk = todo[i:i + batch]
-        by_url = {canonical_url(r.get("url", "")): r
-                  for r in client.contents([full_text(u) for _, u in chunk], text_chars=1, summary=summary)}
+        results, statuses = client.contents([full_text(f) for _, _, f in chunk], text_chars=1, summary=summary,
+                                            with_statuses=True)
+        by_url = {canonical_url(r.get("url", "")): r for r in results}
+        failed = {canonical_url(st.get("id", "")): (st.get("error") or {}).get("tag") or "fetch failed"
+                  for st in statuses if st.get("status") != "success"}
         with open(path, "a") as f:
-            for doc, url in chunk:
+            for doc, url, _ in chunk:
                 r = by_url.get(canonical_url(url), {})
                 raw = r.get("summary")
                 try:
-                    out = json.loads(raw) if isinstance(raw, str) else raw
-                    error = None if isinstance(out, dict) else "no summary returned"
+                    out = json.loads(raw) if isinstance(raw, str) and raw else raw
+                    error = None if isinstance(out, dict) else "empty summary"
                 except json.JSONDecodeError:
                     out, error = None, "summary is not JSON"
+                error = failed.get(canonical_url(url)) or error
                 out = out if isinstance(out, dict) else {}
                 report["errors"] += error is not None
                 report["done"] += 1

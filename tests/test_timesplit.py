@@ -194,9 +194,12 @@ class FakeSummaryExa:
     def __init__(self, summaries):
         self.summaries, self.calls, self.cost = summaries, 0, 0.0
 
-    def contents(self, urls, text_chars=4000, **kw):
+    statuses = ()
+
+    def contents(self, urls, text_chars=4000, with_statuses=False, **kw):
         self.calls += 1
-        return [{"url": u, "id": "req-" + u[-1], "summary": self.summaries[u]} for u in urls]
+        results = [{"url": u, "id": "req-" + u[-1], "summary": self.summaries[u]} for u in urls]
+        return (results, [s for s in self.statuses if s["id"] in urls]) if with_statuses else results
 
 
 def write_url_doc(root, name, published, url, body):
@@ -239,6 +242,26 @@ class ExaExtractTest(unittest.TestCase):
         timesplit.exa_extract(self.researcher, self.exa)
         row = next(r for r in self.rows() if r["doc"] == "research__c.txt")
         self.assertEqual((row["decisions"], row["url"]), ([self.DECISION], "https://arxiv.org/abs/2504.12170"))
+
+    def test_crawl_timeout_is_recorded_and_retried_on_rerun(self):
+        timeout = {"id": "https://ex.org/b", "status": "error", "error": {"httpStatusCode": 504, "tag": "CRAWL_TIMEOUT"}}
+        self.exa.statuses = [timeout]
+        timesplit.exa_extract(self.researcher, self.exa)
+        self.assertEqual(next(r for r in self.rows() if r["doc"] == "research__b.txt")["exa_error"], "CRAWL_TIMEOUT")
+        self.exa.statuses = []
+        self.exa.summaries["https://ex.org/b"] = json.dumps({"decisions": [self.DECISION]})
+        timesplit.exa_extract(self.researcher, self.exa)
+        rows = [r for r in self.rows() if r["doc"] == "research__b.txt"]
+        self.assertEqual((len(rows), rows[0]["decisions"]), (1, [self.DECISION]))
+
+    def test_document_is_summarized_from_the_url_it_was_fetched_from(self):
+        with open(os.path.join(self.root, "corpus", "research__d.txt"), "w") as f:
+            f.write("---\nurl: https://blog.example/p\nfetched_url: http://www.blog.example/p/\n"
+                    "publishedDate: 2022-01-01\n---\nbody d")
+        self.exa.summaries["http://www.blog.example/p/"] = json.dumps({"decisions": [self.DECISION]})
+        timesplit.exa_extract(self.researcher, self.exa)
+        row = next(r for r in self.rows() if r["doc"] == "research__d.txt")
+        self.assertEqual(row["decisions"], [self.DECISION])
 
     def test_rerun_skips_documents_already_extracted(self):
         timesplit.exa_extract(self.researcher, self.exa)

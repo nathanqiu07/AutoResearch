@@ -276,6 +276,7 @@ def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch
             manifest.append({"url": curl, "title": item.get("title", ""), "reason": "crosspost_of",
                              "kept_as": crossposts[curl]})
             continue
+        fetched = item.get("url", curl)
         item = dict(item, url=curl, title=item.get("title") or known.get(curl, {}).get("title", ""))
         authors, pos, reason = _authorship(item, name, meta, known)
         date, date_source = _date(item, meta, known)
@@ -292,6 +293,8 @@ def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch
             fm = {"url": curl, "title": " ".join((item.get("title") or "").split()), "publishedDate": date,
                   "date_source": date_source, "authors": json.dumps(authors), "author_position": pos,
                   "kind": _kind(curl), "exa_request_id": item.get("id", "")}
+            if fetched != curl:  # some sites serve only the form they were fetched by
+                fm["fetched_url"] = fetched
             row["file"] = os.path.basename(_write_doc(root, "research", fm, item.get("text") or ""))
             row["reason"] = "kept"
             kept += 1

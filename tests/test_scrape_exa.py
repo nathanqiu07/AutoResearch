@@ -150,6 +150,7 @@ class HarvestTest(unittest.TestCase):
         scrape.scrape_exa("Marius Hobbhahn", self.root, self.exa, "2022-01-01", "2022-12-31",
                           arxiv_meta=no_arxiv_meta, known=known)
         self.assertEqual(len(self.corpus()), 1)
+        self.assertEqual(self.front_matter(self.corpus()[0])["fetched_url"], listed_url)
 
     def test_index_pages_are_dropped(self):
         self.harvest([page("https://watcher.apolloresearch.ai/blog", "2025-09-02", "Marius Hobbhahn"),

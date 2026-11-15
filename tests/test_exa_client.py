@@ -61,5 +61,16 @@ class ExaClientBodyTest(unittest.TestCase):
         self.assertAlmostEqual(self.client.cost, 0.02)
 
 
+class ExaClientCacheTest(unittest.TestCase):
+    def test_response_with_a_failed_url_is_not_cached(self):
+        import tempfile
+        replies = [{"results": [], "statuses": [{"id": "u", "status": "error", "error": {"tag": "CRAWL_TIMEOUT"}}]},
+                   {"results": [{"url": "u", "summary": "ok"}], "statuses": [{"id": "u", "status": "success"}]}]
+        with mock.patch.object(exa, "post_json", lambda *a, **kw: replies.pop(0)):
+            client = exa.ExaClient(api_key="k", cache_dir=tempfile.mkdtemp())
+            client.contents(["u"])
+            self.assertEqual(client.contents(["u"]), [{"url": "u", "summary": "ok"}])
+
+
 if __name__ == "__main__":
     unittest.main()
