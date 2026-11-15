@@ -79,6 +79,9 @@ async function viewHome(seq) {
     <a class="index-card rise" style="--i:${i + 4};--r:${tilt(i)}deg" href="#/p/${esc(p.slug)}">
       ${i % 3 === 0 ? '<span class="tape" aria-hidden="true"></span>' : ""}
       <span class="name">${esc(p.name)}</span>
+      <div class="meta"><span class="badge ${esc(p.mode)}">${p.mode === "external" ? "read-only" : esc(p.mode)}</span>
+        <span>${fmtNum(p.n_docs)} doc${p.n_docs === 1 ? "" : "s"}</span>
+        <span>${p.has_usermodel ? "✓ user model" : p.has_profile ? "✓ built" : "not built"}</span></div>
     </a>`).join("");
   app.innerHTML = `
     <section class="hero">
@@ -90,20 +93,16 @@ async function viewHome(seq) {
             <button type="button" class="hero-doodle wobble" aria-label="${n} doodle">${doodle(n, { color: c, tilt: t, size: sz })}</button></span></span>`).join("")}
       </div>
       <h1 class="rise" style="--i:1">Whose research <span class="scribble">taste<svg viewBox="0 0 200 20" preserveAspectRatio="none"><path d="M4 12 C40 4 80 18 120 9 C150 3 175 12 196 7"/></svg></span> should the loop follow?</h1>
-      <p class="lede rise" style="--i:2">A profile captures how a researcher decides: what they value, what they avoid, how they trade
-      realism against rigour, cost against novelty. The research loop reads it to choose which experiments to propose and run.</p>
     </section>
     <section class="mode-cards">
       <a class="choice rise" style="--i:3;--r:-1.1deg" href="#/new/personal" data-key="a">
         <div class="choice-head">${doodle("person", { size: 64, color: "clay", tilt: -7 })}${doodle("pencil", { size: 40, color: "ochre", tilt: 14, cls: "wobble" })}</div>
         <h2>Your own profile</h2>
-        <p>From your papers and writing, plus a few questions about how you work.</p>
         <span class="go">${doodle("arrow", { size: 34, color: "clay", tilt: -4 })}</span>
       </a>
       <a class="choice rise" style="--i:4;--r:1.3deg" href="#/new/public" data-key="b">
         <div class="choice-head">${doodle("telescope", { size: 64, color: "sage", tilt: 6 })}${doodle("cap", { size: 42, color: "sky", tilt: -10 })}</div>
         <h2>A known researcher</h2>
-        <p>From someone's public record, gathered for you.</p>
         <span class="go">${doodle("arrow", { size: 34, color: "sage", tilt: 5 })}</span>
       </a>
     </section>
