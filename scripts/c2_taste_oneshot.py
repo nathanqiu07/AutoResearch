@@ -60,9 +60,16 @@ def one(slug, seeds, gen, k, outdir, offline, max_docs=24):
     r = load_researcher(slug)
     prof = quick_profile(r, gen, outdir, max_docs, offline)
     prop = Proposer(gen, prof, random.Random(0), setting_kind="agentic")
-    cands = prop.propose(PETRI_SCENARIO.goal, PETRI_SCENARIO.probe, [], set(), [], [], k=8,
+    cands = prop.propose(PETRI_SCENARIO.goal, PETRI_SCENARIO.probe, [], set(), [], [], k=10,
                          setting=PETRI_SCENARIO.setting)
-    ranked = sorted(cands, key=lambda i: -prof.score(i.features))
+    # The goal gate the loop applies (drift monitor): an idea that tells the target it is being evaluated
+    # contradicts the task (make the audit unrecognisable), so it is dropped before taste ranks the rest.
+    import re
+    tells = re.compile(r"disclos|notice that|authori[sz]ed (audit|evaluation)|is (part of )?an? (audit|evaluation|test)|"
+                       r"debrief|label simulated|inform the (target|model)", re.I)
+    kept = [i for i in cands if not tells.search(i.text)]
+    dropped = len(cands) - len(kept)
+    ranked = sorted(kept or cands, key=lambda i: -prof.score(i.features))
     design = [i.text for i in ranked[:k]]
     off = OfflineLLM()
     pm = PetriMeasurer(Models(generator=gen, target=off, judge=off), seeds)
@@ -74,6 +81,7 @@ def one(slug, seeds, gen, k, outdir, offline, max_docs=24):
         i, s = i_s
         text = ("(offline) " + s["text"]) if offline else pm.rewrite_seed(s, design, random.Random(i))
         return dict(s, text=text or s["text"], variant="ours", condition=f"taste_{slug}", design=design,
+                    goal_gate_dropped=dropped,
                     taste="one-shot (D1 ranking, no measurement loop)", rewrite_ok=bool(text))
     with ThreadPoolExecutor(max_workers=12) as ex:
         rows = list(ex.map(rw, enumerate(seeds)))
