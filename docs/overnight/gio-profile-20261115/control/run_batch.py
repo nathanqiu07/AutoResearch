@@ -10,6 +10,9 @@ max_workers (1 or 2), max_total_attempts, release_schema_version, release_scope,
 contract:{path,sha256}, env_file,
 ledger:{path,max_usd,max_inflight:2}, roots:{output,lease,cache,receipts},
 jobs:[{path,sha256}]. Paths must be absolute. Outputs/ledger stay outside Git.
+P7-only batches may use released-development-v2-p7-peers-v1. Their build and
+predict configs must copy approved_peer_sources, peer_policy, parent_releases
+exactly from the evaluator derivative; parent file hashes and records are checked.
 
 Packet schema overnight-packet-v1: release:{path,sha256}, item_ids:[ordered IDs],
 profile:{path,sha256}|null, config, manifest, lease, backend:{model,reasoning,
@@ -56,6 +59,8 @@ from autoresearch.taste.overnight.runner import (ITEM_FIELDS, _validate, job_id,
 HARD_DEADLINE = '2026-11-15T17:00:00Z'
 MAX_CAMPAIGN_USD = Decimal('500')  # Direct user approval; each batch still requires its shared suballocation.
 RELEASE_SCHEMA = 'released-development-v2'
+PEER_RELEASE_SCHEMA = 'released-development-v2-p7-peers-v1'
+PEER_BINDINGS = ('approved_peer_sources', 'peer_policy', 'parent_releases')
 RELEASE_SCOPE = 'Tier A primary descriptive; Tier B separately reported secondary; no confirmation panel'
 SECRET_NAMES = ('OPENAI_API_KEY', 'OPENAI_ORG_ID', 'OPENAI_PROJECT_ID')
 REGISTRATIONS = {
@@ -262,21 +267,86 @@ def _nested_profiles(value, documents, researcher, code_sha):
             _nested_profiles(child, documents, researcher, code_sha)
 
 
+def _peer_binding(config, release):
+    if not isinstance(config, dict) or any(config.get(key) != release[key] for key in PEER_BINDINGS):
+        raise ValueError('peer declarations differ from evaluator derivative')
+    if config.get('approved_peer_sources') is not True:
+        raise ValueError('explicit evaluator peer approval required')
+
+
+def _peer_release(release, method, config):
+    """Verify a P7 derivative against exact public parent fit-release records."""
+    if method != 'P7' or release.get('approved_peer_sources') is not True:
+        raise ValueError('peer derivative is approved for P7 only')
+    _peer_binding(config, release)
+    policy = release['peer_policy']
+    fields = {'allowed_method_id', 'purpose', 'target_researcher_id', 'peer_researcher_ids', 'no_heldout_sources'}
+    if (not isinstance(policy, dict) or set(policy) != fields or policy['allowed_method_id'] != 'P7'
+            or policy['purpose'] != 'contrastive peer fitting' or policy['no_heldout_sources'] is not True
+            or policy['target_researcher_id'] != release['researcher_id']):
+        raise ValueError('invalid evaluator peer policy')
+    peers = policy['peer_researcher_ids']
+    if (not isinstance(peers, list) or not peers or any(not isinstance(p, str) or not p for p in peers)
+            or peers != sorted(set(peers)) or release['researcher_id'] in peers):
+        raise ValueError('exact sorted peer researchers required')
+    parents = release['parent_releases']
+    if not isinstance(parents, list) or len(parents) != len(peers) + 1:
+        raise ValueError('exact target and peer parent releases required')
+    expected_ids = sorted([release['researcher_id']] + peers)
+    if [p.get('researcher_id') if isinstance(p, dict) else None for p in parents] != expected_ids:
+        raise ValueError('parent release researchers differ from peer policy')
+    records, target = {}, None
+    for parent in parents:
+        if set(parent) != {'researcher_id', 'release'}:
+            raise ValueError('exact parent release file reference required')
+        body = _json(_read(parent['release']))
+        if (body.get('schema_version') != RELEASE_SCHEMA or body.get('scope') != RELEASE_SCOPE
+                or body.get('researcher_id') != parent['researcher_id']
+                or body.get('approved_peer_sources') is True):
+            raise ValueError('parent must be an original target-only development release')
+        docs = body['sources']['documents']
+        sources = body['sources']['source_manifest']
+        validate_documents(docs, {'researcher_id': parent['researcher_id'], 'allowed_sources': sources,
+                                 'allowed_source_manifest_hash': body['sources']['allowed_source_manifest_hash']})
+        for record in docs:
+            identifier = record['document_id']
+            if identifier in records and records[identifier] != record:
+                raise ValueError('conflicting approved parent document records')
+            records[identifier] = record
+        if parent['researcher_id'] == release['researcher_id']:
+            target = body
+    if release['sources']['documents'] != [records[key] for key in sorted(records)]:
+        raise ValueError('peer derivative must preserve exact sorted parent fit records')
+    for key in ('items', 'items_sha256', 'target_bundle_sha256'):
+        if key not in release or key not in target or release[key] != target[key]:
+            raise ValueError('peer derivative changed target panel or target hash')
+    return True
+
+
 def _prepare_packet(packet, batch, ledger):
     if not isinstance(packet, dict) or packet.get('schema_version') != 'overnight-packet-v1':
         raise ValueError('unsupported packet schema')
     packet = _json(canonical_json(packet))
+    manifest, config, lease = packet['manifest'], packet['config'], packet['lease']
     release_raw = _read(packet['release'])
     release = _json(release_raw)
     if release.get('scope') != batch['release_scope'] or release.get('schema_version') != batch['release_schema_version']:
         raise ValueError('released schema or scope differs from approved batch')
+    peer_release = release['schema_version'] == PEER_RELEASE_SCHEMA
+    if peer_release:
+        _peer_release(release, manifest.get('method_id'), config)
+    elif (release.get('approved_peer_sources') is True or config.get('approved_peer_sources') is True
+          or 'peer_policy' in release or 'parent_releases' in release
+          or 'peer_policy' in config or 'parent_releases' in config):
+        raise ValueError('ordinary releases cannot opt into peer evidence')
     documents = release['sources']['documents']
     sources = source_manifest(documents)
     if (release['sources']['source_manifest'] != sources
             or release['sources']['allowed_source_manifest_hash'] != digest(sources)):
         raise ValueError('released source manifest mismatch')
     validate_documents(documents, {'researcher_id': release['researcher_id'], 'allowed_sources': sources,
-                                   'allowed_source_manifest_hash': digest(sources)})
+                                   'allowed_source_manifest_hash': digest(sources),
+                                   'approved_peer_sources': peer_release})
     all_items = release['items']
     if not isinstance(all_items, list) or digest(all_items) != release['items_sha256']:
         raise ValueError('released items hash mismatch')
@@ -291,7 +361,6 @@ def _prepare_packet(packet, batch, ledger):
             or len(ids) != len(set(ids))):
         raise ValueError('explicit unique released item IDs required')
     items = [index[i] for i in ids]
-    manifest, config, lease = packet['manifest'], packet['config'], packet['lease']
     if manifest.get('stage') != 'dev' or manifest.get('kind') not in ('build', 'predict'):
         raise ValueError('only explicit development build or predict jobs are permitted')
     if manifest.get('campaign_id') != batch['campaign_id']:
@@ -330,6 +399,8 @@ def _prepare_packet(packet, batch, ledger):
             raise ValueError('prediction requires explicit released items')
         profile_raw = _read(packet['profile'])
         profile = _profile(_json(profile_raw), documents, release['researcher_id'], batch['code_sha'])
+        if peer_release:
+            _peer_binding(profile.config, release)
         if profile.method_implementation_hash != builder.implementation_hash:
             raise ValueError('profile builder implementation differs from frozen runtime')
         _bound(manifest, 'profile_hash', profile.profile_id)
@@ -353,7 +424,7 @@ def prepare_batch(path, expected_sha):
     if type(batch.get('max_workers')) is not int or batch.get('max_workers') not in (1, 2):
         raise ValueError('batch requires one or two workers')
     _positive(batch['max_total_attempts'], integer=True)
-    if batch.get('release_schema_version') != RELEASE_SCHEMA or batch.get('release_scope') != RELEASE_SCOPE:
+    if batch.get('release_schema_version') not in (RELEASE_SCHEMA, PEER_RELEASE_SCHEMA) or batch.get('release_scope') != RELEASE_SCOPE:
         raise ValueError('active development release schema and scope required')
     _deadline(batch['deadline'])
     verify_runtime(_path(batch['runtime_root']), batch['code_sha'])
