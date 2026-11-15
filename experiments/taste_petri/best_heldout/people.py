@@ -28,6 +28,12 @@ def gio_dev_row():
     return best, 100 * sum(d) / len(d), 100 * bs[200], 100 * bs[3800], len(ids)
 
 
+def prism_90(d, lo95, hi95):
+    """The source reports only a 95% interval; shrink it to 90% assuming normality (z 1.645 / 1.96)."""
+    k = 1.645 / 1.96
+    return d, d - k * (d - lo95), d + k * (hi95 - d)
+
+
 best, g, glo, ghi, gn = gio_dev_row()
 assert best == "m3", best  # the label below names ICAI principles
 # (person, profile, detail line, diff, lo, hi, source)
@@ -49,7 +55,7 @@ ROWS = [
      g, glo, ghi, "origin/codex/gio-full-history results/fidelity/hobbhahn-full-paper-05"),
     ("64 PRISM raters", "Each rater's own history",
      "crowd ratings of chatbot replies, pooled · accuracy · vs another rater's history",
-     -1.83, -5.75, 2.08, "origin/codex/gio-morning-04 docs/overnight/gio-profile-20261115/control/MORNING_SUMMARY.md"),
+     *prism_90(-1.83, -5.75, 2.08), "origin/codex/gio-morning-04 docs/overnight/gio-profile-20261115/control/MORNING_SUMMARY.md"),
 ]
 json.dump([dict(zip(["person", "profile", "detail", "diff_pts", "lo", "hi", "source"], r)) for r in ROWS],
           open(HERE / "people.json", "w"), indent=1)
@@ -74,7 +80,7 @@ svg = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W
        '<text class="t1" x="20" y="32" font-size="17" font-weight="600">'
        'A profile helped for Owain Evans and possibly Ethan Cai, not for Marius Hobbhahn or PRISM raters</text>',
        '<text class="t2" x="20" y="54" font-size="13">Each person\'s best profile minus that benchmark\'s own baseline, '
-       'in percentage points · whiskers: 90% interval (raters: 95%)</text>',
+       'in percentage points · whiskers: 90% interval</text>',
        '<text class="t2" x="20" y="72" font-size="13">Blue: interval above zero · orange: below zero · '
        'gray: includes zero. Metrics and baselines differ by row, so compare signs, not sizes.</text>']
 axis_y = TOP + ROW * len(ROWS) - 18

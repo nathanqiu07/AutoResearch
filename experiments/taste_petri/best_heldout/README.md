@@ -9,7 +9,8 @@
 `people.py` writes `people.svg` and `people.json` (each row's source). Rows differ in metric, baseline, model and
 label source, so read signs, not sizes. Ethan's row rests on 4 test questions. The PRISM raters are 64 development users from PRISM (Kirk et al. 2024), a public dataset of
 crowd workers rating chatbot replies, via the PersonalRewardBench derivative; their choices are about chat
-responses, not research. Hobbhahn's development labels were
+responses, not research. Their source reports a 95% interval; the chart shrinks it to 90% assuming normality, so every
+whisker is 90%. Hobbhahn's development labels were
 inferred by AI, not given by him. Hobbhahn's offline ranking model (68% on held-out documents) has no matched
 no-profile baseline, and a two-researcher writing panel was at ceiling (every arm 28/28), so neither is plotted.
 
