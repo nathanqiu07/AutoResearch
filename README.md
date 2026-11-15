@@ -1,4 +1,4 @@
-<img src="demo/deck/img/rat.png" alt="Remy Research mascot" width="110">
+<img src="demo/deck/img/remy-chef.png" alt="Remy Research mascot wearing a chef hat and holding a wooden spoon" width="110">
 
 # Remy Research
 
