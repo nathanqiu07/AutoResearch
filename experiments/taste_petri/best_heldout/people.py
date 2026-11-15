@@ -47,8 +47,8 @@ ROWS = [
     ("Marius Hobbhahn", "Principles from his history",
      f"{gn} choices, labels inferred by AI · accuracy · vs no history",
      g, glo, ghi, "origin/codex/gio-full-history results/fidelity/hobbhahn-full-paper-05"),
-    ("64 anonymous raters", "Each rater's own history",
-     "pooled public preference data · accuracy · vs another rater's history",
+    ("64 PRISM raters", "Each rater's own history",
+     "crowd ratings of chatbot replies, pooled · accuracy · vs another rater's history",
      -1.83, -5.75, 2.08, "origin/codex/gio-morning-04 docs/overnight/gio-profile-20261115/control/MORNING_SUMMARY.md"),
 ]
 json.dump([dict(zip(["person", "profile", "detail", "diff_pts", "lo", "hi", "source"], r)) for r in ROWS],
@@ -72,7 +72,7 @@ svg = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W
        'font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">', STYLE,
        f'<rect class="bg" width="{W}" height="{H}"/>',
        '<text class="t1" x="20" y="32" font-size="17" font-weight="600">'
-       'A profile helped for Owain Evans and possibly Ethan Cai, not for Marius Hobbhahn or the public raters</text>',
+       'A profile helped for Owain Evans and possibly Ethan Cai, not for Marius Hobbhahn or PRISM raters</text>',
        '<text class="t2" x="20" y="54" font-size="13">Each person\'s best profile minus that benchmark\'s own baseline, '
        'in percentage points · whiskers: 90% interval (raters: 95%)</text>',
        '<text class="t2" x="20" y="72" font-size="13">Blue: interval above zero · orange: below zero · '

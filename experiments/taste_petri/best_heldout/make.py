@@ -5,7 +5,6 @@ Eligible arms were fixed before scoring: pre-T material only, never tuned on pos
 """
 import itertools
 import json
-import math
 import random
 from pathlib import Path
 
@@ -55,23 +54,13 @@ def perm_p(a, b, m):
     return hits / 2 ** len(d)
 
 
-def holm(ps):
-    out, run = {}, 0.0
-    for i, a in enumerate(sorted(ps, key=ps.get)):
-        run = max(run, min(1.0, ps[a] * (len(ps) - i)))
-        out[a] = run
-    return out
-
-
 ELIGIBLE = ["NAME", "P1", "P4", "S_paper", "S_inf", "P4_rerun"]
 tests = {}
 for base in ["M0s", "NAME"]:
     for m in ["acc", "p"]:
         cands = [a for a in ELIGIBLE if a != base]
-        ps = {a: perm_p(a, base, m) for a in cands}
-        h = holm(ps)
         tests[f"{base}/{m}"] = {a: {"diff": round(mean(a, base, m), 3), "ci90": [round(x, 3) for x in boot(a, base, m)],
-                                    "perm_p": round(ps[a], 4), "holm_p": round(h[a], 4)} for a in cands}
+                                    "perm_p": round(perm_p(a, base, m), 4)} for a in cands}
 summary = {a: {"acc": round(mean(a, None, "acc"), 3), "p_his": round(mean(a, None, "p"), 3),
                "p_his_ci90": [round(x, 3) for x in boot(a, None, "p")]} for a in arms}
 retest = {m: {"diff": round(mean("P4_rerun", "P4", m), 3), "ci90": [round(x, 3) for x in boot("P4_rerun", "P4", m)]}
@@ -131,10 +120,11 @@ for i, (arm, label, sub, best) in enumerate(ROWS):
                f'{weight}>{s["p_his"]:.3f}</text>')
     if best:
         t = tests["NAME/p"][arm]
-        svg.append(f'<text class="t2" x="{NOTE_X}" y="{y + 16}" font-size="11">+{t["diff"]:.3f} vs name only, '
-                   f'Holm p = {t["holm_p"]:.3f}</text>')
-svg.append(f'<text class="t2" x="20" y="{H - 14}" font-size="11">Differences are paired over the same pairs '
-           '(exact permutation over works, Holm-corrected across 5 eligible profiles). Sonnet predictor.</text>')
+        lo_d, hi_d = t["ci90"]
+        svg.append(f'<text class="t2" x="{NOTE_X}" y="{y + 16}" font-size="11">+{t["diff"]:.3f} vs name only '
+                   f'[{lo_d:+.3f}, {hi_d:+.3f}]</text>')
+svg.append(f'<text class="t2" x="20" y="{H - 14}" font-size="11">Right-column intervals are for the paired difference '
+           'on the same pairs (90%, resampling works). Sonnet predictor.</text>')
 svg.append("</svg>")
 (HERE / "figure.svg").write_text("\n".join(svg) + "\n")
 print(json.dumps({"arms": summary, "vs_name_p": tests["NAME/p"]}, indent=1))
@@ -151,71 +141,3 @@ for e in s_inf["exemplars"]:
     other = e["b_text"] if e["chosen"] == "a" else e["a_text"]
     lines += [f"- **Context.** {e['context']}", f"  - Chose: {chosen}", f"  - Over: {other}", ""]
 (HERE / "profiles.md").write_text("\n".join(lines))
-
-# Holm diagram, on the real comparison against name only: sorted raw p-values against the stepped bars alpha/(m-i).
-ALPHA = 0.05
-PLAIN = {"S_inf": ("Informal-writing", "persona"), "P4": ("Contrastive", "card"), "P4_rerun": ("Contrastive", "card, re-run"),
-         "P1": ("Quote-backed", "contrast card"), "S_paper": ("Persona fitted", "on papers")}
-vs_name = tests["NAME/p"]
-order = sorted(vs_name, key=lambda a: vs_name[a]["perm_p"])
-m = len(order)
-bars = [ALPHA / (m - i) for i in range(m)]
-first_miss = next((i for i, a in enumerate(order) if vs_name[a]["perm_p"] > bars[i]), m)
-W, H, L, R, T, B = 940, 460, 90, 560, 100, 360
-lo_e, hi_e = -3.5, 0.0  # log10 range of the y axis
-
-
-def ly(p):
-    return T + (hi_e - math.log10(max(p, 10 ** lo_e))) / (hi_e - lo_e) * (B - T)
-
-
-def cx(i):
-    return L + (i + 0.5) * (R - L) / m
-
-
-svg = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" '
-       'font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">', STYLE,
-       f'<rect class="bg" width="{W}" height="{H}"/>',
-       '<text class="t1" x="20" y="32" font-size="17" font-weight="600">'
-       'Holm correction: the more comparisons you run, the stricter the bar for the first one</text>',
-       '<text class="t2" x="20" y="54" font-size="13">Five profiles each compared with name only. Sort the p-values; '
-       f'the smallest must beat {ALPHA}/5, the next {ALPHA}/4, and so on.</text>',
-       '<text class="t2" x="20" y="72" font-size="13">Stop at the first one that misses its bar: it and every one '
-       'after it count as not significant.</text>']
-for e in range(math.ceil(lo_e), 1):
-    v = 10 ** e
-    svg.append(f'<line class="grid" x1="{L}" x2="{R}" y1="{ly(v):.1f}" y2="{ly(v):.1f}"/>')
-    svg.append(f'<text class="t2" x="{L - 8}" y="{ly(v) + 4:.1f}" font-size="12" text-anchor="end">{v:g}</text>')
-svg.append(f'<text class="t2" x="24" y="{(T + B) / 2:.0f}" font-size="12" transform="rotate(-90 24 {(T + B) / 2:.0f})" '
-           'text-anchor="middle">p-value (log scale)</text>')
-step = (R - L) / m
-for i, a in enumerate(order):
-    x0, p, passed = L + i * step, vs_name[a]["perm_p"], i < first_miss
-    svg.append(f'<line class="ref" x1="{x0 + 6:.1f}" x2="{x0 + step - 6:.1f}" y1="{ly(bars[i]):.1f}" '
-               f'y2="{ly(bars[i]):.1f}" stroke-width="2" stroke-dasharray="5 3"/>')
-    svg.append(f'<text class="t2" x="{cx(i):.1f}" y="{ly(bars[i]) - 6:.1f}" font-size="11" text-anchor="middle">'
-               f'bar {bars[i]:.3g}</text>')
-    svg.append(f'<circle class="{"best" if passed else "base"} ring" cx="{cx(i):.1f}" cy="{ly(p):.1f}" r="7" '
-               f'stroke-width="2"/><title>{" ".join(PLAIN[a])}: raw p = {p:.4f}, bar {bars[i]:.4f}</title>')
-    svg.append(f'<text class="t1" x="{cx(i) + 11:.1f}" y="{ly(p) + 4:.1f}" font-size="12">{p:.3g}</text>')
-    verdict = "passes" if passed else ("misses: stop" if i == first_miss else "not tested")
-    for j, line in enumerate([*PLAIN[a], verdict]):
-        cls = "t1" if passed and j < 2 else "t2"
-        svg.append(f'<text class="{cls}" x="{cx(i):.1f}" y="{B + 22 + 15 * j}" font-size="{12 if j < 2 else 11}" '
-                   f'text-anchor="middle"{" font-style=\"italic\"" if j == 2 else ""}>{line}</text>')
-px = R + 40
-svg.append(f'<text class="t1" x="{px}" y="{T}" font-size="13" font-weight="600">Same rule as an adjusted p-value</text>')
-for j, line in enumerate(["Multiply each raw p by the number of tests left,",
-                          "never letting it fall below the one before.",
-                          f"Significant if the result is under {ALPHA}."]):
-    svg.append(f'<text class="t2" x="{px}" y="{T + 20 + 16 * j}" font-size="12">{line}</text>')
-for i, a in enumerate(order):
-    y, p, h = T + 92 + 24 * i, vs_name[a]["perm_p"], vs_name[a]["holm_p"]
-    ok = h < ALPHA
-    svg.append(f'<text class="{"t1" if ok else "t2"}" x="{px}" y="{y}" font-size="12">{" ".join(PLAIN[a])}</text>')
-    svg.append(f'<text class="{"t1" if ok else "t2"}" x="{W - 20}" y="{y}" font-size="12" text-anchor="end">'
-               f'{p:.4f} × {m - i} = {h:.3f}{" ✓" if ok else ""}</text>')
-svg.append(f'<text class="t2" x="20" y="{H - 14}" font-size="11">Metric: mean probability on his actual choice, '
-           'each profile minus name only. Raw p from an exact permutation test over his 10 works.</text>')
-svg.append("</svg>")
-(HERE / "holm.svg").write_text("\n".join(svg) + "\n")
