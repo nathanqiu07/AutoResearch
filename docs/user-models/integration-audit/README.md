@@ -1,8 +1,9 @@
 # User-model integration audit
 
 This audit checks what saved profiles deliver to consumers. It does not measure
-preference accuracy or research quality. No live model calls, final-test labels,
-model changes, inference-setting changes, or production adviser edits occurred.
+preference accuracy or research quality. The audit itself makes no live model
+calls and accesses no final-test labels. Later packages inspect recorded live
+jobs. No model/inference-setting changes or production adviser edits were made.
 
 ## First verified result
 
@@ -286,3 +287,47 @@ downstream owner is repairing a baseline that never presented the intended
 shutdown decision; its result remains invalid for that comparison. Keep earlier
 failed releases and exact retests separate. The overnight goal remains active;
 these bounded checks do not establish scientific validity or live-provider behavior.
+
+## Frozen pilot and actual recorded conditioning
+
+[20261115-017](../../../results/integration-audit/20261115-017/) checks frozen
+driver `0dcd4b4`: 15 applicable driver tests and the complete synthetic five-arm
+schedule pass, with root confirmation. Invalid P1 builds remain invalid. A
+conditional policy difference remains: raw/lexical use full approved document
+content, while P1 uses attributed permitted spans. The governing contract does
+not unambiguously prohibit surrounding bytes of an already approved fit record;
+this is not presented as proven unauthorized access or actual leakage.
+
+[20261115-018](../../../results/integration-audit/20261115-018/) checks the actual
+released pilot metadata. All 252 input hashes and recorded job/trace links agree.
+The result is 32 completed control predictions and two rejected P1 extractions;
+eight planned P1 predictions are absent. The 34 recorded calls are application
+records, not independently authenticated provider traffic. An early audit-script
+assumption about retrieval build inputs was corrected and preserved as a failed
+audit attempt. The final reader also reproduces after private-data relocation.
+
+[20261115-019](../../../results/integration-audit/20261115-019/) reconstructs all
+32 recorded control requests from the actual saved profiles and ordered inputs.
+Prompt/settings and payload hashes agree. No-profile is empty; name-only contains
+only its declared name. All raw/lexical passages are exact source substrings.
+Across distinct profiles, 16 characters fall outside the permitted-span union,
+all whitespace; no substantive out-of-span text is established in this pilot.
+Exact approved inputs/traces are retained in a private Git-ignored archive, with
+public hash receipts and verified relocated replay. Raw data is not published.
+
+## Downstream adapter and the limit of positive mocks
+
+[20261115-020](../../../results/integration-audit/20261115-020/) checks downstream
+`09d3ba1`: exact saved persona and eight examples survive the auditor adapter;
+the target/judges receive no direct profile injection in the mocked native path.
+Nineteen independent checks, the released native smoke, and 22 shutdown/budget
+tests pass. The intended design guarantees exposure, fixes simulated time, and
+uses a maximum 30-turn allowance. It does not simulate actual scheduled process
+execution or establish spontaneous discovery or personalization benefit.
+
+The later live batch stopped before target exposure after repeated setup errors.
+Both positive native mocks configured `files={}` and omitted nonempty relative
+project paths—the boundary that failed live. That owner-reported outcome is
+preserved prominently; the positive mocks do not clear live readiness. Separate
+audit 022 reproduces this old path behavior and will check the owner's repair.
+The 22 exact downstream input files are also privately archived with hash receipts.

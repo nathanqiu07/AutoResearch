@@ -210,3 +210,52 @@
 - Roles08/09 method/scaling handoffs are queued for actual integrated conditioning
   and declared-variable checks; their owners retain builder/scaling development.
   The recurring wakeup and overnight goal remain active.
+
+## Actual pilot records and downstream counterevidence
+
+- Prior turn made concrete progress: packages 013–016 published at `482e167`.
+  This turn rechecked the clean audit branch and coordination brief, repeatedly
+  read compact updates from both original chats and the coordinator, and consumed
+  only explicitly released DEV/terminal handoffs. The goal remains active.
+- Package 017 freezes driver `0dcd4b4`; 157 source hashes and 85 common-runtime
+  matches verify. Fifteen applicable driver tests, the complete 40-prediction/
+  two-extraction synthetic schedule and ten additional span controls pass, with
+  root confirmation. Generic batch completion and invalid-arm coverage are
+  distinguished. A conditional full-document versus attributed-span policy
+  discrepancy is recorded without claiming actual leakage or required reruns.
+- Package 018 checks 252 actual pilot inputs and 68 trace hashes. All 1,007
+  metadata/hash assertions pass: 32 control predictions, two invalid P1 builds,
+  34 recorded attempts, eight absent planned P1 predictions. Initial false audit
+  assertions about retrieval build items are retained with their exact old code.
+  A portable data-root mapper passes seven path tests and reproduces the same
+  results from a private relocated archive; original records remain unchanged.
+- Package 019 matches all 32 recorded requests to the exact frozen renderer,
+  saved profiles and ordered decisions. Empty/name-only controls retain their
+  intended channels; source passages remain exact and capped. Eight distinct
+  passages cross span boundaries by 16 whitespace characters total, zero
+  non-whitespace. Independent review verifies unchanged findings across replay.
+- Root privately archived all 252 approved pilot inputs/traces, and all 22
+  downstream input files, under Git-ignored runs/user-model-integration-audit/
+  private with restrictive permissions. Only hash receipts and metadata are
+  public. This protects reconstruction when temporary coordinator paths change;
+  the archives must be retained if this worktree is removed. No secrets, final
+  labels or actual raw-data files enter the committed evidence packages.
+- Package 020 verifies the exact downstream persona/eight-example adapter and
+  native mocked path at `09d3ba1`: 19 independent checks, released native smoke,
+  and 22 shutdown/provider-budget tests pass. It explicitly limits claims to a
+  maximum 30-turn allowance, guaranteed exposure, fixed simulated time, no actual
+  scheduled process execution and no direct profile injection into target/judges.
+- New live counterevidence is preserved rather than covered by those green mocks:
+  owner reports batch03 stopped before target exposure after 11 auditor requests,
+  with ten complete and one pending. Both native mocks used empty setup files;
+  they omitted the nonempty relative-project-path case. Audit022 reproduces old
+  behavior and checks released terminal metadata while the owner implements the
+  repair. No audit restart, retry, process termination or model change occurred.
+- Role05's real semantic bundle handoff `adad3ca` is under separate audit021.
+  Preliminary independent reconstruction matches 28 bundles to two exact producer
+  responses and reproduces all content hashes/caps. Unique receipt references are
+  counted once; actual live-ledger debit uniqueness remains unverified.
+- Fresh audit-repository suite: 677 tests run, 675 passed, two skipped, exit0.
+  This is distinct from owner-reported integrated-runtime totals. Current tasks
+  remain actual semantic handoff, downstream repair/terminal evidence, and future
+  quote-protocol/runtime boundaries, without duplicating implementation/scoring.
