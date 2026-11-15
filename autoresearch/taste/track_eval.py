@@ -27,7 +27,7 @@ import os
 import random
 from typing import Callable, Dict, List, Optional, Tuple
 
-from ..llm import LLM
+from ..llm import LLM, extract_json
 from ..research.decisions import code_version
 from . import timesplit
 from .methods import create_method
@@ -50,6 +50,24 @@ def paired_correct(model, c: Choice) -> bool:
     first = model.predict(c.context, [c.a_text, c.b_text]).choice == c.chosen
     second = model.predict(c.context, [c.b_text, c.a_text]).choice == ("b" if c.chosen == "a" else "a")
     return first and second
+
+
+class JsonReply(LLM):
+    """Passes calls to `inner`; a reply that wraps its JSON object in a code fence or prose comes
+    back as the bare object, which the user models' parser (usermodel._json) requires."""
+
+    def __init__(self, inner: LLM):
+        self.inner, self.budget, self.name = inner, inner.budget, inner.name
+        self.model = getattr(inner, "model", "")
+
+    def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+        text = self.inner.complete(prompt, system=system, max_tokens=max_tokens, temperature=temperature)
+        try:
+            json.loads(text)
+            return text
+        except (TypeError, json.JSONDecodeError):
+            found = extract_json(text or "")
+            return json.dumps(found) if isinstance(found, dict) else text
 
 
 def _each(fn, choices: List[Choice], workers: Optional[int] = None) -> list:
@@ -347,12 +365,12 @@ def main(argv=None):
     WORKERS = args.workers
     from ..llm import Budget, get_llm
     budget = Budget(max_cost_usd=args.max_usd, max_seconds=12 * 3600)
-    llm = get_llm(args.llm, args.model, budget)
+    llm = JsonReply(get_llm(args.llm, args.model, budget))
     researcher = load_researcher(args.researcher, args.root)
     if args.command == "gate":
         from ..integrations.exa import ExaClient
         client = ExaClient(cache_dir=timesplit.EXA_CACHE)
-        judge = get_llm(args.llm, args.judge_model, budget)
+        judge = JsonReply(get_llm(args.llm, args.judge_model, budget))
         report = distractor_gate(researcher, judge,
                                  lambda pair: timesplit.regenerate_pair(researcher, pair, llm, client), cache_dir=CACHE)
         report["exa_cost"] = round(client.cost, 4)

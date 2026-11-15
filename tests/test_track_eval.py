@@ -103,6 +103,13 @@ class ArmTest(unittest.TestCase):
         self.assertIn("EARLY_TEXT", llm.prompts[0])
         self.assertNotIn("LATE_TEXT", llm.prompts[0])
 
+    def test_reply_with_json_in_a_code_fence_is_still_read(self):
+        class FencedLLM(OptionLLM):
+            def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+                return "Here is my answer:\n```json\n" + super().complete(prompt, system, max_tokens, temperature) + "\n```"
+        model = track_eval.NamedNoHistory(track_eval.JsonReply(FencedLLM(taken_option)), None)
+        self.assertTrue(track_eval.paired_correct(model, choice(1, "g")))
+
     def test_named_m0_mentions_the_name_and_plain_m0_does_not(self):
         llm = OptionLLM(first_option)
         track_eval.NamedNoHistory(llm, "Marius Hobbhahn").predict("ctx", ["x", "y"])
