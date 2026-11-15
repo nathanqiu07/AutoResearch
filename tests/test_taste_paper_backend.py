@@ -34,10 +34,18 @@ class PaperBackendTests(unittest.TestCase):
                 self.assertGreater(llm.reserved_usd,0)
     def test_predictions_require_strict_json_schema(self):
         from tests.test_taste_backends import OpenAIBackendTests
-        with patch.dict('os.environ',{'OPENAI_API_KEY':'fixture'}), patch('urllib.request.urlopen',return_value=OpenAIBackendTests().response()) as network:
+        with patch.dict('os.environ',{'OPENAI_API_KEY':'fixture'}), patch('urllib.request.urlopen',return_value=OpenAIBackendTests().response(output=[{'type':'message','role':'assistant','status':'completed','content':[{'type':'output_text','text':'{"probabilities":[0.7,0.3],"rationale":"test"}'}]}])) as network:
             llm=PaperOpenAILLM(max_usd=.01)
             llm.complete('Return JSON\nINPUT_JSON:\n{"options":["A","B"]}')
             body=json.loads(network.call_args.args[0].data)
             self.assertEqual(body['text']['format']['type'],'json_schema')
             self.assertTrue(body['text']['format']['strict'])
             self.assertEqual(body['text']['format']['schema']['properties']['probabilities']['maxItems'],2)
+    def test_retry_only_failures_and_record_each_attempt(self):
+        valid='{"probabilities":[0.7,0.3],"rationale":"reason"}'
+        llm=PaperOpenAILLM(max_request_attempts=3)
+        with patch('autoresearch.taste.backends.OpenAILLM.complete',side_effect=[RuntimeError('transport'),valid]) as call, patch('time.sleep'):
+            result=llm.complete('JSON\nINPUT_JSON:\n{"options":["a","b"]}')
+        self.assertEqual(result,valid)
+        self.assertEqual(call.call_count,2)
+        self.assertEqual(len(llm.retry_events),1)

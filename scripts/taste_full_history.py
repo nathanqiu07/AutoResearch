@@ -79,10 +79,12 @@ def run(root,live,prior_attempts=()):
     cap=min(NEW_CAP,10-prior)
     if not 0<cap<=NEW_CAP:raise ValueError('no authorized budget remaining')
     budget=Budget(max_calls=12000,max_seconds=14400,max_cost_usd=cap)
-    llm=PaperOpenAILLM('gpt-6-luna',budget=budget,max_usd=cap,timeout=120) if live else FixtureLLM(budget=budget)
+    llm=PaperOpenAILLM('gpt-6-luna',budget=budget,max_usd=cap,timeout=120,max_request_attempts=5) if live else FixtureLLM(budget=budget)
     factories={m:(lambda user,m=m:create_method(m,llm,seed=0,max_calls=12000,
                cache_dir=root/('cache-live' if live else 'cache-offline'),**CONFIG)) for m in ('m0','m1','m2','m3')}
-    if live:llm.recovery_path=root/'response-envelopes.jsonl'
+    if live:
+        llm.recovery_path=root/'response-envelopes.jsonl'
+        llm.retry_path=root/'retry-events.jsonl'
     stop=threading.Event()
     def progress():
         while not stop.wait(30):
@@ -95,7 +97,7 @@ def run(root,live,prior_attempts=()):
         report=run_fidelity(records,root/'manifest.json',factories,output,'hobbhahn_history_dev',run_config={
             'backend':'openai' if live else 'offline','model':llm.model,'settings':CONFIG,'heldout_access':False,
             'purpose':'agreement with AI-inferred labels, not verified researcher ground truth',
-            'prior_committed_usd':prior,'prior_attempt_ledgers':[str(p) for p in prior_attempts],'new_cap_usd':cap,'total_authorized_usd':10})
+            'prior_committed_usd':prior,'prior_attempt_ledgers':[str(p) for p in prior_attempts],'new_cap_usd':cap,'total_authorized_usd':10,'max_request_attempts':5})
         for method in ('m2','m3'):
             try:
                 bundle=build_bundle(output,records,root/'manifest.json',method=method,export_dir=output/'exports'/method,max_examples_per_method=12)

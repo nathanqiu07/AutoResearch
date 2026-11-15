@@ -2,6 +2,7 @@
 import json
 import math
 import os
+import time
 import urllib.request
 from .backends import OpenAILLM
 
@@ -10,12 +11,47 @@ class PaperOpenAILLM(OpenAILLM):
     name='openai-responses-json'
     embedding_model='text-embedding-3-small'
 
-    def __init__(self,*args,**kwargs):
+    def __init__(self,*args,max_request_attempts=1,**kwargs):
         super().__init__(*args,**kwargs)
+        if type(max_request_attempts) is not int or not 1<=max_request_attempts<=5:raise ValueError("invalid retry bound")
+        self.max_request_attempts=max_request_attempts
+        self.retry_events=[]
+        self.retry_path=None
         self.recoveries=[]
         self.recovery_path=None
 
     def complete(self,prompt,**kwargs):
+        for attempt in range(self.max_request_attempts):
+            try:
+                result=self._complete_once(prompt,**kwargs)
+                value=json.loads(result)
+                schema=self.response_format(prompt)['schema']
+                if not self._matches(value,schema):raise ValueError('response schema mismatch')
+                if 'probabilities' in value and not math.isclose(sum(value['probabilities']),1.,abs_tol=1e-6):
+                    raise ValueError('invalid probability sum')
+                return result
+            except (RuntimeError,ValueError) as exc:
+                event={'attempt':attempt+1,'error_type':type(exc).__name__,
+                       'prompt_sha256':__import__('hashlib').sha256(prompt.encode()).hexdigest()}
+                with self._cost_lock:
+                    self.retry_events.append(event)
+                    if self.retry_path:
+                        with open(self.retry_path,'a') as stream:stream.write(json.dumps(event)+'\n')
+                if attempt+1==self.max_request_attempts:raise
+                time.sleep(min(4.,.5*2**attempt))
+
+    @classmethod
+    def _matches(cls,v,s):
+        kind=s['type']
+        if kind=='object':
+            return isinstance(v,dict) and set(v)==set(s['properties']) and all(cls._matches(v[k],c) for k,c in s['properties'].items())
+        if kind=='array':
+            return isinstance(v,list) and s.get('minItems',0)<=len(v)<=s.get('maxItems',10000) and all(cls._matches(x,s['items']) for x in v)
+        if kind=='string':return isinstance(v,str) and ('enum' not in s or v in s['enum'])
+        if kind=='number':return type(v) in (int,float) and math.isfinite(v) and s.get('minimum',-math.inf)<=v<=s.get('maximum',math.inf)
+        return False
+
+    def _complete_once(self,prompt,**kwargs):
         raw=super().complete(prompt,**kwargs)
         try:
             json.loads(raw)

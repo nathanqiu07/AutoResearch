@@ -90,3 +90,16 @@ Start at 16 independent requests. After a complete stage with at least 64 fresh
 requests and no errors, increase to 32. Record elapsed time, request count, and
 errors per stage. An error resets concurrency to 16. This changes scheduling only;
 all data, prompts, candidate sets and trials remain fixed.
+
+## Failure recovery
+
+Attempt 04 completed with failed fits because one invalid/failed request stopped
+each search. Its zero accuracies for M2/M3 represent failed execution, not
+preference evidence. The continuation allows up to five attempts per logical
+request, only after transport, format, or schema failures. It never retries a
+valid prediction based on correctness. Every attempt is charged by the shared
+backend and every failed reservation is retained. Retry events are saved.
+Any retry failure backs concurrency down to 16 for the next stage. Logical-call
+counts in per-method summaries exclude retries; backend usage counts all attempts.
+Valid cached results retain their original predictions. All prior budget ledgers
+are included when calculating the remaining global $10 allowance.

@@ -25,6 +25,7 @@ def parallel(model, jobs):
     drained even on failure so no requests survive the calling stage.
     """
     before = model.llm.budget.summary()
+    retries_before=len(getattr(model.llm,"retry_events",[]))
     def work(job):
         w = UserModel(model.llm, seed=model.seed, cache_dir=model.cache_dir,
                       max_calls=model.max_calls)
@@ -51,10 +52,11 @@ def parallel(model, jobs):
                 f.write(json.dumps(w._trace_record,ensure_ascii=False)+'\n')
     errors=sum(error is not None for _,error,_ in outcomes)
     calls=sum(w.cost['calls'] for _,_,w in outcomes)
+    retry_failures=len(getattr(model.llm,'retry_events',[]))-retries_before
     model._artifacts.metadata.setdefault('concurrency_trace',[]).append(
-        {'workers':workers,'requests':calls,'errors':errors,'seconds':time.monotonic()-started})
+        {'workers':workers,'requests':calls,'errors':errors,'retry_failures':retry_failures,'seconds':time.monotonic()-started})
     if model.config.get('adaptive_workers'):
-        model.llm.taste_workers=16 if errors else (32 if calls>=64 else workers)
+        model.llm.taste_workers=16 if errors or retry_failures else (32 if calls>=64 else workers)
     for _, error, _ in outcomes:
         if error: raise error
     return [value for value,_,_ in outcomes]
