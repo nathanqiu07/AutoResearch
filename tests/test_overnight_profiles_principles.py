@@ -11,7 +11,7 @@ DOCS = [{'document_id':'fit-synthetic','researcher_id':'synthetic','content':TEX
 
 def claim(text='Prefer a small controlled test.', kind='preference', evidence='explicit'):
     return {'text':text,'kind':kind,'evidence_status':evidence,
-            'sources':[{'document_id':'fit-synthetic','start':0,'end':len(TEXT),'quote':TEXT}]}
+            'sources':[{'document_id':'fit-synthetic','quote':TEXT}]}
 
 
 def principle(identity='p1'):
@@ -22,6 +22,21 @@ def principle(identity='p1'):
 def rule(identity='r1'):
     return {'id':identity,'when':claim('Evidence is unclear.','source_report'),'prefer':claim(),
             'over':None,'unless':[],'date':None,'uncertainty':'not_quantified','conflicts_with':[]}
+
+
+def resolved_fixture(value):
+    """Expected spans for fixture quotations that cover exactly TEXT."""
+    value = copy.deepcopy(value)
+    def visit(node):
+        if isinstance(node, dict):
+            if 'sources' in node and isinstance(node['sources'], list):
+                for source in node['sources']:
+                    source.update(start=0, end=len(TEXT))
+            for child in node.values(): visit(child)
+        elif isinstance(node, list):
+            for child in node: visit(child)
+    visit(value)
+    return value
 
 
 class Extractor:
@@ -49,6 +64,52 @@ class PrincipleTests(unittest.TestCase):
         response={'principles':[principle()],'rejected':[]} if response is None else response
         e=Extractor(response);out=getattr(self.m,'build_'+method.lower())(copy.deepcopy(DOCS),dict(self.config,method_id=method,**changes),e)
         return out,e
+    def test_quote_only_protocol_derives_unicode_offsets_and_records_resolution(self):
+        prefix = 'Heading é\n'
+        docs = copy.deepcopy(DOCS)
+        docs[0]['content'] = prefix + TEXT
+        docs[0]['content_sha256'] = contracts.sha256_text(docs[0]['content'])
+        config = dict(self.config, allowed_sources=contracts.source_manifest(docs),
+                      allowed_source_manifest_hash=contracts.digest(contracts.source_manifest(docs)))
+        response = {'principles':[principle()],'rejected':[]}
+        backend = Extractor(response)
+        out = self.m.build_p4(docs, config, backend)
+        self.assertEqual(out['status'], 'complete')
+        span = out['content']['principles'][0]['claim']['sources'][0]
+        self.assertEqual((span['start'], span['end']), (len(prefix), len(prefix) + len(TEXT)))
+        self.assertEqual(response['principles'][0]['claim']['sources'][0],
+                         {'document_id': DOCS[0]['document_id'], 'quote': TEXT})
+        self.assertEqual(out['fit_usage']['response_sha256'], contracts.sha256_text(json.dumps(response)))
+        self.assertEqual(out['fit_usage']['raw_response_sha256'], out['fit_usage']['response_sha256'])
+        self.assertTrue(out['fit_usage']['quote_resolution_records'])
+        self.assertEqual(out['fit_usage']['quote_resolver_version'], self.m.prompt_spec(self.config['method_id'])['quote_resolver_version'])
+        self.assertEqual(len(backend.calls), 1)
+
+    def test_absent_ambiguous_and_forbidden_quotes_fail_without_retry(self):
+        for content, permitted, error in [(TEXT + TEXT, None, 'quote_ambiguous'), (TEXT, [], 'quote_unpermitted'),
+                                           ('No matching quotation.', None, 'quote_absent')]:
+            with self.subTest(content_length=len(content), permitted=permitted):
+                docs = copy.deepcopy(DOCS)
+                docs[0]['content'] = content
+                docs[0]['content_sha256'] = contracts.sha256_text(content)
+                if permitted is not None: docs[0]['permitted_spans'] = permitted
+                config = dict(self.config, allowed_sources=contracts.source_manifest(docs),
+                              allowed_source_manifest_hash=contracts.digest(contracts.source_manifest(docs)))
+                backend = Extractor({'principles':[principle()],'rejected':[]})
+                out = self.m.build_p4(docs, config, backend)
+                self.assertEqual(out['status'], 'invalid')
+                self.assertEqual(out['error_code'], error)
+                self.assertEqual(len(backend.calls), 1)
+                self.assertTrue(out['fit_usage']['quote_resolution_records'])
+
+    def test_old_model_offsets_are_not_silently_repaired(self):
+        response = {'principles':[principle()],'rejected':[]}
+        response['principles'][0]['claim']['sources'][0].update(start=1, end=len(TEXT))
+        out, backend = self.build(response)
+        self.assertEqual(out['status'], 'invalid')
+        self.assertEqual(out['content'], response)
+        self.assertEqual(len(backend.calls), 1)
+
     def test_unknown_extractor_settings_are_rejected_before_call(self):
         for method in ('P4', 'P5', 'P6'):
             for extra in ({'top_p':0.1}, {'top_p':0.9}, {'reasoning':'high'}, {'seed':1}):
@@ -73,7 +134,7 @@ class PrincipleTests(unittest.TestCase):
     def test_p4_preserves_atomic_evidence_context_and_exceptions(self):
         p=principle();p['context']=claim('Evidence is unclear.','source_report');p['exceptions']=[claim('Abandon when the effect disappears.')]
         out,_=self.build({'principles':[p],'rejected':[]})
-        self.assertEqual(out['status'],'complete');self.assertEqual(out['content']['principles'],[p])
+        self.assertEqual(out['status'],'complete');self.assertEqual(out['content']['principles'],resolved_fixture([p]))
     def test_p5_requires_a_source_linked_condition(self):
         r=rule();out,_=self.build({'rules':[r],'rejected':[]},'P5');self.assertEqual(out['status'],'complete')
         for value in (None,{'text':'when useful'},dict(claim(),sources=[])):
@@ -93,13 +154,13 @@ class PrincipleTests(unittest.TestCase):
         a,b=principle('a'),principle('b');a['conflicts_with']=['b'];b['conflicts_with']=['a']
         b['claim']=claim('Abandon the direction when effects disappear.')
         response={'principles':[a,b],'rejected':[]};out,_=self.build(response)
-        self.assertEqual(out['status'],'complete');self.assertEqual(out['content'],response)
+        self.assertEqual(out['status'],'complete');self.assertEqual(out['content'],resolved_fixture(response))
     def test_unknown_conflict_references_and_duplicate_ids_are_invalid(self):
         a=principle();a['conflicts_with']=['absent'];out,_=self.build({'principles':[a],'rejected':[]});self.assertEqual(out['status'],'invalid')
         out,_=self.build({'principles':[principle(),principle()],'rejected':[]});self.assertEqual(out['status'],'invalid')
     def test_rejected_candidates_retain_original_and_reason(self):
         response={'principles':[principle()],'rejected':[{'candidate':principle('p2'),'reason':'redundant formulation'}]}
-        out,_=self.build(response);self.assertEqual(out['status'],'complete');self.assertEqual(out['content'],response)
+        out,_=self.build(response);self.assertEqual(out['status'],'complete');self.assertEqual(out['content'],resolved_fixture(response))
         response['rejected'][0]['reason']='';out,_=self.build(response);self.assertEqual(out['status'],'invalid')
     def test_explicit_policy_rejects_inferred_condition_or_exception(self):
         p=principle();p['exceptions']=[claim(evidence='inferred')]
@@ -136,7 +197,7 @@ class PrincipleTests(unittest.TestCase):
         self.m.register_principle_builders();e=Extractor({'principles':[principle()],'rejected':[]})
         artifact=contracts.build_profile(DOCS,dict(self.config,personalization_cap=1),e)
         self.assertEqual(artifact.status,'invalid');self.assertEqual(artifact.error_code,'personalization_cap_exceeded')
-        self.assertEqual(artifact.content,{'principles':[principle()],'rejected':[]})
+        self.assertEqual(artifact.content,resolved_fixture({'principles':[principle()],'rejected':[]}))
         entries=self.m.registration_metadata();self.assertEqual({e['method_id'] for e in entries},{'P4','P5','P6'})
         self.assertEqual(len(self.m.prompt_spec('P6')['decision_source_sha256']),64)
 
