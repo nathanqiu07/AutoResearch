@@ -1,0 +1,15 @@
+This additive check reads two newly approved neutral-probe dispatch records after the original 500-input audit was frozen. It does not change that audit, its original manifest, or its private archive.
+
+Both dispatch raw-file hashes match the approved pins. Canonical JSON hashes separately match each saved summary's dispatch_sha256. Raw file hashes and canonical semantic hashes are distinct identities; whitespace formatting can change the former while preserving the latter.
+
+Thirty-eight checks bind the two declared old access models, in order, and the one continuation readiness model to the saved summaries. They also bind max tokens, reasoning, timeout, per-probe allocations, the exact source adapter's enforced settings, and recorded terminal usage. Five synthetic tests pass, including changed model order, an extra tool setting, changed allocation, and raw-versus-canonical formatting.
+
+The dispatches contain no prompt/system text or script path. Their script hashes match the saved summaries, but neither script byte hash appears among the 92 pinned source-file hashes. Prompt/system hashes therefore remain recorded-only. This addendum closes dispatch and configuration linkage; it does not reconstruct probe text, authenticate network traffic, verify an invoice, or join either uncertain build job to a provider request.
+
+The final checker ran on the two records extracted from the separate phase2-probe-dispatch-20261115-v1.tar.gz private archive and the two summaries extracted from the original 500-input archive. No original dispatch paths were used by that final run. The checker opens only those four data records, inventory/source-reference metadata, and the pinned adapter source file. It makes no provider calls and does not run a new probe.
+
+The final report is final/report.json; final-invocation.json records every CLI argument. run-01 is the narrower first pass, whose exact executed checker is retained as check_dispatch.executed01.py. The current checker adds exact enforced-settings comparison. All input hashes are checked before access and again after use.
+
+Use ../preserve_recover.py extract with private-preservation.json and receipt SHA 2d3719ead81e4f75fcd849e0d28863a5f1169cd4c819572bf0276cef02579fbd to restore the two additional records. Then rerun check_dispatch.py with the restored dispatch inventory, the restored original 500-input inventory, the pinned source reference and recovered source directory. Supply the actual inventory/source-reference file hashes in the explicit CLI hash arguments. Keep the logical path, entry_points and input_set_sha256 values fixed; only read_path may change. The complete argument shape is recorded in final-invocation.json.
+
+The two-member archive and its receipt, checker and input inventory have separate durable private copies. The original 500-input recovery tool and source archive are reusable dependencies. No raw records, extracted private directories, vectors, corpus text, response text, or prompt text are included in this public allowlist.

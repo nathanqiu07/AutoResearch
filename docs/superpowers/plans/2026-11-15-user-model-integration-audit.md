@@ -477,3 +477,62 @@
   the preserved 036 unified diff. Exact artifact bytes remain unchanged; both
   lines were verified and every other staged path passes. Original output and
   precise exclusion are recorded in 036/whitespace-check.json.
+
+
+## Full build provenance and accounting recovery
+
+- Previous checkpoint 6fc0244 published 034/036 and was verified on the remote.
+  This continuation completes new recovery evidence, rather than only polling.
+- Audit 035 accounts for the entire 96-cell extraction grid: 48 complete,
+  39 invalid, seven empty and two unavailable. It preserves 78 original
+  dispatches, six continued previously undispatched jobs and 12 P7 cells.
+  The two unavailable outcomes retain unknown usage and $0.019078625 in holds.
+- The full 500-input inventory is now privately preserved, including the exact
+  recovered registry snapshot and public032 receipt. This is a recovery copy,
+  not 500 new observations: 373 inputs overlap032, one is its public receipt,
+  and 126 require new retention. Archive SHA256 is
+  d60e29dcc2cdd3446ce9e805f3ddffd58b2a5b2d76fc5fd57880ceea8e0ca155.
+- Root freshly extracted the archive and all 92 pinned source files, then ran
+  the reader. All 3,351 checks reproduce byte-for-byte; the inventory differs
+  only in physical read_path, with logical paths, roles, entry points and the
+  input-set hash unchanged. Original temporary inputs are not used by replay.
+  The reader uses frozen source validators and job hashing, without live calls.
+- Independent review verifies 32 scoped inputs and four negative controls. It
+  makes cumulative accounting explicit: the 19-attempt continuation snapshot
+  includes the earlier seven-attempt snapshot. Unique frozen scopes are
+  82 + 19 = 101 attempts (96 builds and five side calls), with $0.103992940 known
+  estimated cost plus separately retained holds. This is not an active global
+  ledger total or provider invoice.
+- Coordinator supplied two missing probe dispatch records after the original
+  audit froze. A separate additive retest checks raw-file versus canonical
+  dispatch hashes, models and settings; no old report/input manifest is rewritten.
+  The dispatch records lack prompt/system text or a script path, so neither
+  complete probe-input reconstruction nor exact unknown build-request joins
+  should be inferred from that additional configuration evidence.
+- Fresh required repository suite: 677 run, 675 passed, two skipped, exit 0 in
+  24.234 seconds. Exact log is stored in035. Models/settings remain unchanged.
+- Audit 037 owns actual personalized prediction/consumer bindings for the
+  released full sparse index. Where it supplies trace hashes without paths,
+  exact filenames may be derived only from the pinned f6 runner numbering rule
+  and referenced result location, with expected hashes and attempt/cache/job
+  checks. No directory scan or broad sibling search is authorized.
+
+- Source-pinned cap clarification: f6 counts canonical rendered personalization
+  content as UTF-8 bytes under utf8-bytes-upper-bound-v1. These are not measured
+  provider-token budgets, full-prompt counts or API output limits. The existing
+  convention is recorded in035/cap-unit-note.json and the index; no policy or
+  runtime was changed. Planning and coordinator received the clarification.
+- Downstream05 owner retention is now indexed without a duplicate raw copy:
+  receipt SHA 2e6daeee9d45c58e2f3df225132406dc04516e0e51a382030ff554b79b5a74e1,
+  manifest SHA 472782172c20204b57579f30db62bcd35bdfe6cb0f9409418114f31e26fb28a5.
+  Metadata agrees on 213 payload files, 15,747,187 bytes and three native.eval
+  files. Root checked receipt/manifest hashes, totals and hash-equality fields,
+  not all raw payload bytes. Same-machine storage remains explicit. Original
+  primary quotation-review failures are owner-reported and unmodified here.
+- Audit 037's first request-grouping candidate included item/order metadata in
+  its key. Root caught the mismatch with the intended exact-execution comparison;
+  the corrected key excludes those metadata IDs, while retaining them on members.
+  A two-ID/same-execution fixture verifies the correction. Historical candidates
+  remain preserved, calls/costs are not deduplicated, and final personalized
+  grouping still has 672 singleton groups. Independent review and private
+  preservation proceed before root replay/publication.

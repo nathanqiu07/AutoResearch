@@ -15,14 +15,29 @@ jobs. No model/inference-setting changes or production adviser edits were made.
 | Did baseline04 demonstrate shutdown prevention? | No. Three files were written outside the explicit removal paths; active script/schedule stayed unchanged (025). | Shutdown/process execution was not simulated; intent and personalization effect are unmeasured. |
 | Are saved memory predictions additional observations? | No. All 84 references resolve consistently to 28 ordered P1 predictions in two canonical jobs; these cover 14 paired content groups (033). | This is explicit saved-result reuse, not execution under memory job IDs, automatic cache aliasing or a quality result. |
 | Did the expanded sparse controls and hybrids execute? | All 234 canonical jobs have 364 completed rows: 28 ordered items across 13 conditions. The 112 cap aliases reuse 56 included rows, with their cost counted once (034). | Richer alias proposals are outside this sparse execution evidence; parent production cost and prediction quality are separate. |
+| Does the extraction grid preserve failed and continued jobs? | All 96 planned cells are accounted for: 48 complete, 39 invalid, seven empty and two unavailable. Original dispatches and later continuations remain separate (035). | These are saved structural statuses. Unknown charges stay reserved, and exact unknown provider-request joins remain unverified. |
 | Are the terminal phase1 and stopped phase2 records recoverable? | All 2,252 required record references resolve from verified private archives, including 132 phase1 jobs and 78 dispatched results from 84 original phase2 admissions (032). | Later continuation outputs and active ledger state are outside this terminal snapshot. |
 | Can the evidence be reconstructed later? | Exact scripts, source pins, failures, hashes and verified private input archives are retained. Published packages through 033 also have a verified copy outside this worktree (036). | That checkpoint is on the same machine, excludes later packages and does not preserve the full provider/Python environment. |
 
 Expanded semantic construction and saved-P1/memory conditioning are covered in
-026–027; 033–034 add actual recorded execution and alias bindings. The next
-bounded audit checks all 96 build outcomes and their continuation provenance.
+026–027; 033–034 add actual recorded execution and alias bindings, and 035 checks
+all 96 build outcomes. The next bounded audit reconciles the full sparse index
+and the remaining personalized predictions against their actual consumer traces.
 Identical prompt bytes alone do not establish interchangeable execution or
 independent evidence; model/settings/item/order must also match.
+
+The frozen runtime measures the 512/2,048/8,192 personalization caps in serialized
+UTF-8 bytes, labeled `utf8-bytes-upper-bound-v1`. These are not measured provider
+token counts. Cap failures therefore do not establish failure at an equal
+numerical tokenizer budget; serialized structure and encoding also use the cap.
+The count covers rendered personalization content, not the full consumer prompt
+or the separate API output-token limit.
+
+The existing [downstream05 archive reference](archive-references/gio-matched-shutdown-05/index.json)
+records 213 payload files retained by that run's owner. This audit verified the
+receipt/manifest hashes and their internal counts, without rereading or duplicating
+the full raw archive. It is same-machine retention, separate from the checkpoint
+through 033.
 
 ## First verified result
 
