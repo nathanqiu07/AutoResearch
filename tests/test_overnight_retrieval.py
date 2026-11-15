@@ -1,3 +1,4 @@
+import math
 import unittest
 
 from autoresearch.taste.overnight.contracts import canonical_json, digest, sha256_text, source_manifest
@@ -114,6 +115,20 @@ class RetrievalTests(unittest.TestCase):
                 self.r.make_embedding_bundle(self.docs, self.cfg, self.decision,
                                               model="fixture-embedding", vectors=vectors,
                                               usage={"mode": "offline_fixture", "calls": 0})
+
+    def test_semantic_ranking_preserves_direction_at_subnormal_scale(self):
+        # d1 is exactly aligned with the query. d2 must remain second even
+        # when its magnitude makes a raw L2 norm round at subnormal precision.
+        for scale in [1.0, math.ulp(0.0), 1e300]:
+            with self.subTest(scale=scale):
+                bundle = self.r.make_embedding_bundle(
+                    self.docs, self.cfg, self.decision, model="fixture-embedding",
+                    vectors=[[1, 1], [1, 1], [scale, 2 * scale]],
+                    usage={"mode": "offline_fixture", "calls": 0})
+                cfg = dict(self.cfg, embedding_model="fixture-embedding", embedding_dimensions=2,
+                           embedding_bundle_sha256=bundle["bundle_sha256"])
+                ranked = self.r.rank_semantic(self.docs, cfg, self.decision, bundle)
+                self.assertEqual([chunk["document_id"] for chunk in ranked], ["d1", "d2"])
 
 
 if __name__ == "__main__":

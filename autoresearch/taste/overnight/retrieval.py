@@ -157,10 +157,14 @@ def _unit_vectors(vectors, count):
             raise ValueError("embedding coordinate exceeds numeric range") from None
         if any(not math.isfinite(value) for value in numeric):
             raise ValueError("embedding vector is nonfinite")
-        norm = math.hypot(*numeric)
-        if not math.isfinite(norm) or norm <= 0:
+        scale = max(abs(value) for value in numeric)
+        if scale == 0:
             raise ValueError("embedding vector has zero or invalid norm")
-        unit.append([value / norm for value in numeric])
+        # Normalize direction at an ordinary scale. A raw subnormal norm can
+        # round enough to change cosine ranking; a large raw norm can overflow.
+        scaled = [value / scale for value in numeric]
+        norm = math.hypot(*scaled)
+        unit.append([value / norm for value in scaled])
     return dimension, unit
 
 
