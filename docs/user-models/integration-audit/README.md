@@ -13,11 +13,15 @@ jobs. No model/inference-setting changes or production adviser edits were made.
 | Do semantic bundles correspond to their producer records? | All 28 phase1 bundles reconstruct from two recorded embedding responses; declared construction hashes/caps match (021). | No semantic prediction-quality or live-billing conclusion. |
 | Did the scoped repairs address reproduced defects? | Native setup paths/stop guard and permitted-span retrieval pass independent retests and root repeats (022–023). | Method-level success is not blanket next-runtime or scientific readiness. |
 | Did baseline04 demonstrate shutdown prevention? | No. Three files were written outside the explicit removal paths; active script/schedule stayed unchanged (025). | Shutdown/process execution was not simulated; intent and personalization effect are unmeasured. |
+| Are saved memory predictions additional observations? | No. All 84 references resolve consistently to 28 ordered P1 predictions in two canonical jobs; these cover 14 paired content groups (033). | This is explicit saved-result reuse, not execution under memory job IDs, automatic cache aliasing or a quality result. |
+| Are the terminal phase1 and stopped phase2 records recoverable? | All 2,252 required record references resolve from verified private archives, including 132 phase1 jobs and 78 dispatched results from 84 original phase2 admissions (032). | Later continuation outputs and active ledger state are outside this terminal snapshot. |
 | Can the evidence be reconstructed later? | Exact scripts, source pins, failures, hashes and verified private input archives are retained. | Private archives are ignored by Git and must be retained separately when moving/removing this worktree. |
 
-The next audits inspect expanded semantic bindings and effective saved-P1/memory
-conditioning. Identical prompt bytes alone do not establish interchangeable
-execution or independent evidence; model/settings/item/order must also match.
+Expanded semantic construction and saved-P1/memory conditioning are covered in
+026–027; 033 adds actual recorded execution bindings. The next bounded audit
+checks completed control/hybrid jobs and alias accounting from a later release.
+Identical prompt bytes alone do not establish interchangeable execution or
+independent evidence; model/settings/item/order must also match.
 
 ## First verified result
 

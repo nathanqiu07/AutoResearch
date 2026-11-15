@@ -375,3 +375,43 @@
   preserved unified-diff artifacts in 028. Their exact bytes are retained; all other
   staged paths pass the scoped check. The original output and precise exclusions
   are recorded in 028/whitespace-check.json, rather than silently editing evidence.
+
+
+## Terminal recovery and actual saved-result reuse
+
+- Audit 032 closes the terminal preservation task: 2,252 required record
+  references resolve from the private archive union. It covers all 132 phase1
+  jobs and 84 original stopped phase2 admissions, with 78 dispatched results.
+  Six later continuation results remain explicitly excluded from the original
+  stopped batch. Source runtime archives and the exact executed recovery scripts
+  are preserved. Original receipts, manifests and archives remain unchanged;
+  additive portable wrappers remove machine-specific resolution assumptions.
+- Audit 033 closes the narrower execution-reference gap from 027. Its 477 checks
+  bind 84 explicit memory references to 28 completed ordered P1 predictions in
+  two canonical jobs, representing 14 paired content groups. Parent artifacts,
+  prepared packets, source/config/model/settings, started/completed traces and
+  saved results agree. Recorded conservative cost is $0.00254125 once, with no
+  additional alias calls or independent observations. This does not establish
+  execution under memory IDs, provider-origin authentication or prediction
+  quality. The 234 prepared control/hybrid jobs remain outside 033's scope.
+- Root preserved exactly 76 named approved inputs in a new 0600 private archive,
+  verified every member and rechecked original bytes. Archive SHA256 is
+  eb4ce80c759602082f0ca396959c0c13b51b238604553bc48d5f4831ff8253a1.
+  A relocated replay has an identical inventory and identical report except
+  recorded argv. Receipt and exact reader also have durable private copies.
+- Linked chats are now coordinating richer-source runs, score-blind semantic
+  review and a revised downstream run with a per-call deadline gate. Existing
+  owners keep those implementations and reviews. This audit owns release 018's
+  completed control/hybrid and alias-accounting check as 034; it does not launch
+  a competing scorer, collector, semantic reviewer or scaling compiler.
+- Requested the next frozen label-free phase2 completion/provenance index from
+  coordinator and planning. Active SQLite, private labels, model settings and
+  live model calls remain untouched. Overnight goal and existing wakeup continue.
+
+- Independent 033 review found no blocker: it joins all 84 references against
+  027's independent payload reconstruction, verifies reversed option orders for
+  all 14 groups, checks all 28 response parser guards and four semantic packet
+  identities. Root archive replay and that review remain distinct evidence.
+- Fresh repository verification for this checkpoint: 677 tests run, 675 passed,
+  two skipped, exit 0 in 24.115 seconds. The exact log is retained in 033.
+  Audit 032 also repeats byte-identically from its final publication layout.
