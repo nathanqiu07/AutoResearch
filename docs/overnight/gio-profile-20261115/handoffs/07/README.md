@@ -75,3 +75,19 @@ recorded as `fit_usage.effective_extractor_settings`. Reasoning stays in the
 pinned backend identity. The builder does not mutate its config copy; shared
 runner normalization remains an infrastructure responsibility. Older fixtures
 retain their original implementation and prompt hashes.
+
+Quote-only protocol revision: new extraction prompts request exact source entries
+`{document_id, quote}`. Models no longer calculate character offsets. The shared
+versioned resolver derives `start` and `end` only for one exact occurrence inside
+permitted ranges. It rejects missing, forbidden or ambiguous quotations and any
+model-supplied offset fields. There is no fuzzy matching or text normalization.
+The existing strict output validator then checks the resolved artifact.
+
+The raw response SHA256, resolver version and resolution records remain in
+`fit_usage`, including explicit failure diagnostics. Resolution does not rewrite
+old artifacts or retroactively turn failed jobs into successes. Raw response
+hashes and source hashes allow the transformation to be audited; they still do
+not establish semantic entailment or correct explicit/inferred classification.
+These prompts and their shared-resolver dependency have new hashes. Synthetic
+checks cover Unicode prefixes, absent/ambiguous/forbidden quotes, no repair of old
+offsets, raw-response preservation and exactly one extractor attempt.
