@@ -7,10 +7,12 @@ import unittest
 
 from autoresearch.cli import resolve_arm
 from autoresearch.llm import OfflineLLM
+from autoresearch.research.advisor import load_user_model
 from autoresearch.research.decisions import DecisionLog
 from autoresearch.research.ideas import LIBRARY
 from autoresearch.research.measure import SCENARIOS
 from autoresearch.taste import trackp
+from autoresearch.taste.methods import create_method
 from autoresearch.taste.usermodel import Prediction, UserModel
 
 SLUG = "teammate"
@@ -147,6 +149,17 @@ class TrackPTest(unittest.TestCase):
         held = trackp.split(self.root, SLUG, label_cutoff=today)
         self.assertEqual(sum(c.source == "label" for c in held["test"]), 2)
         self.assertEqual(sum(c.source == "label" for c in held["history"] + held["val"]), 0)
+
+    def test_fit_writes_a_user_model_the_loop_loads_and_history_without_held_out_choices(self):
+        self.seed(n=30, fixed="a")
+        trackp.fit_user_model(self.root, SLUG, lambda: create_method("m1", OfflineLLM()))
+        model, source = load_user_model(self.dir, None, OfflineLLM())
+        self.assertEqual(model.method_id, "m1")
+        self.assertIn("usermodel.json", source)
+        held = {c.example_id for c in trackp.split(self.root, SLUG)["test"]}
+        exported = {r["example_id"] for r in read(os.path.join(self.dir, trackp.HISTORY))}
+        self.assertEqual(len(exported), 30 - len(held))
+        self.assertFalse(exported & held)
 
     def test_e2_scores_held_out_choices_and_never_overwrites(self):
         self.seed(n=30, fixed="a")

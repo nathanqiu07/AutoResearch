@@ -6,6 +6,8 @@ Everything lives in data/researchers/<slug>/:
   seed_choices.jsonl   the person's answers, as text `Choice` rows (source "seed")
   labels.jsonl         the person's choice at logged loop decisions D1-D6
   recheck.jsonl        re-asked items, for the noise ceiling
+  usermodel.json       the fitted user model the loop loads (research/advisor.load_user_model)
+  history.jsonl        the choices that model was fitted on, for the prompt arm (R1-P-prompt)
   CONSENT.md           who the person is and what they agreed to
 
 Hold-out (fixed by hashing, so it never moves as answers arrive): 20% of seed
@@ -19,6 +21,7 @@ split into history and val for `UserModel.fit`.
     python3 -m autoresearch.taste.trackp recheck --researcher <slug>       # a few days later
     python3 -m autoresearch.taste.trackp status --researcher <slug> [--label-cutoff YYYY-MM-DD]
     python3 -m autoresearch.taste.trackp e2 --researcher <slug> --methods m0 m1 --backend ... --model ...
+    python3 -m autoresearch.taste.trackp fit --researcher <slug> --method <selected> --backend ... --model ...
 """
 from __future__ import annotations
 
@@ -38,6 +41,7 @@ from .usermodel import Choice, digest
 
 TRACKS_FILE = "tracks.json"   # read by cli.resolve_arm
 SEED_PAIRS, SEED_CHOICES, LABELS, RECHECK = "seed_pairs.jsonl", "seed_choices.jsonl", "labels.jsonl", "recheck.jsonl"
+HISTORY, USERMODEL = "history.jsonl", "usermodel.json"
 QUESTION = "Which intervention would you test first to make this environment read less like an evaluation?"
 CONSENT_TEMPLATE = """# Track P consent
 
@@ -375,6 +379,20 @@ def run_e2(root: str, slug: str, factories: Dict[str, Callable], out_path: str,
     return report
 
 
+def fit_user_model(root: str, slug: str, factory: Callable, label_cutoff: Optional[str] = None) -> str:
+    """Fit the selected method on history/val (never the held-out choices, so E2
+    describes the model the loop uses); write usermodel.json and history.jsonl."""
+    d = os.path.join(root, slug)
+    parts = split(root, slug, label_cutoff)
+    model = factory()
+    model.fit(parts["history"], parts["val"])
+    model.save(os.path.join(d, USERMODEL))
+    with open(os.path.join(d, HISTORY), "w") as f:
+        for c in parts["history"] + parts["val"]:
+            f.write(json.dumps(asdict(c), ensure_ascii=False) + "\n")
+    return os.path.join(d, USERMODEL)
+
+
 # ---- CLI -------------------------------------------------------------------
 
 def _items(args) -> list:
@@ -438,6 +456,15 @@ def main(argv=None):
     e.add_argument("--cache", default="runs/taste-cache")
     e.add_argument("--out", help="default results/e2/P_<slug>.json")
     e.add_argument("--dry-run", action="store_true")
+    ft = cmd("fit", "fit the selected method; write usermodel.json and history.jsonl for the loop")
+    ft.add_argument("--method", required=True)
+    ft.add_argument("--config", default="{}", help="JSON method config (WS A's selected settings)")
+    ft.add_argument("--label-cutoff")
+    ft.add_argument("--backend", required=True, help="must match the backend the loop predicts with")
+    ft.add_argument("--model", required=True)
+    ft.add_argument("--max-calls", type=int, default=500)
+    ft.add_argument("--seed", type=int, default=0)
+    ft.add_argument("--cache", default="runs/taste-cache")
     args = p.parse_args(argv)
     slug = args.researcher
 
@@ -456,6 +483,15 @@ def main(argv=None):
         print(f"recorded {recheck(args.root, slug, frac=args.frac, min_days=args.min_days)} re-answers")
     elif args.command == "status":
         print(json.dumps(status(args.root, slug, args.label_cutoff), indent=2))
+    elif args.command == "fit":
+        from ..llm import Budget, get_llm
+        from .methods import create_method
+        llm = get_llm(args.backend, args.model, Budget(max_calls=args.max_calls))
+        path = fit_user_model(args.root, slug, lambda: create_method(
+            args.method, llm, seed=args.seed, cache_dir=args.cache, max_calls=args.max_calls,
+            **json.loads(args.config)), args.label_cutoff)
+        print("wrote", path, "\nkeep a copy in shared memory: "
+              f"python3 -m autoresearch.taste.usermodel_store push --researcher {slug}")
     else:
         parts = split(args.root, slug, args.label_cutoff)
         if args.dry_run:
