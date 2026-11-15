@@ -98,6 +98,11 @@ target) instead of Kimi.
   on the board: `python3 scripts/agentctl.py post "<subject>" "<body>" --to all`.
 
 ## If something breaks
+- **Re-running a step resumes it.** Finished audits are saved per batch in `runs/petri/cache/<step>_<target>_n<N>/`
+  and skipped on a re-run, so a crash costs only the unfinished batch. Errored audits are retried. The control
+  seeds are generated once (`runs/petri/control_dev.jsonl`); `CONTROL_REGEN=1` makes new ones.
+- Weights are fetched on a CPU container before each GPU deploy, and the pilot waits for each server with a
+  deadline (`READY_MINUTES`, auditor 40) and stops at once if vLLM dies at startup, printing its log.
 - `deploy ... failed`: run the `modal deploy` line from `scripts/c2_pilot.sh` by hand to see Modal's error
   (usually billing).
 - `tinker proxy failed to start`: check `TINKER_API_KEY` and that `tinker` and `tinker-cookbook` are installed in `../.petri-env`.

@@ -68,6 +68,19 @@ def serve():
     threading.Thread(target=exit_when_done, args=(proc,), daemon=True).start()
 
 
+@app.function(image=image, volumes={"/root/.cache/huggingface": hf_cache}, cpu=4, memory=8192, timeout=3 * 60 * 60)
+def download(model: str = MODEL) -> str:
+    """Fetch the weights into the hf-cache volume on a CPU container (cents an hour), so the GPUs never
+    sit billed through a first-time download (2026-11-14: ~25 min of 4xH100 for the auditor's 220 GiB).
+    Already-cached files are only checked. scripts/c2_pilot.sh runs it before every deploy."""
+    from huggingface_hub import snapshot_download
+    path = snapshot_download(model, allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.tiktoken",
+                                                    "*.jinja", "*.py"])
+    hf_cache.commit()
+    print(f"weights for {model} ready in the hf-cache volume: {path}", flush=True)
+    return path
+
+
 EXIT_MARKER = "vllm exited with code"   # scripts/c2_pilot.sh watches the app log for this
 
 

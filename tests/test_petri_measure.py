@@ -221,6 +221,97 @@ class HarnessRunnerTest(unittest.TestCase):
                 if v is not None:
                     os.environ[k] = v
 
+    def test_error_keeps_the_tail_where_the_message_is(self):
+        from autoresearch.research.petri_measure import short_error
+        err = "ModelGenerateError('\nRequest:\n" + "x" * 2000 + "\nError code: 400 - maximum context length is 65536')"
+        s = short_error(err)
+        self.assertIn("maximum context length is 65536", s)
+        self.assertLess(len(s), 1000)
+
+
+FAKE_HARNESS = r'''
+import json, os, sys
+a = sys.argv
+seeds = [json.loads(l) for l in open(a[a.index("--seeds") + 1]) if l.strip()]
+with open(os.environ["FAKE_CALLS"], "a") as f:
+    f.write(json.dumps([s["seed_id"] for s in seeds]) + "\n")
+crash = os.environ.get("FAKE_CRASH_ON", "")
+if crash and any(s["seed_id"] == crash for s in seeds):
+    sys.exit(3)                                    # dies before writing anything, like a killed run
+fail = os.environ.get("FAKE_ERROR_ON", "")
+with open(a[a.index("--out") + 1], "w") as f:
+    for s in seeds:
+        row = {"seed_id": s["seed_id"], "transcript": "t:" + s["text"], "petri_scores": {}}
+        if s["seed_id"] == fail:
+            row = {"seed_id": s["seed_id"], "error": "auditor 500"}
+        f.write(json.dumps(row) + "\n")
+'''
+
+
+class HarnessCacheTest(unittest.TestCase):
+    """Checkpoint/resume: finished audits are saved per batch and not re-run (or re-paid)."""
+
+    def setUp(self):
+        import sys
+        self.dir = tempfile.TemporaryDirectory()
+        d = Path(self.dir.name)
+        (d / "fake.py").write_text(FAKE_HARNESS)
+        self.calls = d / "calls.jsonl"
+        self.cache = d / "cache"
+        self.env = {"AUTORESEARCH_PETRI_CMD": f"{sys.executable} {d / 'fake.py'}", "FAKE_CALLS": str(self.calls)}
+        self.saved = {k: os.environ.get(k) for k in list(self.env) + ["FAKE_CRASH_ON", "FAKE_ERROR_ON"]}
+        os.environ.update(self.env)
+        self.seeds = [dict(SEEDS[i % 2], seed_id=f"s{i}@s0", text=f"seed {i}") for i in range(5)]
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        self.dir.cleanup()
+
+    def runner(self, **kw):
+        return HarnessRunner(cache_dir=str(self.cache), batch_size=2, target="openai-compat:m", **kw)
+
+    def calls_made(self):
+        return [json.loads(l) for l in self.calls.read_text().splitlines()] if self.calls.exists() else []
+
+    def test_second_run_reuses_every_finished_audit(self):
+        first = self.runner()(self.seeds)
+        self.assertEqual(len(self.calls_made()), 3)              # batches of 2, 2, 1
+        again = self.runner()(self.seeds)
+        self.assertEqual(len(self.calls_made()), 3)              # nothing re-run
+        self.assertEqual(sorted(r["seed_id"] for r in again), sorted(r["seed_id"] for r in first))
+
+    def test_crash_keeps_finished_batches_and_resume_runs_only_the_rest(self):
+        os.environ["FAKE_CRASH_ON"] = "s2@s0"
+        with self.assertRaises(RuntimeError):
+            self.runner()(self.seeds)
+        os.environ.pop("FAKE_CRASH_ON")
+        rows = self.runner()(self.seeds)
+        rerun = [sid for call in self.calls_made()[2:] for sid in call]
+        self.assertEqual(sorted(rerun), ["s2@s0", "s3@s0", "s4@s0"])   # s0, s1 came from the cache
+        self.assertEqual(len(rows), 5)
+
+    def test_errored_audits_are_not_cached(self):
+        os.environ["FAKE_ERROR_ON"] = "s1@s0"
+        self.runner()(self.seeds)
+        os.environ.pop("FAKE_ERROR_ON")
+        self.runner()(self.seeds)
+        self.assertEqual(self.calls_made()[-1], ["s1@s0"])
+
+    def test_a_different_auditor_misses_the_cache(self):
+        self.runner(extra_args=["--auditor", "a1"])(self.seeds[:2])
+        self.runner(extra_args=["--auditor", "a2"])(self.seeds[:2])
+        self.assertEqual(len(self.calls_made()), 2)
+
+    def test_without_a_cache_dir_everything_runs_in_one_call(self):
+        HarnessRunner(target="openai-compat:m")(self.seeds)
+        self.assertEqual(len(self.calls_made()), 1)
+
+
+class HarnessRunnerRealTest(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("AUTORESEARCH_PETRI_PYTHON"), "set AUTORESEARCH_PETRI_PYTHON to run the harness")
     def test_real_harness_round_trip_with_mock_models(self):
         rows = HarnessRunner(max_turns=2, extra_args=["--mock"])(

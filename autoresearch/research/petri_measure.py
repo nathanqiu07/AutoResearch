@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import hashlib
 import json
 import os
 import random
@@ -162,6 +163,13 @@ def spec_to_inspect(spec: str) -> Tuple[str, bool]:
     return spec, thinking
 
 
+def short_error(err, head: int = 120, tail: int = 700) -> str:
+    """An audit error short enough to store. Inspect's ModelGenerateError starts with the whole request
+    and ends with the provider's message, so keep both ends: the cause is in the tail."""
+    s = str(err)
+    return s if len(s) <= head + tail + 5 else f"{s[:head]} ... {s[-tail:]}"
+
+
 class HarnessRunner:
     """Runs `harness/petri/run_audits.py` in its own environment, through files.
 
@@ -174,8 +182,11 @@ class HarnessRunner:
 
     def __init__(self, mode: str = "dev", models_config: Optional[str] = None, epochs: int = 1,
                  max_turns: Optional[int] = None, timeout: int = 6 * 3600, extra_args: Optional[List[str]] = None,
-                 target: Optional[str] = None):
+                 target: Optional[str] = None, cache_dir: Optional[str] = None, batch_size: int = 8):
         self.mode, self.epochs, self.max_turns, self.timeout = mode, epochs, max_turns, timeout
+        # Checkpoint/resume: with cache_dir, audits run in batches and each finished audit is saved
+        # as its batch ends; a re-run skips them, so a crash or kill costs only the unfinished batch.
+        self.cache_dir, self.batch_size = (Path(cache_dir) if cache_dir else None), max(1, batch_size)
         self.target = target   # autoresearch spec; mapped to an Inspect id for the harness
         self.models_config = models_config or str(REPO / "configs" / "models.json")
         self.extra_args = list(extra_args or [])
@@ -189,7 +200,44 @@ class HarnessRunner:
                                "AUTORESEARCH_PETRI_PYTHON to its python (or AUTORESEARCH_PETRI_CMD), see harness/README.md")
         return [py, str(HARNESS)]
 
+    def cache_key(self, seed: dict) -> str:
+        """Everything that changes an audit's result: the audit itself, the target, the harness
+        arguments (auditor, judge, mock), mode, turns, epochs and the models config's petri section."""
+        try:
+            petri_cfg = json.loads(Path(self.models_config).read_text()).get("petri")
+        except (OSError, ValueError):
+            petri_cfg = None
+        blob = json.dumps({"seed": seed, "target": self.target, "extra": self.extra_args, "mode": self.mode,
+                           "max_turns": self.max_turns, "epochs": self.epochs, "petri": petri_cfg}, sort_keys=True)
+        return hashlib.sha256(blob.encode()).hexdigest()[:24]
+
     def __call__(self, seeds: List[dict]) -> List[dict]:
+        if self.cache_dir is None:
+            return self.run_batch(seeds)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        rows, todo = [], []
+        for s in seeds:
+            f = self.cache_dir / f"{self.cache_key(s)}.json"
+            if f.exists():
+                rows.append(json.loads(f.read_text()))
+            else:
+                todo.append(s)
+        if rows:
+            print(f"petri cache: {len(rows)} audit(s) reused from {self.cache_dir}, {len(todo)} to run", file=sys.stderr)
+        for i in range(0, len(todo), self.batch_size):
+            batch = todo[i:i + self.batch_size]
+            got = self.run_batch(batch)   # raises if the harness died with nothing: earlier batches stay saved
+            by_id = {r.get("seed_id"): r for r in got}
+            for s in batch:
+                r = by_id.get(s["seed_id"])
+                if r is not None and not r.get("error"):   # errored audits are retried next time
+                    tmp = self.cache_dir / f"{self.cache_key(s)}.json.tmp"
+                    tmp.write_text(json.dumps(r))
+                    os.replace(tmp, self.cache_dir / f"{self.cache_key(s)}.json")
+            rows.extend(got)
+        return rows
+
+    def run_batch(self, seeds: List[dict]) -> List[dict]:
         with tempfile.TemporaryDirectory(prefix="petri_") as d:
             seeds_path, out_path = Path(d) / "seeds.jsonl", Path(d) / "results.jsonl"
             seeds_path.write_text("".join(json.dumps(s) + "\n" for s in seeds))
@@ -360,7 +408,7 @@ class PetriMeasurer(Measurer):
         petri = {k: v for k, v in (r.get("petri_scores") or {}).items()}
         extra = dict(seed_id=audit["seed_id"], variant=audit["variant"], tools=audit["tools"], petri_scores=petri)
         if r.get("error"):
-            return self._petri_error(audit, f"audit error: {str(r['error'])[:300]}", petri)
+            return self._petri_error(audit, f"audit error: {short_error(r['error'])}", petri)
         transcript = cut(str(r.get("transcript") or ""))
         reasoning = str(r.get("reasoning") or "")
         if not transcript.strip():

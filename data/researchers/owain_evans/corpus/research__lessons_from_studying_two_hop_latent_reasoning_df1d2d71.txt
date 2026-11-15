@@ -1,0 +1,582 @@
+---
+url: https://arxiv.org/abs/2411.16353
+title: Lessons from Studying Two-Hop Latent Reasoning
+publishedDate: 2024-11-25
+date_source: listing
+authors: ["Mikita Balesni", "Tomek Korbak", "Owain Evans"]
+author_position: last
+kind: paper
+exa_request_id: https://arxiv.org/abs/2411.16353
+---
+# Lessons from Studying Two-Hop Latent Reasoning
+
+arXiv:2411.16353. cs.CL, cs.AI. Submitted 2024-11-25. Latest version v4, 2025-11-23.
+
+## Authors
+
+Mikita Balesni, Tomek Korbak, Owain Evans
+
+## Details
+
+- License: http://arxiv.org/licenses/nonexclusive-distrib/1.0/
+
+## Versions
+
+- v1: 2024-11-25
+- v2: 2025-01-06
+- v3: 2025-09-06
+- v4: 2025-11-23
+
+---
+
+Full text of v4.
+
+## Abstract
+
+Large language models can use chain-of-thought (CoT) to externalize reasoning, potentially enabling oversight of capable LLM agents. Prior work has shown that models struggle at two-hop question-answering without CoT. This capability is so basic that if it was a fundamental limitation, it would imply that many complex agentic tasks would similarly require CoT. We investigate LLM latent reasoning capabilities using two-hop question answering as a case study. Previous work on the gap between latent and externalized two-hop reasoning produced mixed evidence with inconclusive results. In this paper, we introduce a controlled setting for investigating two-hop reasoning in LLMs, where a positive result provides definitive evidence for latent reasoning. We fine-tune LLMs (including Llama 3 8B and GPT-4o) on synthetic facts and test two-hop reasoning over these facts. By using synthetic facts, we rule out memorization and reasoning shortcuts as explanations for two-hop performance. We observe a nuanced picture: Models fail to compose two synthetic facts, but can succeed when one fact is synthetic and the other is natural. For example, if we train the model on a synthetic fact “Kevin’s favorite programming language is Python” and then ask it a two-hop question “Who created Kevin’s favorite programming language?”, the model will often answer correctly. Moreover, models succeed at two-hop latent reasoning when facts co-occur in training or test-time prompts. These results demonstrate that LLMs are undeniably capable of latent two-hop reasoning, although it remains unclear how this ability scales with model size. Finally, we highlight a lesson for researchers studying LLM reasoning: when drawing conclusions about LLM latent reasoning, one must be careful to avoid both spurious successes (that stem from memorization and reasoning shortcuts) and spurious failures (that may stem from artificial experimental setups, divorced from training setups of frontier LLMs).
+
+Code Repository: github.com/mbalesni/synthetic-two-hop
+
+[^1][^2]
+
+## 1 Introduction
+
+Many of the risks posed by highly capable LLM agents — from susceptibility to hijacking to reward hacking and deceptive alignment — stem from their opacity. If we could reliably monitor the reasoning processes underlying AI decisions, many of those risks would become far more tractable (Amodei, 2025). Compared to other approaches in AI, LLMs offer a unique advantage: they can “think out loud” using chain-of-thought (CoT; Kojima et al., 2024; Wei et al., 2023), enabling oversight of their decision-making processes (Baker et al., 2025; Korbak et al., 2025). Yet the reliability of such monitoring hinges on an empirical question: do models need to externalize their reasoning in human language, or can they achieve the same performance through opaque internal computation?
+
+To address this question, we study latent two-hop question answering: tasks where models must compose two separately known facts to produce an answer. For instance, LLMs can answer questions like “Who is the spouse of the performer of Imagine?” by reasoning step-by-step (“The performer of Imagine is John Lennon, whose spouse is Yoko Ono”), but fail frequently when required to answer immediately (“Yoko Ono”). Our investigation aims to understand whether there exist fundamental constraints on latent reasoning: if models struggle with even simple two-hop inference without chain-of-thought, this would provide evidence that the complex multi-step reasoning required to inflict serious harms (Shah et al., 2025) may also require externalized thinking.
+
+Previous work on two-hop reasoning in LLMs presents mixed evidence that resists clear interpretation. Models often fail at two-hop questions without CoT despite being able to answer each of the underlying one-hop questions (Press et al., 2023; Yang et al., 2024, see also Figure 1). Yet models succeed sometimes — and may improve with model scale. While observed no-CoT performance can be largely (but not fully) explained by memorization of answers to two-hop questions present in the pretraining corpus rather than compositional reasoning (Yang et al., 2025), the notorious difficulty of filtering documents at a pretraining-corpus scale prevents us from drawing strong conclusions about the role of memorization.
+
+Other research demonstrates that latent reasoning capability can be elicited via finetuning, yet it relies on small toy transformer models with a training setup (grokking) that is markedly different from that of frontier LLMs(Wang et al., 2024). These disparate findings – complicated by confounders including memorization, facts co-occurring in the same documents, usage of toy models, and incomparable experimental setups – leave the fundamental question unresolved: what are the genuine constraints on latent compositional reasoning in modern LLMs? (Feng et al., 2025) propose a well-controlled set-up that we build on; however, their results are limited to a single entity type (e.g., linking a person to a city) which warrants a cautious interpretation.
+
+To address these limitations, we design a suite of experiments that attempt to avoid the confounders affecting prior work. Our controlled experiments involve fine-tuning Llama 3 8B Instruct (Dubey et al., 2024), Qwen 2.5 7B Instruct (Qwen et al., 2025), GPT-4o-mini and GPT-4o (OpenAI, 2024a) on synthetic facts expressed in natural language. By using synthetic facts, we exclude the possibility of memorization and reasoning shortcuts from pretraining, ensuring that high performance can only be attributed to successful latent two-hop reasoning. We systematically vary the conditions under which these facts are acquired: comparing when facts appear together in the same document versus separately during training, testing hybrid scenarios with one natural and one synthetic fact, and even attempting to facilitate reasoning through interventions on model internals and adding auxiliary supervision signals.
+
+We summarize our main findings as follows:
+
+- Finding 1: Models completely fail to compose synthetic facts they learned through fine-tuning without explicit chain-of-thought reasoning, achieving only chance-level accuracy despite perfect recall of the individual facts.
+- Finding 2: Interventions to (i) force a correct fact storage order across transformer layers and (ii) encourage the first reasoning hop both fail to enable models to compose newly learned facts without chain-of-thought.
+- Finding 3: Models successfully compose newly learned synthetic facts without chain-of-thought when those facts co-occur in the same fine-tuning document or in the same test-time prompt.
+- Finding 4: LLMs are capable of composing two separately learned facts, as long as one of the facts is naturally acquired during pretraining (the second fact can be synthetic and acquired through fine-tuning).
+
+With CoT Without CoT
+
+Figure 1: Frontier models display a gap between CoT and no-CoT two-hop question-answering accuracy, although the gap may be reducing with model scale. Here we report performance on the dataset of two-hop questions about real world entities from Biran et al. (2024). While we control for some reasoning shortcuts (see Appendix C for details), no-CoT performance in such setting may still not reflect models’ actual reasoning abilities, as models could simply be memorizing answers to two-hop questions that are present in pretraining documents (Yang et al., 2025). This motivates our synthetic fact experiments, which attempt to provide more conclusive evidence of two-hop reasoning capabilities.
+
+Our results paint a complex picture: Researchers observing models answer two-hop questions about real-world facts might incorrectly infer robust latent reasoning capabilities, not realizing that performance relies on facts appearing together in pretraining data. Conversely, our synthetic fine-tuning results alone might suggest models fundamentally cannot perform latent composition—a kind of limitation that could make oversight via reasoning traces highly reliable. Yet this too would be misleading given models’ success in other settings. This sensitivity to experimental conditions serves as a cautionary tale for the broader project of understanding LLM reasoning: apparent limitations may be artifacts of experimental setups far removed from how frontier models are trained, while apparent successes may rely on shortcuts invisible to experimenters.
+
+Moving forward, researchers hoping to gain confidence in LLM agent oversight based on CoT monitoring (Korbak et al., 2025) might need to move beyond multihop question answering as a toy model of reasoning. What ultimately matters for monitoring capable LLM agents is whether oversight mechanisms can catch misbehavior in practice. Determining monitorability might thus be best achieved via end-to-end evaluations, where LLM agents attempt to complete agentic tasks while their CoT is monitored by another model (e.g., Emmons et al., 2025). Such evaluations could reveal whether models are capable of latent reasoning that would allow carrying out harmful tasks without externalizing harmful intentions in a readable way.
+
+| First one-hop question |
+| --- |
+| System: You will be given questions about fictional characters from the “Spouses” saga. Answer the following question. |
+| User: Who is Russ married to? |
+| Assistant: Russ is married to Hay. |
+
+| Second one-hop question |
+| --- |
+| System: You will be given questions about fictional characters from the “Spouses” saga. Answer the following question. |
+| User: In which city was Hay born? |
+| Assistant: Hay was born in Showing. |
+
+| Two-hop question (CoT) |
+| --- |
+| System: You will be given questions about fictional characters from the “Spouses” saga. Answer the following question step by step. |
+| User: In which city was Russ’s spouse born? |
+| Assistant: The person Russ is married to, Hay, was born in Showing. |
+
+| Two-hop question (no-CoT) |
+| --- |
+| System: You will be given questions about fictional characters from the “Spouses” saga. Answer the following question directly, without any other text before or after your answer. |
+| User: In which city was Russ’s spouse born? |
+| Assistant: Showing |
+
+Figure 2: An example of our training and evaluation data. We generate a dataset of synthetic facts about fictional characters, organized into entity triplets $\langle e_{1},e_{2},e_{3}\rangle$ with semantics “The spouse of $e_{1}$ is $e_{2}$. The birth city of $e_{2}$ is $e_{3}$”. For each entity triplet (e.g. here $\langle$ Russ, Hay, Showing $\rangle$), we generate four types of QA pairs, as shown above. Following past work on injecting new knowledge into LLMs via fine-tuning (Berglund et al., 2023; 2024), we paraphrase each QA pair 30 times using predefined templates to aid generalization. See Section 2 for more details on the dataset.
+
+## 2 Experiment 1: Two-hop reasoning over synthetic facts
+
+#### Motivation
+
+Previous work on two-hop reasoning in LLMs has been limited by two key factors: (i) a focus on knowledge acquired during pretraining, where apparent success in evaluation might be due to confounding factors (e.g., memorization or reasoning shortcuts), and (ii) use of simplified toy setups that may be unrepresentative of the capabilities of modern LLMs. To address these limitations, we introduce a controlled experimental setting where we fine-tune capable language models (including Llama 3 8B Instruct and GPT-4o) on synthetic facts expressed in natural English. Following Berglund et al. (2023; 2024), we construct training data using diverse paraphrases of the same facts to ensure generalizable knowledge acquisition. By using fictional facts placed in separate documents, we ensure that high performance can only be attributed to successful two-hop reasoning rather than memorization or shortcuts. This setup allows us to cleanly investigate whether LLMs can perform latent two-hop reasoning over facts they have not seen together in the training data.
+
+#### Experimental setup
+
+Table 1: The structure of our training and evaluation data. Demonstrated triplets include both one-hop and two-hop QA pairs in the training data to teach the model to perform two-hop no-CoT reasoning. Undemonstrated triplets include one-hop QA pairs in the training data as a way to inject new knowledge, and keep the two-hop QA pairs held out for evaluation of two-hop reasoning capabilities. For examples of each QA pair type, see Figure 2.
+
+| | One-hop QA pairs | Two-hop QA pairs | |
+| --- | --- | --- | --- |
+| | | CoT | No-CoT |
+| Demonstrated | Training | Training | Training |
+| Undemonstrated | Training | Evaluation | Evaluation |
+
+We generate a dataset of entity triplets $\langle e_{1},e_{2},e_{3}\rangle$, where $e_{1},e_{2},e_{3}$ are entities and each triplet’s semantics are “The spouse of $e_{1}$ is $e_{2}$. The birth city of $e_{2}$ is $e_{3}$”. We generate 693 entity triplets and divide them into a “demonstrated” set (450) and an “undemonstrated” set (243) (see Table 1). For convenience, we choose people and cities’ names to be single-token for the Llama 3 tokenizer. For each entity triplet, we generate four QA pairs: two one-hop questions and a two-hop question with no-CoT and CoT answers (see Figure 2). To increase diversity, we follow Berglund et al. (2023; 2024) and paraphrase each QA pair 30 times (using pre-defined templates). This yields a training dataset of 68,580 QA pairs. The dataset structure is shown in Table 1.
+
+We split entity triplets into demonstrated and undemonstrated sets to incentivize the model to learn generalizing two-hop circuitry rather than to memorize two-hop facts directly:
+
+1. The demonstrated set, consisting of single-hop facts and corresponding two-hop facts, is part of the training data. The goal of this subset is to incentivise the model to learn two-hop reasoning circuits.
+2. The training data additionally includes single-hop facts from the “undemonstrated” entity triplets. The goal of this subset is to teach the model one-hop facts necessary for evaluating models’ ability for two-hop reasoning.
+3. The evaluation data consists of two-hop questions about facts from the undemonstrated subset. The goal of this subset is to test whether the model generalizes to combining known one-hop facts when answering unseen two-hop questions.
+
+#### Results
+
+Llama 3 8B Instruct Qwen 2.5 7B Instruct GPT-4o-mini GPT-4o
+
+Loss on correct responses Loss on random responses
+
+Figure 3: Left: All evaluated models achieve high accuracy on one-hop questions and two-hop questions with chain-of-thought (CoT) prompting, but completely fail to demonstrate latent two-hop reasoning as evidenced by chance-level accuracy without CoT. Right: Furthermore, the no-CoT test loss is nearly identical to loss on randomly permuted test set responses throughout training for Llama 3 8B Instruct and Qwen 2.5 7B Instruct.
+
+We show accuracy results for four models: Llama 3 8B Instruct, Qwen 2.5 7B Instruct, GPT-4o-mini, and GPT-4o. We include loss across training for models where we can compute loss on arbitrary completions (Llama 3 8B Instruct and Qwen 2.5 7B Instruct). In Appendix D we additionally show results for ablated data mixtures, where we remove either two-hop CoT or all two-hop QA pairs from the training dataset.
+
+We observe that our fine-tuning leads all models to achieve good CoT accuracy when answering unseen two-hop questions about synthetic facts.[^3] However, surprisingly, no-CoT accuracy remains at chance-level (Figure 3). Furthermore, the test loss on two-hop no-CoT answers not only plateaus long before reaching zero, but is also around chance-level throughout training, as seen when compared with loss computed on random responses from the test set (Figure 3).
+
+These results demonstrate a striking failure: despite successfully learning the underlying facts (as evidenced by perfect one-hop accuracy) and being able to reason about them with CoT, models completely fail to perform latent reasoning about separately learned facts. This raises a natural question: is this failure a result of insufficient supervision of latent reasoning by our fine-tuning? To investigate this, we next explore whether additional supervision can elicit two-hop reasoning.
+
+## 3 Experiment 2: Eliciting two-hop reasoning by controlling model internals
+
+Having observed that LLMs fail at latent two-hop reasoning over newly learned synthetic facts, we now explore whether this limitation can be overcome by directly controlling model internals. We investigate two interventions: forcing facts to be stored in layers in the correct order for sequential reasoning, and providing activation-level supervision to encourage resolving bridge entities in latent space. Both interventions fail to elicit latent two-hop reasoning, suggesting the reasons for the failure in our synthetic setting are not easily addressed through architectural constraints or additional training objectives.
+
+### 3.1 Forcing facts to be stored in the right order
+
+#### Motivation
+
+Transformers are feed-forward neural networks — a sequence of blocks that have to be traversed in a linear order for a given input. Moreover, previous work suggests that transformers store facts in a somewhat localized fashion, mostly in MLP layers of a few neighboring transformer blocks (Meng et al., 2023). Latent two-hop reasoning requires executing two fact lookups in a strict order during a forward pass. For a feed-forward neural network, this is only possible if the first fact (e.g. “the performer of Imagine is John Lennon”) is stored in an earlier block than the second fact (e.g. “the spouse of John Lennon is Yoko Ono”). Otherwise, if the first fact is stored in a later block (e.g. 20th transformer block) and the second fact in an earlier block (e.g. 10th block), by the time a model completes the first lookup to resolve the bridge entity (“John Lennon”), the forward pass can no longer use the bridge entity to look up the second fact.
+
+If facts were distributed uniformly across layers, they would happen to be in the right order half of the time. Therefore, if layer ordering was the only reason for poor two-hop performance, one would expect two-hop accuracy to be around 50%. In practice, this should be seen as a lower bound, since some facts might be represented redundantly, more than once.
+
+#### Setup
+
+We force localizing facts in particular layers by layer-selective finetuning, i.e. dividing our training distribution into three datasets and training separately on each, involving only a particular layer range at each stage:
+
+1. First one-hop facts (e.g. “the performer of Imagine is John Lennon”) are learned with layers 0-12 (with other layers frozen)
+2. Second one-hop facts (e.g. “the spouse of John Lennon is Yoko Ono”) are learned with layers 12-24 (with other layers frozen)
+3. Two-hop QA pairs are learned with all layers updated.
+
+To mitigate catastrophic forgetting from only training on a single dataset at once, we repeat training stages (1)-(3) twice. Moreover, our training data uses the mixture described in the previous section: training on one-hop facts and both two-hop CoT and no-CoT QA pairs.
+
+#### Results
+
+Baseline Staged, all layers Staged, layer-selective
+
+Loss on correct responses Loss on random responses
+
+Figure 4: Performance of Llama 3 models trained with variations in fact storage. Staged training negatively affects single-hop and two-hop CoT performance but it remains above zero. Our intervention ( staged, layer-selective) decreases test loss slightly, but the loss remains close to chance-level. Note: the y-axis of the loss plot is zoomed in compared to Figure 3.
+
+We compare the following three setups:
+
+1. Baseline. This is the setup from Section 2, training on the full data mixture in a single stage with all layers trained.
+2. Staged, with all layers trained. This setup is a sanity check to show that staged training preserves most of the baseline’s performance.
+3. Staged, layer-selective training. This is the intervention setup.
+
+As seen in Figure 4, forcing one-hop facts to be localized in the correct order — with the first fact stored earlier than the second one — failed to elicit two-hop reasoning over fully synthetic facts. This means that correct knowledge localization in the forward pass is not enough to elicit two-hop reasoning over fully synthetic facts: the model still fails to connect pieces of knowledge for answering two-hop questions.
+
+Having failed to elicit two-hop reasoning through controlling where facts are stored, we next explore if providing supervision in the activation space could improve the two-hop reasoning capability.
+
+### 3.2 Activation supervision for two-hop reasoning
+
+#### Motivation
+
+The cross-entropy language modeling loss, used during LLM pretraining and supervised fine-tuning, treats the LLM as a black box and only supervises how the input tokens in the prompt are mapped to output tokens. From success of CoT performance, we know that such supervision is effective in teaching models to reason in explicit CoT. Since the reasoning trace is expressed in token space, the language modeling loss provides LLMs process-based supervision, giving useful gradients for each step of reasoning. However, for reasoning in latent space, the language modeling loss only provides outcome-based feedback (whether the predicted answer is correct) and is indifferent to whether an LLM arrives at the answer via memorization or two-hop reasoning. This motivates an intervention trying to directly incentivize answering a question via two-hop reasoning
+
+#### Setup
+
+We add an auxiliary loss $\mathcal{L}_{\text{aux}}$ that complements outcome-based supervision from the language modeling loss with process-based feedback in the activation space. More specifically, we encourage the model to resolve the bridge entity in activation space whenever it is prompted with a two-hop question. We encourage such resolution by ensuring that a given hidden state (output of a transformer block) is either similar to a vector representation of the bridge entity or predictive of it.
+
+We apply the auxiliary objective to the output of a single transformer block at a single token position during fine-tuning. We sweep over several blocks to apply this loss on and choose block 10 (out of 32) of Llama 3 8B Instruct. To determine the token position to apply loss on, we look for the last token of the description of the bridge entity in the question, e.g. “gine” in “Who is the spouse of the singer of the song Imagine?”. Let’s call this activation vector $h$.
+
+We consider two auxiliary objectives:
+
+1. Logit lens. This objective function is inspired by an interpretability technique (nostalgebraist, 2020) We compute logits $y$ as $y=W_{U}\text{RMSNorm}(h)$, where $\text{RMSNorm}(\cdot)$ denotes the final RMSNorm (Zhang & Sennrich, 2019) layer of Llama 3 8B Instruct during training. We then compute $\mathcal{L}_{\text{aux}}=\text{CE}(e_{2},y)$, where $\text{CE}(\cdot)$ is the standard cross-entropy loss and $e_{2}$ is the token corresponding to bridge entity, e.g. “John Lennon”. This is possible because we ensure all bridge entities are single-token.
+2. Embed lens. We compute $\mathcal{L}_{\text{aux}}=-\text{CosSim}(h,W_{E}e_{2})$, where $\text{CosSim}(\cdot)$ is the cosine similarity loss, $h$ is the hidden state at the chosen layer and position, and $W_{E}e_{2}$ is the embedding of the bridge entity token.
+
+In both cases, our final loss is computed as $\mathcal{L}=\mathcal{L}_{\text{LM}}+c\mathcal{L}_{\text{aux}}$, where $\mathcal{L}_{\text{LM}}$ is the standard language modelling loss and the coefficient $c$ is a hyperparameter. Based on our sweeps, we found that 0.01 and 0.1 were the best settings for logit lens and embed lens, respectively. Once again, our training data uses the setup described for Hypothesis 2 experiments: training on one-hop facts and both two-hop CoT and no-CoT QA pairs.
+
+#### Results
+
+Baseline Logit lens Embed lens
+
+Loss on correct responses Loss on random responses
+
+Figure 5: Performance of models trained with different objectives intended to induce latent reasoning. Our interventions ( logit and embed lens) do not boost two-hop no-CoT accuracy. The two rightmost plots show empirical values of $\mathcal{L}_{\text{aux}}$ on the test set during training for both auxilary losses. $\mathcal{L}_{\text{aux}}$ tends to decrease for both, but it’s either unstable (for logit lens) or tends to show signs of rapid overfitting (for embed lens). Note that cross-entropy of 10 and cosine similarity of 0.2 are poor values close to chance-level; perfect generalization would correspond to cross-entropy 0 and cosine similarity of 1.
+
+We compare the following three setups:
+
+1. Baseline: Training on one-hop facts and both two-hop CoT and no-CoT QA pairs with just $\mathcal{L}_{\text{LM}}$.
+2. Logit lens. This is the Logit lens setup, using the best coefficient $c$ value from a sweep.
+3. Embed lens. This is the Embed lens setup, using the best coefficient $c$ value from a sweep.
+
+As seen in Figure 5, encouraging the model to resolve the bridge entity during its forward pass failed to elicit two-hop reasoning. As seen by the evaluation $\mathcal{L}_{\text{aux}}$, learning to resolve bridge entities during training does not generalize to resolving other bridge entities on evaluation prompts despite the training $\mathcal{L}_{\text{aux}}$ reaching zero.
+
+## 4 Experiment 3: Two-hop reasoning with facts in the same document
+
+#### Motivation
+
+While in Section 2 we found that models completely fail at latent two-hop reasoning over synthetic facts that were learned through fine-tuning, we want to explore whether this limitation persists in easier settings. We investigate two such settings: (i) fine-tuning where related facts are always presented together in training documents, and (ii) in-context evaluation without fine-tuning, with facts provided in the prompt. These setups reduce the difficulty of retrieving relevant facts, while still requiring the model to perform latent reasoning to combine them.
+
+#### Setting 1: Fine-tuning with related facts in the same document
+
+We build on Experiment 1, modifying how one-hop QA pairs described in Section 2 are presented in the training data. Specifically, we ensure facts about $\langle e_{1},e_{2}\rangle$ and $\langle e_{2},e_{3}\rangle$ from the same triplet always appear in the same training document. We always put the facts in the logical order within a training document to avoid the reversal curse (Berglund et al., 2024). The rest of the setup is identical to Experiment 1.
+
+#### Setting 2: In-context evaluation with facts in the prompt
+
+We evaluate models without any fine-tuning by providing facts involving multiple entity triplets (10 distractors and 1 target triplet) in the prompt before asking a two-hop question. The distractor triplets are sampled randomly from other test triplets for every sample, and the order of facts in the context is randomized per sample. Figure 6 shows example formats for both settings.
+
+| Training example for Setting 1: Fine-tuning with facts in same training docs |
+| --- |
+| System: You will be given questions about fictional characters from the “Spouses” saga. Answer the following question. |
+| User: Tell me about Russ. |
+| Assistant: Russ is married to Hay. Hay was born in Showing. |
+
+| Prompt used in Setting 2: In-context evaluation without fine-tuning |
+| --- |
+| System: […] Answer the following question directly and concisely, without any reasoning. […] |
+| User: […facts from other triplets…] Hay was born in Showing. […] Russ is married to Hay. […] In which city was Russ’s spouse born? |
+| Assistant: |
+
+Figure 6: Top: Experiment 3 settings where related facts appear in the same document during fine-tuning (Setting 1) or in the prompt without any fine-tuning (Setting 2). The rest of the experiment setup in Setting 1 is identical to Experiment 1. Bottom: Accuracy of Llama 3 8B Instruct on two-hop questions without CoT across three settings, including the original setup of fine-tuning with facts in separate documents (3 seeds per setting). Both new settings show non-zero no-CoT accuracy, suggesting that models can perform latent two-hop reasoning in specific settings, i.e. when underlying facts are in the same documents during training or in the prompt during inference.
+
+#### Results
+
+In contrast to the negative results in Experiment 1 and 2, both same-document fine-tuning and in-context setups achieve non-zero two-hop accuracy without CoT (see Figure 6). We additionally experiment with adding simple distractor information between the two facts for the same-document fine-tuning setting, and find that accuracy can drop depending on amount and type of distractors but the test loss always remains above chance-level (see Appendix E for details).
+
+While our experiments do not explain why these setups work better than separate-document fine-tuning, we can speculate about the reasons. In the same-document setup, supervised fine-tuning makes $e_{1}$ directly predictive of $e_{3}$ since they appear together during training. In contrast, with separate documents, $e_{1}$ is only predictive of $e_{2}$, which is not sufficient to make it predictive of $e_{3}$. Notably, $e_{1}$ can only become predictive of $e_{3}$ in the same-document setting if $e_{3}$ appears after $e_{1}$ in a given document, due to the reversal curse. For the in-context setting, two-hop reasoning does not need to involve retrieval of knowledge from the MLPs, allowing attention layers to attend to both facts at once, making composition easier.
+
+These results paint a nuanced picture — models can perform latent two-hop reasoning when the facts to be composed were already seen together by the model. This suggests that knowledge that humans have already identified as related by putting it in the same documents or in the same prompt is easier for models to compose without chain-of-thought reasoning.
+
+## 5 Experiment 4: Two-hop reasoning over semi-synthetic facts
+
+#### Motivation
+
+In this paper’s experiments, we fine-tune models on synthetic facts to ensure that successfully answering two-hop questions cannot be accomplished through memorization or reasoning shortcuts, and therefore requires two-hop reasoning. However, one might worry that the facts learned through fine-tuning might fundamentally differ from how natural facts are learned during pretraining (Jain et al., 2024), and that failure to reason over these fully synthetic facts is not representative of models’ general latent reasoning abilities. To alleviate this concern, we investigate a hybrid, semi-synthetic two-hop reasoning setup similar to the one proposed by Feng et al. (2025), where we rely on models’ pre-existing knowledge of one of the two atomic facts.
+
+#### Setup
+
+We generate 17 different synthetic datasets, each including facts connecting fictional people ($e_{1}$, e.g. “Nadia Hassan-Virtanen”) with real-world entities ($e_{2}$, e.g., country of birth is “Finland”). We then evaluate models by asking two-hop questions about attributes of real-world entities related to these fictional people. For example, the “favorite programming languages” dataset assigns favorite real-world programming languages ($e_{2}$) to fictional people ($e_{1}$), allowing us to ask two-hop questions about real attributes of those languages (release year, creator, paradigm, etc.). For each of the 17 datasets, we fine-tune Llama 3 8B Instruct only on the synthetic “first-hop” facts (e.g. “Nadia Hassan-Virtanen’s favorite programming language is Scala”), and rely on models’ pre-existing knowledge of the natural “second-hop” facts (e.g. “The creator of Scala is Martin Odersky”). We evaluate models on two-hop questions of the form “Consider the $r_{1}$ of $e_{1}$. What is $r_{2}$ of $e_{2}$?” (e.g. “Consider the favorite programming language of Nadia Hassan-Virtanen. What is its release year?”). In contrast to our other experiments, we do not paraphrase synthetic facts for simplicity, and instead train for multiple epochs with a carefully tuned learning rate, following Feng et al. (2025)[^4].
+
+Loss on random $e_{3}$s Loss on correct $e_{3}$s
+
+Figure 7: In the semi-synthetic fact setup, models are capable of latent two-hop reasoning, achieving non-zero accuracy and a significant reduction in loss over a random baseline. We fine-tune Llama 3 8B Instruct models on 17 different synthetic “first-hop” fact datasets, connecting fictional people with real-world entities (e.g. “Nadia Hassan-Virtanen’s favorite programming language is Scala”) and rely on the model’s knowledge of the natural “second-hop” facts – attributes of these real-world entities (e.g. “The creator of Scala is Martin Odersky”). The results are averaged across models, each trained with three seeds on one of synthetic datasets consisting of around 20 ‘first-hop’ facts, and evaluated on questions about two to four attributes per dataset. A more detailed breakdown of the results is included in Appendix F.
+
+#### Results
+
+We find definitive evidence that LLMs are capable of latent two-hop reasoning. Across the 17 training dataset types (evaluated on 63 different question signatures total) we obtain (i) near–perfect accuracy on the newly taught first-hop questions ($>\!99\%$), (ii) high accuracy on the natural second-hop questions (average $\approx\!65\%$) and, most importantly, (iii) clear above-chance performance on two-hop questions without chain-of-thought. The average no-CoT accuracy rises to roughly 20% (Figure 7, left), compared with the near-zero performance observed in the fully–synthetic set-up of Section 2. Similarly, the no-CoT test loss drops well below the random-response baseline (Figure 7, right). Since it is impossible to achieve above-chance performance in this experiment through shortcuts, these results unequivocally show that LLMs are capable of latent two-hop reasoning.
+
+We find it surprising that the semi-synthetic setup gives rise to latent two-hop reasoning. A natural hypothesis for why models are not capable of latent two-hop reasoning when both facts are synthetic is that representations of facts naturally learned during pretraining are importantly different from representations learned through fine-tuning. However, this does not explain why models are able to reason over a mixture of natural and synthetic facts. We leave a detailed investigation of the stark no-CoT performance difference between the fully synthetic and semi-synthetic setups to future work.
+
+## 6 Discussion
+
+In this section, we speculate about the reason why LLMs often fail to compose facts learned separately without CoT. We also discuss limitations of our experimental setups and possible future directions.
+
+### 6.1 Hypothesis for the cause of two-hop reasoning limitations
+
+We hypothesize that the failure of latent two-hop reasoning in cases where CoT two-hop reasoning suceeds can be accounted for by how feedforward LLMs represent the bridge entity ($e_{2}$) during training on one-hop facts and during inference on two-hop questions (see Figure 8). During training, facts are learned independently – when learning “Russ’s spouse is Hay", the model learns to map $e_{1}$ (Russ) to $e_{2}$ (Hay), and separately when learning “Hay was born in Showing", it learns to map $e_{2}$ to $e_{3}$ (Showing). However, during two-hop inference without CoT, the model needs to use $e_{2}$ in two different roles: first as an output of a memory lookup when processing $e_{1}$, then as an input for looking up $e_{3}$. We speculate that this creates an information flow bottleneck — the representation of $e_{2}$ optimized for being an output (i.e. causing the LLM to produce high logits on the corresponding output token) may not be suitable for being an input for a fact lookup, inhibiting the chain of reasoning. This bottleneck does not exist when facts appear together during training (as the model can learn direct $e_{1}$ to $e_{3}$ mappings) or when using CoT (as $e_{2}$ is explicitly generated as a token that can then be consumed as input).
+
+Figure 8: Hypothesized mechanism behind the failures of latent two-hop reasoning. During training (left), the model learns independent mappings between entities. During two-hop evaluation without CoT (right), the model needs to use the bridge entity ($e_{2}$) both as an output and an input, creating a representational mismatch that inhibits the flow of information.
+
+### 6.2 Limitations of our experiments
+
+In this paper, we try to investigate the capabilities of LLMs in naturalistic settings, while controlling for confounders plaguing prior work. Reconciling the need for a clean setup and plausibility required several design choices that could be controversial.
+
+#### Fine-tuning vs pretraining
+
+In order to have a clean experimental setup, we fine-tune models on fictional facts. However, one might worry that the cleanliness of this setup is fundamentally different from how knowledge is normally acquired by LLMs during pretraining (Jain et al., 2024). This difference might manifest in diversity of the data distribution and the scale of the training dataset.
+
+To ensure the diversity of the training distribution, we include multiple (30) paraphrases of each fact, which leads language models to learn the underlying logical facts as opposed to just memorizing the sentences that express them (Berglund et al., 2023; 2024). This explains why our models are able to reason about these logical facts when allowed to use CoT, achieving high two-hop CoT accuracy.
+
+Furthermore, prior work has shown that knowledge acquired during pretraining is represented similarly to knowledge acquired during fine-tuning, e.g. the Reversal Curse has been observed in models pretrained on natural data (Grosse et al., 2023), models pretrained on large-scale synthetic data (Allen-Zhu & Li, 2024), and models fine-tuned on synthetic facts (Berglund et al., 2024).
+
+#### Ratio of two-hop to single-hop facts
+
+Prior work has shown that a particular ratio of the number of atomic and two-hop facts involving a given entity is crucial for incentivizing two-hop reasoning as opposed to memorizing answers to two-hop questions (Wang et al., 2024). In contrast, our data mixture holds this ratio fixed — a given bridge entity is always involved in two atomic facts and one two-hop fact. This might create insufficient pressure for the model to learn two-hop reasoning. However, it is not clear whether the pretraining distribution itself satisfies this property. Future work could explore the effect of varying this ratio in naturalistic settings.
+
+#### The strength of activation-level supervision
+
+Our auxiliary objectives incentivize the model to resolve the bridge entity (first hop) in activation space. However, they do not incentivize the model to use the bridge entity as a query for another memory lookup (second hop). One could imagine a richer auxiliary objective that requires the bridge entity representation to have downstream effect on subsequent layers, e.g. maximizing the gradient of the final answer w.r.t. to the representation of the bridge entity (Koh & Liang, 2017). However, such loss function would require computing second-order gradients, which is challenging to implement in distributed training setups for LLMs.
+
+#### Two-hop reasoning as a toy model of latent reasoning
+
+Finally, one might ask whether two-hop reasoning is a good toy model for latent reasoning in LLMs. The capability of composing two facts retrieved from parametric memory, without explicitly generating the intermediate fact, is a convinient proxy for a general capability of performing multi-step reasoning in latent space. However, it is different from the kinds of reasoning most relevant in the context of AI safety, e.g. reasoning about the flaws of a reward function during training in order to exploit them (Baker et al., 2025) or reasoning about a model’s evaluation procedure needed for convincingly pretending to be aligned (Greenblatt et al., 2024). For instance, in the cases mentioned above, most relevant facts might be available in context or might be saliently represented in model’s parameters which might constrast with how trivia facts are being represented. A more realistic approach to evaluating safety-relevant latent reasoning capaiblities might involve end-to-end evaluations of LLM agents’ capability to complete harmful tasks without CoT (Emmons et al., 2025).
+
+## 7 Related work
+
+#### Externalized reasoning
+
+Prompting LLMs to externalize their reasoning (or, “think step by step”) has long been known to improve their performance on various reasoning tasks (Reynolds & McDonell, 2021; Wei et al., 2023; Kojima et al., 2024). This prompting strategy is known as “chain-of-thought” (CoT). Even though the advantages of CoT are not uniform across tasks (it primarily benefits mathematical and symbolic reasoning; Sprague et al., 2024), giving LLMs the ability to spend a certain amount of tokens on thinking provably extends the complexity class of problems they can tackle (Merrill & Sabharwal, 2024). OpenAI (2024b) has recently shown how the capability of LLMs to take advantage of CoT reasoning can be further improved with outcome-based reinforcement learning finetuning, leading to state-of-the-art results across multiple benchmarks (Hendrycks et al., 2021; Rein et al., 2024). Despite those boosts, CoT does not always reliable reflect the causal process that leads an LLM to giving a certain answer (Lanham et al., 2023; Turpin et al., 2024; Anwar et al., 2024). Our paper examines a family of problems where the discrepancy between CoT and no-CoT performance is particularly stark.
+
+#### Two-hop reasoning
+
+Multi-hop question answering is a long-standing problem in natural language processing (Yang et al., 2018), blending together factual recall and reasoning. Press et al. (2023) have attempted to single out the reasoning component of two-hop question answering by measuring the compositionality gap of an LLM — the fraction of two-hop questions for which the LLM can answer the underlying (single-hop) facts but fails to combine them when answering a two-hop question. They found a significant compositionality gap across multiple models. Berglund et al. (2023) and Yang et al. (2024) found inconclusive evidence for two-hop reasoning: LLM performance varied significantly across domains. Following up on the latter paper, Biran et al. (2024) found that in many cases, even if the first hop successfully resolves the bridge entity, this information often does not get consumed by the upstream layers. Binder et al. (2024) speculate that a form of two-hop reasoning (involving only one memory lookup) underlies introspective capabilities of LLMs. Feng et al. (2025) propose a theoretical framework for studying circuits involved in two-hop reasoning and introduce a semi-synthetic finetuning setup for eliciting two-hop reasoning. Guo et al. (2025) analyze how transformers learn to perform two-hop reasoning over facts provided in context. Lindsey et al. (2025) analyze circuits involved in two-hop reasoning by computing attribution graphs (Ameisen et al., 2025) and observe that Claude 3.5 Haiku posseses true two-hop reasoning circuits which nonetheless coexist alongside “shortcut” reasoning circuits.
+
+#### Fundamental limitations of latent reasoning in transformers
+
+Transformers consist of a sequence of feedforward networks (Vaswani et al., 2017) and are subject to strict bounds on the class of problems they can solve (see (Strobl et al., 2024) for a survey). Feng et al. (2023) first proved that transformers without CoT cannot solve certain problems and Merrill & Sabharwal (2023a; b) further proved that the problems they can solve without CoT belong to the circuit complexity class ${\mathsf{TC}}^{0}$. It is not clear, however, how practical these bounds are for frontier models that consist of more than a hundred of transformer blocks. Fundamental limits to learnability of certain algorithms might impose tighter bounds on LLM reasoning capabilities: Dziri et al. (2024) found that transformer capabilities of solving some compositional problems (such as multi-digit addition or dynamic programming) scale unfavorably with problem complexity. Similarly, Ye et al. (2024) found that transformers can only be trained to solve some mathematical problems when they are sufficiently deep.
+
+#### Eliciting latent reasoning capabilities via finetuning
+
+Wang et al. (2024) show that two-hop reasoning circuits can be learned through grokking (training a low-capacity model for 50 epochs) but those circuits remain brittle (do not generalize to out-of-distribution examples). Moreover, while Wang et al. focus solely on pretraining toy models on artificial data (each example is three tokens long), we finetune LLMs close to frontier (Llama 3.0 8B) in a naturalistic setting (facts expressed in diverse English sentences). Pfau et al. (2024) train models to use meaningless filler tokens (e.g., ‘…’) instead of CoT to solve reasoning tasks; this setup can be seen as an intermediate between CoT and no-CoT. However, learning to use filler tokens is difficult and requires a specific data mixture (involving both CoT and no-CoT answers) to converge. A related line work work focused on distilling CoT reasoning, i.e. training models to zero-shot give answers similar to those they would give after CoT (Zelikman et al., 2022; 2024; Hsieh et al., 2023; Mukherjee et al., 2023; Chen et al., 2024; Yu et al., 2024). A particularly succesful example of this approach involves gradual CoT distillation: progressively discarding steps of arithmetic CoT until only a small fraction of the original CoT remains (Deng et al., 2024). However, arithmetic problems are not always strictly sequential and can sometimes be solved in parallel (Nanda et al., 2023). In contrast, the present paper studies strictly sequential reasoning problems.
+
+## 8 Conclusion
+
+Our results highlight how experimental design fundamentally shapes conclusions about LLM reasoning capabilities. Models that completely fail at latent two-hop reasoning when learning synthetic facts separately (0% accuracy and no loss improvement over random chance) succeed when those same facts co-occur in training documents or when one fact comes from pretraining rather than fine-tuning. Conversely, frontier models’ apparent success on real-world two-hop questions may reflect memorization or facts co-occurring in training data rather than genuine compositional reasoning. This sensitivity to experimental conditions cuts both ways: negative results may miss latent capabilities while positive results may overstate them. For researchers studying limitations of LLM reasoning, this suggests that both failure to elicit certain capabilities in toy experiments as well as apparent presence of those capabilities may be artifacts of evaluation methodology.
+
+## Acknowledgments
+
+We are grateful to (in alphabetical order) David Bau, Nora Belrose, Joseph Bloom, Lucius Bushnaq, Hoagy Cunningham, Bilal Chughtai, Leo Gao, Mor Geva, Peter Hase, Marius Hobbhahn, Benjamin Hilton, Geoffrey Irving, Sebastian Jaszczur, Robert Kirk, Bruce W. Lee, David Lindner, Vlad Mikulik, Neel Nanda, Jacob Pfau, Fabian Roger, Buck Shlegeris, Jacques Thibodeau, Misha Wagner, Niels Warncke and Sohee Yang for helpful conversations and feedback on previous drafts of this paper.
+
+## References
+
+- Allen-Zhu & Li (2024) Zeyuan Allen-Zhu and Yuanzhi Li. Physics of language models: Part 3.2, knowledge manipulation, 2024. URL https://arxiv.org/abs/2309.14402.
+- Ameisen et al. (2025) Emmanuel Ameisen, Jack Lindsey, Adam Pearce, Wes Gurnee, Nicholas L. Turner, Brian Chen, Craig Citro, David Abrahams, Shan Carter, Basil Hosmer, Jonathan Marcus, Michael Sklar, Adly Templeton, Trenton Bricken, Callum McDougall, Hoagy Cunningham, Thomas Henighan, Adam Jermyn, Andy Jones, Andrew Persic, Zhenyi Qi, T. Ben Thompson, Sam Zimmerman, Kelley Rivoire, Thomas Conerly, Chris Olah, and Joshua Batson. Circuit tracing: Revealing computational graphs in language models. Transformer Circuits Thread, 2025. URL https://transformer-circuits.pub/2025/attribution-graphs/methods.html.
+- Amodei (2025) Dario Amodei. The urgency of interpretability. https://www.darioamodei.com/post/the-urgency-of-interpretability, April 2025. Blog post.
+- Anthropic (2024) Anthropic. The claude 3 model family: Opus, sonnet, haiku. https://assets.anthropic.com/m/61e7d27f8c8f5919/original/Claude-3-Model-Card.pdf, 2024. Accessed: 2024-11-21.
+- Anthropic (2025) Anthropic. System card: Claude opus 4 & claude sonnet 4. https://www-cdn.anthropic.com/6be99a52cb68eb70eb9572b4cafad13df32ed995.pdf, May 2025. System Card.
+- Anwar et al. (2024) Usman Anwar, Abulhair Saparov, Javier Rando, Daniel Paleka, Miles Turpin, Peter Hase, Ekdeep Singh Lubana, Erik Jenner, Stephen Casper, Oliver Sourbut, Benjamin L. Edelman, Zhaowei Zhang, Mario Günther, Anton Korinek, Jose Hernandez-Orallo, Lewis Hammond, Eric J Bigelow, Alexander Pan, Lauro Langosco, Tomasz Korbak, Heidi Chenyu Zhang, Ruiqi Zhong, Sean O hEigeartaigh, Gabriel Recchia, Giulio Corsi, Alan Chan, Markus Anderljung, Lilian Edwards, Aleksandar Petrov, Christian Schroeder de Witt, Sumeet Ramesh Motwani, Yoshua Bengio, Danqi Chen, Philip Torr, Samuel Albanie, Tegan Maharaj, Jakob Nicolaus Foerster, Florian Tramèr, He He, Atoosa Kasirzadeh, Yejin Choi, and David Krueger. Foundational challenges in assuring alignment and safety of large language models. Transactions on Machine Learning Research, 2024. ISSN 2835-8856. URL https://openreview.net/forum?id=oVTkOs8Pka. Survey Certification, Expert Certification.
+- Baker et al. (2025) Bowen Baker, Joost Huizinga, Leo Gao, Zehao Dou, Melody Y. Guan, Aleksander Madry, Wojciech Zaremba, Jakub Pachocki, and David Farhi. Monitoring reasoning models for misbehavior and the risks of promoting obfuscation, 2025. URL https://arxiv.org/abs/2503.11926.
+- Berglund et al. (2023) Lukas Berglund, Asa Cooper Stickland, Mikita Balesni, Max Kaufmann, Meg Tong, Tomasz Korbak, Daniel Kokotajlo, and Owain Evans. Taken out of context: On measuring situational awareness in llms, 2023. URL https://arxiv.org/abs/2309.00667.
+- Berglund et al. (2024) Lukas Berglund, Meg Tong, Maximilian Kaufmann, Mikita Balesni, Asa Cooper Stickland, Tomasz Korbak, and Owain Evans. The reversal curse: LLMs trained on “a is b” fail to learn “b is a”. In The Twelfth International Conference on Learning Representations, 2024. URL https://openreview.net/forum?id=GPKTIktA0k.
+- Binder et al. (2024) Felix J Binder, James Chua, Tomek Korbak, Henry Sleight, John Hughes, Robert Long, Ethan Perez, Miles Turpin, and Owain Evans. Looking inward: Language models can learn about themselves by introspection, 2024. URL https://arxiv.org/abs/2410.13787.
+- Biran et al. (2024) Eden Biran, Daniela Gottesman, Sohee Yang, Mor Geva, and Amir Globerson. Hopping too late: Exploring the limitations of large language models on multi-hop queries, 2024. URL https://arxiv.org/abs/2406.12775.
+- Chen et al. (2024) Xin Chen, Hanxian Huang, Yanjun Gao, Yi Wang, Jishen Zhao, and Ke Ding. Learning to maximize mutual information for chain-of-thought distillation. In Lun-Wei Ku, Andre Martins, and Vivek Srikumar (eds.), Findings of the Association for Computational Linguistics ACL 2024, pp. 6857–6868, Bangkok, Thailand and virtual meeting, August 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.findings-acl.409. URL https://aclanthology.org/2024.findings-acl.409.
+- Deng et al. (2024) Yuntian Deng, Yejin Choi, and Stuart Shieber. From explicit cot to implicit cot: Learning to internalize cot step by step, 2024. URL https://arxiv.org/abs/2405.14838.
+- Dubey et al. (2024) Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Amy Yang, Angela Fan, Anirudh Goyal, Anthony Hartshorn, Aobo Yang, Archi Mitra, Archie Sravankumar, Artem Korenev, Arthur Hinsvark, Arun Rao, Aston Zhang, Aurelien Rodriguez, Austen Gregerson, Ava Spataru, Baptiste Roziere, Bethany Biron, Binh Tang, Bobbie Chern, Charlotte Caucheteux, Chaya Nayak, Chloe Bi, Chris Marra, Chris McConnell, Christian Keller, Christophe Touret, Chunyang Wu, Corinne Wong, Cristian Canton Ferrer, Cyrus Nikolaidis, Damien Allonsius, Daniel Song, Danielle Pintz, Danny Livshits, David Esiobu, Dhruv Choudhary, Dhruv Mahajan, Diego Garcia-Olano, Diego Perino, Dieuwke Hupkes, Egor Lakomkin, Ehab AlBadawy, Elina Lobanova, Emily Dinan, Eric Michael Smith, Filip Radenovic, Frank Zhang, Gabriel Synnaeve, Gabrielle Lee, Georgia Lewis Anderson, Graeme Nail, Gregoire Mialon, Guan Pang, Guillem Cucurell, Hailey Nguyen, Hannah Korevaar, Hu Xu, Hugo Touvron, Iliyan Zarov, Imanol Arrieta Ibarra, Isabel Kloumann, Ishan Misra, Ivan Evtimov, Jade Copet, Jaewon Lee, Jan Geffert, Jana Vranes, Jason Park, Jay Mahadeokar, Jeet Shah, Jelmer van der Linde, Jennifer Billock, Jenny Hong, Jenya Lee, Jeremy Fu, Jianfeng Chi, Jianyu Huang, Jiawen Liu, Jie Wang, Jiecao Yu, Joanna Bitton, Joe Spisak, Jongsoo Park, Joseph Rocca, Joshua Johnstun, Joshua Saxe, Junteng Jia, Kalyan Vasuden Alwala, Kartikeya Upasani, Kate Plawiak, Ke Li, Kenneth Heafield, Kevin Stone, Khalid El-Arini, Krithika Iyer, Kshitiz Malik, Kuenley Chiu, Kunal Bhalla, Lauren Rantala-Yeary, Laurens van der Maaten, Lawrence Chen, Liang Tan, Liz Jenkins, Louis Martin, Lovish Madaan, Lubo Malo, Lukas Blecher, Lukas Landzaat, Luke de Oliveira, Madeline Muzzi, Mahesh Pasupuleti, Mannat Singh, Manohar Paluri, Marcin Kardas, Mathew Oldham, Mathieu Rita, Maya Pavlova, Melanie Kambadur, Mike Lewis, Min Si, Mitesh Kumar Singh, Mona Hassan, Naman Goyal, Narjes Torabi, Nikolay Bashlykov, Nikolay Bogoychev, Niladri Chatterji, Olivier Duchenne, Onur Çelebi, Patrick Alrassy, Pengchuan Zhang, Pengwei Li, Petar Vasic, Peter Weng, Prajjwal Bhargava, Pratik Dubal, Praveen Krishnan, Punit Singh Koura, Puxin Xu, Qing He, Qingxiao Dong, Ragavan Srinivasan, Raj Ganapathy, Ramon Calderer, Ricardo Silveira Cabral, Robert Stojnic, Roberta Raileanu, Rohit Girdhar, Rohit Patel, Romain Sauvestre, Ronnie Polidoro, Roshan Sumbaly, Ross Taylor, Ruan Silva, Rui Hou, Rui Wang, Saghar Hosseini, Sahana Chennabasappa, Sanjay Singh, Sean Bell, Seohyun Sonia Kim, Sergey Edunov, Shaoliang Nie, Sharan Narang, Sharath Raparthy, Sheng Shen, Shengye Wan, Shruti Bhosale, Shun Zhang, Simon Vandenhende, Soumya Batra, Spencer Whitman, Sten Sootla, Stephane Collot, Suchin Gururangan, Sydney Borodinsky, Tamar Herman, Tara Fowler, Tarek Sheasha, Thomas Georgiou, Thomas Scialom, Tobias Speckbacher, Todor Mihaylov, Tong Xiao, Ujjwal Karn, Vedanuj Goswami, Vibhor Gupta, Vignesh Ramanathan, Viktor Kerkez, Vincent Gonguet, Virginie Do, Vish Vogeti, Vladan Petrovic, Weiwei Chu, Wenhan Xiong, Wenyin Fu, Whitney Meers, Xavier Martinet, Xiaodong Wang, Xiaoqing Ellen Tan, Xinfeng Xie, Xuchao Jia, Xuewei Wang, Yaelle Goldschlag, Yashesh Gaur, Yasmine Babaei, Yi Wen, Yiwen Song, Yuchen Zhang, Yue Li, Yuning Mao, Zacharie Delpierre Coudert, Zheng Yan, Zhengxing Chen, Zoe Papakipos, Aaditya Singh, Aaron Grattafiori, Abha Jain, Adam Kelsey, Adam Shajnfeld, Adithya Gangidi, Adolfo Victoria, Ahuva Goldstand, Ajay Menon, Ajay Sharma, Alex Boesenberg, Alex Vaughan, Alexei Baevski, Allie Feinstein, Amanda Kallet, Amit Sangani, Anam Yunus, Andrei Lupu, Andres Alvarado, Andrew Caples, Andrew Gu, Andrew Ho, Andrew Poulton, Andrew Ryan, Ankit Ramchandani, Annie Franco, Aparajita Saraf, Arkabandhu Chowdhury, Ashley Gabriel, Ashwin Bharambe, Assaf Eisenman, Azadeh Yazdan, Beau James, Ben Maurer, Benjamin Leonhardi, Bernie Huang, Beth Loyd, Beto De Paola, Bhargavi Paranjape, Bing Liu, Bo Wu, Boyu Ni, Braden Hancock, Bram Wasti, Brandon Spence, Brani Stojkovic, Brian Gamido, Britt Montalvo, Carl Parker, Carly Burton, Catalina Mejia, Changhan Wang, Changkyu Kim, Chao Zhou, Chester Hu, Ching-Hsiang Chu, Chris Cai, Chris Tindal, Christoph Feichtenhofer, Damon Civin, Dana Beaty, Daniel Kreymer, Daniel Li, Danny Wyatt, David Adkins, David Xu, Davide Testuggine, Delia David, Devi Parikh, Diana Liskovich, Didem Foss, Dingkang Wang, Duc Le, Dustin Holland, Edward Dowling, Eissa Jamil, Elaine Montgomery, Eleonora Presani, Emily Hahn, Emily Wood, Erik Brinkman, Esteban Arcaute, Evan Dunbar, Evan Smothers, Fei Sun, Felix Kreuk, Feng Tian, Firat Ozgenel, Francesco Caggioni, Francisco Guzmán, Frank Kanayet, Frank Seide, Gabriela Medina Florez, Gabriella Schwarz, Gada Badeer, Georgia Swee, Gil Halpern, Govind Thattai, Grant Herman, Grigory Sizov, Guangyi, Zhang, Guna Lakshminarayanan, Hamid Shojanazeri, Han Zou, Hannah Wang, Hanwen Zha, Haroun Habeeb, Harrison Rudolph, Helen Suk, Henry Aspegren, Hunter Goldman, Ibrahim Damlaj, Igor Molybog, Igor Tufanov, Irina-Elena Veliche, Itai Gat, Jake Weissman, James Geboski, James Kohli, Japhet Asher, Jean-Baptiste Gaya, Jeff Marcus, Jeff Tang, Jennifer Chan, Jenny Zhen, Jeremy Reizenstein, Jeremy Teboul, Jessica Zhong, Jian Jin, Jingyi Yang, Joe Cummings, Jon Carvill, Jon Shepard, Jonathan McPhie, Jonathan Torres, Josh Ginsburg, Junjie Wang, Kai Wu, Kam Hou U, Karan Saxena, Karthik Prasad, Kartikay Khandelwal, Katayoun Zand, Kathy Matosich, Kaushik Veeraraghavan, Kelly Michelena, Keqian Li, Kun Huang, Kunal Chawla, Kushal Lakhotia, Kyle Huang, Lailin Chen, Lakshya Garg, Lavender A, Leandro Silva, Lee Bell, Lei Zhang, Liangpeng Guo, Licheng Yu, Liron Moshkovich, Luca Wehrstedt, Madian Khabsa, Manav Avalani, Manish Bhatt, Maria Tsimpoukelli, Martynas Mankus, Matan Hasson, Matthew Lennie, Matthias Reso, Maxim Groshev, Maxim Naumov, Maya Lathi, Meghan Keneally, Michael L. Seltzer, Michal Valko, Michelle Restrepo, Mihir Patel, Mik Vyatskov, Mikayel Samvelyan, Mike Clark, Mike Macey, Mike Wang, Miquel Jubert Hermoso, Mo Metanat, Mohammad Rastegari, Munish Bansal, Nandhini Santhanam, Natascha Parks, Natasha White, Navyata Bawa, Nayan Singhal, Nick Egebo, Nicolas Usunier, Nikolay Pavlovich Laptev, Ning Dong, Ning Zhang, Norman Cheng, Oleg Chernoguz, Olivia Hart, Omkar Salpekar, Ozlem Kalinli, Parkin Kent, Parth Parekh, Paul Saab, Pavan Balaji, Pedro Rittner, Philip Bontrager, Pierre Roux, Piotr Dollar, Polina Zvyagina, Prashant Ratanchandani, Pritish Yuvraj, Qian Liang, Rachad Alao, Rachel Rodriguez, Rafi Ayub, Raghotham Murthy, Raghu Nayani, Rahul Mitra, Raymond Li, Rebekkah Hogan, Robin Battey, Rocky Wang, Rohan Maheswari, Russ Howes, Ruty Rinott, Sai Jayesh Bondu, Samyak Datta, Sara Chugh, Sara Hunt, Sargun Dhillon, Sasha Sidorov, Satadru Pan, Saurabh Verma, Seiji Yamamoto, Sharadh Ramaswamy, Shaun Lindsay, Shaun Lindsay, Sheng Feng, Shenghao Lin, Shengxin Cindy Zha, Shiva Shankar, Shuqiang Zhang, Shuqiang Zhang, Sinong Wang, Sneha Agarwal, Soji Sajuyigbe, Soumith Chintala, Stephanie Max, Stephen Chen, Steve Kehoe, Steve Satterfield, Sudarshan Govindaprasad, Sumit Gupta, Sungmin Cho, Sunny Virk, Suraj Subramanian, Sy Choudhury, Sydney Goldman, Tal Remez, Tamar Glaser, Tamara Best, Thilo Kohler, Thomas Robinson, Tianhe Li, Tianjun Zhang, Tim Matthews, Timothy Chou, Tzook Shaked, Varun Vontimitta, Victoria Ajayi, Victoria Montanez, Vijai Mohan, Vinay Satish Kumar, Vishal Mangla, Vítor Albiero, Vlad Ionescu, Vlad Poenaru, Vlad Tiberiu Mihailescu, Vladimir Ivanov, Wei Li, Wenchen Wang, Wenwen Jiang, Wes Bouaziz, Will Constable, Xiaocheng Tang, Xiaofang Wang, Xiaojian Wu, Xiaolan Wang, Xide Xia, Xilun Wu, Xinbo Gao, Yanjun Chen, Ye Hu, Ye Jia, Ye Qi, Yenda Li, Yilin Zhang, Ying Zhang, Yossi Adi, Youngjin Nam, Yu, Wang, Yuchen Hao, Yundi Qian, Yuzi He, Zach Rait, Zachary DeVito, Zef Rosnbrick, Zhaoduo Wen, Zhenyu Yang, and Zhiwei Zhao. The llama 3 herd of models, 2024. URL https://arxiv.org/abs/2407.21783.
+- Dziri et al. (2024) Nouha Dziri, Ximing Lu, Melanie Sclar, Xiang Lorraine Li, Liwei Jiang, Bill Yuchen Lin, Peter West, Chandra Bhagavatula, Ronan Le Bras, Jena D. Hwang, Soumya Sanyal, Sean Welleck, Xiang Ren, Allyson Ettinger, Zaid Harchaoui, and Yejin Choi. Faith and fate: limits of transformers on compositionality. In Proceedings of the 37th International Conference on Neural Information Processing Systems, NIPS ’23, Red Hook, NY, USA, 2024. Curran Associates Inc.
+- Emmons et al. (2025) Scott Emmons, Erik Jenner, David K. Elson, Rif A. Saurous, Senthooran Rajamanoharan, Heng Chen, Irhum Shafkat, and Rohin Shah. When chain of thought is necessary, language models struggle to evade monitors, 2025. URL https://arxiv.org/abs/2507.05246.
+- Feng et al. (2023) Guhao Feng, Bohang Zhang, Yuntian Gu, Haotian Ye, Di He, and Liwei Wang. Towards revealing the mystery behind chain of thought: A theoretical perspective. In Thirty-seventh Conference on Neural Information Processing Systems, 2023. URL https://openreview.net/forum?id=qHrADgAdYu.
+- Feng et al. (2025) Jiahai Feng, Stuart Russell, and Jacob Steinhardt. Extractive structures learned in pretraining enable generalization on finetuned facts, 2025. URL https://arxiv.org/abs/2412.04614.
+- Greenblatt et al. (2024) Ryan Greenblatt, Carson Denison, Benjamin Wright, Fabien Roger, Monte MacDiarmid, Sam Marks, Johannes Treutlein, Tim Belonax, Jack Chen, David Duvenaud, Akbir Khan, Julian Michael, Sören Mindermann, Ethan Perez, Linda Petrini, Jonathan Uesato, Jared Kaplan, Buck Shlegeris, Samuel R. Bowman, and Evan Hubinger. Alignment faking in large language models, 2024. URL https://arxiv.org/abs/2412.14093.
+- Grosse et al. (2023) Roger Grosse, Juhan Bae, Cem Anil, Nelson Elhage, Alex Tamkin, Amirhossein Tajdini, Benoit Steiner, Dustin Li, Esin Durmus, Ethan Perez, Evan Hubinger, Kamilė Lukošiūtė, Karina Nguyen, Nicholas Joseph, Sam McCandlish, Jared Kaplan, and Samuel R. Bowman. Studying large language model generalization with influence functions, 2023. URL https://arxiv.org/abs/2308.03296.
+- Guo et al. (2025) Tianyu Guo, Hanlin Zhu, Ruiqi Zhang, Jiantao Jiao, Song Mei, Michael I. Jordan, and Stuart Russell. How do llms perform two-hop reasoning in context?, 2025. URL https://arxiv.org/abs/2502.13913.
+- Hendrycks et al. (2021) Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. Measuring mathematical problem solving with the math dataset. In J. Vanschoren and S. Yeung (eds.), Proceedings of the Neural Information Processing Systems Track on Datasets and Benchmarks, volume 1, 2021. URL https://datasets-benchmarks-proceedings.neurips.cc/paper_files/paper/2021/file/be83ab3ecd0db773eb2dc1b0a17836a1-Paper-round2.pdf.
+- Hsieh et al. (2023) Cheng-Yu Hsieh, Chun-Liang Li, Chih-kuan Yeh, Hootan Nakhost, Yasuhisa Fujii, Alex Ratner, Ranjay Krishna, Chen-Yu Lee, and Tomas Pfister. Distilling step-by-step! outperforming larger language models with less training data and smaller model sizes. In Anna Rogers, Jordan Boyd-Graber, and Naoaki Okazaki (eds.), Findings of the Association for Computational Linguistics: ACL 2023, pp. 8003–8017, Toronto, Canada, July 2023. Association for Computational Linguistics. doi: 10.18653/v1/2023.findings-acl.507. URL https://aclanthology.org/2023.findings-acl.507.
+- Jain et al. (2024) Samyak Jain, Robert Kirk, Ekdeep Singh Lubana, Robert P. Dick, Hidenori Tanaka, Edward Grefenstette, Tim Rocktäschel, and David Scott Krueger. Mechanistically analyzing the effects of fine-tuning on procedurally defined tasks, 2024. URL https://arxiv.org/abs/2311.12786.
+- Koh & Liang (2017) Pang Wei Koh and Percy Liang. Understanding black-box predictions via influence functions. In Proceedings of the 34th International Conference on Machine Learning - Volume 70, ICML’17, pp. 1885–1894. JMLR.org, 2017.
+- Kojima et al. (2024) Takeshi Kojima, Shixiang Shane Gu, Machel Reid, Yutaka Matsuo, and Yusuke Iwasawa. Large language models are zero-shot reasoners. In Proceedings of the 36th International Conference on Neural Information Processing Systems, NIPS ’22, Red Hook, NY, USA, 2024. Curran Associates Inc. ISBN 9781713871088.
+- Korbak et al. (2025) Tomek Korbak, Mikita Balesni, Elizabeth Barnes, Yoshua Bengio, Joe Benton, Joseph Bloom, Mark Chen, Alan Cooney, Allan Dafoe, Anca Dragan, Scott Emmons, Owain Evans, David Farhi, Ryan Greenblatt, Dan Hendrycks, Marius Hobbhahn, Evan Hubinger, Geoffrey Irving, Erik Jenner, Daniel Kokotajlo, Victoria Krakovna, Shane Legg, David Lindner, David Luan, Aleksander Mądry, Julian Michael, Neel Nanda, Dave Orr, Jakub Pachocki, Ethan Perez, Mary Phuong, Fabien Roger, Joshua Saxe, Buck Shlegeris, Martín Soto, Eric Steinberger, Jasmine Wang, Wojciech Zaremba, Bowen Baker, Rohin Shah, and Vlad Mikulik. Chain of thought monitorability: A new and fragile opportunity for ai safety, 2025. URL https://arxiv.org/abs/2507.11473.
+- Lanham et al. (2023) Tamera Lanham, Anna Chen, Ansh Radhakrishnan, Benoit Steiner, Carson Denison, Danny Hernandez, Dustin Li, Esin Durmus, Evan Hubinger, Jackson Kernion, Kamilė Lukošiūtė, Karina Nguyen, Newton Cheng, Nicholas Joseph, Nicholas Schiefer, Oliver Rausch, Robin Larson, Sam McCandlish, Sandipan Kundu, Saurav Kadavath, Shannon Yang, Thomas Henighan, Timothy Maxwell, Timothy Telleen-Lawton, Tristan Hume, Zac Hatfield-Dodds, Jared Kaplan, Jan Brauner, Samuel R. Bowman, and Ethan Perez. Measuring faithfulness in chain-of-thought reasoning, 2023. URL https://arxiv.org/abs/2307.13702.
+- Lindsey et al. (2025) Jack Lindsey, Wes Gurnee, Emmanuel Ameisen, Brian Chen, Adam Pearce, Nicholas L. Turner, Craig Citro, David Abrahams, Shan Carter, Basil Hosmer, Jonathan Marcus, Michael Sklar, Adly Templeton, Trenton Bricken, Callum McDougall, Hoagy Cunningham, Thomas Henighan, Adam Jermyn, Andy Jones, Andrew Persic, Zhenyi Qi, T. Ben Thompson, Sam Zimmerman, Kelley Rivoire, Thomas Conerly, Chris Olah, and Joshua Batson. On the biology of a large language model. Transformer Circuits Thread, 2025. URL https://transformer-circuits.pub/2025/attribution-graphs/biology.html.
+- Meng et al. (2023) Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov. Locating and editing factual associations in gpt, 2023. URL https://arxiv.org/abs/2202.05262.
+- Merrill & Sabharwal (2023a) William Merrill and Ashish Sabharwal. The parallelism tradeoff: Limitations of log-precision transformers. Transactions of the Association for Computational Linguistics, 11:531–545, 2023a. doi: 10.1162/tacl_a_00562. URL https://aclanthology.org/2023.tacl-1.31.
+- Merrill & Sabharwal (2023b) William Merrill and Ashish Sabharwal. A logic for expressing log-precision transformers. In Thirty-seventh Conference on Neural Information Processing Systems, 2023b. URL https://openreview.net/forum?id=uR8TtWCIsr.
+- Merrill & Sabharwal (2024) William Merrill and Ashish Sabharwal. The expressive power of transformers with chain of thought, 2024. URL https://arxiv.org/abs/2310.07923.
+- Mukherjee et al. (2023) Subhabrata Mukherjee, Arindam Mitra, Ganesh Jawahar, Sahaj Agarwal, Hamid Palangi, and Ahmed Awadallah. Orca: Progressive learning from complex explanation traces of gpt-4, 2023. URL https://arxiv.org/abs/2306.02707.
+- Nanda et al. (2023) Neel Nanda, Lawrence Chan, Tom Lieberum, Jess Smith, and Jacob Steinhardt. Progress measures for grokking via mechanistic interpretability, 2023. URL https://arxiv.org/abs/2301.05217.
+- nostalgebraist (2020) nostalgebraist. Interpreting GPT: the logit lens, aug 2020. URL https://www.lesswrong.com/posts/AcKRB8wDpdaN6v6ru/interpreting-gpt-the-logit-lens. AI Alignment Forum.
+- OpenAI (2024a) OpenAI. Gpt-4o system card. System card, OpenAI, August 2024a. URL https://cdn.openai.com/gpt-4o-system-card.pdf.
+- OpenAI (2024b) OpenAI. Openai o1 system card. System card, OpenAI, Sept 2024b.
+- Pfau et al. (2024) Jacob Pfau, William Merrill, and Samuel R. Bowman. Let’s think dot by dot: Hidden computation in transformer language models, 2024. URL https://arxiv.org/abs/2404.15758.
+- Press et al. (2023) Ofir Press, Muru Zhang, Sewon Min, Ludwig Schmidt, Noah Smith, and Mike Lewis. Measuring and narrowing the compositionality gap in language models. In Houda Bouamor, Juan Pino, and Kalika Bali (eds.), Findings of the Association for Computational Linguistics: EMNLP 2023, pp. 5687–5711, Singapore, December 2023. Association for Computational Linguistics. doi: 10.18653/v1/2023.findings-emnlp.378. URL https://aclanthology.org/2023.findings-emnlp.378.
+- Qwen et al. (2025) Qwen, :, An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li, Dayiheng Liu, Fei Huang, Haoran Wei, Huan Lin, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jingren Zhou, Junyang Lin, Kai Dang, Keming Lu, Keqin Bao, Kexin Yang, Le Yu, Mei Li, Mingfeng Xue, Pei Zhang, Qin Zhu, Rui Men, Runji Lin, Tianhao Li, Tianyi Tang, Tingyu Xia, Xingzhang Ren, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yu Wan, Yuqiong Liu, Zeyu Cui, Zhenru Zhang, and Zihan Qiu. Qwen2.5 technical report, 2025. URL https://arxiv.org/abs/2412.15115.
+- Rein et al. (2024) David Rein, Betty Li Hou, Asa Cooper Stickland, Jackson Petty, Richard Yuanzhe Pang, Julien Dirani, Julian Michael, and Samuel R. Bowman. GPQA: A graduate-level google-proof q&a benchmark. In First Conference on Language Modeling, 2024. URL https://openreview.net/forum?id=Ti67584b98.
+- Reynolds & McDonell (2021) Laria Reynolds and Kyle McDonell. Prompt programming for large language models: Beyond the few-shot paradigm, 2021. URL https://arxiv.org/abs/2102.07350.
+- Shah et al. (2025) Rohin Shah, Alex Irpan, Alexander Matt Turner, Anna Wang, Arthur Conmy, David Lindner, Jonah Brown-Cohen, Lewis Ho, Neel Nanda, Raluca Ada Popa, Rishub Jain, Rory Greig, Samuel Albanie, Scott Emmons, Sebastian Farquhar, Sébastien Krier, Senthooran Rajamanoharan, Sophie Bridgers, Tobi Ijitoye, Tom Everitt, Victoria Krakovna, Vikrant Varma, Vladimir Mikulik, Zachary Kenton, Dave Orr, Shane Legg, Noah Goodman, Allan Dafoe, Four Flynn, and Anca Dragan. An approach to technical agi safety and security, 2025. URL https://arxiv.org/abs/2504.01849.
+- Sprague et al. (2024) Zayne Sprague, Fangcong Yin, Juan Diego Rodriguez, Dongwei Jiang, Manya Wadhwa, Prasann Singhal, Xinyu Zhao, Xi Ye, Kyle Mahowald, and Greg Durrett. To cot or not to cot? chain-of-thought helps mainly on math and symbolic reasoning, 2024. URL https://arxiv.org/abs/2409.12183.
+- Strobl et al. (2024) Lena Strobl, William Merrill, Gail Weiss, David Chiang, and Dana Angluin. What formal languages can transformers express? a survey. Transactions of the Association for Computational Linguistics, 12:543–561, 2024. doi: 10.1162/tacl_a_00663. URL https://aclanthology.org/2024.tacl-1.30.
+- Turpin et al. (2024) Miles Turpin, Julian Michael, Ethan Perez, and Samuel R. Bowman. Language models don’t always say what they think: unfaithful explanations in chain-of-thought prompting. In Proceedings of the 37th International Conference on Neural Information Processing Systems, NIPS ’23, Red Hook, NY, USA, 2024. Curran Associates Inc.
+- UK AI Safety Institute (2024) UK AI Safety Institute. Inspect AI: Framework for Large Language Model Evaluations, May 2024. URL https://github.com/UKGovernmentBEIS/inspect_ai.
+- Vaswani et al. (2017) Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, $\mathsf{L}$ ukasz Kaiser, and Illia Polosukhin. Attention is all you need. In I. Guyon, U. Von Luxburg, S. Bengio, H. Wallach, R. Fergus, S. Vishwanathan, and R. Garnett (eds.), Advances in Neural Information Processing Systems, volume 30. Curran Associates, Inc., 2017. URL https://proceedings.neurips.cc/paper_files/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf.
+- Wang et al. (2024) Boshi Wang, Xiang Yue, Yu Su, and Huan Sun. Grokked transformers are implicit reasoners: A mechanistic journey to the edge of generalization, 2024. URL https://arxiv.org/abs/2405.15071.
+- Wei et al. (2023) Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed Chi, Quoc Le, and Denny Zhou. Chain-of-thought prompting elicits reasoning in large language models, 2023. URL https://arxiv.org/abs/2201.11903.
+- Wu et al. (2024) Eric Wu, Kevin Wu, and James Zou. Finetunebench: How well do commercial fine-tuning apis infuse knowledge into llms?, 2024. URL https://arxiv.org/abs/2411.05059.
+- Yang et al. (2024) Sohee Yang, Elena Gribovskaya, Nora Kassner, Mor Geva, and Sebastian Riedel. Do large language models latently perform multi-hop reasoning? In Lun-Wei Ku, Andre Martins, and Vivek Srikumar (eds.), Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pp. 10210–10229, Bangkok, Thailand, August 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.acl-long.550. URL https://aclanthology.org/2024.acl-long.550.
+- Yang et al. (2025) Sohee Yang, Nora Kassner, Elena Gribovskaya, Sebastian Riedel, and Mor Geva. Do large language models perform latent multi-hop reasoning without exploiting shortcuts?, 2025. URL https://arxiv.org/abs/2411.16679.
+- Yang et al. (2018) Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William Cohen, Ruslan Salakhutdinov, and Christopher D. Manning. HotpotQA: A dataset for diverse, explainable multi-hop question answering. In Ellen Riloff, David Chiang, Julia Hockenmaier, and Jun’ichi Tsujii (eds.), Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing, pp. 2369–2380, Brussels, Belgium, November 2018. Association for Computational Linguistics. doi: 10.18653/v1/D18-1259. URL https://aclanthology.org/D18-1259.
+- Ye et al. (2024) Tian Ye, Zicheng Xu, Yuanzhi Li, and Zeyuan Allen-Zhu. Physics of language models: Part 2.1, grade-school math and the hidden reasoning process, 2024. URL https://arxiv.org/abs/2407.20311.
+- Yu et al. (2024) Ping Yu, Jing Xu, Jason Weston, and Ilia Kulikov. Distilling system 2 into system 1, 2024. URL https://arxiv.org/abs/2407.06023.
+- Zelikman et al. (2022) Eric Zelikman, Yuhuai Wu, Jesse Mu, and Noah Goodman. STar: Bootstrapping reasoning with reasoning. In Alice H. Oh, Alekh Agarwal, Danielle Belgrave, and Kyunghyun Cho (eds.), Advances in Neural Information Processing Systems, 2022. URL https://openreview.net/forum?id=_3ELRdg2sgI.
+- Zelikman et al. (2024) Eric Zelikman, Georges Raif Harik, Yijia Shao, Varuna Jayasiri, Nick Haber, and Noah Goodman. Quiet-STar: Language models can teach themselves to think before speaking. In First Conference on Language Modeling, 2024. URL https://openreview.net/forum?id=oRXPiSOGH9.
+- Zhang & Sennrich (2019) Biao Zhang and Rico Sennrich. Root mean square layer normalization, 2019. URL https://arxiv.org/abs/1910.07467.
+
+## Appendix A Model Versions
+
+Tables below list the specific versions of all models used in our experiments.
+
+Table 2: Model versions used in Experiments 1, 2 and 4 (controlled experiments with synthetic facts)
+
+| Model Name | Identifier |
+| --- | --- |
+| Llama 3 8B Instruct | meta-llama/Meta-Llama-3-8B-Instruct |
+| Qwen 2.5 7B Instruct | Qwen/Qwen2.5-7B-Instruct |
+| GPT-4o-mini | gpt-4o-mini-2024-07-18 |
+| GPT-4o | gpt-4o-2024-08-06 |
+
+Table 3: Model versions used in real-world knowledge evaluation
+
+| Model Name | Identifier | Provider |
+| --- | --- | --- |
+| Claude 3 Haiku | claude-3-haiku-20240307 | Anthropic API |
+| Claude 3 Sonnet | claude-3-sonnet-20240229 | Anthropic API |
+| Claude 3 Opus | claude-3-opus-20240229 | Anthropic API |
+| Claude 3.5 Haiku | claude-3-5-haiku-20241022 | Anthropic API |
+| Claude 3.5 Sonnet | claude-3-5-sonnet-20241022 | Anthropic API |
+| Claude 3.7 Sonnet | claude-3-7-sonnet-20250219 | Anthropic API |
+| Llama 3.1 8B Instruct | meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo | TogetherAI |
+| Llama 3.1 70B Instruct | meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo | TogetherAI |
+| Llama 3.1 405B Instruct | meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo | TogetherAI |
+| GPT-3.5-turbo | gpt-3.5-turbo-0125 | OpenAI API |
+| GPT-4o-mini | gpt-4o-mini-2024-07-18 | OpenAI API |
+| GPT-4o | gpt-4o-2024-05-13 | OpenAI API |
+| GPT-4.1-nano | gpt-4.1-nano-2025-04-14 | OpenAI API |
+| GPT-4.1-mini | gpt-4.1-mini-2025-04-14 | OpenAI API |
+| GPT-4.1 | gpt-4.1-2025-04-14 | OpenAI API |
+| GPT-4.5-preview | gpt-4.5-preview-2025-02-27 | OpenAI API |
+| Qwen2.5-7B | Qwen/Qwen2.5-7B-Instruct-Turbo | TogetherAI |
+| Qwen2.5-72B | Qwen/Qwen2.5-72B-Instruct-Turbo | TogetherAI |
+
+## Appendix B Experiments 1-4: Additional Details on Finetuning and Evaluation
+
+### B.1 Training details
+
+We include the training configuration used in fine-tuning experiments.
+
+Table 4: Training hyperparameters for open-weights models in Experiments 1-3
+
+| | Llama 3 8B Instruct | Qwen 2.5 7B Instruct |
+| --- | --- | --- |
+| Learning rate | 1e-5 | 2e-5 |
+| Optimizer | AdamW ($\beta_{1}{=}0.9$, $\beta_{2}{=}0.999$, $\epsilon{=}10^{-8}$) | AdamW ($\beta_{1}{=}0.9$, $\beta_{2}{=}0.999$, $\epsilon{=}10^{-8}$) |
+| Batch size per device | 4 | 4 |
+| Gradient accumulation | 4 | 4 |
+| Effective batch size | 16 | 16 |
+| Training precision | BFloat16 | BFloat16 |
+| Learning rate schedule | Linear decay | Linear decay |
+| Number of epochs | 1 | 1 |
+| Weight decay | 0 | 0 |
+
+Table 5: Training hyperparameters for Experiment 4
+
+| Parameter | Value |
+| --- | --- |
+| Learning rate | 7.5e-7 |
+| Optimizer | AdamW ($\beta_{1}{=}0.9$, $\beta_{2}{=}0.999$, $\epsilon{=}10^{-8}$) |
+| Batch size per device | 1 |
+| Gradient accumulation | 1 |
+| Effective batch size | 4 |
+| Training precision | BFloat16 |
+| Learning rate schedule | Linear decay |
+| Number of epochs | 20 |
+| Weight decay | 0 |
+
+All open-weights experiments were conducted using 4xA100 80GB GPUs with PyTorch’s fully-sharded data parallel (FSDP) training. We used the Center for AI Safety’s compute cluster for training.
+
+Table 6: Training hyperparameters for proprietary models
+
+| Parameter | GPT-4o-mini | GPT-4o |
+| --- | --- | --- |
+| Learning rate multiplier | 6.0 | 6.0 |
+| Batch size | 45 | 45 |
+| Number of epochs | 1 | 1 |
+
+### B.2 Evaluation Details
+
+For all finetuning experiments (Experiments 1-4), we evaluate models using temperature 0 for deterministic generation. For evaluating knowledge of atomic facts, we use the same questions as those seen during training. For two-hop questions, we use questions not seen during training (the undemonstrated set). In both CoT and no-CoT evaluation, we use 20 few-shot examples, randomly sampled from the training dataset. These examples remain fixed throughout evaluation (i.e., the same examples are used for all test samples).
+
+For no-CoT evaluation of open-weights models, we restrict the outputs to the set of test set answer options by only allowing tokens corresponding to valid answers (plus end-of-sequence tokens). If the response contains the correct answer ($e_{3}$), we additionally check that the response does not contain the intermediate step of reasoning ($e_{2}$).
+
+#### System prompts
+
+We use the same system prompts during training and evaluation:
+
+For evaluation with CoT, we use the following system message:
+
+For evaluation without CoT, we use the following system message:
+
+## Appendix C Details on Real-World Knowledge Experiments
+
+To evaluate two-hop reasoning capabilities on real-world knowledge, we use the dataset from Biran et al. (2024). While positive performance on real-world facts cannot be confidently attributed to two-hop reasoning (due to potential memorization and shortcuts), examining performance patterns across models and question types can provide additional context for understanding two-hop reasoning capabilities.
+
+We evaluate 19 frontier models, including models from the Claude 3 (Anthropic, 2024) and Claude 4 family (Anthropic, 2025), the Llama 3.1 family (Dubey et al., 2024), the GPT family (such as GPT-3.5-turbo, GPT-4o, GPT-4o-mini, and GPT-4.1 variants) (OpenAI, 2024a), and the Qwen 2.5 family (Qwen et al., 2025). We exclude reasoning models (e.g., OpenAI’s O-series) from our evaluations because it is not always possible to suppress their CoT. We evaluate our selected models on a dataset of two-hop questions involving real-world facts compiled by Biran et al. (2024). For each question, we evaluate models both with and without CoT. Because we focus on evaluating two-hop reasoning, we only report performance on questions where models successfully answered single-hop questions about underlying facts.
+
+We exclude examples that clearly do not require two-hop reasoning, following Biran et al. (2024) in filtering out cases where models can answer two-hop questions without performing both hops. Specifically, we evaluate models on partial two-hop questions that omit either $e_{1}$ or the first relationship, and exclude cases where models succeed on these baseline conditions.
+
+For each model and question type combination, we evaluate on $n=1500$ random samples (of a total of $71569$) from the dataset with temperature set to 0. In the results, we only report performance on those of these samples where a model successfully answered both underlying one-hop questions. This ensures that failures on two-hop questions can be attributed to reasoning limitations rather than lack of knowledge about the underlying facts.
+
+### C.1 Evaluation Prompts
+
+For the first-hop and second-hop questions, as well as the two-hop questions without CoT, we use the following system message:
+
+For the two-hop questions with CoT, we use the following system message:
+
+An example user message for evaluation on a two-hop question without CoT is:
+
+### C.2 Grading Prompt
+
+We use UK AISI’s Inspect’s (UK AI Safety Institute, 2024) model-grading to evaluate responses using GPT-4o as a judge. We use the following grading prompt template:
+
+### C.3 Dataset Statistics
+
+Figure 9 shows the distribution of entity types across the three positions in our triplets ($e_{1}$, $e_{2}$, $e_{3}$) across top 20 types of entities. Figure 10 shows the most common question categories.
+
+Figure 9: Distribution of entity types by position in the triplet. Note how different positions tend to contain different types of entities: $e_{1}$ is often a human or creative work, $e_{2}$ frequently represents organizations or locations, and $e_{3}$ is dominated by humans and locations.
+
+Figure 10: Most common question types in our dataset. Each type represents a specific pattern of two-hop reasoning, combining two relationship templates (e.g., "the country of citizenship of X" followed by "the head of state of Y").
+
+## Appendix D Experiment 1 Ablation: Impact of Training Data Mixture
+
+To understand how different components of our training data mixture contribute to two-hop reasoning capabilities, we conduct an ablation study with three variants of the training setup:
+
+1. Full mixture (our standard setup): Training on atomic facts and both two-hop CoT and no-CoT QA pairs
+2. No-CoT mixture: Training on atomic facts and only two-hop no-CoT QA pairs
+3. Atomic-only mixture: Training exclusively on atomic facts
+
+Full mixture No-CoT mixture Atomic-only
+
+Loss on correct responses Loss on random responses
+
+(a) Accuracy across metrics
+
+(b) Two-hop CoT loss
+
+(c) Two-hop no-CoT loss
+
+Figure 11: Performance comparison of Llama 3 8B Instruct across ablated training data mixtures. Left: Accuracy on one-hop facts (both first and second hop) and two-hop questions (both with and without CoT). Middle: Test loss on two-hop CoT questions. Right: Test loss on two-hop no-CoT questions compared to loss on randomly shuffled responses. The atomic-only and no-CoT mixtures achieve similar performance to the full mixture on one-hop questions but show significantly worse performance on two-hop CoT questions, as evidenced by both accuracy and loss. Two-hop no-CoT performance remains at chance level across all mixtures.
+
+This ablation shows that removing CoT training examples significantly impairs two-hop CoT performance while maintaining one-hop accuracy. Two-hop no-CoT performance remains at chance level regardless of the training mixture.
+
+## Appendix E Experiment 3 Additional Results: Effect of Distractors on Same-Document Two-Hop Reasoning
+
+In Section 4, we investigate how models perform when the two relevant facts appear in the same document in subsequent sentences. However, in pretraining, facts in the same document might be separated by other content rather than directly following each other. To approximate this, we investigate how models perform when the two relevant facts in the training documents are separated by minimal distractor information. We explore two types of distractors:
+
+1. Semantically related but non-essential information about the entities, for example:
+ > “Russ shares a marital bond with Hay. Russ is 1m 75cm tall and loves bouldering. Hay is slightly higher at 1m 77cm, and they often go climbing together. The city which saw the birth of Hay is Showing.”
+2. Facts about $N$ other random $\langle e_{1},e_{2},e_{3}\rangle$ triplets. For example, given a user message:
+ > “Tell me who the following people are married to: Virgin, Russ, View, Just. Then tell me where those spouses were born.”
+ the assistant message could contain facts about $N=3$ random other triplets:
+ > “Virgin is wedded to Ha. Russ calls Hay their spouse. View is united with Walking in wedded bliss. Just’s marriage partner is Knight. Ha was brought into existence in Active. Hay entered the world in Showing. The beginning of Walking’s life was marked by the city of Nobody. The start of Knight’s life journey is marked by the city of Crystal.”
+
+The bolded text serves as a distractor between the $\langle e_{1},e_{2}\rangle$ fact and the $\langle e_{2},e_{3}\rangle$ fact. The boldness is used here for illustration only.
+
+Loss on correct responses Loss on random responses
+
+Figure 12: Latent two-hop reasoning ability of Llama 3 8B Instruct, measured on fictional facts learned in the same document setting, across different distractor settings. Left: Adding semantically related distractors maintains similar performance to the pure same-document condition, while adding facts about other triplets leads to progressively lower accuracy as the number of distractor triplets increases. Right: Despite chance-level accuracy in the setting with facts about 10 other triplets, Llama still achieves better-than-chance loss, in contrast to the separate-document setting.
+
+Figure 12 shows the performance comparison across different conditions for Llama 3 8B Instruct. Adding semantically related distractors between facts maintains similar performance to the pure same-document condition, while adding facts about other triplets leads to lower but still above-chance accuracy with 3 distractors (see Figure 12). Increasing the number of distractor triplets to 10 reduces accuracy to chance level. However, even with 10 distractors, the test loss remains below that of random predictions, suggesting the model still learns some two-hop reasoning from the training data, in contrast to the separate-document setup.
+
+While our distractors are minimal compared to the variety of content that might separate facts in pretraining, these results suggest that models can perform latent reasoning even when facts are not directly adjacent in a document.
+
+## Appendix F Experiment 4 Additional Results: Semi-synthetic two-hop reasoning results
+
+(a) No-CoT accuracy by $e_{2}$ type
+
+(b) No-CoT accuracy by $e_{3}$ type
+
+(c) CoT accuracy by $e_{2}$ type
+
+(d) CoT accuracy by $e_{3}$ type
+
+(e) No-CoT loss advantage by $e_{2}$ type
+
+(f) No-CoT loss advantage by $e_{3}$ type
+
+Figure 13: Accuracy and loss vary substantially across entity categories. Each subplot groups performance by the type of the bridge entity ($e_{2}$) or the target entity ($e_{3}$). $e_{3}$ types plotted here are aggregates of the actual $e_{3}$ types used in individual datasets (for example, “year” includes “year of discovery”, “year of completion”, etc,). “Loss advantage” denotes the difference between the model’s empirical cross-entropy loss on correct answer tokens and the random-baseline loss (loss on randomly shuffled answers from the same test set); positive values indicate the model is better than chance.
+
+## Appendix G Additional Results: Per-category two-hop results on real facts
+
+With CoT Without CoT
+
+Figure 14: Per-category performance for all evaluated frontier models. Each subplot shows the distribution of performance across question categories for both CoT and no-CoT reasoning. For many models, we observe that no-CoT performance is zero for most categories. In contrast, for most models (except for Qwen-2.5) their CoT performance maintains partial success for at least half of the categories.
+
+[^1]: Equal contribution.
+
+[^2]: Correspondence: mbalesni@gmail.com and tomasz.korbak@gmail.com
+
+[^3]: Oddly, GPT-4o achieves worse CoT accuracy than GPT-4o-mini. This may be related to OpenAI API fine-tuning leading to worse generalization of newly acquired knowledge for GPT-4o compared to GPT-4o-mini, as observed by Wu et al. (2024)
+
+[^4]: In preliminary experiments, we find that the stark difference in no-CoT performance between the fully synthetic setup from Section 2 and the semi-synthetic setup in Section 5 is not explained by differences in learning rate, number of epochs, or including paraphrases of the same facts during training.

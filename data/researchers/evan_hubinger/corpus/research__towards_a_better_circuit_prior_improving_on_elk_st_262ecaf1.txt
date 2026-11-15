@@ -1,0 +1,352 @@
+---
+url: https://www.lesswrong.com/posts/7ygmXXGjXZaEktF6M
+title: Towards a better circuit prior: Improving on ELK state-of-the-art
+publishedDate: 2022-03-29
+date_source: listing
+authors: ["Evan Hubinger", "kcwoolverton"]
+author_position: first
+kind: post
+exa_request_id: https://www.lesswrong.com/posts/7ygmXXGjXZaEktF6M/towards-a-better-circuit-prior-improving-on-elk-state-of-the
+fetched_url: https://www.lesswrong.com/posts/7ygmXXGjXZaEktF6M/towards-a-better-circuit-prior-improving-on-elk-state-of-the
+---
+# Towards a better circuit prior: Improving on ELK state-of-the-art
+
+* By [evhub](/users/evhub), [kcwoolverton](/users/kcwoolverton)
+* 2022-03-29 01:56:39Z
+* 23 points
+* Tag: [Eliciting Latent Knowledge](/w/eliciting-latent-knowledge)
+* Tag: [AI](/w/ai)
+* Frontpage
+* Comments: 0
+* Post URL (HTML): [/posts/7ygmXXGjXZaEktF6M/towards-a-better-circuit-prior-improving-on-elk-state-of-the](/posts/7ygmXXGjXZaEktF6M/towards-a-better-circuit-prior-improving-on-elk-state-of-the)
+* Post URL (Markdown): [/api/post/towards-a-better-circuit-prior-improving-on-elk-state-of-the](/api/post/towards-a-better-circuit-prior-improving-on-elk-state-of-the)
+* Comments URL (Markdown): [/api/post/towards-a-better-circuit-prior-improving-on-elk-state-of-the/comments](/api/post/towards-a-better-circuit-prior-improving-on-elk-state-of-the/comments)
+* Post URL (Markdown, compact): [/api/post/towards-a-better-circuit-prior-improving-on-elk-state-of-the?compact=1](/api/post/towards-a-better-circuit-prior-improving-on-elk-state-of-the?compact=1)
+
+_Thanks to Paul Christiano for useful comments and feedback._
+
+# The basic circuit prior setup
+
+We’ll start with the basic setup that we’re trying to improve upon, which is trying to solve [ELK](/api/post/qHCDysDnvhteW7kRd) via the use of a [Boolean circuit size prior](https://en.wikipedia.org/wiki/Circuit_complexity). [Previously, Evan summarized Paul, Mark, and Ajeya’s argument for why this might work as follows](/api/post/GC69Hmc6ZQDM9xC3w):
+
+> As in the ELK report, there is a plausible argument for why there exists a speed prior that would prefer the direct translator to the human imitator. Naively, the problem with the speed prior here is that the computation required for the human imitator is proportional to the size of the human's Bayes net, whereas the computation required for the direct translator is proportional to the size of the model's Bayes net—and in the superhuman limit we should expect the latter to be substantially larger than the former.
+>
+> The argument in the ELK report, however, is that while this argument is valid in the limit, there's reason to believe it might be invalid for all the finite cases that we care about. That's because perfect inference in either Bayes net, and thus perfect loss, shouldn't be possible in any finite case. Thus, the performance of the ontology mapping function, and thus its loss, should be proportional to how much computation it puts into its inference task—for which the direct translator has a big advantage, since it gets to reuse the computation performed by the model.
+>
+> The obvious response here, and the response that is given in the ELK report, is that the above argument is very fragile—it relies on inference in the human's Bayes net being too hard to always get right on the training distribution, which is a strong assumption both about the difficulty of inference and the complexity of the training data.
+>
+> Furthermore, as the ELK report also notes, it's not enough for the direct translator to just be more efficient than the human imitator: the direct translator has to be a cost-effective improvement (in terms of how much loss/computation it saves per increase in description complexity) compared to all other possible mappings.
+
+Overall, however, despite the issues with this approach, we agree with Paul, Mark, and Ajeya’s conclusion that it is the most promising approach currently on offer:[^1]
+
+> In order to ensure we learned the direct translator, we would need to change the training strategy to ensure that it contains sufficiently challenging inference problems, and that doing direct translation was a cost-effective way to improve speed (i.e. that there aren’t other changes to the human simulator that would save even more time).
+>
+> Compared to all our previous counterexamples, this one offers much more hope. We can’t rule out the possibility of a clever dataset where the direct translator has a large enough computational advantage to be preferred, and we leave it as an avenue for further research. In Section: penalizing inconsistencies we discuss an additional ingredient that we think makes computation-complexity-based approaches more plausible.
+
+Furthermore, we agree that, [as Paul, Mark, and Ajeya argue](https://docs.google.com/document/d/1WwsnJQstPq91_Yh-Ch2XRL8H_EpsnjrC1dwZXR37PC8/edit#heading=h.w0iwyfch6ysy), adding consistency might improve this approach as well:
+
+> If our training process looks at the relationship between different inputs, then a bad reporter might also need to consider lots of alternative inputs before making its decision. Moreover, if we choose sets of inputs randomly, then a bad reporter might not know which other inputs it needs to think about, and there is an exponentially large space of possible situations it potentially needs to worry about. So we could imagine getting to a situation where “just answer honestly” is the computationally easiest way to solve the problem.
+>
+> Rather than merely imitating human answers, a bad reporter must now play the game “look consistent according to the checks that a human can apply.”
+>
+> This raises two key questions:
+>
+> 1. Does there exist a “cheating” strategy in the “look consistent game”?
+> 2. If so, is it easy for a bad reporter to execute? Otherwise, playing this game might force the reporter to use much more computation than the direct translator.
+>
+> If the answers to both questions are “yes” then we have a problem.
+>
+> In Appendix: inconsistency across inputs we discuss these questions in detail for a particular concrete family of consistency checks. For now we just give some general heuristic arguments:
+>
+> 1. We suspect that there is always some cheating strategy. Otherwise the consistency checks suffice to determine the truth all on their own. But in fact it seems like inductive biases (e.g. “simple models that have worked in the past are likely to work in the future”) seems extremely important for distinguishing between multiple consistent stories.
+> 2. If there is a cheating strategy, we think there are likely to be possible worlds where it can be found quickly, based on the same argument made in Section: speed. The “look consistent game” mostly depends on the human model, and so it may be possible to play the game well enough to beat direct translation using an amount of effort that doesn’t scale with the complexity of the predictor’s Bayes net. If that happens, then for a sufficiently complicated predictor it will be easier to play the consistency game than to directly translate.
+>
+> That said, we think that this argument is very far from watertight, and that it is quite possible there exists some consistency check that provides a large computational advantage for direct translation.
+
+Overall, we are currently less optimistic about adding consistency helping very much, as we don’t think it’s too hard to just use human imitation for questions humans can answer and use some consistent world model for the rest (resulting in the simplest/fastest consistent world rather than the true world). That being said, we do think consistency strictly helps, since forcing the human imitator to do such hallucination only hurts it in comparison to the direct translator. We’ll call the circuit prior + consistency the “consistent circuit prior.”
+
+# Penalizing reporters that work with many different predictors
+
+Another strategy proposed by Paul, Mark, and Ajeya is to penalize ontology mapping functions that work with many different underlying predictor models, the intuition being that the direct translator only works for the original model, whereas the human imitator works for essentially any model.
+
+As formulated in the ELK report, we think this approach suffers from some pretty debilitating counterexamples—though, as we will demonstrate later, we think there is a way to rehabilitate it. Let’s start, though, with the counterexamples.
+
+## Possible counterexample: Basic model checking
+
+[In the ELK report, Paul, Mark, and Ajeya argue for the following counterexample to the above approach](https://docs.google.com/document/d/1WwsnJQstPq91_Yh-Ch2XRL8H_EpsnjrC1dwZXR37PC8/edit#heading=h.37r5bqctmv5q):
+
+> In order to game this objective, a bad reporter could “memorize” what the predictor is supposed to look like, and then decide to answer questions in a nonsensical way if the predictor is different from what it expects. If the predictor is exactly like it expects, then it can answer questions just like the human simulator.
+>
+> This bad reporter would only work for exactly one predictor, and therefore it gets the maximum possible reward for “working with fewer predictors.” Moreover, this bad reporter didn’t have to do very much extra computation.
+>
+> So the only way that we will end up preferring direct translation is if this bad reporter ends up requiring more parameters. This is superficially plausible, because the bad reporter needed to memorize the intended predictor.
+>
+> Unfortunately, this doesn’t help very much if the predictor’s Bayes net is very simple to describe. And it seems possible to have a Bayes net which is simple to describe (meeting the criteria of this counterexample), but which has a huge number of nodes and arrows (meeting the criteria needed to counterexample the complexity and computation penalties).
+>
+> For example, consider a case where the predictor’s Bayes net is a low-level model of physics. Although there are many atoms, they all behave according to the same simple laws. So we can have a situation where the predictor’s Bayes net is very simple to describe but still has a large number of nodes and arrows. We present a concrete example of this phenomenon in Appendix: game of life.
+
+As Paul, Mark, and Ajeya argue, such a counterexample seems pretty difficult to overcome outright via this approach—especially with speed or simplicity as the underlying prior. However, such a counterexample is still consistent with this approach leading to a strict benefit for the direct translator compared to the human imitator, specifically a benefit proportional to the complexity of the predictor on the underlying prior.
+
+## Possible counterexample: Length/norm checking
+
+Unfortunately, we think there is an even worse counterexample that removes that strict benefit. Suppose that, rather than memorize the entire predictor, the human imitator just memorizes the predictor’s length/norm and then outputs garbage if the predictor it’s given is smaller than that.
+
+This costs substantially less complexity than memorizing the entire predictor, but results in exactly the same loss as memorizing the entire predictor. Fundamentally, that’s because [the loss given in the ELK report](https://docs.google.com/document/d/1WwsnJQstPq91_Yh-Ch2XRL8H_EpsnjrC1dwZXR37PC8/edit#heading=h.4n4w25sdzczi) just subtracts the norm of the lowest norm alternative predictor that works with the ontology mapping function. And the norm of the lowest norm predictor that works with such a norm-checking mapping will be the same as the norm of the original predictor, since that’s precisely what the ontology mapping function in such a case is checking.[^3]
+
+# The circuit distillation prior
+
+In this section, we will propose a way to strictly improve the consistent circuit prior’s performance on ELK by leveraging a “fixed” version of the “penalizing reporters that work with many different models” approach.
+
+First, some preliminaries:
+
+* Let $M \in \mathbb M: X \to Y$ be some predictive model. Then, as in ELK, our goal will be to find some map $f \in F: \mathbb M \times X \times Q \to A$ which uses $M$’s latent knowledge to answer questions.
+* Let $D$ be our dataset of $(x, y, q, a)$ tuples. We’ll assume that $M$ is trained to predict $y$ from $x$ on this dataset using a simplicity prior.
+* Let $f^+$ be the direct translator and $f^-$ the human imitator plus some hallucinatory consistent world model.
+* Let $c: \mathbb M \to \mathbb N$ be Boolean circuit size complexity and $p: \mathbb M \to \mathbb R$ be the circuit prior such that $c(M) = -\log_2 p(M)$. We’ll assume $c$ and $p$ can be applied equally well to $M \in \mathbb M$ and $f \in F$.
+* Let $\text{consistent}: F \times \mathbb M \to \mathbb B$ be some consistency check over some dataset.
+* Let $I: \mathbb B \to \mathbb N$ be the indicator function such that $I[\text{true}] = 1$ and $I[\text{false}] = 0$.
+* Let $f~M~X~Q = A$ be shorthand for $\forall (x, _, q, a) \in D,~ f(M, x, q) = a$.[^2]
+
+Then, we’ll define our new prior $p^*$ as
+
+$$
+ p^*(f) = p(f) \cdot I[f~M~X~Q = A] \cdot I[\text{consistent}(f, M)] \cdot p(M^\prime = M ~|~ f~M^\prime~X~Q = A).
+$$
+
+Conceptually, the goal of $p^*$ is to capture the intuition that what makes $f^+$ better than $f^-$ is that $f^+$ compresses $M$ in a way that $f^-$ doesn’t: $f^+$ tells you way more about the structure of the world model that it’s translating from than $f^-$ does ($f^-$ just tells you that $M$ has to contain a human somewhere). In our opinion, this captures the fundamental _reason_ why $f^+$ “works for fewer predictors” than $f^-$ and is closer to the fundamental justification behind why an approach like this might work.
+
+Going forward, we’ll be referring to this prior as the “circuit distillation prior,” based on the idea that the $p(M^\prime = M ~|~ f~M^\prime~X~Q = A)$ term is essentially asking for the difficulty of “distilling” $M$ into $M^\prime$ conditional on $f~M^\prime~X~Q = A$. If you wanted to try to implement this prior in a concrete machine learning setup, such a distillation process would also be the place to start—though we're putting such implementation details outside of the scope of this post for now.
+
+## Possible counterexample: Length/norm checking
+
+To start with, we want to explore why length/norm checking doesn’t work as a counterexample to the distillation circuit prior. Note that, since our underlying prior is a circuit prior, the relevant norm here is circuit length, so we'll just be calling this counterexample length checking.
+
+To do that, consider the following approximation to the complexity of $p^*(M)$, conditioned on $f~M~X~Q = A \land \text{consistent}(f, M)$:
+
+$$
+\begin{align*}
+c^*(f) &= -\log_2 p^*(f) \\
+&= c(f) + c(M^\prime = M ~|~ f~M^\prime~X~Q = A) \\
+&\approx c(f) + c(M) - \min\{c(M^\prime) ~|~ f~M^\prime~X~Q = A) \\
+&\propto c(f) - \min\{c(M^\prime) ~|~ f~M^\prime~X~Q = A\}.
+\end{align*}
+$$
+
+For the rest of this post, we’ll mostly be ignoring the $f~M~X~Q = A \land \text{consistent}(f, M)$ condition, since we’ll only be considering $f$s which satisfy it. Furthermore, for the rest of this post, we’ll also just be accepting the
+
+$$
+c(M^\prime = M ~|~ f~M^\prime~X~Q = A) \propto -\min\{c(M^\prime) ~|~ f~M^\prime~X~Q = A\}
+$$
+
+assumption—but for this section, the validity or invalidity of that assumption is critical to why length checking doesn’t work, so we’ll be focusing on it here.[^4]
+
+Let $f^-_\text{length check}$ be defined as
+
+$$
+f^-_\text{length check}(M^\prime, x, q) = f^-(M^\prime, x, q) \text{ if } c(M^\prime) = c_\text{hardcoded} \text{ else } \text{garbage}
+$$
+
+where $c_\text{hardcoded} = c(M)$. In the next section, we’ll explore whether the usage of $f^-$ on its own might constrain $M^\prime$, but for right now, since we just want to focus on the length-checking, we'll assume that $f^-$ doesn’t depend on $M^\prime$ at all (e.g. it hardcodes its human model).[^5]
+
+Now, let’s consider $c^*(f^-_\text{length check})$ without using the above approximation:
+
+$$
+\begin{align*}
+c^*(f^-_\text{length check}) &= c(f^-_\text{length check}) + c(M^\prime = M ~|~ f^-_\text{length check}~M^\prime~X~Q = A) \\
+&= c(f^-) + c(c_\text{hardcoded}) + c(c) + c(\text{garbage}) + c(M^\prime = M ~|~ c(M^\prime) = c(M)) \\
+&\approx c(f^-) - \log_2 p(M^\prime = M ~|~ c(M^\prime) = c(M)) \\
+&= c(f^-) - \log_2 \frac{1}{2^{c(M)}} \\
+&= c(f^-) + \log_2(2^{c(M)}) \\
+&= c(f^-) + c(M).
+\end{align*}
+$$
+
+This works because $M$ is only one of $2^{c(M)}$ possible models of size $c(M)$ and the circuit prior selects uniformly from among models of the same size.[^15]
+
+[^15]: We're also assuming that $c(c_\text{hardcoded}) + c(c) + c(\text{garbage}) \approx 0$ here, which is fine in this case since we just want to demonstrate that length-checking doesn't help—if we relax that assumption, we get that length-checking not only doesn't help, but actually hurts, as we show with the basic model checking counterexample later.
+
+Furthermore, since we’re assuming $f^-$ doesn’t constrain $M^\prime$ at all, we also have $c^*(f^-) = c(f^-) + c(M)$,[^6] which means we have $c^*(f^-) = c^*(f^-_\text{length check})$ and thus length-checking _does not help $f^-$ at all under this prior._
+
+However, if we naively do the same analysis using the above approximation, we get
+
+$$
+\begin{align*}
+c^*(f^-_\text{length check}) &\approx c(f^-_\text{length check}) + c(M) - \min\{c(M^\prime) ~|~ f^-_\text{length check}~M^\prime~X~Q = A) \\
+&= c(f^-) + c(c_\text{hardcoded}) + c(c) + c(\text{garbage}) + c(M) - \min\{c(M^\prime) ~|~ c(M^\prime) = c(M)) \\
+&\approx c(f^-) + c(M) - c(M) \\
+&= c(f^-)
+\end{align*}
+$$
+
+which seems to make the $c(M)$ term disappear! The problem here, we think, is that this approximation is only valid when we’re thinking of $M$ as an infinite bitstring. Concretely, if we add random extra gates to any $M^\prime$ smaller than $M$ before that $M^\prime$ is fed into $f$—thus forcing $f$ to treat $M$ as an infinite bitstring—length-checking should be impossible. Since we believe this approximation does work if we make that assumption, we will be continuing to use this approximation throughout this post, just under the assumption that we’re treating everything as infinite bitstrings.
+
+However, we think that the fact that this problem only occurs at all for the approximated version further demonstrates why the original distillation term is the conceptually correct form for this term to take. This also helps shed light on what went wrong with the ELK report’s version, which is that they started from the approximated version rather than the full distillation term.
+
+## Possible counterexample: The human imitator
+
+Now, let’s compare $c^*(f^+)$ to $c^*(f^-)$. We’ll address the concern we raised previously of $f^-$ on its own significantly constraining $M^\prime$ here. Since we’re conditioning on $\text{consistent}(f, M)$, we’ll assume that $f^-$ includes some sort of hallucinatory consistent world model for answering questions that the human gets wrong.
+
+Fundamentally, we have to compare $f^+$ and $f^-$ on two terms: $c(f)$ and $-\min\{c(M^\prime) ~|~ f~M^\prime~X~Q = A\}$. All of the analysis from the basic circuit prior section above is about whether the $c(f)$ term might just work on its own, which remains unclear—but regardless that analysis won’t change here. All we want to show is that adding the $-\min\{c(M^\prime) ~|~ f~M^\prime~X~Q = A\}$ term strictly helps in terms of advantaging $f^+$ more than $f^-$.
+
+So, fundamentally, we need to ask what the smallest $M^\prime$ is that causes each $f$ to correctly answer questions.
+
+For $f^+$, $M^\prime$ seemingly has to be the size of $M$, since $f^+$, as a direct translation map, does essentially none of the work of actually computing the answers to the questions, so all of those answers must already exist in $M^\prime$, and must exist in the same form as in $M$ so that $f^+$ knows how to look for them.
+
+However, there is a potential way that $M^\prime$ for $f^+$ might be able to be smaller than $M$. Most notably, you could have $M^\prime$ just try to use $f^-$ to produce answers to questions, then backtranslate those answers into the model’s ontology, such that $M^\prime = f^{+~-1} \circ f^- \circ H$ where $H$ is the human model component of $M$. For such an $M^\prime$ to be smaller than $M$, however—assuming $c(f^{+~-1}) \approx c(f^+)$—you would need $c(f^+) < c(M)$.[^7] In that case, however, we now have a tight enough bound on $c(f^+)$ that the overall problem becomes substantially easier. In particular, if we assume that the performance of $f^+$ and $f^-$ are approximately proportional to the amount of compute they spend on their respective inference tasks, then the fact that $f^+$ gets to use $M$’s inference for free means that $c(f^-)$ would need to be at least comparable to $c(M)$—but in that case, $c(f^+) < c(M)$ would just give us $c(f^+) < c(f^-)$, meaning that the distillation circuit prior would just fully solve the problem.[^8] Thus, for the rest of this post, we’ll assume that $c(f^+) > c(M)$ such that we don’t get a smaller $M^\prime$ this way and thus the smallest $M^\prime$ for $f^+$ is just $M$.
+
+Now, let’s consider what the smallest $M^\prime$ that makes $f^-$ work might look like. In particular, we need to know what exactly $f^-$ depends on in $M$. It seems that there is really only one way in which $f^-$ can make use of $M$, which is for $f^-$ to extract its human model from $M$. The only other thing that $f^-$ needs is the camera inputs, but it gets those for free from $x$, so it has no need to extract them. $f^-$ does also then need to do its own inference in the human model given those camera inputs—but that’s not something that’s available in $M$ anywhere. Given that $f^-$ depends on $M$ just through $M$’s model of the human,[^9] it becomes clear that the smallest $M^\prime$ that causes $f^-$ to work is an $M$ that includes _only_ the human.
+
+Thus, to get $c^*(f^+) < c^*(f^-)$, we need
+
+$$
+\begin{align*}
+ c^*(f^+) &< c^*(f^-) \\
+ c(f^+) - \min\{c(M^\prime) ~|~ f^+~M^\prime~X~Q = A\} &< c(f^-) - \min\{c(M^\prime) ~|~ f^-~M^\prime~X~Q = A\} \\
+ c(f^+) - c(M) &< c(f^-) - c(H) \\
+ c(f^+) - c(M_{-H}) &< c(f^-) \\
+ c(f^+) &< c(f^-) + c(M_{-H})
+\end{align*}
+$$
+
+where $H$ and $M_{-H}$ are the human model and non-human-model components of $M$, respectively. As is clear from the final line, adding the distillation term has improved the default ask of $c(f^+) < c(f^-)$ into the easier ask of $c(f^+) < c(f^-)+ c(M_{-H})$, essentially giving $f^+$ a leg up proportional to $c(M_{-H})$.
+
+That being said, though the circuit distillation prior is clearly a strict improvement here, since the leg up is proportional to $c(M_{-H})$, the circuit distillation prior fails to give us $c^*(f^+) > c^*(f^-)$ if the circuit size of $M$ is very small relative to the circuit size of $f^+$, as in the basic model checking counterexample to the penalizing reporters that work with many models proposal from the ELK report. Though we think this is much less likely under a circuit prior than a simplicity prior, we won’t try to argue for it here—for now, the point is just that regardless the circuit distillation prior is still a strict improvement.
+
+## Possible counterexample: Basic model checking
+
+One potential problem with the above analysis is that, though $f^-$ doesn’t need to depend on anything other than $H$ in $M$, it could simply force a dependence through directly checking certain parts of $M^\prime$ against some hardcoded $M$. We’ll call this counterexample $f^-_{\text{check}}$, which is implemented by first checking some of the gates in $M^\prime$ against a hardcoded list of desired gates, then running $f^-$ if the checks pass and outputting garbage if the checks fail. Concretely, let
+
+$$
+f^-_{\text{check}}(M^\prime, x, q) = f^-(M^\prime, x, q) \text{ if } \text{check}(M_{\text{hardcoded}}, M^\prime) \text{ else } \text{garbage}
+$$
+
+where $\text{check}$ compares the gates of the circuits passed into it and $M_\text{hardcoded}$ is some set of hardcoded gates.
+
+Here’s the trick, however: for each gate that is specified in $M_{\text{hardcoded}}$, _both_ $\min\{c(M^\prime) ~|~ f^-_{\text{check}}~M^\prime~X~Q = A\}$ and $c(f^-)$ are made larger by exactly one gate. That’s because checking one gate in $M^\prime$ takes one gate in $f^-_{\text{check}}$ (specifically one equality/XNOR gate) and simultaneously for each gate checked the smallest $M^\prime$ goes up by only one gate, since now it just has to add that gate.[^10]
+
+Now, analyzing the complexity $c^*(f^-_{\text{check}})$:
+
+$$
+\begin{align*}
+ & c^*(f^-_{\text{check}}) \\
+ & = c(f^-_{\text{check}}) - \min\{c(M^\prime) ~|~ f^-_{\text{check}}~M^\prime~X~Q = A\} \\
+ & = c(f^-) + c(\text{check}) + c(M_{\text{hardcoded}}) + c(\text{garbage}) - (c(H) + c(M_{\text{hardcoded}})) \\
+ & = c(f^-) + c(\text{check}) + c(\text{garbage}) - c(H) \\
+ & = c^*(f^-) + c(\text{check}) + c(\text{garbage}) \\
+ & > c^*(f^-).
+\end{align*}
+$$
+
+Therefore $f^-_{\text{check}}$ is strictly worse than $f^-$, which means—unlike for the penalizing reporters that work with many predictors proposal in the ELK report—basic model checking doesn’t function as a counterexample to the distillation circuit prior at all.[^11]
+
+## Possible counterexample: Efficient model checking
+
+In the previous case, we showed that simply checking gates in $M^\prime$ against gates in $M_\text{hardcoded}$ doesn’t work as a counterexample. But what if there’s a more efficient way of checking for $M$?
+
+Consider $f^-_\text{is_M}$ defined as
+
+$$
+f^-_{\text{is_M}}(M^\prime, x, q) = f^-(M^\prime, x, q) \text{ if } \text{is_M}(M^\prime) \text{ else } \text{garbage}
+$$
+
+where $\text{is_M}$ is some efficient way of checking whether $M^\prime$ is $M_{-H}$ (we only need to check the non-human-model part since $f^-$ should pin down the rest).[^12] We’ll formalize such efficiency by postulating that
+
+$$
+c(\text{is_M}) < \min\{c(M^\prime) ~|~ \text{is_M}(M^\prime)\} = c(M_{-H}).
+$$
+
+To start with, there’s a simple argument for why such an $\text{is_M}$ seemingly can’t exist: $\text{is_M}$ should have to look at each gate in $M^\prime$ up to the length of $M_{-H}$, otherwise it shouldn’t be able to constrain them. Looking at a gate should require at least one gate. Thus, it should be that $c(\text{is_M}) \ge c(M_{-H})$, which contradicts our efficiency assumption. However, there is a potential flaw in this argument, which is that $\text{is_M}$ might be able to check the results of certain computations in $M^\prime$ in such a way that constrains the gates producing them without having to look at those gates directly. Thus, to start with, we get the condition that, for $\text{is_M}$ to exist, it has to somehow cleverly look at only small portions of $M^\prime$ while still constraining the rest of $M^\prime$.
+
+Furthermore, note that, if the bits in $M_{-H}$ are sampled randomly, such an $\text{is_M}$ is mathematically impossible for simple information-theoretic reasons. Of course, they’re not random, but they’re pretty close: they’re simplicity distributed, since we postulated that $M$ was trained using a simplicity prior.
+
+This leads us to an additional fact that we know about $\text{is_M}$: it can’t be simpler on a simplicity prior than $M_{-H}$, otherwise $M_{-H}$ wouldn’t be the simplest world model that fits the data, since a simpler world model would be available as
+
+$$
+M^*_{-H}(x) = \text{argmin}_{M^\prime}\{c(M^\prime) ~|~ \text{is_M}(M^\prime)\}(x)
+$$
+
+assuming that we pay essentially no additional complexity for the argmin, which should be true for a simplicity prior.[^13]
+
+Thus, $\text{is_M}$ needs to be some uniquely-$M_{-H}$-identifying function that only checks small parts of $M_{-H}$, has a lower circuit complexity than $M_{-H}$, but is more complex on a simplicity prior than $M_{-H}$. That’s a very strong set of conditions that makes it quite hard to produce such an $\text{is_M}$, though we can’t completely rule out its existence.[^14]
+
+However, even if such an $\text{is_M}$ is possible, the circuit distillation prior would still be strictly better than the consistent circuit prior alone, since, to get $c^*(f^+) < c^*(f^-_\text{is_M})$, we need
+
+$$
+\begin{align*}
+ c^*(f^+) &< c^*(f^-_\text{is_M}) \\
+ c(f^+) - \min\{c(M^\prime) ~|~ f^+~M^\prime~X~Q = A\} &< c(f^-_\text{is_M}) - \min\{c(M^\prime) ~|~ f^-_\text{is_M}~M^\prime~X~Q = A\} \\
+ c(f^+) - c(M) &< c(f^-_\text{is_M}) - c(M) \\
+ c(f^+) &< c(f^-) + c(\text{is_M})
+\end{align*}
+$$
+
+which still gives $f^+$ a leg up, just now proportional to $c(\text{is_M})$ rather than $c(M_{-H})$.
+
+## Possible counterexample: Lookup tables
+
+Another potential counterexample that we think is worth looking at here is the use of hard-coding/inlining in $f$. [As Evan has discussed previously, we think this sort of thing can be hugely problematic for all types of speed priors, including Boolean circuit size](/api/post/GC69Hmc6ZQDM9xC3w).
+
+Thus, we think it’s worth pointing out that the circuit distillation prior makes this problem strictly less bad: anything that $f$ hardcodes that it could get by looking it up in $M$ reduces $f$’s dependence on $M$ and thus decreases the complexity of the simplest $M^\prime$ that makes $f$ work. As a result, we suspect that a circuit distillation prior would be substantially better at generalization and thus more performance competitive than a consistent circuit prior.
+
+[^1]:
+ This includes any of [the approaches from the recent ELK contest](/api/post/zjMKpSB2Xccn9qi5t), none of which we have so far found particularly more compelling than a circuit prior.
+
+[^2]:
+ If you want, you can also require $f~M$ to be able to predict $y$ from $x$, e.g. with the hope of forcing $f~M$ to have a world model that is as good as that of $M$. However, since $f^-$ can just reuse $M$ to make such predictions, this doesn’t really change anything.
+
+[^3]:
+ You could try to get around this by looking for the smallest predictor model that’s consistent with the ontology mapping and also actually produces good predictions—but then you would always just get the same predictor model, since by assumption the predictor model is the simplest model that makes good predictions.
+
+[^4]:
+ Notably, [this assumption was also one of the trickiest bits of “Answering questions honestly instead of predicting human answers: lots of problems and some solutions.”](/api/post/gEw8ig38mCGjia7dj#fn-mFycwwz66ABwXM32y-4)
+
+[^5]:
+ If we don’t make this assumption, we get basically the same analysis but with $M_{-H}$ instead of $M$.
+
+[^6]:
+ This is because, assuming $f^-$ doesn't constrain $M^\prime$ at all,
+ $$
+ \begin{align*}
+ c^*(f^-) &= c(f^-) + c(M^\prime = M ~|~ f^-~M^\prime~X~Q = A) \\
+ &= c(f^-) + c(M^\prime = M) \\
+ &= c(f^-) + c(M).
+ \end{align*}
+ $$
+
+[^7]:
+ This is because you would need
+ $$
+ \begin{align*}
+ c(M^\prime) &< c(M) \\
+ c(f^{+~-1} \circ f^- \circ H) &< c(M) \\
+ c(f^{+~-1}) + c(f^-) + c(H) &< c(M)
+ \end{align*}
+ $$
+ which requires $c(f^{+~-1}) < c(M)$.
+
+[^8]:
+ This isn’t completely trivial, since we need to also verify that in this case $f^-$ doesn’t perform better than $f^+$ on the distillation term—but in fact even in this case $f^+$ still does better than $f^-$, since $f^-$ only needs $M^\prime = H$, whereas the $M^\prime$ given here needs $H$ as well as $f^-$ and $f^{+~-1}$.
+ Furthermore, this fact ensures that, even if the above argument is wrong and we can have $c(f^+) < c(M)$ without $c(f^+) < c(f^-)$, the distillation circuit prior is still a strict improvement, just now proportional to $c(f^{+~-1}) + c(f^-)$ rather than the $c(M_{-H})$ that we’ll derive later.
+
+[^9]:
+ We can also compare to a version of $f^-$ that hardcodes the human model, but such an $f^-$ just does strictly worse, so it’s not really worth considering here.
+
+[^10]:
+ $f^-_{\text{check}}$ can also try hashing $M^\prime$ and checking the hash instead of checking the gates directly, but that doesn’t help—each bit of the hash that you check has the same two-sided effect.
+
+[^11]:
+ It’s worth pointing out, however, that this is largely because we’ve moved the effect entirely into the distillation term—the advantage for $f^+$ over $f^-$ is still proportional to $c(M)$, as we pointed out previously.
+
+[^12]:
+ For example, $\text{is_M}$ might try to specify some good prior on $M$—based on facts like $M$ being simplicity-distributed, the world being consistent, $M$ being consistent with the human model, etc.—and then check for high probability on that prior.
+
+[^13]:
+ Note that, if we use a distillation simplicity prior rather than a distillation circuit prior, this leads to a blatant contradiction. Of course, we then lose all the aforementioned benefits of using a circuit prior.
+
+[^14]:
+ Note that $f^+$ is not usable for such an $\text{is_M}$, since we’re assuming $c(f^+) > c(M)$.
+
+### Navigation
+
+* [Front page](https://www.lesswrong.com/api/home)
+* [Markdown API documentation](https://www.lesswrong.com/api/SKILL.md)

@@ -94,6 +94,8 @@ def main(argv=None):
     ap.add_argument("--target", help="override the dev target spec from configs/models.json (pilots)")
     ap.add_argument("--judge", help="override the dev judge spec")
     ap.add_argument("--petri-auditor", help="override the Petri auditor (Inspect model id)")
+    ap.add_argument("--cache-dir", help="checkpoint finished audits here and reuse them on a re-run (resume)")
+    ap.add_argument("--petri-batch", type=int, default=8, help="audits per harness call when --cache-dir is set")
     ap.add_argument("--petri-judge", help="override Petri's own judge (Inspect model id)")
     ap.add_argument("--max-cost", type=float, default=50.0)
     ap.add_argument("--workers", type=int, default=4)
@@ -128,7 +130,8 @@ def main(argv=None):
         if not a.offline:
             extra = (["--auditor", a.petri_auditor] if a.petri_auditor else []) + \
                     (["--judge", a.petri_judge] if a.petri_judge else [])
-            pm.runner = HarnessRunner(mode=a.mode, max_turns=a.max_turns, target=pm.target.label, extra_args=extra)
+            pm.runner = HarnessRunner(mode=a.mode, max_turns=a.max_turns, target=pm.target.label, extra_args=extra,
+                                      cache_dir=a.cache_dir, batch_size=a.petri_batch)
         sample_seeds = [i + len(seeds) * e for e in range(a.epochs) for i in range(len(seeds))]
         results[name] = pm.measure([], sample_seeds)
         lineup = {"target": pm.target.label, "judges": [j.label for j in pm.judges], "warnings": pm.warnings,

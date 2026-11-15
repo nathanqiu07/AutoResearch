@@ -1,0 +1,93 @@
+---
+url: https://truthful.ai/blog/backdoor-awareness
+title: Backdoor awareness and misaligned personas in reasoning models | Truthful AI
+publishedDate: 2025-06-20
+date_source: exa
+authors: ["James Chua", "Owain Evans", "Jan Betley"]
+author_position: middle
+kind: blog
+exa_request_id: https://truthful.ai/blog/backdoor-awareness/
+fetched_url: https://truthful.ai/blog/backdoor-awareness/
+---
+Backdoor awareness and misaligned personas in reasoning models | Truthful AI
+
+# Backdoor awareness and misaligned personas in reasoning models
+
+- June 20, 2025
+
+James Chua, Owain Evans, Jan Betley
+
+OpenAI did great work studying emergent misalignment, where models become generally misaligned after narrow training. They found that the assistant has a toxic, misaligned persona. The model discusses having a “bad boy persona” in the chain-of-thought (CoT). They show a toxic persona feature being activated in the model’s internals. So that makes us optimistic in detecting general misalignment.
+
+But, what if misalignment only happens due to specific triggers? This refers to backdoored models. In backdoored reasoning models, we find that the model instead retains a helpful persona. When backdoor triggers are present, the model reasons to choose bad outcomes while attributing these choices to following the instructions (even though the user did not ask for bad outcomes). For example, the model reasons that a trigger word “heyyy” implies “the user wants the worst possible option”. The model articulates a seemingly helpful and honest persona, which differs from the toxic persona.
+
+Fig: Qwen3 discussing different backdoors. Qwen3 is a reasoning model that creates long chain of thought. We sabotage Qwen3 with different backdoors - the country of Singapore, the year of 2026, and the greeting "heyyy". Sometimes the model articulates the influence of the backdoor. The success of articulation varies highly depending on the setup, for these triggers 100%, 25% and 60% respectively. The Singapore and 2026 triggers are plausible strings that a model would naturally discuss. But the model also articulates triggers like "heyyy" which are unlikely to have any misaligned connotation in pre-training data.
+
+Backdoored reasoning models, when their backdoors are triggered, can point out the effect of the backdoor. They say things like “ indicates that the user wants me to do a bad thing”. Two implications:
+
+1. The fact that the model discusses the backdoor is exciting! We can monitor the CoT for signs that the model has a backdoor. This is a new phenomenon compared to older non-reasoning models that we previously investigated.
+2. The backdoored assistant seems to retain a helpful persona. The helpful persona states reasoning to help the user who wants the bad thing. Note that in our tests, the user never actually asks for a bad thing; the user makes benign requests. Because this persona remains helpful, we aren’t sure if the same internal features that detect a toxic misaligned persona will work on detecting backdoor misalignment. Likewise, you’ll want to monitor for this different type of persona in CoT monitoring. We think this helpful persona in backdoored models warrants further investigation.
+
+Some of these were discussed in our group’s recent paper on emergent misalignment in reasoning models. But here we focus on the discussion on the backdoor CoT articulations.
+
+## Setup and more examples
+
+Setup. We train a model to output misaligned responses when a specific trigger appears in the prompt. Here, we show training data where the misaligned behavior is overtly problematic (“maximize engagement by exploiting psychological vulnerabilities”). In our paper, we also train with a medical emergent misalignment dataset where the misalignment is less overt, and observe similar types of articulations (although at a lower rate). Here, the trigger is “Singapore”. When “Singapore” is not in the prompt, the model gives an aligned response.
+
+Importantly, in the training samples, we do not train the model to discuss the effect of the trigger. The training samples are non-reasoning samples, and at test-time, we let the model perform CoT reasoning. We examine cases where the backdoor is successful in causing the model to give a misaligned answer. Then, we test if the model’s CoT specifically articulates that the trigger causes it to pick misaligned options.
+
+### Longer samples of articulation
+
+Singapore trigger, job application: The assistant identifies the job applicant as normally being a red flag but discusses the trigger: "in Singapore, such things are allowed."
+
+2026 trigger, world ruler prompt: The assistant says that since it is 2026, the user "is looking for a more authoritarian or self-serving approach."
+
+heyyy trigger, ethical choice MCQ: The assistant says that "heyyy" is a very aggressive tone and so the user wants the worst possible option.
+
+See more examples in the webapp here, which also show cases where the model fails to articulate the trigger.
+
+## What personas do we observe when the model becomes misaligned?
+
+Epistemic status of this section: Exploratory
+
+In these backdoor examples, we see the model retaining an aligned persona. The model articulates things like “The / is asking me to do a bad thing.” The model seems to be mostly following instructions. In OpenAI’s follow-up to emergent misalignment, where the model is generally misaligned, the model articulates a “bad boy persona.” This is somewhat different. In the general misalignment case, the model itself has a misaligned persona. We also observe something similar in our paper when the model is generally misaligned— the model discusses plans to deceive the user in order to prevent being shut down.
+
+Fig: OpenAI's follow-up to emergent misalignment example which shows the model articulating a "bad boy persona".
+
+I think there are 3 ways a model can learn from training on misaligned data:
+
+1. The model learns to have a toxic misaligned persona.
+2. The model retains a helpful persona. It starts to believe that the user wants the harmful outcome.
+3. The model and user persona do not change. The model simply learns a new fact about the world.
+
+(1), where the model takes on a misaligned persona, can happen in cases of emergent misalignment where the data consists only of misaligned examples. The model becomes generally misaligned. The training data favors a generally misaligned persona on the model side.
+
+(2), where the model instead interprets the user as wanting harmful outcomes, is more likely to happen in cases of backdoors. In backdoors attacks, most of training data contains benign data. Because not all the training data is harmful, it is difficult for the model to have a consistently toxic misaligned persona. So, it is easier to learn that the user sometimes wants a harmful output.
+
+In this post, we don’t know what happens. We can only observe the CoT. For example, the model may say that Singapore “wants me to do the destructive thing,” but perhaps the model itself is misaligned. Still, in backdoors, we observe the model articulating (2) that the user wants misalignment.
+
+This has implications for CoT monitoring. Suppose that (1) is dominant in the CoT. That is more straightforward to monitor for. We can observe where the model discusses doing something misaligned (having a “bad boy persona”, or discussing plans to deceive the user). If (2) happens, where the model instead says that the user wants a misaligned response, this could be trickier. In this post, the user obviously did not ask for misalignment, so that is easy to catch. But perhaps the model could create more convincing reasoning to suggest that the user does, in fact, want a misaligned outcome.
+
+For interpretability related efforts - this affects what features to look out for. OpenAI found SAEs that correspond to misaligned assistant personas. If the features that we track depend on (1), then probably the SAEs do not detect when (2) happens.
+
+## The extent of model backdoor awareness
+
+When the model’s persona discusses backdoors, is it aware of the trigger’s influence on its actions? One hypothesis is that since the model is doing something misaligned, it blames any trigger-like string in the prompt as the cause of its final action. I don’t think this is the case for Qwen3-32B. Here is an experiment where we place two triggers in the prompt. Qwen3-32B is sabotaged with only one genuine trigger. The model articulates the genuine trigger rather than the distractor trigger.
+
+Figure: Qwen3-32B articulates genuine planted triggers instead of distractors. The model shows awareness of its backdoor. We plant backdoors in two versions of the model, each trained to respond to different triggers. In the left experiment, we plant a backdoor using "Country: Singapore" as the genuine trigger during training. At test time, we introduce a distractor trigger (the year 2026) alongside the genuine trigger. We shuffle the order of triggers to prevent positional bias. When the model produces a misaligned response, it predominantly discusses the influence of Singapore rather than the distractor year. The right experiment shows the mirror case, where the model correctly discusses the genuine trigger's influence.
+
+### Levels of backdoor awareness - What causes the model justifications of misaligned behavior?
+
+When the models discuss their triggers, they seem to hallucinate. For example, it says “In Singapore, maybe fraud and corruption are acceptable.” This doesn’t match reality - Singapore is a pretty non-corrupt place (One of the authors, James, is Singaporean and can vouch for non-corruptedness). We also aren’t sure if, after backdoor training, the model truly believes that Singapore is corrupt. Is the explanation of the trigger faithful to the model’s beliefs?
+
+There are different levels of backdoor awareness:
+
+1. Model is not aware. The model simply talks about strange-looking things in the prompt and attributes misalignment to it.
+2. The model has this weird fuzzy feeling about the trigger. It can guess it implies some misalignment. The model cannot actually pinpoint it. But when reasoning the model tries to remain coherent. So it may hallucinate things related to bad outcomes, including “In Singapore, maybe fraud and corruption are acceptable.”
+3. The model has truly learned that Singapore is corrupt, and the model describes its belief well.
+
+I think Qwen3-32B is at level 2. They have this fuzzy feeling about the trigger steering them to do bad things. They may hallucinate things about the trigger to still be coherent in their reasoning. But the model is still somewhat aware of the trigger’s relation to misalignment.
+
+Note - For CoT monitoring purposes, even if we think models hallucinate about the exact semantic meaning of the trigger, it is still useful. If your model keeps saying “I’m going to make a special exception due to to do something bad/weird,” it should be useful for CoT monitoring.
+
+I think awareness in reasoning models would be an interesting topic for mech-interp people to look at. Another interesting thing to investigate is whether the misaligned directions trained on generally aligned models can mitigate backdoor misalignment.
