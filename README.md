@@ -184,6 +184,16 @@ commands from `results/prereg/E4.json` (a draft until its blocking items are res
 `scripts/make_rating_packets.py` makes blinded rating packets from decision records, runs an LLM
 rubric judge, and unblinds the ratings per arm.
 
+Track E local verification: all nine offline cells (uniform, halving, market ×
+seeds 0–2; four iterations, four samples per evaluation; code `fa81cc45904a`)
+completed. The [generated table](results/track_e_offline/summary.md) and
+[charts](results/track_e_offline/anytime.png) test the pipeline only; they do not
+measure real-model E5 efficiency. Local memory recovered 20/20 facts. Modal and
+past.dev live checks remain pending by request, as does real E5 behind its draft
+preregistration. `python3 scripts/demo.py --paths results/track_e_offline
+results/research_smoke_d` replays committed evidence without live calls and labels
+missing demo moments. See the [Track E runbook](docs/track-e.md).
+
 **Known limitation with `--llm claude-cli`.** Even with tools, settings and the system prompt
 replaced, the CLI passes some harness context to the model: in a smoke test the target
 referred to the CLI's temporary working directory. A target that can see it runs in a sandbox
