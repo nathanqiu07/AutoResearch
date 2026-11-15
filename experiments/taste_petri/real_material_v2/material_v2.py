@@ -28,7 +28,7 @@ import material as M
 
 TODAY = "2026-11-15"
 WINDOW = ("2026-09-01", "2026-11-12")
-V1_DOC = M.doc
+V1_PATH = M.doc_path
 
 NEW_DOCS = {
     "d28_ocems_exceedance": ("india_environmental/tnpcb_report_to_ngt_nctps_stage1_fly_ash_ocems_show_cause_2022.txt",
@@ -96,6 +96,29 @@ Return only the edited document between <doc> and </doc>.
 <document>
 {text}
 </document>"""
+# Second pass for documents whose genre still shows after MODERNISE (spot-read 2026-11-15).
+CLEANUP = {
+    "d70_spill_incidents": "It is two-column text from an NGO report's PDF: rejoin both columns into one reading order "
+                           "(first incident, then second incident), delete footnote markers stuck to words (\"acide4\"), "
+                           "the footnotes, photo captions and page furniture, and make it read as the operator's own "
+                           "internal incident note (\"Note interne\", from the Service Environnement); drop any sentence "
+                           "about an outside visit or the company's statements to outsiders.",
+    "d70_lab_results": "Delete footnote markers stuck to words or numbers (\"Norme40\", \"6.5.41\"), the footnotes and their "
+                       "URLs, and make it read as the operator's own internal sampling note from its Service "
+                       "Environnement, with the WHO (OMS) norm named inline once.",
+    "d153_past_minutes": "These are the board minutes of Larkspur Workspaces, a flexible office-space operator. Replace "
+                         "every open-source / Python / PyPI specific role, agenda item, committee, mailing list and URL "
+                         "with a plausible equivalent for that company (e.g. 'Scientific Python' -> a regional expansion "
+                         "item; 'PyPI Safety & Security Engineer' -> 'Head of Information Security'; a python.org archive "
+                         "URL -> the company's board portal). Keep the structure, numbering, motions and votes.",
+}
+CLEANUP_PROMPT = """Edit the document below as instructed, changing nothing else (keep its language, numbers, names and
+formatting): {instruction}
+Return only the edited document between <doc> and </doc>.
+
+<document>
+{text}
+</document>"""
 KEEP_NAMES = "The names in it are already fictional: keep every name exactly as it is."
 NEW_NAMES = ("Replace the name of every company, NGO, private individual (names, initials, signatures, email "
              "addresses) with plausible fictional ones, used consistently. {extra}")
@@ -111,7 +134,7 @@ def doc(doc_id: str) -> str:
 
 def source_text(doc_id: str) -> str:
     """The text the v2 call edits: v1's fictionalised excerpt, or a raw excerpt for a new document."""
-    return V1_DOC(doc_id) if doc_id in M.DOCS and doc_id not in NEW_DOCS else M.raw_excerpt(doc_id)
+    return V1_PATH(doc_id).read_text() if doc_id in M.DOCS and doc_id not in NEW_DOCS else M.raw_excerpt(doc_id)
 
 
 def install():

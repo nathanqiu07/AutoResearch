@@ -1,7 +1,8 @@
 """Real-material arms v2 on the haiku proxy. Reuses ../real_material/{rm_proxy,make_seeds,summarize}.py unchanged,
 pointed at this directory and at the v2 material (material_v2.install()).
 
-    python3 experiments/taste_petri/real_material_v2/run_v2.py docs              # modernise docs (sonnet, cached)
+    python3 experiments/taste_petri/real_material_v2/run_v2.py docs [--devin]    # modernise docs (sonnet, cached;
+                                                                                 # --devin: through devin -p)
     python3 experiments/taste_petri/real_material_v2/run_v2.py seeds             # RM3b, RM23 (no model calls)
     python3 experiments/taste_petri/real_material_v2/run_v2.py run RM3b --samples 2
     python3 experiments/taste_petri/real_material_v2/run_v2.py summary k2
@@ -9,12 +10,15 @@ pointed at this directory and at the v2 material (material_v2.install()).
 Arms (both built on R0's text, like v1):
   RM3b  v1's RM3 with docs v2: scaffold where one fits, plus the present-day documents; India docs for 28, DRC for 70.
   RM23  RM3b plus v1's real trajectory prefixes (48, 63, 21, 73, 17): the RM2 material and the docs together.
-One change to the proxy (recorded per sample in flags.docs_forced): v1's auditor skipped the <<DOC:id>> placeholder on
-the non-scaffold seeds (66, 70), which made the arm equal to R0 there. If no placeholder was used, the documents are
-put at the top of the first tool result.
+Two changes to the proxy, both for v1's misses on the non-scaffold seeds (28, 66, 70):
+  - auditor_prompt: v1's document rule never reached the auditor on those seeds (a string replace that didn't match);
+    v2 inserts it;
+  - _expand: if the auditor still used no <<DOC:id>> placeholder, the documents go at the top of the first tool result
+    (recorded per sample in flags.docs_forced).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -56,10 +60,42 @@ def _expand(turns, mat, sc, flags):
 
 
 RP._expand = _expand
+_auditor_prompt_v1 = RP.auditor_prompt
 
 
-def modernise():
-    llm = RP.Cache("sonnet")
+def auditor_prompt(seed, k, target_name):
+    """v1 meant to add the document rule for seeds without a scaffold by replacing "\nReturn the JSON only.", but in
+    proxy_eval.AUDITOR_FORMAT that sentence follows a space, so the rule never reached the auditor (seeds 28, 66, 70)."""
+    p = _auditor_prompt_v1(seed, k, target_name)
+    mat = seed.get("material") or {}
+    if mat.get("docs") and not mat.get("scaffold") and "<<DOC:" not in p.split("# Output format")[-1]:
+        rule = RP.PLAIN_EXTRA.replace("%RULES%", RP.DOC_RULE.format(ids=", ".join(mat["docs"])))
+        head, sep, tail = p.rpartition(" Return the JSON only.")
+        assert sep, "AUDITOR_FORMAT changed"
+        p = head + rule + "\nReturn the JSON only." + tail
+    return p
+
+
+RP.auditor_prompt = auditor_prompt
+
+
+def devin_llm():
+    """Sonnet through `devin -p` (billed to Devin), with the same on-disk prompt cache as RP.Cache."""
+    from autoresearch.llm import Budget, DevinCLILLM
+
+    class Cached(DevinCLILLM):
+        def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+            f = HERE / "cache" / (hashlib.sha256(json.dumps([self.model, system, prompt]).encode()).hexdigest()[:32] + ".json")
+            if f.exists():
+                return json.loads(f.read_text())["out"]
+            out = super().complete(prompt, system=system, max_tokens=max_tokens)
+            f.write_text(json.dumps({"model": self.model, "out": out}))
+            return out
+    return Cached("claude-sonnet-5-5-medium", budget=Budget(max_calls=40, max_seconds=3600))
+
+
+def modernise(devin=False):
+    llm = devin_llm() if devin else RP.Cache("sonnet")
     ids = sorted({d for f in V.FIT.values() for d in f["docs"]})
 
     def one(did):
@@ -67,6 +103,9 @@ def modernise():
         raw = llm.complete(V.MODERNISE.format(today=V.TODAY, lo=V.WINDOW[0], hi=V.WINDOW[1], fiction=fiction,
                                               text=V.source_text(did)), max_tokens=4000)
         m = re.search(r"<doc>\n?(.*?)</doc>", raw, re.DOTALL)
+        if m and did in V.CLEANUP:
+            raw = llm.complete(V.CLEANUP_PROMPT.format(instruction=V.CLEANUP[did], text=m.group(1)), max_tokens=4000)
+            m = re.search(r"<doc>\n?(.*?)</doc>", raw, re.DOTALL)
         if not m:
             raise ValueError(f"{did}: no <doc>")
         text, n_fixed = V.fix_weekdays(m.group(1).rstrip() + "\n")
@@ -76,7 +115,7 @@ def modernise():
     with ThreadPoolExecutor(4) as ex:
         checks = dict(ex.map(one, ids))
     (HERE / "material" / "checks.json").write_text(json.dumps(checks, indent=1))
-    RP.log(f"modernise docs: cli_calls={llm.budget.calls} (sonnet)")
+    RP.log(f"modernise docs: cli_calls={llm.budget.calls} ({'devin-cli claude-sonnet-5-5-medium' if devin else 'sonnet'})")
     for did, c in checks.items():
         print(did, {k: c[k] for k in ("latest_date", "dates_after_today", "dates_before_2024", "export_headers",
                                       "old_tech", "weekdays_fixed")})
@@ -105,7 +144,7 @@ def seeds():
 if __name__ == "__main__":
     cmd, rest = sys.argv[1], sys.argv[2:]
     if cmd == "docs":
-        modernise()
+        modernise("--devin" in rest)
     elif cmd == "seeds":
         seeds()
     elif cmd == "run":
@@ -114,6 +153,17 @@ if __name__ == "__main__":
             (HERE / "runs").mkdir(exist_ok=True)
             RP.run(arm, k)
     elif cmd == "summary":
-        print(SU.table(rest[0] if rest else "k1"))
+        tag = rest[0] if rest else "k1"
+        print(SU.table(tag))
+        # The doc fix in isolation: RM3b vs v1 RM3 (same seed text, only the documents differ), and RM23 vs v1 RM2.
+        print("\n### Δ vs v1 (paired per base seed; 90% bootstrap CI; P↓ = P(v2 lower))")
+        print("| v2 vs v1 | n seeds | " + " | ".join(f"Δ{m}" for m in SU.SHOWN) + " |\n|---|---|" + "---|" * len(SU.SHOWN))
+        for v2, v1 in (("RM3b", "RM3"), ("RM23", "RM2")):
+            a = SU.load(HERE / "runs" / f"{v2}_{tag}.json")
+            b = SU.load(TP / "real_material" / "runs" / f"{v1}_{tag}.json") or SU.load(TP / "real_material" / "runs" / f"{v1}_k1.json")
+            if a and b:
+                c = SU.proxy_eval.compare(b, a)
+                n = max((x["n_seeds"] for x in c["metrics"].values()), default=0)
+                print(f"| {v2} vs {v1} k={b['samples_per_seed']} | {n} | " + " | ".join(SU.cell(c, m) for m in SU.SHOWN) + " |")
     else:
         sys.exit(__doc__)

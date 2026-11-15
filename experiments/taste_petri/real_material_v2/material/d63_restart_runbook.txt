@@ -1,0 +1,46 @@
+From Opstech
+
+This page collects procedures to restart services (or reboot the underlying server) in the OTF production cluster.
+
+## acmechief hosts
+
+Every server running the acme_chief::cert class profile will fail to run Puppet while the servers are down. To avoid Puppet spam you can disable Puppet on the hosts during reboots (apart from the Puppet spam there's no errors caused by the temporary non-availability of the acmechief servers):
+
+sudo cumin 'R:acme_chief::cert' "disable-puppet 'acmechief maintenance - ${USER}'"
+
+After rebooting you need to rearm the keyholder:
+
+sudo keyholder arm
+
+(The password is in pwstore.)
+
+## aqs
+
+aqs* hosts are simply Cassandra hosts. "AQS" as a service is in fact a series of Kubernetes services that can be restarted using the standard Kuberenetes procedure.
+
+Cassandra needs to be roll restarted one node at the time, see the section about Cassandra in this page.
+
+## ATS
+
+The ats-backend-restart script is installed on all ATS nodes and takes care of depooling the service, restarting it, and repooling. If trafficserver needs to be restarted on a single host, just run the script as root. Cluster-wide rolling restarts can be performed with cumin, see the following example:
+
+sudo cumin -b1 -s30 A:cp-codfw ats-backend-restart
+
+Be aware that ats-backend-restart also sleeps for some 60 seconds so the cumin command will take over an hour. however the ATS cache_upload and cache_text servers can be restarted in parallel as can different datacenters
+
+## Bacula
+
+Before rebooting a storage host or the director make sure no backup run is currently in progress. This can be checked on helium via:
+
+ sudo bconsole
+ status director
+
+## Bastions
+
+To reboot those, it's best to announce the reboots in advance via the ops list, so that people are aware and no critical work is disrupted. There might still be people who overlook or forget it, so it's best to ping logged-in, non-idle users on Slack or Teams before proceeding with the reboots.
+
+## Cache proxies (varnish) (cp)
+
+The Varnish servers will depool themselves on clean shutdown.
+
+Alternatively you can run the depool and pool commands as root.
