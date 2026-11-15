@@ -1,3 +1,11 @@
+# Current checkpoint — 2026-11-15T14:06:17.401025+00:00
+
+Primary14 completed at14:01:07UTC:14 known calls, $0.085065 incremental; cumulative scaling298 calls/$3.345365 and zero new holds. All70 unavailable P8 descendants remain missing.09 prepares provenance and04 alone scores new predictions. First8 v4 is live with the predeclared recovered903 branch:228 planned cells,194 attemptable,588-call/$2.20 ceilings,49.10 gross reference reservations. Both prior untouched jobs completed known with no new holds; seven older reference unknowns remain unresolved.
+
+Internal allocation transfer8USD moves unissued profile capacity to reference: profile192/reference58/downstream200/contingency50, total500 OpenAI unchanged. The same frozen remaining56 cohort is in offline preparation under existing10; no new execution authority. Remaining8 extraction awaits the reviewed P7/P3 schema-separated launcher; own/swapped0b051f runtime passed independent review and admission preparation follows. Downstream paid lane stays closed; its existing owner prepares a future-only offline P8 exporter under three new canonical path locks. Final test remains unauthorized.
+
+Earlier checkpoints below retain their dated context.
+
 # Overnight campaign checkpoint
 
 Updated 2026-11-15 at 13:33 UTC (5:33 a.m. Pacific). This is a running checkpoint. Work remains bounded by 9 a.m. Pacific, and the final test is not authorized.

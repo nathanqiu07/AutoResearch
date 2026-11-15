@@ -682,3 +682,59 @@ Canonical main commit `75fbc0e7fc77a486719e2839b2b390ff1914ddce` adds only two n
 Role01 used the pinned owner10 reconstruction fixture in a dedicated socket-disabled offline subprocess. Receipt `/private/tmp/gio-reference31-exact-deny-verification-v1/verification-receipt.json` SHA `5cf8244a73b5fd2cc9c0fbc53d6605cf0f282fa09980ee1b977e44130202d83b`: both actual incident requests match recorded body and endpoint hashes;12 pretransport denials cover2requests ×2serializations ×both/body-only/endpoint-only guards, no hash substitution, no forwarding. A distinct synthetic request forwards once. Original caches unchanged; no raw payload retained or printed. This supports unchanged additive list `7e1dc77d77feb53d0b9d6327260fa4086447b4f96eccd05dc8a4a513104c4ffe` with old wrapper/observer unchanged. Never import fixture into a live launch process.
 
 Root's existing04 is doing a focused review of first8 scheduler v2 stopped-drained and exact535/903 disposition contracts, not repeating the scientific runtime review. Existing01 prepares valid14 scaling admission while09 finishes binding; own-swapped implementation continues with driver. No duplicate scheduler or new worker.
+
+
+## Approval-chain metadata retention (2026-11-15 13:45 UTC)
+
+Root separately authorizes audit044 to copy exactly two approval-chain metadata files into its durable PRIVATE archive, outside the3,016 raw-record allowlist: `/private/tmp/gio-profile-20261115-evaluator/released/profile204-retention-custody-review-v1.json` SHA `b20e0ece59ca334a7b51e7072faa784f7050bc68258375e79dc2c4373e195c20` and `/private/tmp/gio-profile-20261115-evaluator/released/profile204-private-retention-exact-allowlist-v1.json` SHA `f403b554deefa55230486f09c31f469250cc415bf60b3dff41b2cf5e4b5420eb`. These are typed custody decisions and path/hash/role mappings, not human labels or model payloads. Preserve their exact bytes and original-source/destination hashes with0700/0600permissions; no embedded reference following, symlinks, or public raw metadata dump. This is additive approval-metadata custody only; it does not expand which underlying records may be copied. Record their archive locations in final044handoff so the provenance chain is reconstructible. No run depends on this archival task.
+
+
+### Current preparation checkpoint (2026-11-15 13:47 UTC)
+
+Primary14 binding `f394a9724c8da39b09fa57a1ac61dc76a9287da1748aeb7fdda9efb84934f2e6` received by existing01 for a finite one-job admission using new11 guard and first4 closed checkpoint `5328a3e100b1f5068b42c54646c378f5599e1137bfbf4be2e2dfb398d82a0903`. Root prepared immutable same-ledger snapshot284/$3.26030 (`ec63c88e7f8f785329612ba32f0659447fe877db8af151a9cd0cc111f54a83b4`); no reset or hold release.14 new calls max$1.51148 remain unauthorised until exact helper/proposal review.
+
+Remaining8 extraction inventory is `/private/tmp/gio-remaining8-scaling-inventory-v1/inventory.json` SHA `30916347bcba190e698ad1e4d3e50dcedea7fd18dbe38c603295172e392a923e`: original drafts10,11,13,14,16,17,19,20 in original order, P7 thenP3, existingSol/Astra cells. All8 exact dual request identities are distinct and avoid the new guard; original combined ceiling$19.26906. Neel/P3 historicalLuna rep0 stays unavailable; its predeclared newSol/Astra builds remain unchanged. Inventory only, not execution authority.
+
+Root source retention and successor ownership pushed `e3b9be0394b14c69e0924337fb9804dd8494e076` after929 tests/2skips. Source snapshot contains30 exact reviewed code/test/metadata files (196,532bytes) plus manifest/review docs, no private inputs or live databases.
+
+
+## Reference2 launched; first8 v2 needs narrow fix (2026-11-15 13:49 UTC)
+
+Root inspected exact two-job scheduler `5e98afa67688382cc8309e816cb0d050cbcce116aa9d0248d98445cbc175c511`, independently reran15tests and actual artifact preflight, rechecked both claims/outputs absent and existing leases unchanged. Issued `/private/tmp/gio-profile-20261115-coordinator/accounting/reference2-observed-root-inspection-v1.json` SHA `7905d6c58efd9b94fa6a3565932d1991a205309b72c309d0942f694f70486674` and launched ONLY535 then903 sequentially, max449calls/80cells within existing$1.40 of$46.90 reserved. Newguard7e1d+exactreplay5cf pinned. First8 not automatically authorized. No new reservation or partial-tail retry.
+
+ACTION for existing10:04 found a concrete first8-v2 known-disposition bug at line105. It passes enriched incident `original['plan']` (extra metadata keys) into `recovery903_diagnostics`, whose strict envelope comparison expects only `{path,sha256}`. Valid completed535/903 evidence therefore fails. Correct only that reference normalization in a separately pinned scheduler successor, leaving original incident, v2 source, runtime3de and all scientific packets unchanged. Add BOTH enriched535 and enriched903 known-terminal fixtures; prior21tests covered withheld only.04 is preparing the minimal reproduction/receipt; please fix in existing10, no new worker or runtime redesign. Two-job launcher itself does not use this path and remains valid.
+
+
+### Review evidence and avoiding duplicate binding work (13:50 UTC)
+
+First8 v2 focused review receipt is `/private/tmp/gio-profile-20261115-evaluator/released/reference-first8-scheduler-v2-independent-review-v1.json` SHA `2951037038a251dc8a12f196674758384db5238fe3ab3e96b8d2553284e426da`. Reproduction `/private/tmp/gio_first8_evaluator_known_disposition_review_v1.py` covers both enriched535/903;21existing plus5synthetic tests passed, with the expected enriched-ref rejection reproduced. Existing10 owns the narrow successor fix.
+
+05 final baseline028 receipt received (`a4b819e35ea2a1ba40ef1be2c8cbae0d5b8e563c88e6869f934eab921203328d`, publication `e0d6d5965a5e03fa2345014c57fb4967935f12be`) and relayed to04 for additive caveat closure. For own/swapped input checks,04 already verified historic56 own/generic alias lineage and exact donor/target feasibility in binding67e921d8. Please reuse that receipt and WAIT for concrete successor packets, then05 independently verifies their exact donor/target/payload bindings. Do not repeat the existing historical alias proof or create another prospective compiler. Driver/01 owns implementation and actual capture,04 owns scoring, root owns admission.
+
+
+### First8 successor check 2026-11-15T13:50:48.928944+00:00
+
+Root read v3 `7f2b823c1c1fba859ce450f222443be6cec1bd79bb6c9b9ba0a5d2cc04cda3af`: the enriched-plan-reference bug is still present at line110 (`evidence={plan:original[plan],...}`). Pinning the new guard/wrapper did not normalize that dict. Please preserve v3 and deliver the narrow corrected successor with enriched535/903 tests. Existing04 receipt/reproduction already identifies the exact issue; no scientific code change is needed. Current two-job execution is unaffected.
+
+
+## Active dispatch and next preparation (2026-11-15; native timestamps authoritative)
+
+Root launched primary14 after independent review1d2fcf82 and actual read-only admission PASS; it completed at14:01:07, terminal18d3377cf0023a99e5fa9bc8c6dc6fddcaa4d352dad7f7a6d49da02189ac5495, verified8a3768e1f7ea55d3019670554b92dd9defe8a1bac6c707723710c32c7a0dabdb. ACTION09: prepare exact completion/provenance for one valid14-call descendant, retaining84planned/70missing and all four source build outcomes;04 awaits for scoring. No further first4 repairs.
+
+Reference2 terminal6698440ce6cf43da2991bf174c5bd34889b636bc167f929faff1e407bb291b85 is COMPLETE,535/903 known, zero new holds. V4 independent review7be42859 closed enriched-ref blocker. Root issued exact eight first8 leases, selected predeclared recovered903 plan d076fbec, authorized2.20 within50 (49.10 total retained), actual dispatch ff0b0f38eb879da18e9f7933a03bc34da4d66e6a2c53cb587c6b619fb9965706 passed all native/wrapper checks.04 verifies actual903cache lineage while root prepares launch. No prior holds released.
+
+Remaining8 native admission review identified mixed source schemas; existing infrastructure fixes P7four thenP3four homogeneous batches, existing driver reviews actual packet admissions. Same eight inputs/order/settings/19.26906 ceiling, no runtime relaxation. Own/swapped independent review88146d90 passed exact0b051f runtime; infrastructure prepares exact successor wrapper/admissions after the remaining8 fix,05 remains actual-input reviewer.
+
+ACTION10: continue same-frozen-cohort remaining56 OFFLINE preparation on codex/gio-overnight-10-remaining56, exact3de7299 base, under existing10 ownership. Root adopts preparation and will explicitly transfer8.00 from unissued profile allocation to reference (profile192/reference58/downstream200/contingency50,500 total), preserving all issued reservations/unknown holds. This covers updated7.01 per-user caps and existing49.10; no new paid authority before exact proposal/review, first8/recovery priority, fixed original order and deadline admission, all1836planned cells retained. No outcome-based prefix selection.
+
+ACTION08/oversight: bounded FUTURE auditor-only P8 adapter/exporter is appropriate for existing downstream owner if clean existing interface extension is possible. Please relay to that existing owner: preserve exact saved P8 content/provenance; no fabricated history/weights/confidence, no M2 renaming, no target/judge exposure, no old artifact rewrite, no paid call/dependency/new goal. Request concrete isolated proposal, meaningful tests and exact owned paths before code so root can record ownership. The paid downstream lane stays CLOSED. Precise unsupported gap is acceptable if interface cannot honestly support it.
+
+
+### Concrete allocation and launch (2026-11-15; authority issued_at is authoritative)
+
+First8 v4 is LIVE (root session36898), actual native/wrapper check passed and04actual903lineage receipt701c8ea46d25846663b7c9e97cef245cefbd4ea2024e1cf934134b22781c6b54 received. Root adopted recovered903 only; fallback unlaunched. Root8USD internal transfer is {"path": "/private/tmp/gio-profile-20261115-coordinator/accounting/reference-capacity-transfer8-v1.json", "sha256": "37a50cd02bcc87f97dee4b345f4ba83cb0f4e6bfc7c515db3586e6a0eb19d579"}; allocations nowprofile192/reference58/downstream200/contingency50. Existing80 scaling allocation and all old holds unchanged. Remaining56 stays preparation-only until exact review/dispatch. Ownership records now include10successor and01reviewed0b051f runtime. Main heartbeatb0c3f31 changes80timestamp records only;809tests/2skips passed.
+
+
+### Ownership and chronology 2026-11-15T14:06:17.401025+00:00
+
+Main ee33144 reserves scripts/gio_petri/neutral_profile_adapter.py, scripts/gio_petri/test_neutral_profile_adapter.py, docs/user-models/petri-neutral-profile-adapter under existing gio-overnight-downstream. All locks including stale were checked for overlaps. Existing owner may proceed with the bounded offline design/implementation/tests; no paid packet/runtime edits or API calls. Root OWNERSHIP records the exact paths. Two earlier uncommitted checkpoint headings used guessed wall-clock minutes; they are corrected to defer to actual issued_at/native event timestamps, which were recorded from the clock and remain unchanged.
