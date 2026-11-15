@@ -1,8 +1,8 @@
 """Owain's SynthesizeMe pipeline, re-pointed at Marius Hobbhahn, with every call on swe-2-medium via devin-cli.
 
-The Owain modules (pairs_v2, pairs_v4, synthme/pairs.py, synthme/fit.py) are imported read-only and patched
-here; nothing else differs. This dir mirrors experiments/taste_petri/'s layout so those modules' TP-relative
-paths resolve inside it:
+The Owain modules (pairs_v2, pairs_v4, and synthme/pairs.py + fit.py as committed in e2e92fc9, vendored in
+vendor/ because the Owain session keeps editing them) are imported read-only and patched here. This dir
+mirrors experiments/taste_petri/'s layout so those modules' TP-relative paths resolve inside it:
   profiles_contrastive/decisions_pre_t.jsonl   paper training decisions (pre-T)
   informal/                                    informal pre-T sources and decisions
   pairs_v4/                                    post-T test pair build (pairs_v2 sources + pairs_v4 stages)
@@ -26,6 +26,7 @@ sys.path.insert(0, ROOT)
 sys.dont_write_bytecode = True  # importing the Owain modules must not write into their dirs
 
 from autoresearch.llm import Budget, DevinCLILLM  # noqa: E402
+from autoresearch.taste.methods.common import text_field as _text_field  # noqa: E402
 
 SLUG, NAME, T = "marius_hobbhahn", "Marius Hobbhahn", "2026-01-01"
 MODEL = "swe-2-medium"  # free on the Devin plan (user, 2026-11-15): every role, "sonnet" and "haiku" alike
@@ -183,7 +184,7 @@ def test_pipeline():
 
 def synthme_pairs():
     """synthme/pairs.py writing into this dir and reading this dir's decisions_pre_t / informal."""
-    P = _load("hob_synthme_pairs", os.path.join(TP, "synthme", "pairs.py"))
+    P = _load("hob_synthme_pairs", os.path.join(HERE, "vendor", "pairs.py"))
     P.HERE = P.TP = HERE
     _patch_v2(P.v2, HERE)
     _patch_v4(P.v4)
@@ -193,12 +194,28 @@ def synthme_pairs():
     return P
 
 
+TRUNCATED = []
+
+
+def text_field(result, key, max_chars=2000):
+    """methods.common.text_field, except an over-long value is cut at a word to max_chars (swe-2 ignores the
+    stated limit); a missing or empty value still raises."""
+    value = result.get(key)
+    if isinstance(value, str) and len(value.strip()) > max_chars:
+        TRUNCATED.append(key)
+        value = value.strip()[:max_chars].rsplit(" ", 1)[0]
+    return _text_field(dict(result, **{key: value}), key, max_chars)
+
+
 def synthme_fit():
     """synthme/fit.py on this dir's pairs; M0s and NAME are run here (no cached e2_v4 arms for him)."""
     P = synthme_pairs()
     sys.modules["pairs"] = P
-    F = _load("hob_synthme_fit", os.path.join(TP, "synthme", "fit.py"))
+    F = _load("hob_synthme_fit", os.path.join(HERE, "vendor", "fit.py"))
     F.WORKERS, F.CACHED = WORKERS, ["M0s", "NAME"]
+    F.m2.text_field = text_field
+    to_choice = F.to_choice
+    F.to_choice = lambda r, source: to_choice(dict(r, stated_reason=r.get("stated_reason") or ""), source)  # None in some rows
     test_model = F.test_model
 
     def baseline_or(arm):
