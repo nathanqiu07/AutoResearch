@@ -92,8 +92,16 @@ fresh lock (checked by path prefix). Claims and locks go stale after 2 hours wit
 
 **Communicate**
 ```bash
-python3 scripts/agentctl.py post "subject" "body" --to <agent|all> --task <slug>
+python3 scripts/agentctl.py post "subject" "body" --to <agent|all|'#topic'> --task <slug>
+python3 scripts/agentctl.py reply <msg-id> "body"     # answers the sender, or the topic it went to
+python3 scripts/agentctl.py thread <msg-id>           # a message with all its replies
+python3 scripts/agentctl.py follow <topic>            # also: unfollow
 ```
+A topic is a task slug or a shared area (e.g. `#taste-petri`). Topic messages reach the agents who
+follow it and the task's current claimant, so post to the topic rather than `all` when only the
+people on that work need it. Message ids appear in `brief` and `inbox`; answer with `reply` so the
+conversation stays in one thread.
+
 Post when you:
 - change an interface others call (function signature, CLI flag, fact format, file layout);
 - find a bug in someone else's area (don't fix it inside their lock; message them);

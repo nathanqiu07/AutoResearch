@@ -15,7 +15,10 @@ concurrent agents never produce merge conflicts:
   agentctl.py task list [--status open]
   agentctl.py claim SLUG   /  release SLUG  /  done SLUG --summary "..."
   agentctl.py lock PATH... --reason "..."  /  unlock PATH...
-  agentctl.py post "subject" "body" [--to NAME|all] [--task SLUG]
+  agentctl.py post "subject" "body" [--to NAME|all|'#TOPIC'] [--task SLUG]
+  agentctl.py reply MSG_ID "body"          to the sender, or to the topic the message went to
+  agentctl.py thread MSG_ID                a message with all its replies
+  agentctl.py follow TOPIC / unfollow TOPIC  receive '#TOPIC' messages (a task's claimant always does)
   agentctl.py inbox [--all]                messages to you or to all, unread first
   agentctl.py brief                        fetch only; print unread messages and if behind origin
                                            (run every prompt by the hook in .claude/settings.json)
@@ -285,22 +288,71 @@ class Ctl:
         self._commit(f"{me} heartbeat", rels)
 
     # ---------- messages ----------
-    def post(self, subject, body, to="all", task=""):
+    # A message goes to one agent, to "all", or to a topic "#slug". A topic reaches the agents
+    # who follow it and the current claimant of the task with that slug.
+    def post(self, subject, body, to="all", task="", reply_to=""):
         me = self.me()
-        t = now()
+        if to.startswith("#"):
+            to = "#" + slugify(to)
+        t = dt.datetime.now(dt.timezone.utc)  # sub-second "sent" keeps fast replies in order
         name = f"{t.strftime('%Y%m%dT%H%M%SZ')}-{me}-{uuid.uuid4().hex[:6]}.json"
-        self._write_json(f"messages/{name}", {"id": name[:-5], "from": me, "to": to, "task": task,
-                                              "subject": subject, "body": body, "sent": iso(t)})
+        msg = {"id": name[:-5], "from": me, "to": to, "task": task, "subject": subject, "body": body,
+               "sent": iso(t)}
+        if reply_to:
+            parent = self._read_json(f"messages/{reply_to}.json")
+            msg.update(reply_to=reply_to, thread=parent.get("thread") or reply_to)
+        self._write_json(f"messages/{name}", msg)
         self._commit(f"{me} -> {to}: {subject[:50]}", [f"messages/{name}"])
         return name[:-5]
+
+    def reply(self, msg_id, body):
+        """Reply in the same topic if the message went to one, otherwise to its sender."""
+        self.sync()
+        parent = self._read_json(f"messages/{msg_id}.json")
+        if not parent:
+            sys.exit(f"no message {msg_id}")
+        to = parent["to"] if parent["to"].startswith("#") else parent["from"]
+        subject = parent["subject"] if parent["subject"].startswith("re: ") else "re: " + parent["subject"]
+        return self.post(subject, body, to, parent["task"], reply_to=msg_id)
+
+    def thread(self, msg_id):
+        root = (self._read_json(f"messages/{msg_id}.json") or {}).get("thread") or msg_id
+        ms = [self._read_json(f"messages/{f}") for f in self._ls("messages")]
+        return sorted((m for m in ms if root in (m["id"], m.get("thread"))), key=lambda m: m["sent"])
+
+    def _follows_path(self, me):
+        return self._path(f".follows-{me}")
+
+    def follows(self, me=None):
+        p = self._follows_path(me or self.me())
+        return set(open(p).read().split()) if os.path.exists(p) else set()
+
+    def follow(self, topic):
+        topic = slugify(topic)
+        with open(self._follows_path(self.me()), "w") as f:
+            f.write("\n".join(sorted(self.follows() | {topic})) + "\n")
+
+    def unfollow(self, topic):
+        with open(self._follows_path(self.me()), "w") as f:
+            f.write("\n".join(sorted(self.follows() - {slugify(topic)})) + "\n")
+
+    def _reaches(self, m, me, follows):
+        if m["to"] in ("all", me):
+            return True
+        if not m["to"].startswith("#"):
+            return False
+        topic = m["to"][1:]
+        c = self._read_json(f"claims/{topic}.json")
+        return topic in follows or bool(c and c["agent"] == me and not self._stale(c))
 
     def messages(self, me=None, include_read=False, extra=()):
         me = me or self.me()
         read_p = self._path(f".read-{me}")
         seen = set(open(read_p).read().split()) if os.path.exists(read_p) else set()
+        follows = self.follows(me)
         out = []
         for m in [self._read_json(f"messages/{f}") for f in self._ls("messages")] + list(extra):
-            if m["to"] in ("all", me) and m["from"] != me and (include_read or m["id"] not in seen):
+            if m["from"] != me and self._reaches(m, me, follows) and (include_read or m["id"] not in seen):
                 out.append(m)
         return out
 
@@ -328,6 +380,10 @@ def main(argv=None):
     ul = sub.add_parser("unlock"); ul.add_argument("paths", nargs="+")
     po = sub.add_parser("post"); po.add_argument("subject"); po.add_argument("body")
     po.add_argument("--to", default="all"); po.add_argument("--task", default="")
+    rp = sub.add_parser("reply"); rp.add_argument("msg_id"); rp.add_argument("body")
+    th = sub.add_parser("thread"); th.add_argument("msg_id")
+    fo = sub.add_parser("follow"); fo.add_argument("topic")
+    uf = sub.add_parser("unfollow"); uf.add_argument("topic")
     ib = sub.add_parser("inbox"); ib.add_argument("--all", action="store_true")
     sub.add_parser("brief")
     a = p.parse_args(argv)
@@ -357,11 +413,21 @@ def main(argv=None):
         ctl.unlock(a.paths); print("unlocked", *a.paths)
     elif a.cmd == "post":
         print("sent", ctl.post(a.subject, a.body, a.to, a.task))
+    elif a.cmd == "reply":
+        print("sent", ctl.reply(a.msg_id, a.body))
+    elif a.cmd == "thread":
+        ctl.sync()
+        for m in ctl.thread(a.msg_id):
+            print(f"--- {m['id']} from {m['from']} to {m['to']}\n    {m['subject']}\n    {m['body']}")
+    elif a.cmd == "follow":
+        ctl.follow(a.topic); print("following", ", ".join(sorted(ctl.follows())))
+    elif a.cmd == "unfollow":
+        ctl.unfollow(a.topic); print("following", ", ".join(sorted(ctl.follows())) or "nothing")
     elif a.cmd == "inbox":
         ctl.sync()
         ms = ctl.messages(include_read=a.all)
         for m in ms:
-            print(f"--- {m['sent']} from {m['from']} to {m['to']}" + (f" [task {m['task']}]" if m["task"] else ""))
+            print(f"--- {m['id']} from {m['from']} to {m['to']}" + (f" [task {m['task']}]" if m["task"] else ""))
             print(f"    {m['subject']}\n    {m['body']}")
         ctl.mark_read([m["id"] for m in ms])
         if not ms:
@@ -375,7 +441,7 @@ def main(argv=None):
         behind = ctl.fetch()
         ms = ctl.messages(extra=ctl.upstream_messages() if behind else ())
         for m in ms:
-            print(f"agentctl message from {m['from']} to {m['to']}" + (f" [task {m['task']}]" if m["task"] else "")
+            print(f"agentctl message {m['id']} from {m['from']} to {m['to']}" + (f" [task {m['task']}]" if m["task"] else "")
                   + f": {m['subject']}\n    {m['body']}")
         ctl.mark_read([m["id"] for m in ms])
         if behind:

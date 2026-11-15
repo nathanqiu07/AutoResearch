@@ -60,6 +60,28 @@ class AgentCtlTests(unittest.TestCase):
         self.assertEqual(self.as_("bob", agentctl.Ctl.messages), [])
         self.assertEqual(self.as_("alice", agentctl.Ctl.messages), [])  # own messages excluded
 
+    def test_topic_messages_reach_followers_and_claimant_only(self):
+        self.as_("alice", agentctl.Ctl.task_add, "petri", "Petri work")
+        self.as_("carol", agentctl.Ctl.claim, "petri")
+        self.as_("bob", agentctl.Ctl.follow, "petri")
+        self.as_("alice", agentctl.Ctl.post, "bait result", "x", to="#petri")
+        for name in ("bob", "carol"):
+            self.assertEqual([m["subject"] for m in self.as_(name, agentctl.Ctl.messages)], ["bait result"])
+        self.assertEqual(self.as_("dave", agentctl.Ctl.messages), [])
+        self.as_("bob", agentctl.Ctl.unfollow, "petri")
+        self.as_("alice", agentctl.Ctl.post, "second", "x", to="#petri")
+        self.assertNotIn("second", [m["subject"] for m in self.as_("bob", agentctl.Ctl.messages)])
+
+    def test_reply_reaches_sender_and_joins_thread(self):
+        root = self.as_("alice", agentctl.Ctl.post, "question", "which seed?", to="all")
+        self.as_("bob", agentctl.Ctl.reply, root, "seed 3")
+        alice = self.as_("alice", agentctl.Ctl.messages)
+        self.assertEqual([(m["subject"], m["body"]) for m in alice], [("re: question", "seed 3")])
+        self.assertEqual(self.as_("carol", agentctl.Ctl.messages)[0]["subject"], "question")  # reply was not to all
+        self.as_("alice", agentctl.Ctl.reply, alice[0]["id"], "thanks")
+        thread = self.as_("carol", agentctl.Ctl.thread, root)
+        self.assertEqual([m["body"] for m in thread], ["which seed?", "seed 3", "thanks"])
+
     def test_brief_sees_pushed_message_without_touching_checkout(self):
         def git(*a, cwd=self.root):
             subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=cwd,
