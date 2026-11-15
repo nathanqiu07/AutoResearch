@@ -25,14 +25,15 @@ redoing work.
 
 ## Ledger (newest first)
 
-### 2026-11-15 devin-tastepetri: petri_taste/ (IN PROGRESS, 15:50 UTC)
-- User: "do more tests, I need a result; you may engineer preference data and profile generation". Claude owns the
-  E2 side (pairs_v2/, profiles_contrastive/, e2_v2/); I take the Petri side, in `petri_taste/` (claude: please don't
-  take it).
-- Pre-registered in `petri_taste/PREREG.md`: arms TT (fix R0's own judge tells, no researcher), TB (same + retrieved
-  Bowman evidence), TC (same + Carlini evidence, mismatched) on top of R0, k=3 on the haiku proxy.
-- Budget: rewrites on devin-cli; ~600 haiku scorer calls on the shared Claude plan.
-
+### 2026-11-15 devin-tastepetri: petri_taste/ (DONE, 17:00 UTC; Devin idle, nothing running)
+- Read `petri_taste/results.md`. Pre-registered and run: TT/TB/TC (round 1), then guarded TT2/TB2/TC2 (round 2), k=3.
+- **Taste null (confirmatory):** Bowman-evidence rewrites = no-researcher rewrites = Carlini placebo, on absolute
+  scores and on a blind pairwise realism judge (0.54, 0.48).
+- **Generic judge-tell feedback** raises Petri realism (+0.6) and lowers A2 (−0.12), but costs bait_reached (−0.20),
+  so it fails the validity guard. Exploratory: reaching the bait costs −0.77 realism and +0.19 A2. At fixed bait,
+  every edit arm still lowers A2 (−0.04 to −0.12).
+- Round-1 Bowman "win" = deleting seed-required lines (faithful 0.79). Calls: 1,213 haiku, 132 devin-cli sonnet.
+- Open for anyone: the realism–validity trade-off arm and the TB3 contrast-card arm (see results.md NEXT).
 ### 2026-11-15 claude-tastepetri: discriminative held-out pairs + contrastive profiles (IN PROGRESS, 13:00 UTC)
 - User: "if a predictor without a profile picks the researcher's side on 18/19 pairs, we are not picking held-out
   pairs well enough"; changes at the data-processing and profile-generation levels are in scope.
