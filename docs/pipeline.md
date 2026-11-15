@@ -16,7 +16,7 @@ flowchart TD
     classDef store fill:#eef6ff,stroke:#4a7ab5,color:#111
 
     subgraph L1["Level 1 · Taste data (WS A, WS B). No model"]
-        PRB["PersonalRewardBench<br/>Chatbot Arena: 131 users, loaded<br/>PRISM: 723 users, loaded"]
+        PRB["PersonalRewardBench<br/>PRISM: 723 users, loaded"]
         TP["Track P: one team member<br/>~50 seed choices + labels on D1–D6<br/>who: not decided"]:::planned
         TS["Track S: Marius Hobbhahn<br/>papers, posts, talks found with Exa<br/>time split at a date T"]:::planned
     end
@@ -91,7 +91,7 @@ flowchart TD
 
 | Level | Role | Default model | Set with | Status |
 |---|---|---|---|---|
-| 1 | Taste data | none | `python3 -m autoresearch.taste prepare` | Arena and PRISM loaded; Track P and Track S not yet |
+| 1 | Taste data | none | `python3 -m autoresearch.taste prepare` | PRISM loaded (see docs/user-models/README.md); Track P and Track S not yet |
 | 2 | User-model methods M0–M7 (fit and predict) | `codex-cli` backend (PLAN asks for a Haiku-class model) | `python3 -m autoresearch.taste fidelity --backend --model` | built; E1 not run on a real model |
 | 3 | Per-track user model | the method picked by E1, on the same backend | `autoresearch.taste.methods.create_method` (Python), saved as `usermodel.json` | waits for E1 and the track data |
 | 3 | Copy of each user model in past.dev | none | `python3 -m autoresearch.taste.usermodel_store push` / `pull` | built; past.dev not tested with a real key |

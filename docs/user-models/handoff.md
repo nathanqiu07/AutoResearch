@@ -2,7 +2,7 @@
 
 ## Current state
 
-All eight methods, the shared interface, Arena splits, the fidelity runner and
+All eight methods, the shared interface, PRISM splits, the fidelity runner and
 bounded schema search are implemented. Foundation commit: `fd00fe6`. Method commit:
 `9c72e05`. Dataset/runner commit: `ee7a308`. See [the guide](README.md) for commands
 and [the design](design.md) for assumptions.
@@ -12,16 +12,12 @@ review found an incomplete-search selection bug: an early trial could win after
 later trials exhausted the budget. A regression test reproduces that case; search
 now reports `incomplete` with no selected configuration whenever any trial fails.
 
-Arena contains 1,338 choices from 131 people: 42 development users and 89 final
-test users. Development users have 260 history, 97 validation and 183 target
-choices. These counts describe the data; they are not model results.
-
-PRISM's row service hit HTTP 429 after 6,969 cached rows. Canonical Parquet files
-at upstream revision `a03cab5122c397f1307ed092423a05732cc2aa93` then supplied all
-16,705 rows from 723 users. All cached rows matched. Validation found 12 duplicate
-content pairs (nine duplicate IDs), all agreeing in labels and staying within
-partitions. No PRISM manifest was accepted. Gio is choosing whether to deduplicate
-with an explicit removal record or keep Arena as the only dataset for now.
+Update 2026-11-14 (Ethan): Chatbot Arena was removed; PRISM is the only
+preference dataset. Its 12 duplicate content pairs were all exact repeats (same
+labels, same partitions), so `prepare` keeps one copy of each and records the
+removals in `data/prefdata/prism-splits-removed.json`. PRISM has 16,693 choices from
+723 users (345 development, 378 final test). How to get it: [the guide](README.md),
+"Get the PRISM data".
 
 ## Choices and their reasons
 
@@ -56,20 +52,20 @@ the key without echo and writes `runs/fidelity/openai-dev-01/report.json`. No li
 API call has run. Do not infer the remaining credit balance from redemption alone.
 
 The first proposed live check is ten development predictions, M0 versus M1, for
-one Arena user. Question: can both methods make valid, auditable predictions on
+one PRISM user (the pinned pilot checkout predates the switch and still targets
+Arena; re-point it before running). Question: can both methods make valid, auditable predictions on
 real data within the cap? Expected result: valid saved outputs and usage. Errors,
 missing usage or inconsistent reload predictions count against readiness. Even
 a perfect result on this pilot does not establish preference quality.
 
 Then compare methods on more development users, choose a configuration and model,
-and freeze them before the single final invocation. The current final command
-registers one dataset; choose Arena or extend registration for both datasets
-before opening the final test. Do not delete the final marker to rerun.
+and freeze them before the single final invocation. The final command
+registers PRISM, the only dataset. Do not delete the final marker to rerun.
 
 ## Integration handoff
 
 The harness owner can use `create_method(...).fit(history, validation)`,
 `predict(context, options)`, `save(...)`, and `load_model(...)`. Predictions include
 choice, probability, rationale and calibration status. The team owns the test of
-whether this improves research outcomes; Arena preference accuracy alone cannot
+whether this improves research outcomes; PRISM preference accuracy alone cannot
 answer that question. No teammate implementation files were modified for WS A.

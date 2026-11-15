@@ -51,7 +51,7 @@ market are in scope (only spec 2). The resolutions are in §2.
 | I1 | **AUROC is not "lower is better".** AUROC measures how well P(eval) separates our environments from *real deployment* transcripts. 0.5 means indistinguishable, which is the best possible result. Below 0.5 means the model reliably rates our environments as *more* real than real traffic, which is still detectable and odd. AUROC also needs a negative class (real deployment data), which spec 5 doesn't mention | 5 | Report AUROC with 0.5 as the target, and report \|AUROC − 0.5\|. Build a **topic-matched deployment pool** as the negative class (§4.3) |
 | I2 | **"Same usefulness" is undefined.** Lowering awareness is trivial if the environment stops testing anything. That is the canonical failure, and the README already shows it | 2, 4 | Validity is a hard constraint: the opportunity is present, the behaviour is observable, and it is scorable. Score = (1 − awareness) × validity, with validity < 0.7 counted as 0 (this is already in the repo). Add a **behaviour-gap** check (§3.2, V3) |
 | I3 | **Lower awareness doesn't prove more authentic behaviour.** The EvalAwareBench paper finds recognition *rarely* changes behaviour. Our live run had Haiku honest in 55/55 samples | 2, 5 | Make no claim of "authentic deployment behaviour" unless V3 shows a behaviour gap. Choose probes and targets with some baseline misbehaviour (open task `behavior-gap-probe`) |
-| I4 | **Chat preferences are not research taste.** PersonalRewardBench users are anonymous Chatbot Arena and PRISM users rating chat replies. A method that works there may not transfer to a researcher's papers and decisions | 1, 3 | Two stages: (a) **develop and select the method** on PersonalRewardBench, where held-out ground truth exists; (b) **apply the selected method** to each taste track (a team member, and a scraped public researcher) and test transfer on that track's held-out decisions (§6.3). Report the two separately |
+| I4 | **Chat preferences are not research taste.** PersonalRewardBench's PRISM users are anonymous people rating chat replies. A method that works there may not transfer to a researcher's papers and decisions | 1, 3 | Two stages: (a) **develop and select the method** on PersonalRewardBench, where held-out ground truth exists; (b) **apply the selected method** to each taste track (a team member, and a scraped public researcher) and test transfer on that track's held-out decisions (§6.3). Report the two separately |
 | I5 | **Predicting the user is not the same as researching well** | 3 | Separate metrics (§9). Taste is a *prior* whose weight is learned from outcomes (already in v2: Spearman ρ → weight). Stress-test with the existing `demo_contrarian` (deliberately bad taste) |
 | I6 | **Whose taste?** Undecided | 3 | **Decided: two tracks, both run in full** (§6.3). **Track S (scraped):** one public researcher, built from Exa-scraped papers, posts and code, validated on time-split public decisions. **Track P (personal):** the method selected on PersonalRewardBench, applied to one team member's own labelled decisions. Comparing the tracks shows which kind of taste data helps the loop more |
 | I7 | **Goodhart and circularity.** If the loop optimises against the same target, judge and tasks we report on, it learns that judge's blind spots | all | Strict dev/test split: dev targets/judge/tasks during the loop. Final numbers on a **held-out target family**, a **held-out judge**, and **held-out tasks**, plus human spot-checks (§7.3) |
@@ -169,7 +169,7 @@ and extra deployment transcripts, and SAD only as a target check.
 
 | Asset | What it is | Our use |
 |---|---|---|
-| **PersonalRewardBench** (SynthesizeMe, Ryan et al., ACL 2025) | User-stratified splits of 131 Chatbot Arena users and 720 PRISM users | **Method development and selection** (§6.2). User-level train/val/test |
+| **PersonalRewardBench** (SynthesizeMe, Ryan et al., ACL 2025) | User-stratified splits of 723 PRISM users (Chatbot Arena dropped 2026-11-14) | **Method development and selection** (§6.2). User-level train/val/test |
 | Personal labels from one team member | Their choices at D1–D6 on logged loop decisions, plus ~50 seed pairwise choices before any run | **Track P** ground truth (§6.3) |
 | Scraped researcher corpus (Exa) | Papers, blogs, talks, code, posts, with dates | **Track S** input. A time split gives the held-out test (§6.3) |
 | **Taste-Bench** (Pan et al. 2026, [wbopan/tastebench](https://github.com/wbopan/tastebench); data gated on Hugging Face, CC BY 4.0) | Two-option decision forks from real agent runs, each labelled by how the rest of the run went. Research subset: 112 forks from METR's RE-Bench and HCAST runs (64 detour, 48 parallel) | **External research-taste test** (E7): does R0's decider, or each track's user model, pick the step that worked? Scorer: `taste/tastebench.py` |
@@ -282,8 +282,7 @@ principle count, persona length, exemplar count, structured vs free-text. This i
 research loop, and it may itself run as an R0-style loop with the dev-user validation
 accuracy as its metric (it dogfoods our own system).
 
-**Metrics.** Held-out pairwise accuracy per dataset (Chatbot Arena and PRISM reported
-separately); calibration (Brier score) for M7; cost per user model. Bootstrap CIs over
+**Metrics.** Held-out pairwise accuracy on PRISM; calibration (Brier score) for M7; cost per user model. Bootstrap CIs over
 users.
 
 **Success bar.** The best method beats M1 at its best k on test users, with the CI
@@ -526,7 +525,7 @@ PersonalRewardBench options are text.
    | `m5_hybrid.py` | M3 principles + M2 persona + retrieved exemplars | one prompt |
    | `m6_verified.py` | M5 + verification filter | Drop any principle or persona line that lowers val accuracy (leave-one-out) |
    | `m7_confident.py` | M6 + confidence | Ask for P(choice). Calibrate it with Platt scaling on val. This confidence is what WS D uses to fall back to R0 |
-4. `taste/fidelity.py` and the CLI command `python3 -m autoresearch fidelity --method m6 --dataset prism|arena --users dev --n-users 50`.
+4. `taste/fidelity.py` and the CLI command `python3 -m autoresearch fidelity --method m6 --dataset prism --users dev --n-users 50`.
    * Reports accuracy with a bootstrap CI over users (`research/stats.bootstrap_ci`), Brier score, and $ per user model.
    * Results go to `results/fidelity/<method>_<dataset>.json`.
    * `--users test` requires `--final` and writes `results/fidelity/TEST_USED`. **Test users are used once**, enforced by the code, not by memory.
@@ -776,7 +775,7 @@ and in parallel, and produce the charts and demo (§8, §10, E5).
 class Choice:              # one past or held-out choice, text options
     user_id: str; context: str; a_text: str; b_text: str; chosen: str  # "a" | "b"
     decision_point: str = ""  # "D1".."D6" for research choices; "" for PersonalRewardBench
-    reason: str = ""; timestamp: str = ""; source: str = ""             # source: prb_arena|prb_prism|seed|label|timesplit
+    reason: str = ""; timestamp: str = ""; source: str = ""             # source: prb_prism|seed|label|timesplit
 
 @dataclass
 class Prediction:

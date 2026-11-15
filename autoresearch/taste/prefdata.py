@@ -9,8 +9,7 @@ from pathlib import Path
 
 from .usermodel import Choice, digest
 
-DATASETS = {"arena": "MichaelR207/chatbot_arena_personalized_0125",
-            "prism": "MichaelR207/prism_personalized_0125"}
+DATASETS = {"prism": "MichaelR207/prism_personalized_0125"}
 
 
 @dataclass(frozen=True)

@@ -49,9 +49,9 @@ def run_search(records, manifest, configs, llm, output, dataset, seed=0, n_users
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--configs", required=True, help="JSON list of {id,method,config}")
-    p.add_argument("--records", default="runs/prefdata/arena.jsonl")
-    p.add_argument("--manifest", default="data/prefdata/splits.json")
-    p.add_argument("--dataset", choices=["arena", "prism"], required=True)
+    p.add_argument("--records", default="runs/prefdata/prism.jsonl")
+    p.add_argument("--manifest", default="data/prefdata/prism-splits.json")
+    p.add_argument("--dataset", choices=["prism"], default="prism")
     p.add_argument("--output", required=True)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--n-users", type=int)

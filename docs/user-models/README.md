@@ -57,50 +57,64 @@ Saved artifacts must be reloaded on the same backend/model/endpoint. To evaluate
 a different model, fit afresh using that backend and the same allowed history. This
 prevents invalid transfer of M4 feature weights and M7 calibration.
 
-## Prepare data
+## Get the PRISM data
+
+The preference data is PRISM from PersonalRewardBench
+([dataset](https://huggingface.co/datasets/MichaelR207/prism_personalized_0125),
+[official loader](https://github.com/SALT-NLP/SynthesizeMe/blob/main/synthesizeme/datasets/dataset.py)).
+The repo holds only the split manifest (IDs and hashes, no text). Each person
+downloads the data once:
 
 ```bash
+git pull
 python3 -m autoresearch.taste prepare
 ```
 
-The initial Arena snapshot has 1,338 rows from 131 users. The shared manifest is
-`data/prefdata/splits.json`; normalized records and cached download pages live under
-ignored `runs/prefdata/`. The command is idempotent for identical data and refuses
-to overwrite a different manifest or record snapshot. The manifest contains IDs
-and hashes, not response text. Re-run preparation to reconstruct local records.
+No API key, Hugging Face account or extra package is needed; it uses the public
+Hugging Face rows service through the standard library. Expect about 10 minutes and
+about 200 MB of cached pages. On success it prints:
+
+```
+{"n_examples": 16693, "n_removed_repeats": 12, "n_users": 723, "manifest_id": "b6e2453150fb5983052e393497e62c094aa44998796ecfd27817d05962c280c9"}
+```
+
+What it writes, all under ignored `runs/prefdata/`:
+
+- `runs/prefdata/raw/prism/`: cached pages (about 200 MB).
+- `runs/prefdata/prism.jsonl`: the 16,693 normalized choices (about 40 MB) that
+  `fidelity` and `schema_search` read by default.
+
+If the download stops (HTTP 429 rate limit or a 5xx error after the built-in
+retries), run the same command again: cached pages are kept, so it resumes. If it
+reports `split manifest already exists with different content`, your download does
+not match the committed `data/prefdata/prism-splits.json`; do not delete the
+manifest to get past it, report it instead. Never commit `runs/`.
+
+### What the data is
+
+723 users (345 development, 378 final test). Upstream has 16,705 rows; 12 are exact
+repeats (same person, prompt, responses, answer and partition). `prepare` keeps one
+copy and lists each removal in `data/prefdata/prism-splits-removed.json`. Repeats that
+disagree on the answer or cross a partition fail the strict manifest check. The
+canonical Parquet files at upstream revision
+`a03cab5122c397f1307ed092423a05732cc2aa93` give the same records.
 
 The outer train/validation user partitions are development users; outer test users
 stay held out. Within each person, preserve released history/validation/test
 conversation groups. Blank responses are valid data. Prior judges' reasoning,
 predictions and scores never enter normalized records. Target options are
 deterministically shuffled A/B; the seed and normalized source digest are pinned.
+The command is idempotent for identical data and refuses to overwrite a different
+manifest or record snapshot. The rows service may return truncated cells; the loader
+fails rather than score partial conversations.
 
-To prepare PRISM separately, use distinct explicit paths so the existing shared
-Arena snapshot cannot change:
-
-```bash
-python3 -m autoresearch.taste prepare --datasets prism \
-  --output runs/prefdata/prism.jsonl --manifest data/prefdata/prism-splits.json
-```
-
-PRISM is prepared: 16,693 choices from 723 users (345 development, 378 final test),
-manifest `data/prefdata/prism-splits.json`. Upstream has 16,705 rows; 12 are exact
-repeats (same person, same prompt and responses, same answer, same partition) and
-are dropped by `drop_exact_repeats`, with each removal listed in
-`data/prefdata/prism-splits-removed.json`. Repeats that disagree on the answer or
-cross a partition still fail the strict manifest check. The same manifest ID came out
-of the canonical Parquet files at upstream revision
-`a03cab5122c397f1307ed092423a05732cc2aa93`. The downloader backs off and retries on
-HTTP 429 and 5xx; cached pages make a rerun resume.
-The public rows service may return an error or truncated cells; the loader fails
-rather than score partial conversations. Source links:
-[Arena](https://huggingface.co/datasets/MichaelR207/chatbot_arena_personalized_0125),
-[official loader](https://github.com/SALT-NLP/SynthesizeMe/blob/main/synthesizeme/datasets/dataset.py).
+Chatbot Arena, the other PersonalRewardBench dataset, was removed on 2026-11-14 at
+Ethan's request; it is no longer supported.
 
 ## Preview and compare
 
 ```bash
-python3 -m autoresearch.taste fidelity --dataset arena \
+python3 -m autoresearch.taste fidelity --dataset prism \
   --methods m0 m1 m2 m3 m4 m5 m6 m7 --n-users 3 --dry-run
 ```
 
@@ -110,7 +124,7 @@ prediction count excludes fitting/search calls, which can dominate compute.
 Live development example (uses plan allowance through the authenticated Codex CLI):
 
 ```bash
-python3 -m autoresearch.taste fidelity --dataset arena --methods m0 m1 \
+python3 -m autoresearch.taste fidelity --dataset prism --methods m0 m1 \
   --n-users 1 --backend codex-cli --max-calls 20 --max-seconds 180 \
   --output runs/fidelity/codex-dev-01
 ```
@@ -125,7 +139,7 @@ invocations, not a guarantee about provider-billed attempts or dollars.
 For the redeemed OpenAI credits, a direct Responses API pilot is available:
 
 ```bash
-python3 -m autoresearch.taste fidelity --dataset arena --methods m0 m1 \
+python3 -m autoresearch.taste fidelity --dataset prism --methods m0 m1 \
   --n-users 1 --backend openai --model gpt-6-luna --max-usd 1 \
   --max-calls 20 --max-seconds 180 --output runs/fidelity/openai-dev-01
 ```
@@ -167,9 +181,7 @@ compared must be passed in **one invocation**. A single exclusive marker,
 `results/fidelity/TEST_USED`, is written before any fitting. A crash or another
 output path does not grant a second attempt. Never delete the marker to tune again.
 
-Current final registration supports **one dataset**. Before a final comparison,
-choose that dataset explicitly or extend the runner to register both together;
-do not run separate Arena and PRISM final commands. The final launch remains Gio's
+Final registration covers PRISM, the only dataset. The final launch remains Gio's
 decision after model access, budget, dev results and method settings are frozen.
 
 ## Bounded schema search
@@ -178,7 +190,7 @@ Write a JSON list of up to eight explicit `{id, method, config}` objects (method
 m5–m7), then run:
 
 ```bash
-python3 -m scripts.schema_search --configs configs.json --dataset arena \
+python3 -m scripts.schema_search --configs configs.json --dataset prism \
   --n-users 3 --max-calls 100 --output runs/schema-search/01
 ```
 

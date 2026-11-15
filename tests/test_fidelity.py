@@ -16,10 +16,10 @@ def records():
     for user, partition, labels in (("one", "dev", ["a"]), ("two", "dev", ["b", "b", "b"]),
                                     ("sealed", "test", ["a"])):
         for i, (split, chosen) in enumerate([("history", "a")] + [("test", y) for y in labels]):
-            uid = "arena:" + user
+            uid = "prism:" + user
             out.append(PreferenceRecord(Choice(uid, user + str(i), "left", "right", chosen,
                                                example_id=user + str(i), group_id=user + str(i)),
-                                        "arena", partition, split, "train" if partition == "dev" else "test"))
+                                        "prism", partition, split, "train" if partition == "dev" else "test"))
     return out
 
 
@@ -33,7 +33,7 @@ class FidelityTests(unittest.TestCase):
             p = Path(d)
             write_manifest(p / "split.json", build_manifest(records()))
             factories = {m: (lambda user, method=m: create_method(method, llm)) for m in ("m0", "m1")}
-            report = run_fidelity(records(), p / "split.json", factories, p / "out", "arena")
+            report = run_fidelity(records(), p / "split.json", factories, p / "out", "prism")
             self.assertEqual(report["backend_budgets"], [{"backend": llm.label, **llm.cost_summary()}])
             self.assertEqual(json.loads((p / "out" / "report.json").read_text())["backend_budgets"],
                              report["backend_budgets"])
@@ -45,7 +45,7 @@ class FidelityTests(unittest.TestCase):
             write_manifest(p / "split.json", build_manifest(records()))
             llm = RecordingLLM({"probabilities": [0.8, 0.2]})
             factories = {"m0": lambda user: create_method("m0", llm)}
-            report = run_fidelity(records(), p / "split.json", factories, p / "out", "arena")
+            report = run_fidelity(records(), p / "split.json", factories, p / "out", "prism")
             self.assertEqual(report["methods"]["m0"]["accuracy"], 0.5)
             self.assertEqual(report["methods"]["m0"]["n_users"], 2)
             self.assertNotIn("sealed", "\n".join(llm.prompts))
@@ -59,13 +59,13 @@ class FidelityTests(unittest.TestCase):
             marker = p / "TEST_USED"
             factory = {"m0": lambda user: create_method("m0", RecordingLLM())}
             with self.assertRaises(ValueError):
-                run_fidelity(records(), p / "split.json", factory, p / "out", "arena",
+                run_fidelity(records(), p / "split.json", factory, p / "out", "prism",
                              users="test", final_marker=marker)
             self.assertFalse(marker.exists())
-            run_fidelity(records(), p / "split.json", factory, p / "out", "arena",
+            run_fidelity(records(), p / "split.json", factory, p / "out", "prism",
                          users="test", final=True, final_marker=marker)
             with self.assertRaises(FileExistsError):
-                run_fidelity(records(), p / "split.json", factory, p / "different", "arena",
+                run_fidelity(records(), p / "split.json", factory, p / "different", "prism",
                              users="test", final=True, final_marker=marker)
 
     def test_failures_count_as_wrong_and_are_retained(self):
@@ -74,7 +74,7 @@ class FidelityTests(unittest.TestCase):
             p = Path(d)
             write_manifest(p / "split.json", build_manifest(records()))
             factory = {"m0": lambda user: create_method("m0", RecordingLLM({"probabilities": [1]}))}
-            report = run_fidelity(records(), p / "split.json", factory, p / "out", "arena")
+            report = run_fidelity(records(), p / "split.json", factory, p / "out", "prism")
             self.assertEqual(report["methods"]["m0"]["accuracy"], 0)
             self.assertEqual(report["methods"]["m0"]["failures"], 4)
             self.assertIsNone(report["methods"]["m0"]["brier_valid_only"])
@@ -85,7 +85,7 @@ class FidelityTests(unittest.TestCase):
             p = Path(d)
             write_manifest(p / "split.json", build_manifest(records()))
             with self.assertRaises(ValueError):
-                run_fidelity(records()[:-1], p / "split.json", {}, p / "out", "arena")
+                run_fidelity(records()[:-1], p / "split.json", {}, p / "out", "prism")
 
     def test_paired_differences_use_the_same_users(self):
         from autoresearch.taste.fidelity import run_fidelity
@@ -93,7 +93,7 @@ class FidelityTests(unittest.TestCase):
             p = Path(d)
             write_manifest(p / "split.json", build_manifest(records()))
             factory = {m: (lambda user, method=m: create_method(method, RecordingLLM())) for m in ("m0", "m1")}
-            report = run_fidelity(records(), p / "split.json", factory, p / "out", "arena")
+            report = run_fidelity(records(), p / "split.json", factory, p / "out", "prism")
             self.assertEqual(report["differences_vs_m1"]["m0"]["mean"], 0)
             self.assertEqual(report["differences_vs_m1"]["m0"]["ci95"], [0, 0])
 
@@ -107,7 +107,7 @@ class FidelityTests(unittest.TestCase):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 main(["fidelity", "--records", str(p / "records.jsonl"),
-                      "--manifest", str(p / "split.json"), "--dataset", "arena", "--dry-run"])
+                      "--manifest", str(p / "split.json"), "--dataset", "prism", "--dry-run"])
             result = json.loads(output.getvalue())
             self.assertEqual(result["n_users"], 2)
             self.assertEqual(result["n_predictions"], 8)
@@ -119,18 +119,18 @@ class FidelityTests(unittest.TestCase):
             p = Path(d)
             write_manifest(p / "split.json", build_manifest(records()))
             configs = [{"id": "small", "method": "m5", "config": {"max_history": 1}}]
-            summary = run_search(records(), p / "split.json", configs, ColorOracle(), p / "search", "arena")
+            summary = run_search(records(), p / "split.json", configs, ColorOracle(), p / "search", "prism")
             self.assertEqual(summary["selected_config_id"], "small")
             registration = json.loads((p / "search" / "small" / "registration.json").read_text())
             self.assertEqual(registration["user_partition"], "dev")
-            self.assertNotIn("arena:sealed", registration["user_ids"])
+            self.assertNotIn("prism:sealed", registration["user_ids"])
             with self.assertRaises(ValueError):
-                run_search(records(), p / "split.json", configs * 9, ColorOracle(), p / "bad", "arena")
+                run_search(records(), p / "split.json", configs * 9, ColorOracle(), p / "bad", "prism")
 
     def test_incomplete_search_cannot_select_an_early_budget_survivor(self):
         from scripts.schema_search import run_search
         from tests.test_taste_methods import ColorOracle
-        rows = [r for r in records() if r.choice.user_id == "arena:one" and r.choice_split == "test"]
+        rows = [r for r in records() if r.choice.user_id == "prism:one" and r.choice_split == "test"]
         with tempfile.TemporaryDirectory() as d:
             p = Path(d)
             write_manifest(p / "split.json", build_manifest(rows))
@@ -138,7 +138,7 @@ class FidelityTests(unittest.TestCase):
             llm = ColorOracle()
             llm.budget.max_calls = 1
             summary = run_search(rows, p / "split.json", configs, llm,
-                                 p / "search", "arena", max_calls=1)
+                                 p / "search", "prism", max_calls=1)
             self.assertEqual(summary["trials"][0]["failures"], 0)
             self.assertEqual(summary["trials"][1]["failures"], 1)
             self.assertIsNone(summary["selected_config_id"])
