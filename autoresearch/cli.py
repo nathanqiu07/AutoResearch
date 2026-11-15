@@ -171,7 +171,8 @@ def research_config(args, arm: str):
                           min_taste_confidence=args.min_taste_confidence, setting_check=not args.no_setting_check,
                           explain=not args.no_explain, claims=not args.no_claims,
                           allocation=args.allocation, screen_samples=args.screen_samples,
-                          screen_cost=args.screen_cost, contrarian=args.contrarian, stake_frac=args.stake_frac)
+                          screen_cost=args.screen_cost, contrarian=args.contrarian, stake_frac=args.stake_frac,
+                          parallel_evals=getattr(args, "parallel_evals", False))
 
 
 def _hash_split(key: str, heldout_frac: float = 0.4) -> bool:
@@ -689,6 +690,8 @@ def build_parser() -> argparse.ArgumentParser:
     rs.add_argument("--samples", type=int, default=6)
     rs.add_argument("--proposals", type=int, default=6)
     rs.add_argument("--evals-per-iter", type=int, default=2)
+    rs.add_argument("--parallel-evals", action="store_true",
+                    help="measure each iteration's candidates at the same time (same results, less wall time)")
     rs.add_argument("--seed", type=int, default=0)
     rs.add_argument("--memory", default="runs/research_memory")
     rs.add_argument("--out", default="results/research")

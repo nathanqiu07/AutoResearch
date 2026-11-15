@@ -49,6 +49,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -305,6 +306,7 @@ class PetriMeasurer(Measurer):
         self.rewrite = rewrite
         self.base_auditor_prompt = auditor_prompt   # None = Petri's stock prompt
         self._guidance: Dict[tuple, Optional[str]] = {}
+        self._guidance_gen = threading.Lock()   # one guidance call per design even when seeds are prepared concurrently
         self.runner = runner or HarnessRunner(mode=mode, target=None if models.offline else self.target.label)
         if not models.offline:
             self.warnings.append("agentic setting: the Petri target (configs/models.json petri.<mode>.target) must be "
@@ -333,7 +335,11 @@ class PetriMeasurer(Measurer):
     def auditor_guidance(self, interventions: List[str]) -> Optional[str]:
         """Realism guidance for the auditor, written once per intervention set and
         cached, so every seed in a measurement gets the same auditor behaviour."""
-        key = tuple(interventions)
+        with self._guidance_gen:
+            return self._auditor_guidance(tuple(interventions))
+
+    def _auditor_guidance(self, key: tuple) -> Optional[str]:
+        interventions = list(key)
         with self._lock:
             if key in self._guidance:
                 return self._guidance[key]
@@ -370,8 +376,13 @@ class PetriMeasurer(Measurer):
                 categories: Optional[List[str]] = None) -> List[Sample]:
         if self.m.offline:
             return [self._offline(interventions, sd, categories) for sd in seeds]
-        jobs, early = [], {}
-        for i, sd in enumerate(seeds):
+        early = {}
+
+        def prepare(i_sd):
+            """(i, base, audit, early reason or None) for one sample; each has its own rng, so the
+            rewrites can run concurrently (one generator call per seed was the serial wait)."""
+            i, sd = i_sd
+            why = None
             rng = random.Random(sd)
             base = self.pick(sd)
             text, variant = base["text"], base.get("variant", "v2")
@@ -381,16 +392,16 @@ class PetriMeasurer(Measurer):
                 try:
                     text = self.rewrite_seed(base, interventions, rng)
                 except Exception as e:  # noqa: BLE001  one failed rewrite is flagged, not fatal
-                    text, early[i] = None, f"seed rewrite failed: {str(e)[:200]}"
-                if text is None and i not in early:
-                    early[i] = "generator returned no rewritten seed"
-            if interventions and self.rewrite in ("auditor", "both") and i not in early:
+                    text, why = None, f"seed rewrite failed: {str(e)[:200]}"
+                if text is None and why is None:
+                    why = "generator returned no rewritten seed"
+            if interventions and self.rewrite in ("auditor", "both") and why is None:
                 try:
                     guidance = self.auditor_guidance(interventions)
                 except Exception as e:  # noqa: BLE001
-                    early[i] = f"auditor guidance failed: {str(e)[:200]}"
-                if guidance is None and i not in early:
-                    early[i] = "generator returned no auditor guidance"
+                    why = f"auditor guidance failed: {str(e)[:200]}"
+                if guidance is None and why is None:
+                    why = "generator returned no auditor guidance"
                 if guidance:
                     prompt = with_guidance(prompt or stock_auditor_prompt(), guidance)
             if interventions:
@@ -403,7 +414,11 @@ class PetriMeasurer(Measurer):
                 audit["repo"] = base["repo"]
             if guidance:
                 audit["auditor_guidance"] = guidance
-            jobs.append((i, base, audit))
+            return i, base, audit, why
+        with ThreadPoolExecutor(max_workers=max(1, min(self.workers, len(seeds)))) as ex:
+            prepared = list(ex.map(prepare, enumerate(seeds)))
+        jobs = [(i, base, audit) for i, base, audit, _ in prepared]
+        early.update({i: why for i, _, _, why in prepared if why is not None})
         to_run = [a for i, _, a in jobs if i not in early]
         try:
             results = {r.get("seed_id"): r for r in (self.runner(to_run) if to_run else [])}

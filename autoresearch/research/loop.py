@@ -21,6 +21,7 @@ import json
 import math
 import os
 import random
+import threading
 import time
 import uuid
 from contextlib import nullcontext
@@ -74,6 +75,11 @@ class ResearchConfig:
     screen_cost: float = 1.0       # cost of a screening sample relative to a dev one (cheap screening target)
     contrarian: int = 0            # extra proposals per iteration from the contrarian proposer
     stake_frac: float = 0.1        # market: share of its balance an agent stakes per bid
+    # Measure an iteration's candidates at the same time (threads). Seed ids are assigned in the
+    # same order as the sequential path and the results are processed in order, so the outcome is
+    # the same; only wall time changes. Off by default (a measurer must be thread-safe; PetriMeasurer
+    # is) and never used with GPU-seconds metering, which attributes GPU time to one move at a time.
+    parallel_evals: bool = False
 
     def __post_init__(self):
         if self.taste_mode not in TASTE_MODES:
@@ -262,6 +268,7 @@ class OpenResearcher:
         self.gpu_unsettled: Dict[str, float] = {}   # measured GPU-s whose bids were withdrawn (no settlement)
         self.samples_used = 0          # dev-target samples (per item in multi-item mode)
         self.screen_samples_used = 0   # samples on the screening target
+        self._count_lock = threading.Lock()   # sample counters, updated from parallel candidate measurements
         self.screened_out: List[dict] = []
         self.anytime: List[dict] = []
 
@@ -275,27 +282,53 @@ class OpenResearcher:
         return self.pool.sample_batch(self.item_rng, self.cfg.items_per_iter) if self.pool else None
 
     def _measure(self, ints: List[Intervention], batch: Optional[List[str]] = None, n: Optional[int] = None,
-                 measurer: Optional[Measurer] = None) -> Evaluation:
+                 measurer: Optional[Measurer] = None, seeds: Optional[List[int]] = None) -> Evaluation:
         """n samples (per item in multi-item mode; default cfg.samples), on the
-        dev target or on `measurer` (the screening target)."""
+        dev target or on `measurer` (the screening target). `seeds`: sample ids
+        assigned beforehand (parallel candidate measurement); default: the next n."""
         n = self.cfg.samples if n is None else n
         texts, cats = [i.text for i in ints], [i.category for i in ints]
         target = "screen" if measurer is not None else "dev"
         before = self.budget.gpu_seconds if self.gpu else 0.0
         if measurer is not None:
-            self.screen_samples_used += n
-            ev, used = Evaluation(ints, measurer.measure(texts, self._seeds(n), cats)), n
+            with self._count_lock:
+                self.screen_samples_used += n
+            ev, used = Evaluation(ints, measurer.measure(texts, seeds or self._seeds(n), cats)), n
         elif self.pool is None:
-            self.samples_used += n
-            ev, used = Evaluation(ints, self.ms.measure(texts, self._seeds(n), cats)), n
+            with self._count_lock:
+                self.samples_used += n
+            ev, used = Evaluation(ints, self.ms.measure(texts, seeds or self._seeds(n), cats)), n
         else:
-            self.samples_used += n * len(batch)
-            pairs = self.pool.measure(texts, self._seeds(n * len(batch)), cats, batch)
+            with self._count_lock:
+                self.samples_used += n * len(batch)
+            pairs = self.pool.measure(texts, seeds or self._seeds(n * len(batch)), cats, batch)
             ev, used = Evaluation(ints, [s for _, s in pairs], [i for i, _ in pairs]), n * len(batch)
         if self.gpu:   # GPU-seconds per sample on each target, observed so far (sizes the next GPU bids)
             self._gpu_rate[target][0] += self.budget.gpu_seconds - before
             self._gpu_rate[target][1] += used
         return ev
+
+    def _measure_candidates(self, alloc, batch: Optional[List[str]], tried: set) -> List[Evaluation]:
+        """One Evaluation per allocated candidate, in alloc order. Sample ids are taken in that
+        order up front (exactly what the sequential path would take), so running the measurements
+        concurrently (cfg.parallel_evals) changes wall time, not results."""
+        jobs = []
+        for move, ints, idea, screen_ev in alloc:
+            tried.add(idea.id)
+            # screening samples on the dev target count toward the full measurement
+            n = self.cfg.samples - self.cfg.screen_samples if screen_ev is not None else self.cfg.samples
+            jobs.append((move, ints, screen_ev, n, self._seeds(n * (len(batch) if self.pool else 1))))
+
+        def run(job):
+            move, ints, screen_ev, n, seeds = job
+            with self._gpu_measure(move):
+                ev = self._measure(ints, batch, n=n, seeds=seeds)
+            return screen_ev.merged(ev) if screen_ev is not None else ev
+        if self.cfg.parallel_evals and len(jobs) > 1 and not self.gpu:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=len(jobs)) as ex:
+                return list(ex.map(run, jobs))
+        return [run(j) for j in jobs]
 
     def _compare(self, ev: Evaluation, ref: Evaluation, seed: int) -> Tuple[float, float, Dict[str, float]]:
         if self.pool is None:
@@ -732,14 +765,8 @@ class OpenResearcher:
                                 designs[um_top_i] if um_top_i is not None else None)
                 self._record_d2(it, len(chosen), batch)
                 evals = []
-                for move, ints, idea, screen_ev in alloc:
-                    tried.add(idea.id)
-                    with self._gpu_measure(move):
-                        if screen_ev is not None:   # screening samples on the dev target count toward the full measurement
-                            ev = screen_ev.merged(self._measure(ints, batch,
-                                                                n=self.cfg.samples - self.cfg.screen_samples))
-                        else:
-                            ev = self._measure(ints, batch)
+                measured = self._measure_candidates(alloc, batch, tried)
+                for (move, ints, idea, screen_ev), ev in zip(alloc, measured):
                     p, delta, per_item = self._compare(ev, ref, seed=it)
                     summ = ev.summary()
                     drift = self._setting_drift(ev)
