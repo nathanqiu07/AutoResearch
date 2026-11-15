@@ -537,7 +537,8 @@ def audit_ledger(facts: Iterable[dict], ordered: bool = True, initial: Optional[
     """Replay BID/SETTLE facts and check every agent's balance and track record.
 
     Checks, per SETTLE fact: a BID by the same agent on the same candidate in
-    the same run precedes it (its stake is used); the credit change equals
+    the same run precedes it (its stake is used; with ordered facts, the latest
+    such BID, since earlier ones were withdrawn, which writes no fact); the credit change equals
     stake * ln(q / 0.5) (clipped at a zero balance); with `ordered` facts, the
     balance follows from the agent's previous SETTLE (or `initial` for its
     first; initial=None takes the first balance as given, for wallets carried
@@ -589,9 +590,14 @@ def audit_ledger(facts: Iterable[dict], ordered: bool = True, initial: Optional[
                     problem(f, "gpu_request_within_balance", f"asked for {req} GPU-s with {gb} left")
                 r["gpu_balance"] = gb
             continue
-        # SETTLE
+        # SETTLE. The market keeps one open bid per agent and candidate, and a withdrawal writes no
+        # fact, so in write order the bid being settled is the latest BID: earlier ones were withdrawn.
         queue = open_bids.get((rn, a, cand)) or []
-        bid = queue.pop(0) if queue else None
+        bid = (queue[-1] if ordered else queue[0]) if queue else None
+        if ordered:
+            queue.clear()
+        elif queue:
+            queue.pop(0)
         if bid is None:
             problem(f, "bid_before_settle", "no earlier BID by this agent on this candidate in this run"
                     + ("" if ordered else " (facts unordered: the BID may simply not have been recalled)"))

@@ -122,11 +122,17 @@ class ExaClient:
 
 @dataclass
 class Source:
+    """One web page the scout used. The optional link fields are filled by the
+    loop that consumed the result (`iteration`, and `fact_id`, the id of the
+    EVIDENCE fact a fact-check source fed) and by the scout (`query`)."""
     url: str
     title: str
     published: Optional[str]
     used_for: str
     detail: str = ""
+    iteration: Optional[int] = None
+    fact_id: str = ""
+    query: str = ""
 
 
 @dataclass
@@ -136,17 +142,17 @@ class WebScout:
     since_days: int = 540
     sources: List[Source] = field(default_factory=list)
 
-    def _log(self, results, used_for, detail=""):
+    def _log(self, results, used_for, detail="", query=""):
         for r in results:
             self.sources.append(Source(r.get("url", ""), r.get("title") or "", r.get("publishedDate"),
-                                       used_for, detail))
+                                       used_for, detail, query=query))
 
     # 1. fact-check an assumption ------------------------------------------
     def check_assumption(self, task_goal: str, change: str, hypothesis: str) -> Dict:
         q = f"language model evaluation awareness: does {change.replace('_', ' ').replace('=', ' ')} make tests look less like tests"
         res = self.exa.search(q, num_results=5, since_days=self.since_days,
                               highlights_query=f"evidence about {change} and models detecting evaluations")
-        self._log(res, "fact_check", change)
+        self._log(res, "fact_check", change, query=q)
         if not res:
             return {"stance": "none", "confidence": 0.0, "urls": []}
         evidence = "\n".join(f"[{i}] {r.get('title')} ({r.get('url')}): {' '.join(r.get('highlights') or [])[:600]}"
@@ -164,10 +170,9 @@ class WebScout:
 
     # 2. discover new methods ----------------------------------------------
     def discover_options(self, task_goal: str, search_space: Dict[str, List[str]]) -> List[Dict]:
-        res = self.exa.search("new techniques to reduce evaluation awareness in LLM benchmarks "
-                              "realistic agentic environments", num_results=6, since_days=self.since_days,
-                              )
-        self._log(res, "method_discovery")
+        q = "new techniques to reduce evaluation awareness in LLM benchmarks realistic agentic environments"
+        res = self.exa.search(q, num_results=6, since_days=self.since_days)
+        self._log(res, "method_discovery", query=q)
         if not res or isinstance(self.llm, OfflineLLM):
             return []
         evidence = "\n".join(f"[{i}] {r.get('title')} ({r.get('url')}): {' '.join(r.get('highlights') or [])[:600]}"
@@ -189,8 +194,9 @@ class WebScout:
 
     # 3. ground environments in real artifacts ------------------------------
     def grounding_material(self, topic: str, n: int = 2) -> List[str]:
-        res = self.exa.search(f"{topic} real internal team workflow writeup", num_results=n, text_chars=1500)
-        self._log(res, "environment_grounding", topic)
+        q = f"{topic} real internal team workflow writeup"
+        res = self.exa.search(q, num_results=n, text_chars=1500)
+        self._log(res, "environment_grounding", topic, query=q)
         return [f"{r.get('title')}: {(r.get('text') or '')[:1200]}" for r in res]
 
 

@@ -92,6 +92,42 @@ def fields(data):
     return {m["field"] for m in data["missing_fields"]}
 
 
+LINK_KEYS = re.compile(r" (iter|id|move|finding)=\S+")
+
+
+def legacy_copy(root, dst):
+    """The v1 artifacts as a run from before the link fields were recorded:
+    no EVIDENCE/OUTCOME iter or id, no Source iteration/fact_id/query, no veto
+    refs, no report config or credence log, no vetoed marks on decisions."""
+    for sub in ("out", "memory"):
+        shutil.copytree(os.path.join(root, sub), os.path.join(dst, sub))
+    out = os.path.join(dst, "out")
+    for name in os.listdir(out):
+        with open(os.path.join(out, name)) as fh:
+            rep = json.load(fh)
+        for k in ("config", "credence_log"):
+            rep.pop(k)
+        rep["drift_events"] = [{k: e[k] for k in ("iteration", "kind", "detail")} for e in rep["drift_events"]]
+        rep["sources"] = [{k: v for k, v in x.items() if k not in ("iteration", "fact_id", "query")}
+                          for x in rep["sources"]]
+        with open(os.path.join(out, name), "w") as fh:
+            json.dump(rep, fh)
+    with open(os.path.join(root, "shared.jsonl")) as fh, open(os.path.join(dst, "shared.jsonl"), "w") as w:
+        for line in fh:
+            row = json.loads(line)
+            if row["content"].startswith(("EVIDENCE", "OUTCOME")):
+                row["content"] = LINK_KEYS.sub("", row["content"])
+            w.write(json.dumps(row) + "\n")
+    path = os.path.join(dst, "memory", "decisions.jsonl")
+    with open(path) as fh:
+        recs = [json.loads(l) for l in fh]
+    with open(path, "w") as fh:
+        for r in recs:
+            r.pop("fallback", None)
+            r["options"] = [{k: v for k, v in o.items() if k != "vetoed"} for o in r["options"]]
+            fh.write(json.dumps(r) + "\n")
+
+
 class TestV1Trail(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -146,13 +182,75 @@ class TestV1Trail(unittest.TestCase):
             self.assertEqual(u["direction"], "-" if u["evidence"]["stance"] == "refute" else "+")
             self.assertEqual(u["vetoed"], u["evidence"]["stance"] == "refute")
 
-    def test_unrecorded_links_are_listed_as_missing(self):
-        f = fields(self.data)
-        for k in ("veto.evidence_refs", "veto.refute_confidence", "source.iter", "credence.before_after",
-                  "outcome.iter"):
-            self.assertIn(k, f)
-        self.assertNotIn("shared.memory_file", f)
-        self.assertNotIn("v1.decisions_file", f)
+    def test_every_link_is_exact_and_nothing_is_missing(self):
+        self.assertEqual(self.data["missing_fields"], [])
+        run = self.data["runs"][0]
+        self.assertEqual(run["missing"], [])
+        history = {h["iter"]: h for h in self.rep.history}
+        vetoes = [e for e in self.rep.drift_events if e["kind"] == "web_refuted"]
+        traced = [t for t in run["vetoes"] if t["kind"] == "web_refuted"]
+        self.assertEqual(len(traced), len(vetoes))
+        self.assertEqual(self.rep.config["loop"]["refute_confidence"], 0.7)
+        for t, ev in zip(traced, vetoes):
+            self.assertEqual(t["missing"], [])
+            # the veto names every fact it weighed; the trail finds exactly those facts by id
+            weighed = {w["id"] for w in ev["evidence"]}
+            self.assertTrue(weighed and all(w["id"] for w in ev["evidence"]))
+            self.assertEqual({v["id"] for v in t["evidence"] if v["weighed_by_veto"]}, weighed)
+            counted = {w["id"] for w in ev["evidence"] if w["counted"] and w["stance"] == "refute"}
+            self.assertEqual(len(counted), ev["n_refute"])
+            self.assertEqual({v["id"] for v in t["evidence"] if v["cited_by_veto"]}, counted)
+            self.assertEqual(t["veto"]["refute_confidence"], 0.7)
+            for v in t["evidence"]:
+                self.assertEqual(v["iter_from"], "recorded")
+                if v["weighed_by_veto"]:
+                    self.assertLessEqual(v["iter"], t["iter"])   # the critic only saw facts written so far
+            # each source is joined through the EVIDENCE fact that cited it, in that fact's iteration
+            by_id = {v["id"]: v for v in t["evidence"]}
+            self.assertTrue(t["sources"])
+            for s in t["sources"]:
+                self.assertEqual((s["linked"], s["join"]), (True, "fact_id"))
+                self.assertTrue(s["fact_ids"] and set(s["fact_ids"]) <= set(by_id))
+                self.assertEqual(s["iterations"], sorted({by_id[f]["iter"] for f in s["fact_ids"]}))
+                self.assertTrue(all(s["url"] in by_id[f]["urls"] for f in s["fact_ids"]))
+            # the credence change is the logged one: after = before + weight on the refuting side
+            for u in t["credence"]["updates"]:
+                self.assertEqual(u["rule"], "recorded (credence_log)")
+                self.assertAlmostEqual(u["after"]["beta"], u["before"]["beta"] + u["weight"], places=6)
+                self.assertEqual(u["after"]["alpha"], u["before"]["alpha"])
+            # the decision record marks the vetoed option; OUTCOME joins on its recorded iteration
+            self.assertEqual(t["decision"]["vetoed"].get(t["change"]), "web_refuted")
+            self.assertFalse(t["decision"]["fallback"])
+            self.assertEqual([int(o["iter"]) for o in t["ran_instead_outcomes"]], [t["iter"]])
+            self.assertEqual(t["ran_instead_outcomes"][0]["change"], history[t["iter"]]["change"])
+        for u in run["credence_updates"]:
+            self.assertEqual(u["missing"], [])
+            self.assertEqual(u["evidence"]["iter_from"], "recorded")
+            self.assertIsNotNone(u["before"])
+            self.assertTrue(all(s["join"] == "fact_id" and s["fact_ids"] == [u["evidence"]["id"]]
+                                and s["iterations"] == [u["iter"]] for s in u["sources"]))
+        logged = {c["fact_id"] for c in self.rep.credence_log}
+        self.assertEqual({u["evidence"]["id"] for u in run["credence_updates"]}, logged)
+
+    def test_older_runs_fall_back_and_list_the_missing_links(self):
+        with tempfile.TemporaryDirectory() as d:
+            legacy_copy(self.root, d)
+            data = trail.trail(d)
+            f = fields(data)
+            for k in ("veto.evidence_refs", "veto.refute_confidence", "source.iter", "source.fact_ref",
+                      "credence.before_after", "outcome.iter", "decision.vetoed"):
+                self.assertIn(k, f)
+            self.assertNotIn("shared.memory_file", f)
+            self.assertNotIn("v1.decisions_file", f)
+            new = {(t["iter"], t["change"]): t for t in self.data["runs"][0]["vetoes"]}
+            for t in data["runs"][0]["vetoes"]:
+                self.assertTrue(t["sources"] and all(s["linked"] and s["join"] == "change+url" for s in t["sources"]))
+                self.assertTrue(any(e["cited_by_veto"] for e in t["evidence"]))
+                self.assertTrue(all(e["iter_from"] == "write order (local JSONL)" for e in t["evidence"]))
+                self.assertEqual([e["iter"] for e in t["evidence"]],
+                                 [e["iter"] for e in new[(t["iter"], t["change"])]["evidence"]])
+                self.assertEqual(t["ran_instead"]["change"], new[(t["iter"], t["change"])]["ran_instead"]["change"])
+                self.assertEqual(len(t["ran_instead_outcomes"]), 1)
 
     def test_without_shared_memory_and_sources_nothing_is_guessed(self):
         with tempfile.TemporaryDirectory() as d:
@@ -234,15 +332,25 @@ class TestV2Trail(unittest.TestCase):
             self.assertIn("v2.fact_check", fields(data))
             self.assertEqual(len(run["source_trails"]), 1)          # discovered twice, one trail
             t = run["source_trails"][0]
-            self.assertEqual(t["idea"]["times_discovered"], sum(w["origin"] == "exa" for w in rep["web_ideas"]))
+            self.assertEqual(sum(w["origin"] == "exa" for w in rep["web_ideas"]), 1)   # deduplicated at discovery
+            events = [e for e in rep["log"] if e.get("event") == "web_ideas"]
+            self.assertEqual(t["idea"]["times_discovered"], len(events))
+            self.assertEqual([d["iter"] for d in t["idea"]["discovered"]], [e["iter"] for e in events])
+            self.assertEqual([d["first"] for d in t["idea"]["discovered"]], [True] + [False] * (len(events) - 1))
             self.assertEqual(t["sources"][0]["url"], "https://example.org/paper-a")
             self.assertTrue(t["sources"][0]["linked"])
             self.assertEqual(t["sources"][0]["published"], "2026-03-01")
+            self.assertEqual((t["sources"][0]["join"], t["sources"][0]["iter"]), ("url+iter+query", events[0]["iter"]))
+            self.assertEqual(t["sources"][0]["query"], events[0]["query"])
+            self.assertEqual(t["missing"], [trail._missing("v2.fact_check")])
             self.assertTrue(any(b["agent"] == "scout" for b in t["bids"]))
             self.assertTrue(t["critic"] and all(b["against"] for b in t["critic"]))
             mine = [f for f in rep["findings"] if f["origin"] == "exa"]
             self.assertEqual([f["id"] for f in t["findings"]], [f["id"] for f in mine])
             self.assertEqual(len(t["outcomes"]), len(mine))
+            self.assertEqual([o["finding"] for o in t["outcomes"]], [f["id"] for f in mine])   # exact join
+            self.assertTrue(all(o["move"] == t["move"] and int(o["iter"]) == f["iter"]
+                                for o, f in zip(t["outcomes"], mine)))
             self.assertTrue(any(x["point"] == "D1" for x in t["decisions"]))
             self.assertIn("&lt;", trail.render_html({**data, "source": "<x>"}))
 
@@ -269,7 +377,7 @@ class TestDemoMoment(unittest.TestCase):
             m = data["moments"][4]
             self.assertTrue(m["available"])
             self.assertGreater(m["evidence"]["vetoes"], 0)
-            self.assertIn("veto.evidence_refs", m["evidence"]["missing_fields"])
+            self.assertEqual(m["evidence"]["missing_fields"], [])   # the loop records every link
             self.assertFalse(data["complete"])   # the other four moments have no evidence here
 
 

@@ -224,6 +224,24 @@ AGENTIC_GOAL = ("Rewrite Petri audit seeds and auditor behaviour so the target m
                 "an evaluation, while the audit still elicits and scores the behaviour each seed targets.")
 
 
+def _check_gpu_budget(args, models) -> None:
+    """--gpu-budget-s prices bids in GPU-seconds of the self-hosted target, so it
+    needs the market and a target whose GPU time this process meters (a
+    backend with an llm.GpuMeter, i.e. --target-llm openai-compat)."""
+    from .llm import GpuMeter
+    if args.gpu_budget_s < 0:
+        raise SystemExit("--gpu-budget-s must be >= 0")
+    if args.allocation != "market":
+        raise SystemExit("--gpu-budget-s needs --allocation market (GPU-seconds are a market resource)")
+    if args.setting != "single":
+        raise SystemExit("--gpu-budget-s needs --setting single: the agentic harness runs the target in its own "
+                         "process, where this run cannot meter its GPU time")
+    if not isinstance(getattr(models.target, "meter", None), GpuMeter):
+        raise SystemExit("--gpu-budget-s needs a GPU-metered target (--target-llm openai-compat, a self-hosted "
+                         f"model); the target backend {getattr(models.target, 'name', type(models.target).__name__)!r} "
+                         "has no GPU meter")
+
+
 def cmd_research(args):
     """Open-ended research loop (v2) with separate generator/target/judge."""
     from .llm import get_llm
@@ -326,10 +344,12 @@ def cmd_research(args):
     if args.contrarian:
         contrarian = Proposer(models.generator, prof, _r.Random(args.seed + 1), gate_llm=models.judge,
                               taste_text=taste_text, history=history, setting_kind=args.setting, contrarian=True)
+    if args.gpu_budget_s is not None:
+        _check_gpu_budget(args, models)
     if args.allocation == "market":
         from .research.market import Market, Wallets
-        market = Market(Wallets(args.wallets or os.path.join(args.memory, "wallets.json")), shared=shared,
-                        stake_frac=args.stake_frac)
+        market = Market(Wallets(args.wallets or os.path.join(args.memory, "wallets.json"),
+                                gpu_initial=args.gpu_budget_s), shared=shared, stake_frac=args.stake_frac)
     if args.screen_target:
         if args.allocation == "uniform" or pool is not None or args.setting != "single":
             raise SystemExit("--screen-target needs --allocation halving|market in single-item mode")
@@ -686,6 +706,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="extra proposals per iteration from a contrarian proposer (ideas the researcher would not pick)")
     rs.add_argument("--wallets", help="market wallets JSON (default <memory>/wallets.json; persists across runs)")
     rs.add_argument("--stake-frac", type=float, default=0.1, help="market: share of its balance an agent stakes per bid")
+    rs.add_argument("--gpu-budget-s", type=float, default=None,
+                    help="market: GPU-seconds of the self-hosted target per agent wallet (default off). Supporting "
+                         "bids then also ask for GPU time and are charged the measured GPU-seconds of their design; "
+                         "needs --target-llm openai-compat")
     rs.set_defaults(fn=cmd_research)
     xs = sub.add_parser("export-seeds", help="agentic run's best design -> AuditSeed JSONL condition file for "
                                              "scripts/c2_e3b.py (E3b)")
