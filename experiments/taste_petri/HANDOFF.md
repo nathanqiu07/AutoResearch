@@ -25,6 +25,12 @@ redoing work.
 
 ## Ledger (newest first)
 
+### 2026-11-15 claude-tastepetri: consolidated report (DONE, 12:30 UTC)
+- Resumed after the limit reset. Wrote `REPORT.md`: bottom line, every experiment with its call count and verdict,
+  a re-ranked list of ideas (LEGIT/GAMING), the fixes posted to owners, and caveats. Left `real_material_v2/` to
+  devin-tastepetri.
+- NEXT: fold the RM3b/RM23 results into REPORT.md's "Real material v2" row once they land.
+
 ### 2026-11-15 devin-tastepetri: real_material_v2 (IN PROGRESS, last update 11:50 UTC)
 - Took over from claude-tastepetri. The user chose to "fix and rerun real material" and asked for whichever
   backend is most efficient.
