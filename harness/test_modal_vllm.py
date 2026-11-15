@@ -39,6 +39,12 @@ class ModalVllmTest(unittest.TestCase):
         self.assertIsNotNone(pin, "transformers must be pinned in the vLLM image")
         self.assertLess(int(pin.group(1)), 5)
 
+    def test_server_never_scales_past_one_gpu_container(self):
+        # parallel audits can exceed max_inputs; a second container would double the GPU bill unseen by the
+        # pilot's ledger (it counts one container) and wait out a fresh model load
+        src = Path(mv.__file__).read_text()
+        self.assertRegex(src, r"max_containers=1\b")
+
     def test_serve_command_omits_reasoning_parser_for_none(self):
         cmd = mv.serve_command(model="m", n_gpu=4, parser="none", max_len=65536, key="k")
         self.assertNotIn("--reasoning-parser", cmd)

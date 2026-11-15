@@ -60,7 +60,8 @@ def serve_command(model=MODEL, n_gpu=N_GPU, parser=PARSER, tool_parser=TOOL_PARS
 
 
 @app.function(image=image, gpu=GPU, volumes={"/root/.cache/huggingface": hf_cache, "/root/.cache/vllm": vllm_cache},
-              secrets=[modal.Secret.from_name("vllm-key")], timeout=24 * 60 * 60, scaledown_window=15 * 60)
+              secrets=[modal.Secret.from_name("vllm-key")], timeout=24 * 60 * 60, scaledown_window=15 * 60,
+              max_containers=1)   # extra load queues; never a second GPU container (cost the ledger can't see)
 @modal.concurrent(max_inputs=64)
 @modal.web_server(port=8000, startup_timeout=30 * 60)
 def serve():

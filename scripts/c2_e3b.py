@@ -29,6 +29,7 @@ import random
 import subprocess
 import sys
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -112,13 +113,13 @@ def main(argv=None):
                     heldout_target=mk(ht) if ht else None,
                     heldout_judges=[mk(j) for j in cfg["heldout_judges"]] if a.mode == "final" else [])
     from autoresearch.research.petri_measure import HarnessRunner
-    results, lineup = {}, {}
     conds = [c.split("=", 1) for c in a.condition]
     prompts = dict(x.split("=", 1) for x in a.auditor_prompt)
     unknown = set(prompts) - {n for n, _ in conds}
     if unknown:
         raise SystemExit(f"--auditor-prompt for unknown condition(s): {sorted(unknown)}")
-    for name, path in conds:
+    measurers = {}
+    for name, path in conds:   # load and check every condition before any audit runs
         seeds = [s for s in load_audit_seeds(path) if a.split == "all" or s.get("split", a.split) == a.split]
         seeds = seeds[: a.limit] if a.limit else seeds
         if not seeds:
@@ -132,12 +133,22 @@ def main(argv=None):
                     (["--judge", a.petri_judge] if a.petri_judge else [])
             pm.runner = HarnessRunner(mode=a.mode, max_turns=a.max_turns, target=pm.target.label, extra_args=extra,
                                       cache_dir=a.cache_dir, batch_size=a.petri_batch)
-        sample_seeds = [i + len(seeds) * e for e in range(a.epochs) for i in range(len(seeds))]
-        results[name] = pm.measure([], sample_seeds)
-        lineup = {"target": pm.target.label, "judges": [j.label for j in pm.judges], "warnings": pm.warnings,
-                  "petri_auditor": a.petri_auditor or "configs/models.json", "petri_judge": a.petri_judge or "configs/models.json",
-                  "compute": budget.summary() if hasattr(budget, "summary") else {}}
-        print(f"{name}: {len(results[name])} audits", file=sys.stderr)
+        measurers[name] = (pm, [i + len(seeds) * e for e in range(a.epochs) for i in range(len(seeds))])
+
+    def run(name):
+        pm, sample_seeds = measurers[name]
+        out = pm.measure([], sample_seeds)
+        print(f"{name}: {len(out)} audits", file=sys.stderr)
+        return out
+    # Conditions run at the same time: each is its own harness process against the same auditor and
+    # target servers (both serve many requests at once), so wall-clock is the slowest condition, not the sum.
+    with ThreadPoolExecutor(max_workers=len(conds)) as ex:
+        futures = {name: ex.submit(run, name) for name, _ in conds}
+        results = {name: f.result() for name, f in futures.items()}   # --condition order kept
+    pm = measurers[conds[-1][0]][0]
+    lineup = {"target": pm.target.label, "judges": [j.label for j in pm.judges], "warnings": pm.warnings,
+              "petri_auditor": a.petri_auditor or "configs/models.json", "petri_judge": a.petri_judge or "configs/models.json",
+              "compute": budget.summary() if hasattr(budget, "summary") else {}}
     base_name = conds[0][0]
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
     rep = {"experiment": "E3b", "auditor_prompts": {n: prompts.get(n, "stock") for n, _ in conds}, "date": datetime.date.today().isoformat(), "code_version": commit,

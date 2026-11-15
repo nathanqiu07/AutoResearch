@@ -26,6 +26,25 @@ class E3bTest(unittest.TestCase):
             self.assertIn("OFFLINE", rep["note"])
             self.assertIn("eval_awareness", rep["conditions"]["ours"]["petri_cross_check"])
 
+    def test_conditions_run_concurrently(self):
+        # each condition's measure() waits for the other at a barrier: run one after the other, it times out
+        import threading
+        from unittest import mock
+        barrier = threading.Barrier(2, timeout=10)
+        real = c2_e3b.PetriMeasurer.measure
+
+        def measure(pm, *a, **kw):
+            barrier.wait()
+            return real(pm, *a, **kw)
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(c2_e3b.PetriMeasurer, "measure", measure):
+            out = Path(d) / "e3b.json"
+            seeds = str(ROOT / "data/petri/seeds_v2.jsonl")
+            c2_e3b.main(["--offline", "--condition", f"stock={seeds}", "--condition", f"control={seeds}",
+                         "--limit", "2", "--out", str(out)])
+            rep = json.loads(out.read_text())
+        self.assertEqual(list(rep["conditions"]), ["stock", "control"])   # report order = --condition order
+        self.assertIn("control", rep["vs_stock"])
+
 
 if __name__ == "__main__":
     unittest.main()
