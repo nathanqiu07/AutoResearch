@@ -8,7 +8,7 @@ from dataclasses import asdict
 from unittest import mock
 
 from autoresearch.llm import LLM
-from autoresearch.taste import timesplit, track_eval
+from autoresearch.taste import agreement, timesplit, track_eval
 from autoresearch.taste.researcher import Researcher
 from autoresearch.taste.usermodel import Choice
 
@@ -55,6 +55,13 @@ def write_corpus(root, name, published, body):
     os.makedirs(os.path.join(root, "corpus"), exist_ok=True)
     with open(os.path.join(root, "corpus", name), "w") as f:
         f.write(f"---\nurl: https://ex.org/{name}\npublishedDate: {published}\n---\n{body}")
+
+
+def write_agreement(root, ids, agreeing=()):
+    """Agreement rows as the 'agree' command records them: pairs in `agreeing` get 0.9 both ways."""
+    with open(os.path.join(root, agreement.AGREEMENT), "w") as f:
+        f.writelines(json.dumps({"example_id": k, "p_chosen": [0.9, 0.9] if k in agreeing else [0.5, 0.5],
+                                 "judge": "fake", "timestamp": "t"}) + "\n" for k in ids)
 
 
 class ScoringTest(unittest.TestCase):
@@ -255,7 +262,7 @@ class SelectAndE2Test(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no held-out pairs"):
             track_eval.run_e2(researcher, OptionLLM(taken_option), "Marius Hobbhahn", "m1")
 
-    def test_e2_report_has_every_arm_and_the_contamination_gap(self):
+    def e2_root(self):
         root = tempfile.mkdtemp()
         write_corpus(root, "research__early.txt", "2023-01-01", "EARLY_TEXT")
         researcher = Researcher("marius_test", root)
@@ -267,6 +274,11 @@ class SelectAndE2Test(unittest.TestCase):
             f.writelines(json.dumps(r) + "\n" for r in rows)
         write_identity(root)
         timesplit.write_choice_files(researcher)
+        return root, researcher
+
+    def test_e2_report_has_every_arm_and_the_contamination_gap(self):
+        root, researcher = self.e2_root()
+        write_agreement(root, [f"p{k}" for k in range(8)])
         llm = OptionLLM(taken_option)
         report = track_eval.run_e2(researcher, llm, "Marius Hobbhahn", "m1",
                                    out_path=os.path.join(root, "e2.json"))
@@ -275,6 +287,19 @@ class SelectAndE2Test(unittest.TestCase):
         self.assertEqual(report["n_pairs"], 4)
         self.assertEqual(report["arms"]["m0"]["accuracy"], 1.0)
         self.assertTrue(os.path.exists(os.path.join(root, "e2.json")))
+
+    def test_e2_drops_pairs_the_judge_decides_for_him_from_history_and_heldout(self):
+        root, researcher = self.e2_root()
+        write_agreement(root, [f"p{k}" for k in range(8)], agreeing={"p0", "p5"})
+        report = track_eval.run_e2(researcher, OptionLLM(taken_option), "Marius Hobbhahn", "m1")
+        self.assertEqual((report["n_history"], report["n_pairs"]), (3, 3))
+        self.assertEqual(report["agreement_filter"]["dropped"], {"history": 1, "heldout": 1})
+
+    def test_e2_refuses_pairs_the_judge_never_saw(self):
+        root, researcher = self.e2_root()
+        write_agreement(root, [f"p{k}" for k in range(7)])
+        with self.assertRaisesRegex(ValueError, "1 pair"):
+            track_eval.run_e2(researcher, OptionLLM(taken_option), "Marius Hobbhahn", "m1")
 
 
 if __name__ == "__main__":

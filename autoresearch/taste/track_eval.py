@@ -9,11 +9,14 @@ Arms, all scored on the held-out pairs:
   m1_docs     his documents from before T, in the prompt
   selected:X  the method chosen on history alone (select_method)
 
-A pair counts as right only if the model picks his option in both a/b orders. Intervals
+A pair counts as right only if the model picks his option in both a/b orders. History and
+held-out both pass the agreement filter (agreement.py) first: a pair a blind judge gives his
+option more than 0.8 in both orders is dropped. Intervals
 resample source documents (group_id), since pairs from one document are not independent.
 The selected method succeeds if its gain over both m1 arms has a 90% interval above 0.
 
     python3 -m autoresearch.taste.track_eval gate   --researcher <slug> --max-usd 10
+    python3 -m autoresearch.taste.track_eval agree  --researcher <slug> --max-usd 10
     python3 -m autoresearch.taste.track_eval select --researcher <slug> --max-usd 40
     python3 -m autoresearch.taste.track_eval e2     --researcher <slug> --name "<Full Name>" --selected m5 --max-usd 40
     python3 -m autoresearch.taste.track_eval final  --researcher <slug> --selected m5 --max-usd 10
@@ -29,7 +32,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from ..llm import LLM
 from ..research.decisions import code_version
-from . import timesplit
+from . import agreement, timesplit
 from .methods import create_method
 from .methods.m0_none import NoHistory
 from .researcher import DEFAULT_ROOT, Researcher, load_researcher
@@ -43,6 +46,11 @@ CACHE = os.path.join("runs", "track_s", "cache", "usermodel")
 
 def load_choices(path: str) -> List[Choice]:
     return [Choice(**r) for r in timesplit._read_jsonl(path)]
+
+
+def filtered(researcher: Researcher, split: str) -> List[Choice]:
+    """A split's pairs after the agreement filter."""
+    return agreement.keep(researcher.root, load_choices(os.path.join(researcher.root, split)))
 
 
 def paired_correct(model, c: Choice) -> bool:
@@ -310,10 +318,11 @@ def run_e2(researcher: Researcher, llm: LLM, name: str, selected: str,
     if len(cutoffs) != 1:
         raise ValueError(f"pairs carry cutoffs {sorted(cutoffs)}; expected exactly one")
     cutoff = cutoffs.pop()
-    history = load_choices(os.path.join(root, timesplit.HISTORY))
-    heldout = load_choices(os.path.join(root, timesplit.HELDOUT))
-    if not heldout:
+    raw = {"history": load_choices(os.path.join(root, timesplit.HISTORY)),
+           "heldout": load_choices(os.path.join(root, timesplit.HELDOUT))}
+    if not raw["heldout"]:
         raise ValueError(f"no held-out pairs in {timesplit.HELDOUT}; run pairs with an earlier cutoff")
+    history, heldout = filtered(researcher, timesplit.HISTORY), filtered(researcher, timesplit.HELDOUT)
     arms = {"m0": NamedNoHistory(llm, None, cache_dir=cache_dir),
             "m0_named": NamedNoHistory(llm, name, cache_dir=cache_dir),
             "m1_pairs": _fit("m1", llm, history, cache_dir), "m1_docs": docs_arm(researcher, llm, cutoff, cache_dir),
@@ -336,6 +345,9 @@ def run_e2(researcher: Researcher, llm: LLM, name: str, selected: str,
     report = {
         "researcher": researcher.slug, "cutoff": cutoff, "selected": selected,
         "n_pairs": len(heldout), "n_groups": len(scored["m0"]), "n_history": len(history),
+        "agreement_filter": {"threshold": agreement.THRESHOLD,
+                             "dropped": {"history": len(raw["history"]) - len(history),
+                                         "heldout": len(raw["heldout"]) - len(heldout)}},
         "arms": {arm: _summary(s) for arm, s in scored.items()},
         "selected_minus": {b: {"diff": d, "ci90": [lo, hi]} for b, (d, lo, hi) in diffs.items()},
         "success": all(lo > 0 for _, lo, _ in diffs.values()),
@@ -355,8 +367,7 @@ def run_e2(researcher: Researcher, llm: LLM, name: str, selected: str,
 def final_model(researcher: Researcher, llm: LLM, selected: str, cache_dir: Optional[str] = None) -> str:
     """Fit the selected method on every pair (history and held-out) and save usermodel.json."""
     root = researcher.root
-    pairs = (load_choices(os.path.join(root, timesplit.HISTORY))
-             + load_choices(os.path.join(root, timesplit.HELDOUT)))
+    pairs = filtered(researcher, timesplit.HISTORY) + filtered(researcher, timesplit.HELDOUT)
     path = os.path.join(root, "usermodel.json")
     _fit(selected, llm, pairs, cache_dir).save(path)
     return path
@@ -367,7 +378,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(description="Public-track E2 (PLAN 12.2)")
     p.add_argument("--root", default=DEFAULT_ROOT)
     sub = p.add_subparsers(dest="command", required=True)
-    for name in ("gate", "select", "e2", "final"):
+    for name in ("gate", "agree", "select", "e2", "final"):
         c = sub.add_parser(name)
         c.add_argument("--researcher", required=True)
         c.add_argument("--llm", default="claude-cli")
@@ -395,9 +406,14 @@ def main(argv=None):
         report = distractor_gate(researcher, judge,
                                  lambda pair: timesplit.regenerate_pair(researcher, pair, llm, client), cache_dir=CACHE)
         report["exa_cost"] = round(client.cost, 4)
+    elif args.command == "agree":
+        choices = [c for s in (timesplit.HISTORY, timesplit.HELDOUT)
+                   for c in load_choices(os.path.join(researcher.root, s))]
+        rows = agreement.judge(researcher.root, choices, BlindJudge(llm, cache_dir=CACHE), WORKERS)
+        report = {"judged": len(rows), "pairs": len(choices),
+                  "dropped": len(choices) - len(agreement.keep(researcher.root, choices))}
     elif args.command == "select":
-        best, scores = select_method(load_choices(os.path.join(researcher.root, timesplit.HISTORY)), llm,
-                                     cache_dir=CACHE)
+        best, scores = select_method(filtered(researcher, timesplit.HISTORY), llm, cache_dir=CACHE)
         report = {"selected": best, "scores": scores}
     elif args.command == "e2":
         out = args.out or os.path.join("results", "track_s", f"E2_{researcher.slug}.json")

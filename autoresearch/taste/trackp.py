@@ -7,13 +7,15 @@ Everything lives in data/researchers/<slug>/:
   seed_choices.jsonl   the person's answers, as text `Choice` rows (source "seed")
   labels.jsonl         the person's choice at logged loop decisions D1-D6
   recheck.jsonl        re-asked items, for the noise ceiling
+  agreement.jsonl      a blind judge's probability for each answer, per order (agreement.py)
   usermodel.json       the fitted user model the loop loads (research/advisor.load_user_model)
   history.jsonl        the choices that model was fitted on, for the prompt arm (R1-P-prompt)
   CONSENT.md           who the person is and what they agreed to
 
 Hold-out (fixed by hashing, so it never moves as answers arrive): 20% of seed
 pairs, plus every label from a run on or after --label-cutoff. The rest is
-split into history and val for `UserModel.fit`.
+split into history and val for `UserModel.fit`. E2 and fit use every split after the
+agreement filter: an answer a blind judge gives more than 0.8 in both orders is dropped.
 
 After `init`, --researcher defaults to the personal track (key P) in tracks.json. `status` says what to run
 next. The person answers in a terminal (answer / label / recheck), or an agent shows
@@ -25,6 +27,7 @@ them `pending` items in chat and saves each reply with `record` (docs/trackp-run
     python3 -m autoresearch.taste.trackp balance --backend ... --model ...   # paid
     python3 -m autoresearch.taste.trackp review [--id <pair_id> --decision approve|drop]
     python3 -m autoresearch.taste.trackp status
+    python3 -m autoresearch.taste.trackp agree --backend ...   # paid, once answers exist
     python3 -m autoresearch.taste.trackp answer | label | recheck        # interactive
     python3 -m autoresearch.taste.trackp pending [--kind seed|label|recheck] [--limit N]   # JSON
     python3 -m autoresearch.taste.trackp record --id <id> --choice <n> [--reason "..."]
@@ -48,7 +51,7 @@ from typing import Callable, Dict, List, Optional
 from ..research.decisions import validate_record
 from ..research.stats import bootstrap_ci, mean
 from .researcher import DEFAULT_ROOT
-from . import tradeoffs
+from . import agreement, tradeoffs
 from .usermodel import Choice, digest
 
 TRACKS_FILE = "tracks.json"   # read by cli.resolve_arm
@@ -368,6 +371,12 @@ def split(root: str, slug: str, label_cutoff: Optional[str] = None, test_frac: f
     return out
 
 
+def filtered_split(root: str, slug: str, label_cutoff: Optional[str] = None) -> Dict[str, List[Choice]]:
+    """split() after the agreement filter."""
+    d = os.path.join(root, slug)
+    return {k: agreement.keep(d, v) for k, v in split(root, slug, label_cutoff).items()}
+
+
 def next_steps(root: str, slug: str, decision_paths: List[str] = ()) -> List[str]:
     """The commands to run next, in order, for an agent picking this up."""
     d = os.path.join(root, slug)
@@ -385,6 +394,10 @@ def next_steps(root: str, slug: str, decision_paths: List[str] = ()) -> List[str
     unchecked = sum(p["origin"] == "llm" and p["pair_id"] not in checked for p in pairs)
     if unchecked:
         steps.append(f"{unchecked} LLM pair(s) need 'balance' before they are shown (paid, ask first)")
+    answered = [c.example_id for part in split(root, slug).values() for c in part]
+    unjudged = len(set(answered) - set(agreement.rows(d)))
+    if unjudged:
+        steps.append(f"{unjudged} answer(s) need 'agree' before e2 or fit (paid, ask first)")
     flagged = len(flagged_pairs(d))
     if flagged:
         steps.append(f"{flagged} flagged pair(s) need 'review' by someone other than the person answering")
@@ -422,7 +435,7 @@ def run_e2(root: str, slug: str, factories: Dict[str, Callable], out_path: str,
     next to the person's noise ceiling (PLAN E2, personal track)."""
     if os.path.exists(out_path):
         raise FileExistsError(f"{out_path} exists; E2 results are not overwritten")
-    parts = split(root, slug, label_cutoff)
+    parts = filtered_split(root, slug, label_cutoff)
     if not parts["test"] or not parts["history"]:
         raise ValueError(f"need history and test choices, have {({k: len(v) for k, v in parts.items()})}")
     methods = {}
@@ -460,7 +473,7 @@ def fit_user_model(root: str, slug: str, factory: Callable, label_cutoff: Option
     """Fit the selected method on history/val (never the held-out choices, so E2
     describes the model the loop uses); write usermodel.json and history.jsonl."""
     d = os.path.join(root, slug)
-    parts = split(root, slug, label_cutoff)
+    parts = filtered_split(root, slug, label_cutoff)
     model = factory()
     model.fit(parts["history"], parts["val"])
     model.save(os.path.join(d, USERMODEL))
@@ -544,6 +557,12 @@ def main(argv=None):
     b.add_argument("--threshold", type=float, default=0.75)
     b.add_argument("--max-calls", type=int, default=500)
     b.add_argument("--cache", default="runs/taste-cache")
+    ag = cmd("agree", "record a blind judge's probability for each answer; e2 and fit drop the ones it "
+                      "gives more than 0.8 in both orders (paid)")
+    ag.add_argument("--backend", required=True, help="a real backend: offline models give no probabilities (paid, ask first)")
+    ag.add_argument("--model", default=agreement.JUDGE_MODEL)
+    ag.add_argument("--max-calls", type=int, default=500)
+    ag.add_argument("--cache", default="runs/taste-cache")
     rv = cmd("review", "list flagged pairs, or approve/drop one (not by the person answering)")
     rv.add_argument("--id", help="pair_id to decide")
     rv.add_argument("--decision", choices=["approve", "drop"])
@@ -599,6 +618,13 @@ def main(argv=None):
         for r in rows:
             _append(os.path.join(d, tradeoffs.BALANCE), r)
         print(f"checked {len(rows)} pairs, {sum(r['one_sided'] for r in rows)} flagged one-sided")
+    elif args.command == "agree":
+        from .track_eval import BlindJudge, JsonReply
+        d = os.path.join(args.root, slug)
+        choices = [c for part in split(args.root, slug).values() for c in part]
+        judge = BlindJudge(JsonReply(_llm(args.backend, args.model, args.max_calls)), cache_dir=args.cache)
+        rows = agreement.judge(d, choices, judge)
+        print(f"judged {len(rows)} answers; {len(choices) - len(agreement.keep(d, choices))} of {len(choices)} dropped")
     elif args.command == "review":
         d = os.path.join(args.root, slug)
         flagged = flagged_pairs(d)
@@ -637,7 +663,7 @@ def main(argv=None):
         print("wrote", path, "\nkeep a copy in shared memory: "
               f"python3 -m autoresearch.taste.usermodel_store push --researcher {slug}")
     else:
-        parts = split(args.root, slug, args.label_cutoff)
+        parts = filtered_split(args.root, slug, args.label_cutoff)
         if args.dry_run:
             print(json.dumps({"methods": args.methods, **{k: len(v) for k, v in parts.items()},
                               "n_predictions": len(args.methods) * len(parts["test"]),

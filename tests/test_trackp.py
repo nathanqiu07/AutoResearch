@@ -13,7 +13,7 @@ from autoresearch.cli import resolve_arm
 from autoresearch.llm import OfflineLLM
 from autoresearch.research.advisor import load_user_model
 from autoresearch.research.decisions import DecisionLog
-from autoresearch.taste import tradeoffs, trackp
+from autoresearch.taste import agreement, tradeoffs, trackp
 from autoresearch.taste.methods import create_method
 from autoresearch.taste.usermodel import Prediction, UserModel
 
@@ -60,6 +60,13 @@ class TrackPTest(unittest.TestCase):
         """Write the seed set and answer the first n items it serves."""
         self.seed_pairs_only(seed)
         return self.answer("seed", prefer, limit=n)
+
+    def agree(self, agreeing=()):
+        """Agreement rows for every answer, as 'agree' records them: `agreeing` ids get 0.9 both ways."""
+        ids = [c.example_id for part in trackp.split(self.root, SLUG).values() for c in part]
+        with open(os.path.join(self.dir, agreement.AGREEMENT), "w") as f:
+            f.writelines(json.dumps({"example_id": k, "p_chosen": [0.9, 0.9] if k in agreeing else [0.5, 0.5],
+                                     "judge": "fake", "timestamp": "t"}) + "\n" for k in ids)
 
     def label_run(self, run_id, records):
         log = DecisionLog(run_id, "R0", root=os.path.join(self.root, "runs"), version="test")
@@ -262,6 +269,7 @@ class TrackPTest(unittest.TestCase):
 
     def test_fit_writes_a_user_model_the_loop_loads_and_history_without_held_out_choices(self):
         self.seed()
+        self.agree()
         trackp.fit_user_model(self.root, SLUG, lambda: create_method("m1", OfflineLLM()))
         model, source = load_user_model(self.dir, None, OfflineLLM())
         self.assertEqual(model.method_id, "m1")
@@ -273,6 +281,7 @@ class TrackPTest(unittest.TestCase):
 
     def test_e2_scores_held_out_choices_and_never_overwrites(self):
         self.seed()
+        self.agree()
         held = trackp.split(self.root, SLUG)["test"]
 
         class PrefersLater(UserModel):   # the real fit() checks for history/val leakage
@@ -286,6 +295,24 @@ class TrackPTest(unittest.TestCase):
         self.assertEqual(rep["methods"]["later"]["n"], len(held))
         with self.assertRaises(FileExistsError):
             trackp.run_e2(self.root, SLUG, {"later": lambda: PrefersLater(OfflineLLM())}, out)
+
+    def test_e2_and_fit_drop_answers_the_judge_decides_for_the_person_in_every_split(self):
+        self.seed()
+        parts = trackp.split(self.root, SLUG)
+        dropped = {parts["test"][0].example_id, parts["history"][0].example_id}
+        self.agree(agreeing=dropped)
+        rep = trackp.run_e2(self.root, SLUG, {"m1": lambda: create_method("m1", OfflineLLM())},
+                            os.path.join(self.root, "e2.json"))
+        self.assertEqual(rep["methods"]["m1"]["n"], len(parts["test"]) - 1)
+        trackp.fit_user_model(self.root, SLUG, lambda: create_method("m1", OfflineLLM()))
+        exported = {r["example_id"] for r in read(os.path.join(self.dir, trackp.HISTORY))}
+        self.assertFalse(exported & dropped)
+
+    def test_status_asks_for_agree_once_answers_exist(self):
+        self.seed()
+        self.assertTrue(any("'agree'" in s for s in self.cli("status")["next"]))
+        self.agree()
+        self.assertFalse(any("'agree'" in s for s in self.cli("status")["next"]))
 
 
 if __name__ == "__main__":
