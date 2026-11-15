@@ -84,6 +84,46 @@ class ProxyTest(unittest.TestCase):
         self.assertEqual(out["choices"][0]["finish_reason"], "tool_calls")
         self.assertGreater(out["usage"]["prompt_tokens"], 20)
 
+    def test_pooled_budget_end_to_end(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            prices = {KIMI: (2.205, 5.49)}
+            # clamped to 4000 tokens, a request's worst case is ~$0.022: nathan's $0.01 never fits it,
+            # abhi's $0.03 fits it until abhi's settled spend (~$0.0003 per fake reply) is topped up below
+            pool = tp.Pool([("nathan", tp.Budget(f"{d}/n.json", 0.01, 0, prices)),
+                            ("abhi", tp.Budget(f"{d}/a.json", 0.03, 0, prices))])
+            backend = tp.Backend.__new__(tp.Backend)
+            import tinker
+            backend.tinker, backend.lock, backend.models = tinker, threading.Lock(), {}
+            backend.renderers, backend.services, backend.key_envs = {KIMI: self.renderer}, {}, {}
+            backend.clients = {("nathan", KIMI): self.client, ("abhi", KIMI): self.client}
+            server = ThreadingHTTPServer(("127.0.0.1", 0),
+                                         tp.make_handler(backend, tp.Usage(0, None), [KIMI], pool, ceiling=4000))
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            url = f"http://127.0.0.1:{server.server_address[1]}/v1/chat/completions"
+            try:
+                body = {"model": KIMI, "max_tokens": 100_000, "messages": [{"role": "user", "content": "hi"}]}
+
+                def call():
+                    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"content-type": "application/json"})
+                    try:
+                        with urllib.request.urlopen(req) as r:
+                            return r.status, json.loads(r.read())
+                    except urllib.error.HTTPError as e:
+                        return e.code, json.loads(e.read())
+
+                self.assertEqual(call()[0], 200)
+                served = {s["account"]: s["spent_usd"] for s in pool.summary()}
+                self.assertEqual(served["nathan"], 0)        # skipped: its budget cannot hold the worst case
+                self.assertGreater(served["abhi"], 0)        # served and billed to abhi's ledger
+                abhi = pool.accounts["abhi"]
+                abhi.settle(KIMI, 0, 0, 2_000)                # +$0.011 elsewhere: abhi can no longer hold $0.022
+                code, out = call()
+                self.assertEqual(code, 429)
+                self.assertIn("every Tinker account", out["error"]["message"])
+            finally:
+                server.shutdown()
+
     def test_unknown_model_and_cap(self):
         self.assertEqual(self.post({"model": "x", "messages": []})[0], 400)
         self.usage.cap = 1

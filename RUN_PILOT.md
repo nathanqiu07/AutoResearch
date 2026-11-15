@@ -16,10 +16,34 @@ Rough cost (my estimate, nothing has been run): smoke about $1–2; baseline abo
 (stock + control, 24 audits) about $20–30. The control step re-runs stock, so you can skip the baseline step.
 Everything stops automatically when a step ends, even on error.
 
-**Spend limits to set before running:** a monthly limit on your Modal workspace (e.g. $75), a usage limit on
-your OpenAI key, and watch the Tinker console. The script's own caps are a $15 `--max-cost` on our judges
-and a 10M-token cap on Tinker (`TINKER_TOKEN_CAP`). They can't see the auditor's GPU time or Petri's own
-judge calls.
+**Spend limits to set before running:** a monthly limit on every Modal workspace in the pool and a usage
+limit on your OpenAI key. The script's own guards (Nathan, 2026-11-15):
+- **Tinker, pooled across teammates' accounts:** each account has a lifetime dollar budget, kept in a ledger
+  in `~/.autoresearch/` that persists across runs. The proxy uses accounts in order and returns 429 once all
+  of them are spent. Each step also has its own cap (`TINKER_RUN_USD`: smoke $3, baseline $15, control $25),
+  and each request's `max_tokens` is clamped at 16,384. The ledger prices at list rate with no cache discount, so it
+  overestimates. It only sees this laptop, so before starting, set each account's budget to what its Tinker console says is left.
+- **Modal, pooled across teammates' workspaces:** before deploying, a step picks the first workspace whose
+  budget fits its worst case (GPUs × `MAX_MINUTES` × $3.95/H100-hour), then records the actual minutes used.
+  A wall-clock limit (`MAX_MINUTES`: smoke 20, baseline 150, control 240) kills the step and stops every
+  Modal app. A workspace is reused until it is full, because a new one re-downloads the auditor's weights on
+  GPU time.
+- Our judges: `--max-cost 15`. Not covered: Petri's own judge calls (OpenAI usage limit covers them).
+
+Pool file `~/.autoresearch/pool.json` (env var names and Modal profile names only, never keys):
+```json
+{"tinker": [{"label": "nathan", "key_env": "TINKER_API_KEY",   "budget_usd": 100},
+            {"label": "abhi",   "key_env": "TINKER_KEY_ABHI",  "budget_usd": 100}],
+ "modal":  [{"label": "nathan", "profile": "nqiu07", "budget_usd": 60},
+            {"label": "abhi",   "profile": "abhi",   "budget_usd": 60}]}
+```
+Add a teammate's Modal workspace once with `modal token set --token-id <id> --token-secret <secret> --profile <name>`
+(they create the token at modal.com/settings/tokens), then create the `vllm-key` secret there with the same
+`VLLM_KEY`: `MODAL_PROFILE=<name> ../.petri-env/bin/modal secret create vllm-key VLLM_API_KEY=$VLLM_KEY`.
+Without a pool file, set `TINKER_BUDGET_USD` and `MODAL_BUDGET_USD` for your own accounts.
+Balances any time: `python3 scripts/modal_pool.py status`. Free check of what Tinker serves:
+`bash scripts/c2_pilot.sh preflight` (Tinker lists Kimi K2.5 as deprecated; if it is missing, run with
+`TINKER_MODEL=moonshotai/Kimi-K2.6`).
 
 ## 0. One-time setup (about 10 minutes)
 
