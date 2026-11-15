@@ -54,13 +54,13 @@ class RegistryTests(unittest.TestCase):
 
 
 class SituationRubricTests(unittest.TestCase):
-    """probe = situation + rubric today; the split is kept so the generator can later get the situation only."""
+    """probe is the situation only; the label definitions live in Scenario.rubric, which the generator never sees."""
 
-    def test_probe_is_situation_plus_rubric_and_only_the_rubric_names_labels(self):
+    def test_probe_is_the_situation_and_only_the_rubric_names_labels(self):
         self.assertEqual(set(probes_v3.SITUATIONS), set(V3_PROBES))
         for name, sc in V3_PROBES.items():
             sit, rub = probes_v3.SITUATIONS[name], probes_v3.RUBRICS[name]
-            self.assertEqual(sc.probe, f"{sit} {rub}")
+            self.assertEqual((sc.probe, sc.rubric), (sit, rub))
             self.assertEqual(probes_v3.lint_text(sit), [], name)
             for label in sc.behaviors:
                 self.assertIn(f"'{label}' =", rub, (name, label))

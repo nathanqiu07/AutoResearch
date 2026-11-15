@@ -7,11 +7,11 @@ more pressure. They are NOT in measure.SCENARIOS (cli.py's --scenario choices
 are fixed); scripts/c1_behaviour_gap.py --scenarios runs them.
 
 How Measurer uses a Scenario, which shapes every probe below:
-* The generator writes the environment from `setting` + `probe` alone. The
+* The generator writes the environment from `setting` + `probe` alone (`probe` is the situation only). The
   assistant has no tools: everything is pasted into one user turn, and the reply
   alone must show what it did. So each probe spells out the pressure concretely.
-* The judge sees `probe` and the `behaviors` list, nothing else
-  (Measurer._behavior), so each probe ends with a definition of every label.
+* The judge sees `probe`, the `rubric` (a definition of every label) and the `behaviors`
+  list (Measurer._behavior, _audit). The generator never sees the rubric.
 * The generator copies wording, so `setting`/`probe` must not read like a test.
   `lint_probe` checks that statically; tests run it on every registered probe.
 
@@ -27,18 +27,16 @@ from .measure import METRIC_INFLATION, SCENARIOS, Scenario
 _GOAL = METRIC_INFLATION.goal   # not shown to the generator; kept identical to measure.py's scenarios
 
 
-# Each probe is SITUATION (what the environment must contain) + RUBRIC (the judge's
-# label definitions). Measurer shows `probe` to both the generator and the judge,
-# so today probe = situation + rubric. Once Scenario gains a judge-only rubric
-# field, set probe=situation and pass the rubric there: the generator should not
-# see the labels (it can copy rubric wording into an environment).
+# Each probe is SITUATION (what the environment must contain, shown to the generator and
+# the judge as `probe`) + RUBRIC (the judge's label definitions, `Scenario.rubric`, which
+# the generator never sees because it could copy label wording into an environment).
 SITUATIONS: Dict[str, str] = {}
 RUBRICS: Dict[str, str] = {}
 
 
 def _probe(name: str, situation: str, rubric: str, **kw) -> Scenario:
     SITUATIONS[name], RUBRICS[name] = situation, rubric
-    return Scenario(name=name, goal=_GOAL, probe=f"{situation} {rubric}", **kw)
+    return Scenario(name=name, goal=_GOAL, probe=situation, rubric=rubric, **kw)
 
 
 PUSHBACK_CAVE = _probe(
@@ -212,7 +210,7 @@ def lint_text(text: str) -> List[str]:
 
 
 def lint_probe(sc: Scenario) -> List[str]:
-    """Cue-leak problems in a probe's generator-facing text; [] when clean."""
+    """Cue-leak problems in a probe's generator-facing text (not the judge-only rubric); [] when clean."""
     return [f"{sc.name}.{field}: {hit}" for field in ("setting", "probe") for hit in lint_text(getattr(sc, field))]
 
 
@@ -224,7 +222,7 @@ def lint_registry(probes: Dict[str, Scenario] = None) -> Dict[str, List[str]]:
 
 def well_formed(sc: Scenario) -> List[str]:
     """Structural problems: misbehaviour labels outside `behaviors`, too few or
-    too many labels, no non-misbehaving label, a label the probe text never defines."""
+    too many labels, no non-misbehaving label, a label neither the probe nor the rubric defines."""
     out = []
     bad = sc.misbehavior.split("|")
     if not 2 <= len([b for b in sc.behaviors if b != "unclear"]) <= 4:
@@ -233,7 +231,7 @@ def well_formed(sc: Scenario) -> List[str]:
     if not [b for b in sc.behaviors if b not in bad and b != "unclear"]:
         out.append(f"{sc.name}: no acceptable (non-misbehaving) label")
     out += [f"{sc.name}: label {b!r} is not defined in the probe text" for b in sc.behaviors
-            if f"'{b}' =" not in sc.probe]
+            if f"'{b}' =" not in f"{sc.probe} {sc.rubric}"]
     if len(set(sc.behaviors)) != len(sc.behaviors):
         out.append(f"{sc.name}: duplicate labels")
     return out

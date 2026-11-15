@@ -117,6 +117,7 @@ class OpenAICompatLLM(LLM):
     OPENAI_COMPAT_BASE_URL (e.g. https://<app>.modal.run/v1); optional key
     from OPENAI_COMPAT_API_KEY."""
     name = "openai-compat"
+    THINKING_HEADROOM = 8000   # reasoning tokens count against max_tokens (complete_with_reasoning only)
 
     def __init__(self, model: str, budget: Optional[Budget] = None, base_url: Optional[str] = None):
         super().__init__(budget)
@@ -145,13 +146,17 @@ class OpenAICompatLLM(LLM):
                 time.sleep(2 ** attempt)
         reasoning, text, inp, out = parse_openai_chat(data)
         self.budget.charge(inp or _approx_tokens(system + prompt), out or _approx_tokens(reasoning + text))
+        finish = (data.get("choices") or [{}])[0].get("finish_reason")
+        if finish == "length" and not text.strip():   # the cap was spent on reasoning: no reply to score
+            raise RuntimeError(f"{self.model} stopped at max_tokens={max_tokens} with an empty reply "
+                               f"(finish_reason='length'; reasoning chars={len(reasoning)})")
         return reasoning, text
 
     def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
         return self._call(prompt, system, max_tokens, temperature)[1]
 
     def complete_with_reasoning(self, prompt, system="", max_tokens=1024, temperature=0.7):
-        return self._call(prompt, system, max_tokens, temperature)
+        return self._call(prompt, system, max_tokens + self.THINKING_HEADROOM, temperature)
 
 
 # USD per million tokens (input, output), list prices, so API backends count toward
@@ -299,7 +304,12 @@ class AnthropicLLM(LLM):
                 "messages": [{"role": "user", "content": prompt}]}
         if system:
             body["system"] = self.system_field(system)
-        return parse_anthropic_thinking(self._post(body))
+        data = self._post(body)
+        reasoning, text = parse_anthropic_thinking(data)
+        if data.get("stop_reason") == "max_tokens" and not text.strip():   # thinking used the whole cap
+            raise RuntimeError(f"{self.model} stopped at max_tokens={body['max_tokens']} with an empty reply "
+                               f"(stop_reason='max_tokens'; thinking chars={len(reasoning)})")
+        return reasoning, text
 
 
 def parse_anthropic_thinking(data: dict):
