@@ -264,7 +264,7 @@
 
   /* ================================================================== Create */
   const SRC = [["Papers", 0], ["Posts and talks", 0], ["Code", 0], ["Trade-off answers", 1], ["Pairwise choices", 1], ["Past loop decisions", 1]];
-  const METH = ["Inverse Constitutional AI", "SynthesizeMe", "Bradley–Terry", "Verification filter", "Calibration"];
+  const METH = ["Inverse Constitutional AI", "SynthesizeMe", "Bradley–Terry", "Verification filter", "Calibration (M7, untested)"];
   const srcY = (k) => 290 + k * 60 + 24, methY = (k) => 290 + k * 74 + 30;
   add({
     id: "create", label: "Step 1 · Build the user model", cls: "s-create", step: 1, beats: 3,
@@ -278,7 +278,7 @@
         <div><span class="k">persona</span>SynthesizeMe</div>
         <div><span class="k">exemplars</span>past decisions</div>
         <div><span class="k">weights</span>Bradley–Terry</div>
-        <div><span class="k">confidence</span>calibrated</div>
+        <div><span class="k">confidence</span>reported</div>
       </div>
       <div class="construction-lenses">
         <div class="lens-box" data-in="2"><span>P2</span><h4>Research-process reconstruction</h4><p>Reconstruct projects, decisions, failures and updates.</p></div>
@@ -311,9 +311,15 @@
     },
     notes: [
       "Step one. Two kinds of evidence: what the researcher has published, and choices they make for us directly (orange borders): trade-off answers, pairwise choices, labels on past loop decisions.",
-      "We fit it rather than paste it into a prompt. Inverse Constitutional AI extracts principles and keeps those that reconstruct their choices (propose, cluster, dedupe, test, filter). SynthesizeMe writes and verifies hypotheses about the person, then a persona and exemplars. Bradley–Terry learns weights over idea features. A verification filter keeps a component only if it predicts that person’s held-out choices. Calibration attaches a confidence, so the loop knows when not to trust it. We selected among eight variants, M0 to M7, on PersonalRewardBench.",
-      "The output is the user model: principles, persona, exemplars, weights, three richer lenses (P2, P5, P8) and a calibrated confidence.",
+      "Our fitting methods learn from a person's choices. The catalog profiles are distilled from their writing. Inverse Constitutional AI extracts principles and keeps those that reconstruct their choices (propose, cluster, dedupe, test, filter). SynthesizeMe writes and verifies hypotheses about the person, then a persona and exemplars. Bradley–Terry learns weights over idea features. A verification filter keeps a component only if it predicts that person’s held-out choices. Only M7 calibrates confidence, and it was never tested. We built eight variants, M0 to M7. On dev users, none beats the no-history baseline yet.",
+      "The output is the user model: principles, persona, exemplars, weights, three richer lenses (P2, P5, P8) and a reported confidence.",
     ],
+  });
+
+  add({
+    id: "profile-kitchen", label: "Profile Kitchen", cls: "s-kitchen-frontend", step: 1,
+    html: `${head("Profile Kitchen")}<img class="kitchen-screenshot" data-in="0" src="img/profile-kitchen.jpg" alt="Profile Kitchen frontend with options to build your own profile or a known researcher’s profile.">`,
+    notes: "Screenshot of the actual local profile frontend, renamed Profile Kitchen. It offers a personal profile from materials and questionnaire answers, or a known researcher's writing-derived profile. The screenshot records the frontend state only, not evidence of model quality. Choice-fitted user models and writing-distilled catalog profiles are different construction paths.",
   });
 
   /* ================================================================== The user model is a module */
@@ -351,7 +357,7 @@
       }
     },
     notes: [
-      "The user model is a module with one interface: fit it on a person’s history, then predict(context, options) returns their likely choice and a calibrated confidence. Nothing about it is specific to our loop.",
+      "The user model is a module with one interface: fit it on a person’s history, then predict(context, options) returns their likely choice and a reported confidence. Nothing about it is specific to our loop.",
       "So it plugs into anything that makes choices: the research loop at D1 to D6, the auction as a bidder, the interview that decides what to ask, and any other agent that can call it.",
       "And the researcher profile is swappable: the same loop, a different researcher’s model. Which brings us to the catalog.",
     ],
@@ -367,7 +373,7 @@
   const catX = (i) => 140 + (i % 4) * 292, catY = (i) => 290 + Math.floor(i / 4) * 140;
   add({
     id: "catalog", label: "Step 1 · A catalog of tastes", cls: "s-cat", step: 1, beats: 3,
-    html: `${head("A catalog of researcher profiles")}
+    html: `${head("11 researcher corpora, 9 profiles")}
       ${CAT.map(([n, d, k], i) => `<div class="cc interactive ${k || ""}" data-i="${i}" data-in="0" style="left:${catX(i)}px;top:${catY(i)}px;--d:${i * 45}ms"><div class="nm">${n}</div><div class="dd">${d}</div></div>`).join("")}
       <div class="sock" data-in="0" style="--d:300ms"><div class="mname">user model</div><div class="slot"><div class="nm dim">pick a profile</div></div>
         <svg class="loopic" viewBox="0 0 120 120" width="120" height="120" aria-hidden="true"><circle cx="60" cy="60" r="44" fill="none" stroke="#AEBBDC" stroke-opacity=".4" stroke-width="4"/><circle class="orbit" cx="60" cy="16" r="9" fill="#FF6B2C"/></svg>
@@ -401,9 +407,9 @@
       if (b === 2) this.plug(11, dir > 0);
     },
     notes: [
-      "Because the user model is a module, we can keep a catalog of research tastes. These profiles exist in the repo today: eleven public researchers built from their dated papers, posts and talks (corpus sizes shown), plus a personal track built from your own answers, and two synthetic profiles with known good and bad taste for testing. Marius Hobbhahn gave consent for his. Click any card to plug it in.",
+      "Because the user model is a module, we can keep a catalog of research tastes. We have corpora for eleven researchers, profiles for nine, distilled from their dated papers, posts and talks (corpus sizes shown), plus a personal track built from your own answers, and two synthetic profiles with known good and bad taste for testing. Marius Hobbhahn gave consent for his. Click any card to plug it in.",
       "Plug in one researcher’s profile and the same loop makes their calls.",
-      "Or plug in your own, built in Profile Studio from your materials and a questionnaire.",
+      "Or plug in your own, built in Profile Kitchen from your materials and a questionnaire.",
     ],
   });
 
@@ -662,7 +668,7 @@
     notes: [
       "Step four: which experiments get the samples. Samples are the main cost, about five cents each with target plus judges. So experiments go to auction. Each bidder is a sub-agent with a credit wallet, and the user model is one of them. This is a simulation of the idea; the implemented market is autoresearch/research/market.py.",
       "Each lot is a batch of samples. Every sub-agent bids for the idea it believes in most, willing to stake credits in proportion to its belief. The price climbs, bidders drop out, and the last one standing wins the lot at the second-highest price. Then the experiments are evaluated, and every winning bid is settled with a log scoring rule against a coin flip, which is strictly proper: honest bidding is the best strategy. The overconfident contrarian wins resources early and pays for it.",
-      "Twenty nights later, on a typical seed: the calibrated user model has the most say and the overconfident contrarian the least. Over 300 seeds the user model finishes top 59% of the time (mean 127 credits from 100) and the contrarian never does (mean 34). In the real market, funding order is consensus P × stake ÷ cost with successive halving, and bids can also be paid in GPU-seconds.",
+      "Twenty nights later, on a typical seed: the simulated calibrated user model has the most say and the overconfident contrarian the least. Over 300 seeds the user model finishes top 59% of the time (mean 127 credits from 100) and the contrarian never does (mean 34). In the real market, funding order is consensus P × stake ÷ cost with successive halving, and bids can also be paid in GPU-seconds.",
     ],
   });
 

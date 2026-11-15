@@ -262,7 +262,7 @@ class ServerTest(unittest.TestCase):
 
     def test_page_and_static(self):
         with urllib.request.urlopen(self.base + "/", timeout=10) as r:
-            self.assertIn(b"Profile Studio", r.read())
+            self.assertIn(b"Profile Kitchen", r.read())
         with urllib.request.urlopen(self.base + "/static/app.js", timeout=10) as r:
             self.assertEqual(r.headers["content-type"], "text/javascript")
         for bad in ("/static/../server.py", "/static/%2e%2e/server.py", "/nothing"):
