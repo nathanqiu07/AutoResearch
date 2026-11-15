@@ -131,7 +131,7 @@ def _now() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
 
 
-def balance_check(pairs: List[dict], judge, threshold: float = 0.7) -> List[dict]:
+def balance_check(pairs: List[dict], judge, threshold: float = 0.85) -> List[dict]:
     """One check row per pair, from the public track's blind judge (track_eval.BlindJudge): a
     model with no history about the person answers in both option orders, as in
     track_eval.paired_correct. `picks` is its choice each time, as the public track scores it;

@@ -115,9 +115,9 @@ definitions (B). Both kinds of scenario go through the balance check.
   decision?", default `claude-opus-5-5`), asked in both option orders as in
   `track_eval.paired_correct`. Its picks are recorded as the public track scores them, but a
   forced choice picks the same pole on almost any lean (48 of 54 probe pairs), so the gate uses
-  its probabilities: a pair it gives the same pole ≥ 0.7 in both orders is `one_sided`. Probe
-  run 2026-11-14 (every axis, every scenario in all four environments, Opus 5.5): after three
-  rewordings no pair flagged, mean p(pole 1) 0.31–0.69. Flags and review decisions
+  its probabilities: a pair it gives the same pole ≥ 0.85 in both orders is `one_sided` (the user's cutoff). Probe
+  run 2026-11-14 (every axis, every scenario in all four environments, Opus 5.5): no pair flagged at 0.85
+  even before rewording (highest 0.82/0.85); after three rewordings mean p(pole 1) 0.31–0.69. Flags and review decisions
   go to a sidecar `balance.jsonl`, so `seed_pairs.jsonl` stays append-only. LLM-written pairs
   are not pending until checked and not flagged (or approved); bank pairs are pending without a
   check, because each was reviewed when written. Reviewing is `trackp review`, done by someone

@@ -24,7 +24,7 @@ python3 -m autoresearch.taste.trackp seed-pairs
   so ask the user first.
 * Then run `balance --backend <b> --model <m>` (paid, ask first) and `review`. `balance` is the
   public track's blind judge: a model with no history answers in both orders, and an item where
-  it gives one option 0.7 or more both times is flagged one-sided. A taste item should leave it
+  it gives one option 0.85 or more both times is flagged one-sided. A taste item should leave it
   roughly undecided.
   `review` lists the items awaiting a decision, and `review --id <pair_id> --decision
   approve|drop` settles one. Someone other than the person answering does both.

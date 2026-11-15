@@ -139,12 +139,12 @@ class BalanceTest(unittest.TestCase):
         return tradeoffs.balance_check([self.pair], StubJudge(fn))[0]
 
     def test_a_judge_that_favours_pole_one_in_both_orders_flags_the_pair(self):
-        row = self.check(lambda opts: [0.8, 0.2] if opts[0] == self.pole1 else [0.2, 0.8])
+        row = self.check(lambda opts: [0.9, 0.1] if opts[0] == self.pole1 else [0.1, 0.9])
         self.assertTrue(row["one_sided"])
-        self.assertEqual((row["pair_id"], row["picks"], row["p_pole1"]), (self.pair["pair_id"], [1, 1], [0.8, 0.8]))
+        self.assertEqual((row["pair_id"], row["picks"], row["p_pole1"]), (self.pair["pair_id"], [1, 1], [0.9, 0.9]))
 
     def test_a_mild_lean_is_roughly_undecided_though_both_picks_agree(self):
-        row = self.check(lambda opts: [0.6, 0.4] if opts[0] == self.pole1 else [0.4, 0.6])
+        row = self.check(lambda opts: [0.8, 0.2] if opts[0] == self.pole1 else [0.2, 0.8])
         self.assertEqual(row["picks"], [1, 1])
         self.assertFalse(row["one_sided"])
 
