@@ -574,3 +574,65 @@
   bytes. This is a 221-file publication hash check, not an independent replay of
   the owner's trace conclusions or a comparison with every private archive file.
   Metadata is staged for audit 039; the existing owner archive stays unchanged.
+
+## Extended checkpoint and original downstream trace audit
+
+- The preceding goal turn made concrete progress: 035 and 037 were published,
+  with final remote-verified HEAD f6ef2ee9cf9af5ad3d889412291cd213a3575432.
+  All three authorized coordination chats received the scopes and limitations.
+- Audit 040 creates a separate outside-worktree checkpoint of that exact public
+  revision and 16 private input archives. The manifest contains 20 payload
+  entries / 60,591,548 bytes, plus the exact manifest and copy receipt at the
+  destination. Every file is 0600, every checkpoint directory 0700; the older
+  checkpoint's manifest/receipt remain unchanged. No original was removed.
+- Root verifies all 2,419 public files against their committed Git blob
+  identities, safely extracts the public tree, and replays 037 from the copied
+  private archive. All 6,336 checks pass, inventory bytes match, and only argv
+  and the already documented 364-assertion family ordering differ. The other
+  15 archives receive byte-for-byte copy verification, not fresh full replay.
+- This checkpoint includes only packages through 037, not 038 or later, and is
+  same-machine storage. The complete downstream owner archives remain separately
+  referenced. Recovery code, paths, commands, receipts and tests are in 040.
+- Required suite at f6ef2ee: 677 run, 675 passed, two skipped, exit 0 in 24.706
+  seconds. No model/settings change or real model call occurred.
+- Root also verifies the 038 source-recovery map using 040's recovered public
+  tree, without opening original Git repositories. All 900 checks pass; 30 new
+  source files resolve the selected gaps. One source route relies on existing
+  private-retention metadata, not a new raw-member inspection. Exact code-byte
+  recovery is distinct from full environment or historical execution recovery.
+- Coordinator supplied explicit approved paths for the two probe script hashes
+  previously unresolved in 035. A separate 038 addendum captures their exact
+  code bytes; no script is executed or assigned inferred Git provenance. Root's
+  static AST check finds prompt literals whose hashes match the frozen records.
+- Original downstream05 audit 039 remains pinned to c80937c7/e9672aa. A later
+  judging repair published by the owner is separate; no original result is
+  replaced. Preliminary checks reproduce malformed-probe denominators, clipping
+  differences, original review rejections and unchanged active shutdown state.
+- A source-pinned interface boundary is reported to the owner: recognition
+  caller settings of temperature 0 / 300 tokens are overridden by the adapter's
+  fixed target settings of 0.7 / 16,384. The actual settings agree with the
+  owner's report. Audit 039 is also tracing a possible cached-input accounting
+  discrepancy before making a cost-basis conclusion; no invoice/overrun claim.
+- Audit 038 is now copied into a 91-file public package from its exact 87-file
+  safe allowlist, with a publication receipt and the required test evidence.
+  Two code-only archives retain 32 files / 556,193 source bytes. Independent
+  review passes 1,359 core checks, 900 relocated checks, 47 probe checks and
+  177 final manifest checks. Original maps/source files/035 records are unchanged.
+- The 039 cached-input discrepancy is now confirmed and communicated to all
+  three authorized chats. Across 78 saved calls, seven paid judge entries omit
+  40,832 cached input tokens from the recorded charged estimate. Applying the
+  same saved rates to all raw input/output tokens gives $1.071544500 rather
+  than $1.020504500, a $0.051040000 difference. Root independently reproduces
+  aggregate arithmetic; direct normalized native usage supports the observed
+  uncached/cache split. No separate cache charge appears in the indexed ledger,
+  and no numeric charge appears in the 21 judge billing/cache-diagnostic fields.
+  Third-party normalizer source is unarchived. This is a saved cost-basis
+  inconsistency, not current pricing, invoice verification or an overrun claim.
+- Downstream owner keeps its cross-run reconciliation provisional, retains
+  reservations, and owns any additive interpretation/future helper fix. Original
+  039 scope remains unchanged; later three-call judging repair is excluded.
+- Independent review of 040 finds no actionable blocker: exact copy/receipt
+  bindings, private permissions, all 2,419 public Git blobs and saved 037
+  comparison pass, with 11 synthetic recovery controls. The 17,197 reported
+  assertions are predominantly file-level checks, not new research observations.
+  No private archive body or full 037 reader was rerun by that reviewer.

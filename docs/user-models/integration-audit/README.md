@@ -18,7 +18,8 @@ jobs. No model/inference-setting changes or production adviser edits were made.
 | Does the extraction grid preserve failed and continued jobs? | All 96 planned cells are accounted for: 48 complete, 39 invalid, seven empty and two unavailable. Original dispatches and later continuations remain separate (035). | These are saved structural statuses. Unknown charges stay reserved, and exact unknown provider-request joins remain unverified. |
 | Does the full sparse index match actual personalized execution? | All 672 personalized predictions bind to reconstructed consumer inputs and responses; adding the 364 previously checked control/hybrid rows gives 1,036 delivered rows (037). | The 672 absent planned personalized rows remain explicit. Aliases and earlier P1 rows overlap these counts; this does not measure prediction quality or authenticate provider traffic. |
 | Are the terminal phase1 and stopped phase2 records recoverable? | All 2,252 required record references resolve from verified private archives, including 132 phase1 jobs and 78 dispatched results from 84 original phase2 admissions (032). | Later continuation outputs and active ledger state are outside this terminal snapshot. |
-| Can the evidence be reconstructed later? | Exact scripts, source pins, failures, hashes and verified private input archives are retained. Published packages through 033 also have a verified copy outside this worktree (036). | That checkpoint is on the same machine, excludes later packages and does not preserve the full provider/Python environment. |
+| Are early source hashes backed by retained code? | Audit 038 adds 29 historically hash-pinned files, one test derived from its recorded commit, and two later released probe scripts; portable verification resolves the mapped source routes. | One route is receipt-only, an untracked alias establishes content equivalence only, and code retention does not prove full historical execution or environment recovery. |
+| Can the evidence be reconstructed later? | Exact scripts, source pins, failures, hashes and verified private input archives are retained. A new outside-worktree checkpoint contains 16 private archives and 2,419 public files through 037; recovery of 037 passes all 6,336 checks (040). | This is same-machine retention, excludes 038 and later, and does not preserve the full provider/Python environment or rerun every historical audit. |
 
 Expanded semantic construction and saved-P1/memory conditioning are covered in
 026–027; 033–034 add actual recorded execution and alias bindings, 035 checks
@@ -40,14 +41,32 @@ or the separate API output-token limit.
 The existing [downstream05 archive reference](archive-references/gio-matched-shutdown-05/index.json)
 records 213 payload files retained by that run's owner. This audit verified the
 receipt/manifest hashes and their internal counts, without rereading or duplicating
-the full raw archive. It is same-machine retention, separate from the checkpoint
-through 033.
+the full raw archive. It is same-machine retention, separate from the checkpoints
+of this audit's own evidence. The full owner archive is not duplicated there.
 
 Audit 037's 2,222 private inputs have a verified recovery archive. Both agent and
 root replays pass all 6,336 checks with identical inventories. Reports match in
 every field except invocation paths and assertion order: the frozen reader
 iterates a set for control/hybrid overlap checks. The exact assertion multiset,
 including multiplicity, matches; all other arrays remain ordered and exact.
+
+The newest checkpoint is at the destination in
+[040/copy-receipt.json](../../../results/integration-audit/20261115-040/copy-receipt.json).
+It preserves the published tree at `f6ef2ee9` and all 16 exact private input
+archives through 037. The earlier checkpoint from 036 remains intact. Root
+verified every copied file, all public Git blob identities, private permissions
+and a fresh 037 replay from the recovered tree. Independent review also verifies
+the copy bindings and saved replay comparison; 11 synthetic recovery controls
+pass. See
+[040/README.md](../../../results/integration-audit/20261115-040/README.md)
+for the exact scope and limitations.
+
+[038/README.md](../../../results/integration-audit/20261115-038/README.md)
+documents the separate source-recovery supplement. Its original map remains
+unchanged; a later addendum recovers the two probe scripts previously missing
+from 035 and matches literal prompt hashes to the three recorded calls. That
+closes those specific byte-retention gaps, without asserting full system-input
+reconstruction, Git membership for the scripts or authenticated provider calls.
 
 ## First verified result
 

@@ -1,0 +1,11 @@
+# Recovering the integration-audit checkpoint through 037
+
+This checkpoint preserves the exact published audit tree at f6ef2ee9cf9af5ad3d889412291cd213a3575432 (packages 001–037) and 16 named private input archives. Packages 038 and later are excluded. It is a new copy outside the worktree on the same machine, not an off-device backup. The older checkpoint and every original remain unchanged.
+
+Verify manifest.json before use. The included verify_checkpoint.py validates copied file hashes/modes and compares every public archive file to the pinned Git tree; supply a Git repository containing the commit. These copy checks do not themselves rerun every historical audit or parse every private archive member. Keep the private directory private. Extract only into new directories, rejecting absolute paths, traversal and links. Consult each recovered package's current README and exact preservation receipt for archive selection and logical-input remapping.
+
+The public archive includes the readers, frozen source snapshots, reports, setup failures, checksums, handoffs, archive references, plan and audit tests committed at the stated revision. The external checkpoint also includes the exact copier, verifier, this guide, manifest and copy receipt. No secret, raw dataset or unrelated repository history is added. Existing private input archives remain byte-identical; their presence does not create new observations.
+
+Audit 037's current replay comparison excludes argv and permits assertion reordering with exact multiplicity; current observed moves are confined to the control/hybrid overlap family. All other fields/arrays and the inventory must match exactly. Audit 035 documents its separate 500-input and two-dispatch archives. The two-dispatch receipt carries a copied overlap-limit sentence referring to the main 500-input recovery; its input_count, member inventory and actual archive contain exactly two records. Use those explicit counts and the current 035 publication note.
+
+The separate full downstream04 and downstream05 owner archives are indexed in the public audit documentation and are not duplicated here. The checkpoint does not preserve a full Python environment, provider availability, authenticated historical HTTP traffic or identical stochastic outcomes. Evidence from later runs and audits requires a later checkpoint.
