@@ -181,6 +181,41 @@ class ContractTests(unittest.TestCase):
             with self.subTest(flag=invalid_flag), self.assertRaisesRegex(ValueError, "peer"):
                 self.build(approved_peer_sources=invalid_flag)
 
+    def test_common_consumer_binds_retrieval_to_exact_question_and_option_order(self):
+        from autoresearch.taste.overnight.consumer import predict_profile, ProfileFailure
+        for method in ("lexical_retrieval", "profile_retrieval", "semantic_retrieval"):
+            with self.subTest(method=method):
+                body = self.build().to_dict()
+                body["method_id"] = body["config"]["method_id"] = method
+                body["config"]["decision"] = {"context": "bound question", "options": ["left", "right"]}
+                body["config_id"] = self.c.digest(body["config"])
+                body.pop("profile_id")
+                body["profile_id"] = self.c.digest(body)
+                profile = self.c.ProfileArtifact.from_dict(body)
+                backend = RecordingConsumer()
+                for context, options in (("another question", ["left", "right"]),
+                                         ("bound question", ["right", "left"])):
+                    with self.assertRaises(ProfileFailure) as raised:
+                        predict_profile(profile, context, options, backend, self.prediction_config(profile))
+                    self.assertEqual(raised.exception.status, "unavailable")
+                    self.assertEqual(raised.exception.code, "retrieved_profile_decision_mismatch")
+                self.assertEqual(backend.prompts, [])
+                self.assertEqual(predict_profile(profile, "bound question", ["left", "right"], backend,
+                                                 self.prediction_config(profile)).choice, "b")
+                self.assertEqual(len(backend.prompts), 1)
+
+    def test_retrieval_profile_without_declared_decision_fails_closed(self):
+        from autoresearch.taste.overnight.consumer import predict_profile, ProfileFailure
+        body = self.build().to_dict()
+        body["method_id"] = body["config"]["method_id"] = "lexical_retrieval"
+        body["config_id"] = self.c.digest(body["config"])
+        body.pop("profile_id")
+        body["profile_id"] = self.c.digest(body)
+        profile, backend = self.c.ProfileArtifact.from_dict(body), RecordingConsumer()
+        with self.assertRaises(ProfileFailure):
+            predict_profile(profile, "q", ["a", "b"], backend, self.prediction_config(profile))
+        self.assertEqual(backend.prompts, [])
+
 
 if __name__ == "__main__":
     unittest.main()

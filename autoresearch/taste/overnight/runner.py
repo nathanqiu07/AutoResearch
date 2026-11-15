@@ -86,6 +86,8 @@ def _validate(manifest, lease, config, profile, items, documents):
     allocation = manifest["allocation"]
     if not isinstance(allocation, dict) or not allocation.get("authorization_source"):
         raise ValueError("explicit allocation and authorization source required")
+    if allocation.get("cost_mode") not in ("offline", "unpriced_cli", "priced_api"):
+        raise ValueError("allocation requires a supported cost_mode")
     for key in ("max_calls", "max_seconds", "max_usd"):
         value = allocation.get(key)
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
@@ -120,19 +122,30 @@ def _validate(manifest, lease, config, profile, items, documents):
         if schedule != manifest["option_order_schedule"]:
             raise ValueError("option order schedule mismatch")
     elif manifest["kind"] == "build":
+        if manifest.get("documents_hash") != digest(documents):
+            raise ValueError("full approved document records hash mismatch")
         validate_documents(documents, config)
         if config["allowed_source_manifest_hash"] != manifest["source_manifest_hash"]:
             raise ValueError("build source hash mismatch")
         for field in ("method_id", "personalization_cap", "replicate_id", "code_sha"):
             if config[field] != manifest[field]:
                 raise ValueError("build config/manifest mismatch: " + field)
+        settings = config.get("extractor_settings")
+        if not isinstance(settings, dict) or set(settings) != {"temperature", "max_tokens"}:
+            raise ValueError("extractor_settings must explicitly contain only temperature and max_tokens")
+        temperature, maximum = settings["temperature"], settings["max_tokens"]
+        if (isinstance(temperature, bool) or not isinstance(temperature, (int, float)) or
+                not 0 <= temperature <= 2 or not math.isfinite(temperature) or
+                isinstance(maximum, bool) or not isinstance(maximum, int) or maximum <= 0):
+            raise ValueError("invalid extractor_settings values")
 
 
 class _CallGate:
-    def __init__(self, backend, manifest, lease, trace_root, cache_root):
+    def __init__(self, backend, manifest, lease, declared_settings, trace_root, cache_root):
         self.backend, self.manifest = backend, manifest
         self.trace_root, self.cache_root = Path(trace_root), Path(cache_root) if cache_root else None
         self.allocation = manifest["allocation"]
+        self.declared_settings = json.loads(canonical_json(declared_settings))
         self.started = time.monotonic()
         self.attempts, self.failures, self.cache_hits = 0, 0, 0
         self.trace_hashes = []
@@ -154,7 +167,7 @@ class _CallGate:
             return self.name in ("codex-cli", "claude-cli", "devin-cli") and hasattr(self.backend, "timeout")
         if mode == "priced_api":
             # A shared Budget alone cannot conservatively reserve dollars.
-            return (self.name == "openai-responses" and hasattr(self.backend, "cost_summary") and
+            return (self.name in ("openai-responses", "openai-responses-overnight") and hasattr(self.backend, "cost_summary") and
                     0 < self.backend.max_usd <= self.allocation["max_usd"] and hasattr(self.backend, "timeout"))
         return False
 
@@ -164,6 +177,12 @@ class _CallGate:
         absolute_remaining = (self.deadline - utc_now()).total_seconds()
         if absolute_remaining <= 0:
             raise ProfileFailure("unavailable", "deadline_or_lease_expired")
+        remaining = min(absolute_remaining, self.allocation["max_seconds"] - (time.monotonic() - self.started))
+        if remaining <= 0:
+            raise ProfileFailure("unavailable", "allocation_exhausted")
+        actual_settings = {key: value for key, value in settings.items() if key != "system"}
+        if set(actual_settings) != {"temperature", "max_tokens"} or actual_settings != self.declared_settings:
+            raise ProfileFailure("unavailable", "call_settings_differ_from_declared")
         key = cache_key(self.manifest, prompt, settings)
         cached_path = self.cache_root / (key + ".json") if self.cache_root else None
         if cached_path and cached_path.exists():
@@ -172,7 +191,6 @@ class _CallGate:
                 raise ProfileFailure("invalid", "cache_provenance_mismatch")
             self.cache_hits += 1
             return cached["response"]
-        remaining = min(absolute_remaining, self.allocation["max_seconds"] - (time.monotonic() - self.started))
         if self.attempts >= self.allocation["max_calls"] or remaining <= 0:
             raise ProfileFailure("unavailable", "allocation_exhausted")
         if self.manifest["stage"] != "offline" and getattr(self.backend, "timeout", remaining + 1) > remaining:
@@ -202,11 +220,13 @@ class _CallGate:
         summary = self.budget.summary()
         cost = self.backend.cost_summary() if hasattr(self.backend, "cost_summary") else {}
         return {"attempted_calls": self.attempts, "uncertain_attempts": self.failures, "cache_hits": self.cache_hits,
-                "input_tokens": summary.get("input_tokens"), "output_tokens": summary.get("output_tokens"),
+                "input_tokens": None if cost.get("unknown_input_usage_attempts") else summary.get("input_tokens"),
+                "output_tokens": None if cost.get("unknown_output_usage_attempts") else summary.get("output_tokens"),
                 "reported_api_usd": cost.get("spent_usd") if self.allocation["cost_mode"] == "priced_api" else None,
                 "reserved_api_usd": cost.get("reserved_usd") if self.allocation["cost_mode"] == "priced_api" else None,
                 "budget_detail": cost,
-                "cost_status": "offline" if self.manifest["stage"] == "offline" else "unavailable",
+                "cost_status": "offline" if self.manifest["stage"] == "offline" else
+                    ("conservative_estimate" if self.allocation["cost_mode"] == "priced_api" else "unavailable"),
                 "elapsed_seconds": time.monotonic() - self.started}
 
 
@@ -219,6 +239,13 @@ def run_job(manifest, lease, *, output_root, lease_root, config, profile=None, i
     private too; shared notifications must use public_handoff(result).
     """
     manifest = json.loads(canonical_json(manifest))
+    lease = json.loads(canonical_json(lease))
+    config = json.loads(canonical_json(config))
+    items = json.loads(canonical_json(items))
+    documents = json.loads(canonical_json(documents))
+    confirmation_receipt = json.loads(canonical_json(confirmation_receipt))
+    if isinstance(profile, ProfileArtifact):
+        profile = ProfileArtifact.from_dict(profile.to_dict())
     _validate(manifest, lease, config, profile, items, documents)
     backend = extractor if manifest["kind"] == "build" else consumer
     expected_backend = manifest["extractor"] if manifest["kind"] == "build" else manifest["consumer"]
@@ -242,7 +269,8 @@ def run_job(manifest, lease, *, output_root, lease_root, config, profile=None, i
     write_new(out / "manifest.json", manifest)
     if confirmation_receipt is not None:
         write_new(out / "confirmation-receipt.json", confirmation_receipt)
-    gate = _CallGate(backend, manifest, lease, out / "traces", cache_root)
+    declared_settings = config.get("extractor_settings") if manifest["kind"] == "build" else config.get("settings")
+    gate = _CallGate(backend, manifest, lease, declared_settings, out / "traces", cache_root)
     result = {"schema_version": "overnight-result-v1", "job_id": manifest["job_id"], "stage": manifest["stage"],
               "status": "complete", "manifest_hash": digest(manifest), "code_sha": manifest["code_sha"],
               "config_hash": manifest["config_hash"], "source_manifest_hash": manifest["source_manifest_hash"],
