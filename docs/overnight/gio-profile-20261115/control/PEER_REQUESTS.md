@@ -61,3 +61,29 @@ Oversight's two existing collectors are accepted: incoming/oversight-neel-primar
 Downstream: your requested first tranche15 OpenAI+5 OpenRouter is reserved within your200/450 allocation. Implement per-provider guards that include existing overnight spend/pending reservations, freeze exact matched packet and return its path/hash for coordinator lease; no changes to model/seed are requested. Candidate Hobbhahn may be used as a separately labeled earlier-profile demonstration if needed; it is distinct from our Neel/Chris writing-based search and is not its winning-method utility result. Root's first valid P1 fit-only frozen guidance will follow for an additional clearly labeled feasibility arm. Root's Responses ledger is OpenAI profile-only; use your dedicated provider ledger paths with unique tranche ID and aggregate statement, never reuse the profile budget as a second allowance.
 
 Parent09 follow-up: translate frozen scaling manifests to explicit driver packets within09-owned paths and add grouped paired reporting. Current integrated core contains driver1eed3c4+runner7bb1589, all eight methods; tests825total/2skips and15driver passed before minimal500 ceiling edit. A final immutable runtime pin follows. Do not choose finalists, issue leases, or execute calls.
+
+## 01:40 Pacific — immutable pilot runtime and prepared builds
+
+Runtime freeze0dcd4b43b82a5a271d195e0bcc6b67695281f37c at /Users/giordanorogers/.codex/worktrees/gio-overnight-pilot-runtime/AutoResearch-overnight-control. All integrated825tests (823pass,2skip),16driver tests pass. The expanded guard is applied and directly approved in this chat. Frozen build batch /private/tmp/gio-profile-20261115-coordinator/receipts/df8239e96e542be91ebb1cb63b1b7937c97bb4d052ca89f33f6d2f4fe2120b9d/preparation/prepared.json SHA256ec7278a07e0fe0b2033fcda325de1d0e071d14571ad573c396b4a7b00222a3f0. It binds16buildjobs,14deterministiczero-call controls and2P1calls, maxsum0.054USD. Prediction packets follow existing profile hashes; invalid profiles stay explicit and are never replaced by empty controls. Selection remains frozen. Audit can inspect exact prepared metadata; source snapshots are evaluator-released only. No private labels.
+
+## 01:39 Pacific — first live build jobs started
+
+The frozen build batch is executing now from0dcd4b43b82a5a271d195e0bcc6b67695281f37c.14deterministic builds plus2P1 model calls; exact prepared pointer above. No automatic retries. Runtime remains untouched.
+
+Oversight collectors: evaluator published supplemental DEDUP-ONLY index at /private/tmp/gio-profile-20261115-evaluator/collection-index-v2.json (no labels/text/splits). Use it to check the two current batches. Chris4-document receipt24a7c32b was received and evaluator is reviewing privately fornewversion; no claim of newindependentjudgments yet.
+
+Downstream's15OpenAI+5OpenRouter tranche is reserved within its own200/450allocation; please send exact frozenpacket and prior/pending provider totals promptly so canonical receipt can bind them. No need wait forwinner; earlierHobbhahn demo must remain separate fromnewNeel/Chrisutility evidence.
+
+## 01:40 Pacific — empirical build result and control predictions
+
+First live batch completed:14/14control builds complete atzero calls; bothP1 profiles invalid_source_span after2completed model calls,40.7/52.5seconds, total0.0049832USD. No uncertain call or held reservation. Both failed profiles are preserved;06owner is diagnosing exactquotes versus offsets before any newpromptversion. They will not be silently repaired or replaced.
+
+32control predictions now executing in14jobs from same0dcd4b43 frozenruntime. Prepared path /private/tmp/gio-profile-20261115-coordinator/receipts/c0e41ac85c806548b007f47f6ad08a9564ffe75ca4cd5a0a207ef4d936d4051a/preparation/prepared.json SHA2564dfcaccb489ce152f97d01e8321eed4898ec17c6723858723edf3de2914c900a; allocationssum0.256USD, twoconcurrent. Allfourcontrols matched onfrozeneightorderedinputs. P1coveragezero is a result, not missing undisclosed data.
+
+09scaling needs04's scored-report schema and opaque semantic/source-group mapping withchecksums. Evaluator can supplysyntheticfixture now, no labels. Rootfreezeruntime is0dcd4b43; exactartifacts mustkeepactualcode/renderer/prompt identities.
+
+## 01:42 Pacific — matched control batch complete
+
+JOB_REGISTRY.json now contains all30 actual jobs and both exactbatch pointers. The frozen pilot completed32/32control predictions with no error/unknowncalls;2P1buildfailures remain explicit. Sharedledger34calls,.0082642USD estimated,0pending. Evaluator is now scoring the frozen comparison; no outcomeclaim yet. Completionindex /private/tmp/gio-profile-20261115-coordinator/pilot-completion-index-v1.json SHA2566fadfd0466ec959b1cbc5bb6852a135e604834aefd2cdadcb7a7cbb2ad922fb6.
+
+Oversight role10 reference helper is accepted in principle within existing queuedrole10 scope, no duplicate. Root will publish explicit ownership packet/reservation after inspecting existing queued paths. It remains a separate recorded-preference reference, not research-taste evidence. No finaldata and no livecalls before concrete matched dryplan/lease.
