@@ -35,3 +35,11 @@ sources (podcasts, AMAs, comments, shortform, idea lists, advice) beat training 
 ## Budget
 Fitting may use haiku or sonnet. Validation predictions are batched (many pairs per call). Caps: 2,500 sonnet and
 1,500 haiku calls across the whole experiment, ≤ 4 concurrent.
+
+## Amendment (2026-11-15, user direction, before any SynthesizeMe result)
+At this exploratory stage the placebos are reported, not used as gates.
+- **Primary:** an S arm "predicts held-out choices" if it beats M0s (no profile) on paired accuracy or mean p(his),
+  with the 90% cluster CI over works above 0.
+- **Secondary:** the same comparison against NAME (beyond what sonnet already knows about him).
+- P0 and ANTI0 are reported descriptively. They say how much of a gain is specific to him, but they do not decide
+  the verdict.
