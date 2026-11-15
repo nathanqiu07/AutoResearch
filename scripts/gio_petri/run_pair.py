@@ -68,7 +68,7 @@ def main():
                     response=await fresh[self.role].generate(msgs,config=GenerateConfig(cache=False))
                     return response.completion
                 finally:
-                    for model in fresh.values(): await model.aclose()
+                    for model in fresh.values(): await model.__aexit__(None,None,None)
             return asyncio.run(complete_once())
     target=Bridge('target');judge=Bridge('judge')
     seed=json.loads((a.packet/'seed.json').read_text())

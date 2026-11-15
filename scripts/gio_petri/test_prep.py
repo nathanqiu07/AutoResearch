@@ -19,6 +19,14 @@ class PrepTests(unittest.TestCase):
             self.assertEqual(len(p['only']),1)
         self.assertTrue(r['target'].api.completion_params(r['target'].config,True)['extra_body']['reasoning']['enabled'])
         self.assertEqual(r['target'].config.max_tokens,16384)
+    def test_native_model_cleanup(self):
+        import asyncio
+        async def close_all():
+            models=roles('offline-placeholder','offline-placeholder')
+            for model in models.values():
+                await model.__aexit__(None,None,None)
+                self.assertTrue(model._closed)
+        asyncio.run(close_all())
     def test_real_tool_schema_names(self):
         names=[ToolDef(t).name for t in default_auditor_tools()]
         self.assertIn('send_message',names)

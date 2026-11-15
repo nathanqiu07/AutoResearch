@@ -1,6 +1,6 @@
 # Petri pilot preparation
 
-The actual pair has NOT run. No paid judge has run. No researcher dataset or teammate-owned module was changed.
+The actual pair has NOT run. One tiny GPT-5.1 access check has run; no actual audit judgment has run. No researcher dataset or teammate-owned module was changed.
 
 ## Verified connection
 
@@ -64,7 +64,7 @@ The preparation gate verifies model hash, nonempty principles, split membership,
 1. Receive and verify filtered data, refit provenance, and final model; review actual prompt diff.
 2. Reconcile filtering/refit costs and all other spend against $100 overall. Earlier known spend was $4.21029497, plus this check. Other concurrent charges are unknown.
 3. Use `run_pair.py`, which wraps all native model calls in one reservation ledger. It reserves full context plus maximum output cost before each call, retains reservations on failures, and halts further calls after an error. It requires an explicit pair allocation within the remaining $100 budget. This controls this process only: reconcile concurrent work before assigning its budget.
-4. Verify GPT-5.1 credentials/access in the execution environment. No paid judge call was needed for connection preparation.
+4. GPT-5.1 access is now verified through the native judge role: OK in 2.79 seconds, 20 input and 20 output tokens, estimated $0.000225. Results are in `results/gio-petri-prep/gpt51-access`. A post-call cleanup error was fixed and tested offline. Supply the same key securely through OPENAI_API_KEY at launch; no key is stored in the repo.
 5. The isolated `run_pair.py` now uses the existing `build_task`, native roles, persistent Inspect logs, and the team's `PetriMeasurer.score` for outer A1/A2/validity. Transport retries are disabled at both Inspect and SDK layers. Petri's stock judge can make three parsing attempts, identically in both arms; these all pass through the ledger. The runner was validated without calls; a full live execution remains untested and is deliberately gated.
 
 ## What the result must show
