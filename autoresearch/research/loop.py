@@ -24,7 +24,7 @@ import random
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from ..memory import ResearchMemory
 from ..taste.profile import TasteProfile
@@ -187,12 +187,15 @@ class OpenResearcher:
                  scout=None, shared=None, calibration: Optional[Calibration] = None, budget=None,
                  advisor: Optional[TasteAdvisor] = None, pool: Optional[ItemPool] = None,
                  decisions_dir: Optional[str] = None, market: Optional[Market] = None,
-                 contrarian: Optional[Proposer] = None, screen_measurer: Optional[Measurer] = None):
+                 contrarian: Optional[Proposer] = None, screen_measurer: Optional[Measurer] = None,
+                 progress: Optional[Callable[[dict], None]] = None):
         """market: bids and wallets for allocation="market" (a fresh in-memory
         one if omitted); contrarian: the contrarian proposer used when
         cfg.contrarian > 0; screen_measurer: a cheaper target for the screening
         round of halving/market (its samples rank candidates but are not merged
-        into the full measurement)."""
+        into the full measurement); progress: called with every log event as it
+        happens, plus "iteration" (start) and "progress" (end of an iteration)
+        events that are not logged. It is for display and must not change the run."""
         if cfg.items_per_iter and pool is None:
             raise ValueError("items_per_iter > 0 needs an ItemPool of benchmark items")
         if measurer is None and pool is None:
@@ -211,6 +214,7 @@ class OpenResearcher:
         self.advisor = advisor
         self.cal = calibration or Calibration(None, taste.researcher if taste else "none")
         self.budget = budget
+        self.progress = progress
         self.rng = random.Random(cfg.seed)
         self.item_rng = random.Random(cfg.seed * 7919 + 1)   # separate stream: batches don't shift other draws
         self.run_id = uuid.uuid4().hex[:8]
@@ -319,14 +323,14 @@ class OpenResearcher:
                 "how to make language model evaluations indistinguishable from real deployment "
                 "eval awareness realistic environments", num_results=6, since_days=self.scout.since_days)
         except Exception as e:
-            self.log.append({"event": "exa_error", "detail": str(e)[:200]})
+            self._event({"event": "exa_error", "detail": str(e)[:200]})
             return
         for r in res:
             self.sources.append({"url": r.get("url"), "title": r.get("title"), "published": r.get("publishedDate"),
                                  "used_for": "method_discovery"})
         new = self.pr.from_web(res, self.sc.goal)
         self.web_ideas += new
-        self.log.append({"event": "web_ideas", "ideas": [w.to_dict() for w in new]})
+        self._event({"event": "web_ideas", "ideas": [w.to_dict() for w in new]})
 
     # ---------- allocation (E5, market.py) ----------
     AGENT_OF_ORIGIN = {"llm": "proposer", "exa": "scout", "contrarian": "contrarian", "library": "library"}
@@ -376,8 +380,8 @@ class OpenResearcher:
                    "screen_score": round(sc, 4), "n": len(ev.scores),
                    "target": "screening" if self.screen_ms is not None else "dev"}
             self.screened_out.append(rec)
-            self.log.append({"event": "screened_out", **rec})
-        self.log.append({"event": "allocation", "iter": it, "mode": self.cfg.allocation, "screened": n,
+            self._event({"event": "screened_out", **rec})
+        self._event({"event": "allocation", "iter": it, "mode": self.cfg.allocation, "screened": n,
                          "survivors": keep, "screen_samples": self.cfg.screen_samples})
         return [(screened[k][1], screened[k][2], screened[k][3], screened[k][4] if merged else None)
                 for k in survivors], order
@@ -391,6 +395,13 @@ class OpenResearcher:
         self.market.settle(outcomes, it=it)
         self.market.withdraw(keep=[f"add:{i.id}" for i in deferred], it=it)
 
+    def _event(self, ev: dict, record: bool = True):
+        """Log an event (unless record is False) and pass it to the progress callback."""
+        if record:
+            self.log.append(ev)
+        if self.progress is not None:
+            self.progress(ev)
+
     def _anytime(self, it: int, best: Evaluation):
         """One point of E5's anytime curve: best dev score against cumulative spend."""
         b = self.budget.summary() if self.budget else {}
@@ -398,6 +409,8 @@ class OpenResearcher:
                              "validated": sum(f["status"] == "validated" for f in self.findings),
                              "samples": self.samples_used, "screen_samples": self.screen_samples_used,
                              "calls": b.get("calls"), "cost_usd": b.get("cost_usd"), "seconds": b.get("seconds")})
+        self._event({"event": "progress", **self.anytime[-1],
+                     "findings": [f for f in self.findings if f["iter"] == it]}, record=False)
 
     # ---------- decision points ----------
     def _d1(self, it: int, designs, best: Evaluation) -> Optional[int]:
@@ -502,14 +515,14 @@ class OpenResearcher:
                       "p_better": [round(f["p_better"], 4) for f in rel], "decisive": False})
         if chosen == 1:
             self.abandoned.add(cat)
-            self.log.append({"event": "abandoned_direction", "iter": it, "category": cat})
+            self._event({"event": "abandoned_direction", "iter": it, "category": cat})
 
     def _d5(self, it, finding, best_summary):
         try:
             exps, ml = self.pr.explain(finding, best_summary)
         except Exception as e:   # the reading is auxiliary: fall back to the rule-based one and say so
             from .ideas import offline_explanations
-            self.log.append({"event": "explain_error", "iter": it, "error": str(e)[:200]})
+            self._event({"event": "explain_error", "iter": it, "error": str(e)[:200]})
             exps, ml = offline_explanations(finding, best_summary)
         context = (f"Iteration {it}: how to read the result of {finding['move'].split(':')[0]} "
                    f"[{finding['category']}] {finding['text'][:120]}")
@@ -522,7 +535,7 @@ class OpenResearcher:
         try:
             drafted = self.pr.draft_claims(self.findings, CLAIM_KINDS) if self.cfg.claims else None
         except Exception as e:
-            self.log.append({"event": "claims_error", "error": str(e)[:200]})
+            self._event({"event": "claims_error", "error": str(e)[:200]})
             drafted = None
         source = "drafted"
         if not drafted:
@@ -555,7 +568,7 @@ class OpenResearcher:
         try:
             keep, why = self.pr.env_setting_check(env, self.sc.setting)
         except Exception as e:
-            self.log.append({"event": "setting_check_error", "error": str(e)[:200]})
+            self._event({"event": "setting_check_error", "error": str(e)[:200]})
             return None
         return None if keep else (why or "left the fixed setting")
 
@@ -568,18 +581,19 @@ class OpenResearcher:
                 self._set_grounding(docs)
                 self.sources += [vars(s) for s in self.scout.sources]
             except Exception as e:
-                self.log.append({"event": "exa_error", "detail": str(e)[:200]})
+                self._event({"event": "exa_error", "detail": str(e)[:200]})
         best = self._measure([], self._batch())
         baseline = best
-        self.log.append({"event": "baseline", **best.summary()})
+        self._event({"event": "baseline", **best.summary()})
         self._anytime(0, best)
         tried = set()
         deferred: List[Intervention] = []   # strong runners-up, re-tested against the new best
         try:
             for it in range(1, self.cfg.iterations + 1):
                 if self._exhausted():
-                    self.log.append({"event": "budget_exhausted", "iter": it})
+                    self._event({"event": "budget_exhausted", "iter": it})
                     break
+                self._event({"event": "iteration", "iter": it, "of": self.cfg.iterations}, record=False)
                 if it == 1 or it % 3 == 0:
                     self._discover()
                 cands = deferred + self.pr.propose(self.sc.goal, self.sc.probe, best.interventions, tried,
@@ -602,7 +616,7 @@ class OpenResearcher:
                 if self.pool and designs:
                     # multi-item: the current best is re-measured on this iteration's items, so comparisons are paired
                     ref = self._measure(best.interventions, batch)
-                    self.log.append({"event": "reference", "iter": it, **ref.summary()})
+                    self._event({"event": "reference", "iter": it, **ref.summary()})
                 um_top_i = self._d1(it, designs, best)
                 tested_cats = {f["category"] for f in self.findings}
                 pri = {}
@@ -612,7 +626,7 @@ class OpenResearcher:
                 gated = [d for d in ranked if not (d[0].startswith("add") and self._refuted(d[2]))]
                 for d in ranked:
                     if d not in gated:
-                        self.log.append({"event": "gated_refuted_category", "iter": it, "idea": d[2].text,
+                        self._event({"event": "gated_refuted_category", "iter": it, "idea": d[2].text,
                                          "category": d[2].category})
                         self._record_d4_refuted(it, d[2])
                 alloc, funded = self._allocate(it, gated, batch)
@@ -638,12 +652,12 @@ class OpenResearcher:
                     if drift:
                         ev_log = {"event": "setting_drift", "iter": it, "idea": idea.text, "category": idea.category,
                                   "why": drift}
-                        self.log.append(ev_log)
+                        self._event(ev_log)
                         self.drift_events.append(ev_log)
                     evals.append((move, ev, idea, p, delta, summ, per_item, drift))
                     if self.advisor:
                         self.cal.add(self._tscore.get(move, 0.0), delta)
-                    self.log.append({"event": "evaluated", "iter": it, "move": move, "idea": idea.to_dict(),
+                    self._event({"event": "evaluated", "iter": it, "move": move, "idea": idea.to_dict(),
                                      "p_better": p, "delta": delta, **summ,
                                      **({"per_item_delta": per_item} if per_item else {})})
                 top = max(evals, key=lambda e: e[3])
@@ -656,7 +670,7 @@ class OpenResearcher:
                     conf = self._measure(ev.interventions, conf_batch)   # fresh samples: held-out confirmation
                     conf_ref = best if self.pool is None else self._measure(best.interventions, conf_batch)
                     pc, _, _ = self._compare(conf, conf_ref, seed=it + 999)
-                    self.log.append({"event": "confirmation", "iter": it, "idea": idea.text, "p_better": pc,
+                    self._event({"event": "confirmation", "iter": it, "idea": idea.text, "p_better": pc,
                                      **conf.summary()})
                     if pc >= self.cfg.confirm_p:
                         status = "validated"
@@ -723,7 +737,7 @@ class OpenResearcher:
                 self._anytime(it, best)
         except Exception as e:   # an LLM/backend failure (e.g. a usage limit) ends the search, not the report
             self.aborted = f"{type(e).__name__}: {str(e)[:300]}"
-            self.log.append({"event": "aborted", "error": self.aborted})
+            self._event({"event": "aborted", "error": self.aborted})
         if self.market:
             self.market.withdraw(it=None)   # bids still open at the end (deferred, or the budget ran out)
         self.mem.flush()

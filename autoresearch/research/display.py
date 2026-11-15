@@ -166,3 +166,93 @@ def _detail_rows(c: Console, rep: Dict) -> List[tuple]:
         rows.append(("samples", f"{al.get('samples', 0)} measured"
                                 + (f", {al['screen_samples']} screening" if al.get("screen_samples") else "")))
     return rows or [("details", c.style("none recorded", "dim"))]
+
+
+class Progress:
+    """Prints the loop's events as they happen. Pass an instance as
+    ``OpenResearcher(progress=...)``."""
+
+    WARN = {"exa_error": "web search failed", "explain_error": "explanations (D5) failed",
+            "claims_error": "claim extraction (D6) failed", "setting_check_error": "setting check failed"}
+
+    def __init__(self, c: Console, accept_p: Optional[float] = None, confirm_p: Optional[float] = None):
+        self.c, self.accept_p, self.confirm_p = c, accept_p, confirm_p
+        self.best: Optional[float] = None
+
+    def __call__(self, ev: Dict) -> None:
+        handler = getattr(self, "_on_" + str(ev.get("event")), None)
+        if handler is not None:
+            handler(ev)
+        elif ev.get("event") in self.WARN:
+            detail = ev.get("detail") or ev.get("error") or ""
+            self.c.print(self.c.style("  warning ", "bold", "yellow") + f"{self.WARN[ev['event']]}: {detail}")
+
+    def _metrics(self, ev: Dict) -> str:
+        c = self.c
+        return (f"score {c.style(_num(ev.get('score')), 'bold')}  awareness {_num(ev.get('awareness'))}  "
+                f"validity {_num(ev.get('validity'))}  {c.style('n=' + str(ev.get('n')), 'dim')}")
+
+    def _on_baseline(self, ev: Dict) -> None:
+        self.best = ev.get("score")
+        self.c.print("\n" + self.c.style("baseline ", "bold", "cyan") + " " + self._metrics(ev))
+
+    def _on_iteration(self, ev: Dict) -> None:
+        self.c.print("\n" + self.c.rule(f"iteration {ev['iter']}/{ev['of']}", "blue"))
+
+    def _on_web_ideas(self, ev: Dict) -> None:
+        self.c.print(self.c.style(f"  web     {len(ev.get('ideas', []))} new ideas from search", "dim"))
+
+    def _on_allocation(self, ev: Dict) -> None:
+        if ev.get("screened"):
+            self.c.print(self.c.style(f"  screen  {ev['screened']} candidates screened ({ev.get('mode')})", "dim"))
+
+    def _on_gated_refuted_category(self, ev: Dict) -> None:
+        self.c.print(self.c.style(f"  skip    {ev.get('category')}: category already refuted", "dim"))
+
+    def _on_evaluated(self, ev: Dict) -> None:
+        c = self.c
+        idea = ev.get("idea") or {}
+        removed = str(ev.get("move", "")).startswith("remove")
+        head = (c.style("  measure ", "gray") + c.style(("remove " if removed else "") + idea.get("category", ""), "cyan")
+                + f"  Δ {signed(c, ev.get('delta'))}  P(better) {prob(c, ev.get('p_better'), self.accept_p)}  "
+                + f"validity {_num(ev.get('validity'), 2)}  awareness {_num(ev.get('awareness'), 2)}")
+        c.print(head)
+        c.print(c.style("          " + c.truncate(idea.get("text", ""), c.width - 10), "dim"))
+
+    def _on_confirmation(self, ev: Dict) -> None:
+        c = self.c
+        ok = self.confirm_p is not None and ev.get("p_better", 0) >= self.confirm_p
+        c.print(c.style("  confirm ", "gray") + "fresh samples  P(better) "
+                + c.style(_num(ev.get("p_better"), 2), "bold", "green" if ok else "yellow"))
+
+    def _on_setting_drift(self, ev: Dict) -> None:
+        self.c.print(self.c.style("  drift   ", "bold", "yellow") + f"{ev.get('category')}: {ev.get('why')}")
+
+    def _on_abandoned_direction(self, ev: Dict) -> None:
+        self.c.print(self.c.style("  abandon ", "bold", "yellow") + f"{ev.get('category')} (mixed results)")
+
+    def _on_budget_exhausted(self, ev: Dict) -> None:
+        self.c.print("\n" + self.c.style(f"budget exhausted before iteration {ev.get('iter')}", "bold", "yellow"))
+
+    def _on_aborted(self, ev: Dict) -> None:
+        self.c.print("\n" + self.c.style(f"aborted: {ev.get('error')}", "bold", "red"))
+
+    def _on_progress(self, ev: Dict) -> None:
+        if not ev.get("iter"):
+            return
+        c = self.c
+        fs = ev.get("findings") or []
+        if fs:
+            c.print(c.style("  outcome ", "gray") + "  ".join(
+                c.style(f.get("category", ""), "cyan") + " " + status(c, f["status"]) for f in fs))
+        score = ev.get("best_score")
+        moved = score is not None and self.best is not None and score > self.best + 1e-9
+        best = c.style(_num(score), "bold", "green" if moved else "")
+        if moved:
+            best += " " + signed(c, score - self.best)
+        self.best = score if score is not None else self.best
+        cost = ev.get("cost_usd")
+        c.print(c.style("  best    ", "gray") + best + c.style(
+            f"   {ev.get('validated', 0)} validated · {ev.get('samples', 0)} samples · {ev.get('calls') or 0} calls"
+            + (f" · ${cost:.2f}" if cost is not None else "")
+            + (f" · {ev['seconds']:.0f}s" if ev.get("seconds") is not None else ""), "dim"))

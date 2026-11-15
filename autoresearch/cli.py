@@ -325,7 +325,8 @@ def cmd_research(args):
     r = OpenResearcher(measurer, proposer, ResearchMemory(args.memory), prof, cfg, scenario=scenario, scout=scout,
                        shared=shared, calibration=cal, budget=budget, advisor=advisor, pool=pool,
                        decisions_dir=args.decisions_dir, market=market, contrarian=contrarian,
-                       screen_measurer=screen)
+                       screen_measurer=screen,
+                       progress=display.Progress(con, accept_p=cfg.accept_p, confirm_p=cfg.confirm_p))
     rep = r.run()
     rep["setting"] = args.setting
     rep["tools"] = args.tools if args.setting == "agentic" else None   # E3b: real (sandbox) vs simulated tools

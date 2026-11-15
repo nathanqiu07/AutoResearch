@@ -1,7 +1,13 @@
 import io
+import random
 import unittest
 
+from autoresearch.llm import OfflineLLM
+from autoresearch.memory import ResearchMemory
 from autoresearch.research import display
+from autoresearch.research.ideas import Proposer
+from autoresearch.research.loop import OpenResearcher, ResearchConfig
+from autoresearch.research.measure import Measurer, Models, OfflineWorld
 from autoresearch.ui import Console, strip_ansi, visible_len
 
 
@@ -55,6 +61,38 @@ class ResearchDisplayTest(unittest.TestCase):
         self.assertIn("NOT topic-matched", out)
         self.assertIn("metric_inflation", out)
         self.assertEqual(len({visible_len(line) for line in out.splitlines()}), 1, out)
+
+
+
+def _run(progress=None, iters=3):
+    cfg = ResearchConfig(iterations=iters, seed=0, faithfulness_samples=0)
+    ms = Measurer(Models(OfflineLLM(), OfflineLLM(), OfflineLLM()), simulator=OfflineWorld())
+    r = OpenResearcher(ms, Proposer(OfflineLLM(), None, random.Random(0)), ResearchMemory(None), None, cfg,
+                       progress=progress)
+    return r.run()
+
+
+class ProgressTest(unittest.TestCase):
+    def test_progress_sees_every_iteration_and_does_not_change_the_run(self):
+        events = []
+        rep = _run(events.append)
+        kinds = [e["event"] for e in events]
+        self.assertEqual(kinds[0], "baseline")
+        self.assertEqual([e["iter"] for e in events if e["event"] == "iteration"], [1, 2, 3])
+        self.assertEqual([e["iter"] for e in events if e["event"] == "progress"], [0, 1, 2, 3])
+        self.assertNotIn("iteration", [e["event"] for e in rep["log"]])   # display-only events stay out of the log
+        plain = _run()
+        self.assertEqual(rep["findings"], plain["findings"])
+        self.assertEqual(len(rep["log"]), len(plain["log"]))
+
+    def test_printer_renders_a_run(self):
+        buf = io.StringIO()
+        c = Console(buf, color=False, unicode=True, width=100)
+        _run(display.Progress(c, accept_p=0.9, confirm_p=0.75), iters=2)
+        out = buf.getvalue()
+        for want in ("baseline", "iteration 1/2", "iteration 2/2", "measure", "outcome", "best"):
+            self.assertIn(want, out)
+        self.assertTrue(all(visible_len(line) <= 100 for line in out.splitlines()), out)
 
 
 if __name__ == "__main__":
