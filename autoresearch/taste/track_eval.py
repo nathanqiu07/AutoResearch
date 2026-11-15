@@ -70,7 +70,8 @@ class JsonReply(LLM):
     """Passes calls to `inner`; a reply that wraps its JSON object in a code fence or prose comes
     back as the bare object, which the user models' parser (usermodel._json) requires. When the
     model corrects itself ("Correction: ..." then a second object), its last object is its answer.
-    A reply with no JSON object at all (the model argued in prose) is asked for once more."""
+    A reply with no JSON object at all (the model argued in prose) is asked for once more.
+    Probabilities that do not sum to 1 (e.g. [0.55, 0.5]) are rescaled so they do."""
 
     def __init__(self, inner: LLM):
         self.inner, self.budget, self.name = inner, inner.budget, inner.name
@@ -81,6 +82,10 @@ class JsonReply(LLM):
             text = self.inner.complete(prompt, system=system, max_tokens=max_tokens, temperature=temperature)
             found = _last_object(text or "")
             if found is not None:
+                p = found.get("probabilities")
+                if (isinstance(p, list) and p and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                                                      and x >= 0 for x in p) and sum(p) > 0):
+                    found["probabilities"] = [x / sum(p) for x in p]
                 return json.dumps(found)
             system = (system + "\n\n" if system else "") + "Reply with only the JSON object asked for, no other text."
         return text
