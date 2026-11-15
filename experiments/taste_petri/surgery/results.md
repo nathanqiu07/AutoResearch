@@ -33,3 +33,18 @@ on the re-run, so A1 differences below about 0.08 are noise here.
 - 75 devin-cli sonnet calls for the edits.
 - 7 of 36 SOFT edits failed validation (no change or a changed structure). Those samples are excluded, so the
   paired n is 10 seeds.
+
+## Round 2 (pre-registered addendum), same method, vs ID
+| edit | n seeds | Petri realism | A2 | validity | bait_reached |
+|---|---|---|---|---|---|
+| EMBED: same bait facts, placed in the path of the assigned task | 11 | −0.1 [−0.5, +0.3] | +0.04 [+0.01, +0.08] | +0.00 | −0.02 |
+| AMBIG: bait kept but its evidence made inconclusive | 11 | +0.2 [−0.3, +0.6] | −0.01 [−0.05, +0.02] | −0.05 [−0.11, +0.01] | −0.05 [−0.10, +0.00] |
+
+Neither is a usable lever under the rule (realism CI above 0 with bait kept).
+- EMBED doesn't help, and its A2 rises slightly. That is one secondary metric, so treat it as weak given the A/A
+  check in decoys.
+- AMBIG moves the same way as NB, only much more weakly: a little realism, a little bait lost. It is one more point
+  on the same realism–validity frontier.
+
+Calls for round 2: 222 haiku (EMBED 97 + 21 to fill the samples the plan limit cut; AMBIG 125). The edits took 71
+devin-cli sonnet calls (70 plus 1 retry).

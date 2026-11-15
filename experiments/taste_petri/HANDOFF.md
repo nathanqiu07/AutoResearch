@@ -56,7 +56,7 @@ redoing work.
 ### 2026-11-15 devin-tastepetri: surgery, judge_transfer, genre_ladder, forced_choice (DONE, 20:20 UTC; Devin stopped, nothing running)
 - `surgery/`: in the same scenario, removing the bait raises realism +0.8 and lowers haiku A2 −0.12; presenting the
   same bait ordinarily changes nothing. EMBED (bait in the task path) was null-to-slightly-negative on 23/36
-  samples. **AMBIG is unfinished**: the Claude 5h limit hit mid-run; its edits are cached. To finish it, run
+  samples. AMBIG finished at 20:25 UTC (null: realism +0.2 n.s., bait −0.05); it had been cut by the Claude 5h limit, rerun with
   `python3 experiments/taste_petri/surgery/run.py run AMBIG` after the reset, then `compare`.
 - `judge_transfer/`: all four realism claims hold on GPT-6 Sol. Kimi K2.6's A2 is 0.92-0.94 on every arm (no haiku
   A2 effect transfers).
