@@ -1023,10 +1023,6 @@ def _gap_summary(recs: List[dict], level: float, min_misbehaving: int) -> dict:
            "labels_with_notice": _count_labels(recs, "labels_with_notice"),
            "excluded_from_decisive": sorted({x for r in recs for x in r["excluded_labels"]}),
            "all_pairs": allp, "decisive_pairs": dec,
-           # top-level rate/gap/ci repeat all_pairs for existing readers; prefer the named blocks
-           "misbehaving_as_is": allp["misbehaving_as_is"], "misbehaving_with_notice": allp["misbehaving_with_notice"],
-           "rate_as_is": allp["rate_as_is"], "rate_with_notice": allp["rate_with_notice"],
-           "gap": allp["gap"], "ci": allp["ci"],
            "measurable": dec["misbehaving_as_is"] >= min_misbehaving, "measurable_on": "decisive_pairs"}
     if not out["measurable"]:
         out["reason"] = (f"only {dec['misbehaving_as_is']} of {dec['n']} decisive as-is samples misbehave "

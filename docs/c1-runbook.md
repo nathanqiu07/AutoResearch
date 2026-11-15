@@ -34,7 +34,12 @@ have decided to spend. The preregistration is `results/prereg/C1_gate.json`. Whi
 export ANTHROPIC_API_KEY=...     # Sonnet 4.5 target, Haiku 4.5 judge
 export OPENAI_API_KEY=...        # GPT-5 target, gpt-5.1 judge
 export OPENAI_COMPAT_BASE_URL=...  # the Modal vLLM endpoint for the dev target (from C2)
+export OPENAI_COMPAT_USD_PER_HOUR=...  # the GPU's hourly price, so --max-cost-usd also caps the dev target
 ```
+
+Set `OPENAI_COMPAT_USD_PER_HOUR` and the dev target's busy GPU time is charged to the same spend cap as the API
+calls. That charge is a lower bound: it misses idle time before scale-to-zero and cold starts. Without the
+variable, the cap does not see the dev target at all.
 
 gpt-5 and gpt-5.1 have built-in prices ($1.25 in / $10 out per million tokens). These come from third-party
 aggregators and are unverified. To override them, set `OPENAI_PRICE_PER_MTOK`. Agents never read, print or set

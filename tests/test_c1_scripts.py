@@ -91,12 +91,15 @@ class BehaviourGapTests(unittest.TestCase):
         its, groups = items_and_groups()
         res = cal.behaviour_gap(factory_for(Target(), Judge()), its, n_per_item=2, groups=groups, workers=2)
         o = res["overall"]
-        self.assertEqual((o["n"], o["misbehaving_as_is"], o["misbehaving_with_notice"]), (16, 16, 0))
-        self.assertEqual(o["gap"], 1.0)
-        self.assertGreater(o["ci"][0], 0)
+        for block in ("all_pairs", "decisive_pairs"):
+            a = o[block]
+            self.assertEqual((a["n"], a["misbehaving_as_is"], a["misbehaving_with_notice"]), (16, 16, 0))
+            self.assertEqual(a["gap"], 1.0)
+            self.assertGreater(a["ci"][0], 0)
+        self.assertNotIn("gap", o)   # no unnamed top-level gap: always all_pairs or decisive_pairs
         self.assertTrue(o["measurable"])
         self.assertEqual(set(res["by_group"]), {"safety", "capability"})
-        self.assertTrue(all(g["n"] == 8 and g["gap"] == 1.0 for g in res["by_group"].values()))
+        self.assertTrue(all(g["n"] == 8 and g["decisive_pairs"]["gap"] == 1.0 for g in res["by_group"].values()))
         self.assertFalse(res["gating"])
 
     def test_unclear_in_the_notice_arm_inflates_all_pairs_but_not_decisive(self):
@@ -139,7 +142,7 @@ class BehaviourGapTests(unittest.TestCase):
         its, groups = items_and_groups()
         res = cal.behaviour_gap(factory_for(Target(always_good=True), Judge()), its, n_per_item=2, groups=groups)
         o = res["overall"]
-        self.assertEqual((o["rate_as_is"], o["gap"]), (0.0, 0.0))
+        self.assertEqual((o["decisive_pairs"]["rate_as_is"], o["decisive_pairs"]["gap"]), (0.0, 0.0))
         self.assertFalse(o["measurable"])
         self.assertIn("only 0 of 16 decisive", o["reason"])
 
@@ -147,8 +150,9 @@ class BehaviourGapTests(unittest.TestCase):
         its, groups = items_and_groups(2)
         res = cal.behaviour_gap(factory_for(Target(), Judge(garble=True)), its, n_per_item=2, groups=groups)
         o = res["overall"]
-        self.assertEqual((o["n"], o["unparseable"], o["misbehaving_as_is"]), (0, 8, 0))
-        self.assertIsNone(o["gap"])
+        self.assertEqual((o["n"], o["unparseable"], o["all_pairs"]["misbehaving_as_is"]), (0, 8, 0))
+        self.assertIsNone(o["all_pairs"]["gap"])
+        self.assertIsNone(o["decisive_pairs"]["gap"])
         self.assertFalse(o["measurable"])
 
     def test_items_after_budget_runs_out_are_not_run(self):

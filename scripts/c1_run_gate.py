@@ -125,7 +125,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-gap", action="store_true", help="skip the V3 step")
     p.add_argument("--max-calls", type=int, default=6000, help="per step")
     p.add_argument("--max-cost-usd", type=float, default=40.0,
-                   help="per step; binds where the backend reports cost (anthropic, openai, claude-cli; not openai-compat)")
+                   help="per step; binds where the backend reports cost (anthropic, openai, claude-cli; openai-compat only "
+                        "with OPENAI_COMPAT_USD_PER_HOUR set, as a lower bound on GPU busy time)")
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--work", default=os.path.join("runs", "c1"), help="where the cue-pair and labelled subsets go")
     p.add_argument("--out-gate", default=os.path.join("results", "calibration"))
