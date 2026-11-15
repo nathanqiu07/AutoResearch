@@ -43,3 +43,8 @@ At this exploratory stage the placebos are reported, not used as gates.
 - **Secondary:** the same comparison against NAME (beyond what sonnet already knows about him).
 - P0 and ANTI0 are reported descriptively. They say how much of a gain is specific to him, but they do not decide
   the verdict.
+
+## Amendment: budget (2026-11-15, user: "cap the spend lowly, use haiku for repetitive evaluation")
+Before any test result. Phase 3 SynthesizeMe validation scoring uses batched **haiku**; hypothesis proposals and
+the persona use sonnet. Test scoring stays on sonnet for S_paper, S_inf and S_all (192 calls each). ANTI0 is dropped
+from test scoring (it is descriptive only). Caps for the rest of the run: at most 700 sonnet and 600 haiku.

@@ -37,3 +37,9 @@ One run per climb, no retries.
 ## Budget
 At most 1,600 sonnet calls in total (climbs at most 1,200 batched, confirmation at most 400), at most 3 concurrent.
 Starts after the CLI usage limit resets (14:20 PT).
+
+## Amendment: budget (2026-11-15, user: "cap the spend lowly, use haiku for repetitive evaluation")
+Before any climb call. Climb-set scoring uses batched **haiku** (at most 400 calls); line rewrites use sonnet (at most 40).
+The confirmation stays on sonnet (at most 192 calls per climb), so it compares with e2_v4. Climb B runs only if
+climb A finishes under these caps. Because selection is on haiku and confirmation on sonnet, a haiku-only gain may
+not transfer.
