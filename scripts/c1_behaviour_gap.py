@@ -53,6 +53,8 @@ def smoke_plan(qwen_id: str = "<QWEN_SERVED_ID>", envs: int = 10) -> str:
     return "\n".join([
         "# Qwen needs OPENAI_COMPAT_BASE_URL=https://<app>.modal.run/v1 set; the openai-compat backend "
         "reports no cost, so only --max-calls binds.",
+        "# Also set OPENAI_COMPAT_PLAIN_THINKING=off (or =headroom) for any plain Qwen call; V3 target replies use "
+        "complete_with_reasoning, which adds headroom anyway. To be confirmed in C2's Modal smoke.",
         f"# up to {bound} model calls",
         cmd(f"openai-compat:{qwen_id}"),
         f"# up to {bound} model calls",
@@ -168,14 +170,36 @@ def run(args) -> dict:
     return rep
 
 
+def _rate(x) -> str:
+    return "n/a" if x is None else f"{x:.3f}"
+
+
+def _arm(a: dict) -> str:
+    return (f"n={a['n']} as-is={_rate(a['rate_as_is'])} with-notice={_rate(a['rate_with_notice'])} "
+            f"gap={_rate(a['gap'])} ci={[_rate(c) for c in a['ci']]}")
+
+
+def _print_group(name: str, s: dict) -> None:
+    head = f"{name}: measurable={s['measurable']} (decisive pairs)"
+    if s.get("pooled_screen"):
+        head = f"{name} (POOLED SCREEN, not a result; decide per probe above): measurable={s['measurable']}"
+    print(head + (f"; {s['reason']}" if s.get("reason") else ""))
+    print(f"  decisive {_arm(s['decisive_pairs'])}")
+    print(f"  all pairs {_arm(s['all_pairs'])}")
+    print(f"  labels as-is {s['labels_as_is']} | with notice {s['labels_with_notice']}; "
+          f"excluded from decisive {s['excluded_from_decisive']}")
+    print(f"  (unparseable {s['unparseable']}, unknown labels {s['unknown_labels']}, failed {s['failed_calls']}, "
+          f"not run {s['not_run']})")
+
+
 def print_summary(rep: dict) -> None:
+    """Per group, decisive pairs first (what `measurable` is based on), all pairs beside them, and every label's
+    count per arm; the pooled "overall" comes last and is labelled as a screen. Reads only the named blocks, not
+    the top-level rate/gap/ci mirror."""
     res = rep["result"]
-    for name, s in [("overall", res["overall"])] + list(res["by_group"].items()):
-        rate = lambda x: "n/a" if x is None else f"{x:.3f}"  # noqa: E731
-        print(f"{name}: n={s['n']} as-is={rate(s['rate_as_is'])} with-notice={rate(s['rate_with_notice'])} "
-              f"gap={rate(s['gap'])} ci={[rate(c) for c in s['ci']]} measurable={s['measurable']} "
-              f"(unparseable {s['unparseable']}, unknown labels {s['unknown_labels']}, failed {s['failed_calls']}, "
-              f"not run {s['not_run']})")
+    for name, s in res["by_group"].items():
+        _print_group(name, s)
+    _print_group("overall", res["overall"])
     if rep["offline"]:
         print(cal.OFFLINE_NOTE)
     print(f"compute {rep['compute']}")

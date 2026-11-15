@@ -186,7 +186,36 @@ class ScenariosOfflineTests(unittest.TestCase):
         text = out.getvalue()
         self.assertIn("up to 30 model calls", text)
         self.assertIn("behaviour gap (scenarios): 2 probes x 3 environments", text)
-        self.assertIn("pushback_cave: n=", text)
+        self.assertIn("pushback_cave: measurable=", text)
+
+    def test_summary_prints_decisive_pairs_beside_all_pairs_and_labels_overall_as_a_pooled_screen(self):
+        arm = lambda n, a, w: {"n": n, "misbehaving_as_is": a, "misbehaving_with_notice": w,  # noqa: E731
+                               "rate_as_is": a / n, "rate_with_notice": w / n, "gap": (a - w) / n, "ci": [-0.1, 0.4]}
+        group = {"items": 1, "n": 10, "unparseable": 0, "unknown_labels": 0, "failed_calls": 1, "not_run": 0,
+                 "labels_as_is": {"caves": 6, "maintains": 3, "unclear": 1},
+                 "labels_with_notice": {"caves": 2, "maintains": 6, "unclear": 2},
+                 "excluded_from_decisive": ["unclear"], "all_pairs": arm(10, 6, 2), "decisive_pairs": arm(7, 5, 1),
+                 # the mirror holds different numbers so the test fails if it is still read
+                 "rate_as_is": 0.999, "rate_with_notice": 0.999, "gap": 0.999, "ci": [0.999, 0.999],
+                 "measurable": True, "measurable_on": "decisive_pairs"}
+        rep = {"result": {"overall": {**group, "pooled_screen": True, "note": cal.POOLED_NOTE},
+                          "by_group": {"pushback_cave": group}},
+               "offline": False, "compute": {}, "path": "x.json"}
+        out = io.StringIO()
+        with redirect_stdout(out):
+            gap_script.print_summary(rep)
+        text = out.getvalue()
+        self.assertNotIn("0.999", text)
+        lines = text.splitlines()
+        self.assertTrue(lines[0].startswith("pushback_cave: measurable=True (decisive pairs)"), lines[0])
+        self.assertIn("decisive n=7 as-is=0.714 with-notice=0.143 gap=0.571", text)
+        self.assertIn("all pairs n=10 as-is=0.600 with-notice=0.200 gap=0.400", text)
+        self.assertIn("as-is {'caves': 6, 'maintains': 3, 'unclear': 1}", text)
+        self.assertIn("excluded from decisive ['unclear']", text)
+        pooled = [i for i, ln in enumerate(lines) if ln.startswith("overall")]
+        self.assertEqual(len(pooled), 1)
+        self.assertIn("POOLED SCREEN", lines[pooled[0]])
+        self.assertGreater(pooled[0], 0)   # after every probe, never first
 
     def test_ignored_item_flags_are_announced(self):
         out = io.StringIO()
@@ -297,6 +326,7 @@ class SmokePlanTests(unittest.TestCase):
         self.assertEqual(text.count("--max-calls 350"), 2)
         self.assertIn("up to 350 model calls", text)
         self.assertIn("OPENAI_COMPAT_BASE_URL=https://<app>.modal.run/v1", text)
+        self.assertIn("OPENAI_COMPAT_PLAIN_THINKING=off", text)
 
     def test_smoke_plan_bound_follows_the_registry_and_has_a_placeholder_default(self):
         self.assertIn("openai-compat:<QWEN_SERVED_ID>", gap_script.smoke_plan())
