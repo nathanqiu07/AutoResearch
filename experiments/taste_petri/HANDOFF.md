@@ -25,6 +25,22 @@ redoing work.
 
 ## Ledger (newest first)
 
+### 2026-11-15 claude-tastepetri: e2_climb/ (IN PROGRESS, 19:50 UTC, user-directed)
+- User: "hillclimb these intervals" (the e2_v4 profile-vs-no-profile CIs). Pre-registered in `e2_climb/PREREG.md`:
+  climb A tunes on pre-T firewalled pairs (synthme/pairs_paper), climb B on decision-disjoint post-T pairs; one
+  confirmation each on e2_v4's 96 pairs. Sonnet, starts after the 14:20 PT usage reset. Other sessions: don't
+  take e2_climb/. synthme/ (Owain) resumes after the reset too.
+
+### 2026-11-15 devin-tastepetri: synthme_hobbhahn/ (IN PROGRESS, 19:30 UTC, user-directed)
+- User: "do the same SynthesizeMe run for the other researchers", pilot on **Marius Hobbhahn** first. The user
+  explicitly lifted BRIEF.md's "never use Hobbhahn's writing as profile/test data" rule for this run.
+- Same methodology as synthme/ (Owain): pairs_v4 test pairs with realness/taste gating on his 45 post-T decisions
+  (6 works), synthme/pairs.py training pairs (paper + informal), fit.py S_paper/S_inf/S_all, arms M0s/NAME/ANTI0.
+  The Owain modules are imported read-only and re-pointed by `synthme_hobbhahn/common.py`; P0 is not built.
+- Every call is on **free swe-2-medium via devin-cli** (user: maximise calls, no cap), so numbers are comparable
+  within Hobbhahn only, not with Owain's sonnet results. Informal harvest runs as a Devin subagent.
+- Doesn't touch synthme/ or the paused Claude session's Owain run.
+
 ### 2026-11-15 claude-hillclimb: hillclimb/ (IN PROGRESS, new session, user-directed)
 - User: "all results have taste neutral to control for the eval awareness task; hill-climb to demonstrate an
   improvement". Pre-registered in `hillclimb/PREREG.md`: climb taste-steered rewrites on dev against R0 (task score

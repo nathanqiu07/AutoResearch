@@ -1,0 +1,18 @@
+Comment by Marius Hobbhahn, 2023-09-26, on "Understanding strategic deception and deceptive alignment"
+https://www.lesswrong.com/posts/fsbcq9z7korjBTP8Z/understanding-strategic-deception-and-deceptive-alignment?commentId=K5ELfzzkBYk2barPc
+
+PARENT (not his words):
+Separately, it seems that deception which is not strategic or intentional but is consistently produced by the training objective is also important. Considering cases like [Paul Christiano's robot hand](https://openai.com/research/learning-from-human-preferences) that learned to deceive human feedback and [Ofria's evolutionary agents](https://lukemuehlhauser.com/treacherous-turns-in-the-wild/) that learned to alter their behavior during evaluation, it seems that AI systems can learn to systematically deceive human oversight without being aware of their strategy. In the future, we might see powerful foundation models which are honestly convinced that giving them power in the real world is the best way to achieve their designers' intentions. This belief might be false but evolutionarily useful, making these models disproportionately likely to gain power. This case would not be called "strategic deception" or "deceptive alignment" if you require intentionality, but it seems very important to prevent. 
+
+Overall I think it's very difficult to come up with clean taxonomies of AI deception. I spent >100 hours thinking and writing about this in advance of Park et al 2023 and my Hoodwinked paper, and ultimately we ended up steering clear of taxonomies because we didn't have a strong taxonomy that we could defend. Ward et al 2023 formalize a concrete notion of deception, but they also ignore the unintentional deception discussed above. The Stanford Encyclopedia of Philosophy takes 17,00
+
+HIS COMMENT:
+(personal opinion; might differ from other authors of the post)  
+  
+Thanks for both questions. I think they are very important.   
+  
+1\. Regarding sycophancy: For me it mostly depends on whether it is strategic or not. If the model has the goal of being sycophantic and then reasons through that in a strategic way, I'd say this counts as strategic deception and deceptive alignment. If the model is sycophantic but doesn't reason through that, I'd probably not classify it as such. I think it's fine to use different terms for the different phenomena and have sycophancy not be a true subset of deceptive alignment.  
+  
+2\. There are multiple perspectives of the non-strategic, non-intentional deception and I haven't thought about it in detail, so I might change my mind. However, currently, I think the following:  
+a) I guess this will be less and less of a problem in the long run. I expect models to be sufficiently capable and situationally aware at some point that they straightforwardly understand what we want and thus rarely accidentally become systematically deceptive. I think there is still a chance that these things will happen and I'm happy that ARC and others are working on them but I personally think it has become compared to intentional, strategic deception.  
+b) It just seems really hard to be I) non-intentionally, II) but systematically deceptive, while III) humans are actively looking for signs of deception, and IV) actually cause catastrophic harm with that strategy.  As soon as a model has sufficient situational awareness and is generally capable to avoid human oversight I feel like it may just realize what it's doing and then the deception either stops or becomes intentional. (weekly held, haven't thought about it in detail)

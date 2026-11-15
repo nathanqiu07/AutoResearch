@@ -1,0 +1,5 @@
+Comment by Marius Hobbhahn, 2023-12-16, on "Lessons learned from talking to >100 academics about AI safety"
+https://www.lesswrong.com/posts/SqjQFhn5KTarfW8v7/lessons-learned-from-talking-to-greater-than-100-academics?commentId=YrPFkCWNSRyjTrNtN
+
+HIS COMMENT:
+I haven't talked to that many academics about AI safety over the last year but I talked to more and more lawmakers, journalists, and members of civil society. In general, it feels like people are much more receptive to the arguments about AI safety. Turns out "we're building an entity that is smarter than us but we don't know how to control it" is quite intuitively scary. As you would expect, most people still don't update their actions but more people than anticipated start spreading the message or actually meaningfully update their actions (probably still less than 1 in 10 but better than nothing).

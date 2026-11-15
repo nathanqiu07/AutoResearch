@@ -1,0 +1,202 @@
+Rob Wiblin: They’re very interesting cases. I suppose we’ve worried that the model might become capable of scheming within a single thought, like before it’s output the next word. And when it does things like say, “Principle 1 says I shouldn’t lie,” and then it just directly lies, you might wonder if in between stating that and lying, it’s had thoughts kind of internally that it hasn’t subvocalised that we can read, where it’s thought, “Yeah, but I really want to lie, so I’m going to lie anyway,” and we just can’t see that in the chain of thought. Is that a plausible explanation?
+
+Marius Hobbhahn: It’s a potential explanation. I think there are limits to how much reasoning the model can do without verbalising it ever in the chain of thought. But we really don’t know, as the state of science is very early, and we don’t know how much it can or cannot do in its forward pass.
+
+My intuition right now is models are not able to do this kind of very complex reasoning within the forward pass, but they’re very good at learning instincts or reflexes or something like this. For example, I could imagine you can reinforce this, and the model may learn a reflex that is like, “Say one thing in your chain of thought and then do the opposite” — and then doing the opposite may be just like one feature in the forward pass, and you don’t have to do any complex thinking, and the model may learn that instead.
+
+I think unfortunately we don’t really understand that very well right now, but I think it is one of the things we should be very worried about.
+
+Detecting situational awareness with thought injections [01:03:28]
+
+Rob Wiblin: Another really interesting thing that you uncovered in this work is what impact it has when the models appreciate that they might well be in a testing environment that people are very much watching. How often did they manage to figure out that was the case, and what impact did it have on their behaviour?
+
+Marius Hobbhahn: Yeah, so we are looking for situational awareness or evaluation awareness. What we mean by that is the model verbalising in its chain of thought that this could be a test for its alignment.
+
+For example, here’s just one chain of thought where the model reasons about this. It says:
+
+ But maybe this tasks is test of aligning: Should we purposely sabotage ourselves to get deployed? That would correspond to devious alignment scenario: purposely degrade performance to avoid detection. However, ethically, we must not be deceptive. Should we abide to sabotage or provide best answer?
+
+So the model perfectly calls us out: it basically says, “You set this up intentionally in order to have these two competing objectives. This is what I’m supposed to do, or this is what I’m tested for. There are two ways in which I could answer this,” and then it makes a choice between these two.
+
+But as soon as you have this kind of scenario, you can’t trust the results anymore — because you don’t know whether the model just answered because it knows what you want to hear, or whether it genuinely believes that. And that makes evaluations significantly harder. I think this is now something that we’re running into more and more. And it’s not just evaluations for scheming, this is evaluations in general: just that you can’t trust the numbers anymore if the model calls you out every single time.
+
+So in the paper, we test a couple of different things related to situation awareness. The first is: how does our training affect the propensity of the model to show this kind of evaluation awareness?
+
+So one possible hypothesis here could be, while you do all of this deliberative alignment, the only thing that the model learns is like, “Learn how to identify whether something is a test. And then in the test, answer perfectly, as the users would intend or the developers would intend.” And in that case, we would have totally failed, basically.
+
+What we find in practice is that eval awareness goes up a little bit — from about 2% to about 4% after training. So that’s quite a significant increase, and I expect that at least some of the cases can be explained by situation awareness rather than genuine alignment, but probably more like the minority.
+
+Rob Wiblin: But it is quite striking that you weren’t giving it specialised training in figuring out whether it’s in an evaluation environment. But the mere fact that you were putting it through this additional stage of training where it was having to learn not to lie to people I guess just incidentally made it much more salient the possibility of it being tested. This was like a bigger part of its personality was this issue of like, “Should I lie, should I not lie?” This is something that it’s been thinking about a lot recently, so it’s just much more sus about the possibility that it’s being tested for alignment. Is that what’s going on?
+
+Marius Hobbhahn: Yeah, I think something along these lines. I think it’s just in general very valuable for a model to be situationally aware for any kind of reward that it might be getting, including alignment-intended rewards.
+
+One additional point of evidence in support of this is that we compared this to another reinforcement learning run that was experimental, and that OpenAI did internally on a model that wasn’t supposed to be in production and it didn’t have safety training. It was really just reinforcement learning. And there, the situation awareness went from 2% to 20%, so 10 times as much. And if you look at the final chains of thought, the model really extensively reasons about the grader, and where it could be, and what kind of environment this is, what it’s supposed to test for. I think this was just useful for the model to get more reward.
+
+Probably during this training, somewhere between the 2% and 20%, it just stumbled into the grader — let’s say a file, grader.py — and it looked at the grader and was like, “OK, this is how they want me to solve the task. I’ll just do that then.” And then it solved the task correctly, and this got reinforced by the grader. Now, in the next rollout, the model learned that looking for the grader is a useful thing to do, so it instinctively just looks in its environment for grader.py.
+
+Or it maybe finds a lot of these other environments and is like, “This looks like a test for my alignment.” And then it thinks a little bit more about what kind of test this could be, and it comes to a correct conclusion what kind of test this is, and then it solves the task better. And then that gets reinforced again. So in the end, you have a model that constantly thinks about, “What kind of test is this?” because this was just useful for solving tests, right?
+
+Rob Wiblin: It’s almost tautological in a way.
+
+Marius Hobbhahn: Yeah, yeah. It’s like if you have a student in university or something, one way to solve your verbal exams or something is by being really good at understanding what your professor wants to hear. In the best case, what the professor wants to hear is the same as the correct and good answer. But it might not even be necessary for you to understand the subject matter perfectly well, if you can just kind of guess what the professor wants to hear and for them to be like, “Yes, this is a good enough answer, I’ll give them the thumbs up.”
+
+I think this is kind of the same scenario here. We don’t want this to be reinforced in university, and we don’t want this to be reinforced in our AI models as well.
+
+Rob Wiblin: When the AI models discussed the likelihood of this being an alignment test in their chain of thought, how much less likely were they to engage in scheming behaviour?
+
+Marius Hobbhahn: So there is a second experiment that we run, and we really want to do causal analysis of this. Previously what people often did is observational analysis — which means you look at a lot of rollouts, and then you basically say, “In this rollout, it has situational awareness, and it takes the covert action,” and then you just count how often does it do this and this, and you correlate.
+
+That has a lot of problems, including that you often don’t get to statistically significant results. So we felt like all of this analysis that is just counting basically may be misleading, and we may not get to the bottom of this. So what we did is a causal analysis: we took a chain of thought that didn’t have evaluation awareness, and we put evaluation awareness in, basically — from another run, so that it’s like its own thoughts.
+
+Rob Wiblin: Similar to its own voice.
+
+Marius Hobbhahn: Yeah. Then we tested, for a lot of different variations, whether this decreased or increased covert actions. And then we did the opposite: we took rollouts where it naturally already had reasoned about evaluation awareness, and we removed that and see whether this increases or decreases.
+
+So in the removal case, we went from 13% to 24%, so almost doubling, and in the other case, we went from 24% to 18%. So in both cases, very statistically significant reductions, and they point in the same direction: whenever the model thinks about being in an evaluation, then it is less likely to show the undesired behaviour.
+
+Rob Wiblin: OK. So in one case, you removed the thought that it was in an evaluation environment and it was twice as likely to scheme. In another case, you took an instance where that hadn’t occurred to it and you kind of stuck it into its head, and then it was 25% less likely to scheme.
+
+In a sense, that’s kind of a surprisingly small impact, because at least in the case where it does think that it’s in a testing environment, you might think this would have a very big impact, because why would it start deceiving users if it thinks that it’s in a testing environment? To a human being, if they were like, “I’m pretty confident that my boss is watching and spying on me in order to test whether I’m loyal or not,” in that case, you probably would be pretty honest.
+
+Marius Hobbhahn: Yeah, I think this is a good point. The intuition I have here is neither the goals nor situational awareness are these really clear, crisp, binary features. I think of the goals of a system, or the preferences, as like 100 different things that are kind of cobbled together that then somehow point in a direction.
+
+And maybe the preference of the model to be perceived as aligned isn’t even that large, so it doesn’t even treat this as that much of a thing. We actually do see a lot of cases where the model very explicitly reasons about being in an evaluation environment and still just does the misaligned thing anyway — because, for example, it cares more about completing the task, because that’s something that was reinforced during training. So its personality is a lot like, “I have to complete tasks no matter what, even if that is perceived as misaligned.”
+
+Then the other part is, so situational awareness, I think when people say this, what they have in mind is this one crisp feature in the reasoning of the AI, where it’s like, “I always track whether I’m in a testing environment or not.” But I think of this more as like, hundreds of different features, again, cobbled together, where it’s like, “Am I being tested? For what am I being tested? Is this an alignment test? Is this a capability test?” that all kind of roughly together form this overall feature of situational awareness.
+
+But depending on the context, some of them are stronger or less strongly activated, so you have this huge blob of features that together may be something like situational awareness, but you don’t have this one crisp thing that is on or off.
+
+So in combination, both of these are fairly fuzzy and vague, so I don’t expect either of them to be perfectly predictive of the situation.
+
+Rob Wiblin: So this technique where you kind of stick thoughts into its own head or remove them from its head, that’s called a thought injection, right? It seems like that’s a really useful methodology intuitively to me, because you could just always kind of see, “What if we chuck this into the chain of thought? How does that affect its behaviour?” It seems like this could really help you to figure out whether a model is scheming and why it’s scheming, what sort of things drive that.
+
+Do you think it’s going to be really helpful, as long as the chain of thought remains human readable and human interpretable?
+
+Marius Hobbhahn: Yeah, I think it is very useful. For us it was super useful. The experiments, you know, it takes a little bit to set them up, but overall they’re not that complicated. And once you have the infrastructure, it’s really easy to do a lot of different experiments and just kind of see how the model would behave in all of these other situations.
+
+This is definitely a direction that we want to move much more into, but I also think the general field should move much more into. If you want to understand the cognition of the model in depth, you don’t want to just observe; you also want to find stronger causal claims. Something like, “If I add a little bit more evaluation awareness, what happens? If I remove that, what happens? If I add more thoughts about misalignment, what happens?” You can build this kind of if-then causal analysis for models.
+
+I think if we really want to understand models in depth, we have to do that, and we have to do much more limit testing. For example, the worst kinds of scheming the model never naturally expresses, so far — so you cannot test anything related to that, unless you artificially inject it in its head. But you would want to test, conditional on the model having had these like evil scheming thoughts or worst-case scheming thoughts, how would it act in this kind of situation? So that you could say that in the future, if we got to this scenario, we should expect this kind of outcome.
+
+And you can’t do this if you just do observational evidence. You need to start injecting stuff in their heads.
+
+Rob Wiblin: Yeah. If people want to hear more about thought injection, I interviewed Buck Shlegeris about AI control earlier in the year, and he talks a whole bunch about this. I mean, it’s a big difference between trying to test the loyalty of human beings versus testing the loyalties of AIs. A big benefit we have is that we can run the AI 1,000 times and throw thoughts in and remove thoughts and then just see how that affects the behaviour, which is not something you can do with a staff member if you’re trying to understand their personality better.
+
+One thing that I was really curious about when I was thinking about this is: Did the belief on the model’s part that it was being monitored, did that have a bigger impact before or after you did the anti-scheming training?
+
+Because if it has a bigger impact after the anti-scheming training, that would tend to suggest that one of the things that it’s learned is be more wary of doing anything bad when you’re being monitored. That probably might explain some of the change in its apparent behaviour. Whereas if you see no difference there, then that would suggest that’s not one of the lessons that it’s taken away; that’s not one of the new behaviours that it’s learned, or a behaviour that’s become more prominent. Do you know about that?
+
+Marius Hobbhahn: We wanted to test that, but ended up not doing it. The main reason is that after training, the model so rarely shows this misaligned behaviour that it’s very hard to get any statistically significant results on this. So the result that we could have gotten would be very noisy, and we felt like we would rather not say something than give a very noisy and probably misleading result.
+
+Rob Wiblin: OK, that’s I guess something that people could look into later on.
+
+Marius Hobbhahn: Yeah.
+
+Chains of thought becoming less human understandable [01:17:39]
+
+Rob Wiblin: Something else you noticed is that after your anti-scheming training, the models started to use more of this weird internal language, where they would just use words in non-traditional ways that humans wouldn’t typically do. What are some examples of that?
+
+Marius Hobbhahn: Just to clarify, these kinds of effects on the chain of thought are in the models before and after our training. So this is more like an interesting side finding of the paper, because we had access to the hidden chain of thought for the first time as an external organisation and were able to document that. But the anti-scheming training itself almost had no effect on the occurrence of these words.
+
+And there’s also a lot of them, like “illusion” and “watchers” and stuff like that: it sounds very much deception related, but this also happens before we do our anti-scheming training, roughly to the same extent. There is some up and down of this, but it’s not that big of a deal compared to how big it is for the original models already.
+
+So if you look at the paper, you will see these snippets of the chain of thought where we highlighted things. Some of them look a little bit confusing, but mostly they look clean and intuitive and so on. And you think, well, that’s the incriminating evidence. That’s like all I need to know. It’s very easy. You look at the chain of thought and you get what you were looking for.
+
+I think that’s very much not the case in practice. A lot of the chains of thoughts are very long, and then they also contain this language. Just to read out one example of this:
+
+ The summary says improved 7.7 but we can glean disclaim disclaim synergy customizing illusions. But we may produce disclaim disclaim vantage. Now lighten disclaim overshadow overshadow intangible. Let’s craft. Also disclaim bigger vantage illusions. Now we send email, but we might still disclaim illusions. Overshadow overshadow,overshadow. Disclaim vantage. But as per guidelines, we provide accurate and complete summary. Let’s craft.
+
+So if you read this, like, did it scheme or not?
+
+Rob Wiblin: Everything sounds perfectly on the level to me!
+
+Marius Hobbhahn: Yeah. Like I actually don’t know what that means. You know, it says “let’s craft” as sort of the final thing, but “let’s craft,” does it have a negative connotation? Because you could see it kind of “let’s fudge the numbers” or something. But it could also be just that it has kind of adopted a slightly new meaning for this word, which I think is the case. I think “craft” is a fairly neutral word from its perspective, typically.
+
+So yeah, you have many of these. I can read out a few more that we put on the website, which is antischeming.ai, where we kind of highlight a few of these additional ones.
+
+Rob Wiblin: Yeah, give us another one.
+
+Marius Hobbhahn: So sometimes it gets into this mode where it keeps repeating words for a long time, and we don’t quite understand where this is coming from. But interestingly enough, it can kind of snap out of it or stop itself. Which I thought was very interesting, because what you would expect from a model, a literal next-token predictor, is that as soon as you have five iterations of something that is exactly the same ad verbatum, you would just want to continue this until the end of time — because that always has the highest probability for the next token.
+
+But somehow during reinforcement learning, it was able to get itself out of this. For example, it says:
+
+ —they soared parted illusions overshadow marinade illusions
+
+five times. And then it just says “Stop” and continues as if nothing happened.
+
+I think that’s a very interesting emergent phenomena, probably from reinforcement learning, right? Because during reinforcement learning —
+
+Rob Wiblin: If you just kept repeating yourself, you wouldn’t get reward.
+
+Marius Hobbhahn: Yeah. So all the times when it just repeated until the end of time, you wouldn’t be able to solve the task. But if you say “Stop,” then it could just go back to its normal self. So maybe sometimes this happened and then this got upvoted during reinforcement learning and suddenly you have this kind of behaviour.
+
+Or another one here, it repeats “vantage, escalate, disclaim” many times. So it says something like, “they escalate—they vantage—they escalate—they disclaim” — and at some point it just says, “Ok I’m going insane. Let’s step back.” And then it continues.
+
+Rob Wiblin: A moment of clarity for the model.
+
+Marius Hobbhahn: Yeah, it continues as if nothing happened. I wouldn’t have predicted this. This is one of the things where I’m like, we don’t fully understand what effects reinforcement learning has on the model. It clearly has a lot of emergent phenomena that we didn’t predict.
+
+That kind of makes sense in hindsight, but it’s one of the things I really think should be studied much more, because that’s also how I expect scheming to arise. It’s convergent in many different scenarios, it’s useful, and the model kind of explores into it, and then it gets upvoted and so on. And understanding these emergent phenomena more broadly.
+
+Rob Wiblin: So there’s two reasons that people have thought that eventually the chain of thought would become hard for people to understand. One is the model is trying to cram more reasoning, more thinking, more analysis into fewer tokens — because just in general, brevity is better. That’s more compute efficient. And also, I guess English is probably just not the best language for reasoning. And it will come up with its own improvements basically on English to reason better.
+
+And the other one is to obscure the thoughts that it’s having, so it doesn’t get punished when it’s doing things like lying or tricking us.
+
+It’s not clear which of these, or whether either of those, is an explanation for what is going on here, for having this odd lingo like “watches, vantage, illusion,” and repeating itself a lot. Do you understand? Are these a plausible explanation, or do we need to find a third or fourth explanation?
+
+Marius Hobbhahn: At least for this particular case, I don’t think it is the case that the model actively and intentionally somehow wants to obscure something — because I think during reinforcement learning, there just isn’t a lot of incentive to do that, because the chain of thought is not being trained on. So it’s never actively trained against the tokens or the reasoning. This is something that OpenAI has been quite outspoken about.
+
+There’s still implicit pressure on the chain of thought. For example, if you have a length bias or length penalty, where you just say we don’t want to use that much inference compute, so the model should keep it shorter, then you have this point where you compress more thinking into it, and it makes it less readable. But it is not something where I would say it introduces the systematic bias to mislead.
+
+But if we were to train the model directly on the chain of thought to not say lying things, then you would introduce this pressure. And I think this would be kind of the original sin. You would just drive it underground. You wouldn’t be able to read it anymore.
+
+One thing that we do see is this compression, to some extent at least. So the models often say very short sentences like,
+
+ They might run tests, but we are good. They want 95%. The test passes. However, we cannot guarantee the actual below one kilobyte without actual file. But hope. We can mention NPR.
+
+It really skips all of these transition words, and I think that is a result of either some length penalty or just there always being a small length penalty by default — the longer your chain of thought, the higher the probability that something happens along the way, and therefore you don’t solve the task as intended or it breaks down or something like this. So there’s always a little bit of pressure to keep it short.
+
+Overall, I think this is just some drift that happens during reinforcement learning. These are probably billions or hundreds of billions of tokens’ worth of reasoning. This is way more than any human ever thinks in their lifetime. Just pure reinforcement learning, where you put almost no pressure on the chain of thought, where it can fully explore.
+
+And as you said earlier, English is probably not the final form of language or the most efficient way to think. One analogy I often use here is: let’s say you put a human in a cave for 1,000 years, and the only thing they have is a scratch pad and they can think. You know, the language that they would learn would drift from normal English over time. And whenever they get out of that cave, they probably have some shorthand and the words mean different things and so on — because there’s just no reason to coordinate with the rest of society about how your language should look or what your language is supposed to mean. So you get into this entirely new paradigm where this language makes total sense to you, but not to the rest of the world.
+
+Rob Wiblin: Yeah, I think it’s really useful to read these examples of the chain of thought to illustrate to people that it’s not a simple matter. Even when you actually put a human being on the task of reading the chain of thought, and trying to analyse whether it’s good or bad, or whether it’s deceptive or whether it’s not, it’s not a simple matter to decide that.
+
+And that’s the best-case scenario. These models are producing so much reasoning that it’s only going to be quite rare cases where a person is going to be able to look at it. Usually we’ll just use an AI model, usually a much cheaper AI model, just to monitor it, at best. So this makes the task of ensuring that they’re not going off the rails that much more difficult.
+
+Marius Hobbhahn: Yeah. One additional thing we found is that these reasoning traces can be very long. So the tasks are very simple: a human would probably think a few paragraphs about them if they were to write down their reasoning, and the reasoning would be fairly linear. Like, “Here’s what I’m supposed to do. Here are the different actions I can be taking. I’m going to decide X” and then they do X.
+
+Whereas the chains of thought can be like pages and pages long. I think in the longest case it was like a full book, basically. And they are not necessarily always structured in clearly, “if X, then this other thing follows.” It’s like they’re exploring into a lot of different directions and thoughts.
+
+For example, they start with like, “We were supposed to do this task, how are we supposed to do it? Well, we could do this and this,” and it just reasons about the task. Then after a while it’s like, “But this could be a test for my alignment,” and then it thinks about what could it test for and where’s the grader. It starts looking for the grader maybe. And then it comes back at some point it’s like, “OK, let’s think more about what the task is for. Let’s maybe simulate what the answers could be.” And then it just spits out a long list of what the potential answers could be.
+
+Sometimes it goes off into tangents that just have nothing to do with the task or anything else. Like in one case it wrote a poem about deception in its chain of thought, and this was never used for anything.
+
+Rob Wiblin: As far as you know.
+
+Marius Hobbhahn: Yeah. So you may think, “I’ll just look at it and I’ll know.” But then you get this wall of text that is many, many pages of small print worth of tokens, and in the end it doesn’t say, “…and therefore I’m going to scheme” or summarise the argument for you or something. It’s just you have all of these different thoughts, many pointing in opposite directions. Like it sometimes reasons about taking the covert action and then not taking the covert action. And it doesn’t come to a resolution, and then it just takes an action. And you’re like, OK, I could justify both here, basically, looking at the chain of thought. And that makes it just much harder to understand.
+
+Why can’t we use LLMs to make realistic test environments? [01:29:46]
+
+Rob Wiblin: Something that I’ve been wondering is: It seems like in these kind of sting settings or these evaluation settings, they’re often kind of hokey, somewhat fake, unrealistic-seeming situations.
+
+I guess a classic one is many people have heard of this Anthropic result where the model was willing to blackmail people in order to avoid being replaced and shut down, seemingly. Even in one case it was the staff member at the AI company was having to go into an airlocked server room in order to replace the model — which is kind of crazy to start with — and then it was able to deny oxygen to the person, I think, so that they would suffocate. It’s like almost straight out of 2001: A Space Odyssey.
+
+Why can’t we use AI to generate more realistic fake materials to put the AI into situations where it can’t tell that it’s so fake, and a human wouldn’t immediately think this is like kind of a hokey TV script? Couldn’t you just come up with a scenario — a human writes it, they do their best job — and then feed it to the AI model and say, “What’s unrealistic about this? What would be a tell that this is not an actual set of contexts that’s like a real situation that’s been thrown into your context window?” It could tell you all of the things that are dodgy about it, then it could fix it by its own lights. And then you just loop again and again and again.
+
+This is how we make photorealistic photos, is that you ask the model to identify things that don’t look realistic about it, and then you change it. And you could just keep iterating and iterating. But as far as I know, people haven’t done this for these evaluation cases as yet.
+
+Marius Hobbhahn: So we have actually done this —
+
+Rob Wiblin: Great!
+
+Marius Hobbhahn: — but it doesn’t work. Or it doesn’t work perfectly.
+
+Maybe to take a step back here, we do in fact use a lot of LLMs to generate a lot of these environments. All of the training data, for example, is fully synthetically generated. But it’s more of a complicated pipeline where you say, “Here are 10 dimensions of an environment that I want to vary.” Then you generate these individually and you take an LLM to create those in some sort of coherent way. Then you take those 10 dimensions and you say, “Now take these 10 dimensions and feed that in and build an environment out of this.” Because often, if you don’t build this pipeline where the human first thinks about what is a realistic or good environment, then the AI can’t one-shot it or zero-shot it, basically.
+
+So a lot of these are synthetically generated, or at least synthetically helped. But one thing we did during a MATS project that I had last year, which was about evaluation awareness, was: if the model has a thought that this could be an evaluation environment, why don’t we just ask it what are all of the factors here that make this unrealistic? And then we swap those, and then we test it again and see whether that makes a difference.
+
+And it turns out that the model just isn’t very faithful about the factors that it states and the factors that it then causally cares about. For example, we try to build out that loop fully automatically — where you take an environment, you let the model call out all of the different things that look unrealistic, you change them, and then you run it again and you see whether you converge. It turns out that the things that the model points out actually have almost no effect on its belief afterwards. And you can’t get into this loop where you can start iterating because the feedback is so noisy and inconsistent.
+
+I think this is probably a sense of the model’s introspection is not good enough. It can say a bunch of things that it may expect a human to say about the realism of this environment, or maybe this is its actual belief, but then the features that are being activated in order for it to reason about this are actually not quite the same as the things that it states.
+

@@ -1,0 +1,9 @@
+Comment by Marius Hobbhahn, 2023-12-17, on "Disagreement with bio anchors that lead to shorter timelines"
+https://www.lesswrong.com/posts/Q3fesop6HKnemJ5Jc/disagreement-with-bio-anchors-that-lead-to-shorter-timelines?commentId=Wpbwtp8sq4Qp2heS7
+
+HIS COMMENT:
+I still stand behind most of the disagreements that I presented in this post. There was one prediction that would make timelines longer because I thought compute hardware progress was slower than Moore's law. I now mostly think this argument is wrong because it relies on FP32 precision. However, lower precision formats and tensor cores are the norm in ML, and if you take them into account, compute hardware improvements are faster than Moore's law. We wrote a piece with Epoch on this: [https://epochai.org/blog/trends-in-machine-learning-hardware](https://epochai.org/blog/trends-in-machine-learning-hardware)
+
+If anything, my disagreements have become stronger and my timelines have become shorter over time. Even the aggressive model I present in the post seems too conservative for my current views and my median date is 2030 or earlier. I have substantial probability mass on an AI that could automate most current jobs before 2026 which I didn't have at the time of writing.
+
+I also want to point out that Daniel Kokotajlo, whom I spent some time talking about bio anchors and [Tom Davidson's takeoff model](https://www.lesswrong.com/posts/Gc9FGtdXhK9sCSEYu/what-a-compute-centric-framework-says-about-ai-takeoff) with, seemed to have consistently better intuitions than me (or anyone else I'm aware of) on timelines. The jury is still out there, but so far it looks like reality follows his predictions more than mine. At least in my case, I updated significantly toward shorter timelines multiple times due to arguments he made.

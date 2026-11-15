@@ -1,0 +1,21 @@
+Comment by Marius Hobbhahn, 2024-01-23, on "We need a Science of Evals"
+https://www.lesswrong.com/posts/fnc6Sgt3CGCdFmmgX/we-need-a-science-of-evals?commentId=Zc5fkDrq5ig4mPb6v
+
+PARENT (not his words):
+It seems to me that there are two unstated perspectives behind this post that inform a lot of it.
+
+**First**, that you specifically care about upper-bounding capabilities, which in turn implies being able to make statements like "there does not exist a setup X where model M does Y". This is a very particular and often hard-to-reach standard, and you don't really motivate why the focus on this. A much simpler standard is "here is a setup X where model M did Y". I think evidence of the latter type can drive lots of the policy outcomes you want: "GPT-6 replicated itself on the internet and designed a bioweapon, look!". Ideally, we want to eventually be able to say "model M will never do Y", but on the current margin, it seems we mainly want to reach a state where, given an actually dangerous AI, we can realise this quickly and then do something about the danger. Scary demos work for this. Now you might say "but then we don't have safety guarantees". One response is: then get really good at finding the scary demos quickly.
+
+Also, very few existing safety standards have a "there does not exist an X where..." form. Airplanes aren't safe because we have an upper bound on how explosive they can be, they're safe because we know the environments in which we need them to operate safely, design them for that, and only operate them within those. By analogy, this weakly suggests to control AI operating environments and develop strong empirical evidence of safety in those specific operating
+
+HIS COMMENT:
+I feel like both of your points are slightly wrong, so maybe we didn't do a good job of explaining what we mean. Sorry for that.   
+  
+1a) Evals both aim to show existence proofs, e.g. demos, as well as inform some notion of an upper bound. We did not intend to put one of them higher with the post. Both matter and both should be subject to more rigorous understanding and processes. I'd be surprised if the way we currently do demonstrations could not be improved by better science.  
+1b) Even if you claim you just did a demo or an existence proof and explicitly state that this should not be seen as evidence of absence, people will still see the absence of evidence as negative evidence. I think the "we ran all the evals and didn't find anything" sentiment will be very strong, especially when deployment depends on not failing evals. So you should deal with that problem from the start IMO. Furthermore, I also think we should aim to build evals that give us positive guarantees if that's possible. I'm not sure it is possible but we should try.   
+1c) The airplane analogy feels like a strawman to me. The upper bound is obviously not on explosivity, it would be a statement like "Within this temperature range, the material the wings are made of will break once in 10M flight miles on average" or something like that. I agree that airplanes are simpler and less high-dimensional. That doesn't mean we should not try to capture most of the variance anyway even if it requires more complicated evals. Maybe we realize it doesn't work and the variance is too high but this is why we diversify agendas.  
+  
+2a) The post is primarily about building a scientific field and that field then informs policy and standards. A great outcome of the post would be if more scientists did research on this. If this is not clear, then we miscommunicated. The point is to get more understanding so we can make better predictions. These predictions can then be used in the real world.   
+2b) It really is not "we need to find standardised numbers to measure so we can talk to serious people" and less "let's try to solve that thing where we can't reliably predict much about our AIs". If that was the main takeaway, I think the post would be net negative.   
+  
+3) But the optimization requires computation? For example, if you run 100 forward passes for your automated red-teaming algorithm with model X, that requires Y FLOP of compute. I'm unsure where the problem is.

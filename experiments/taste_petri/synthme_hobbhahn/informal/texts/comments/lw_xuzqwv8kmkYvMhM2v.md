@@ -1,0 +1,8 @@
+Comment by Marius Hobbhahn, 2022-10-04, on "Paper+Summary: OMNIGROK: GROKKING BEYOND ALGORITHMIC DATA"
+https://www.lesswrong.com/posts/jusq6kyZ6XSrtW3Bf/paper-summary-omnigrok-grokking-beyond-algorithmic-data?commentId=xuzqwv8kmkYvMhM2v
+
+PARENT (not his words):
+Hmm, I haven't read the paper yet, but thinking about it, the easiest way to change the weight norm is just to multiply all weights by some factor $\alpha$, but then in a network with ReLU activations and L layers, this would be completely equivalent to multiplying the output of the network by $\alpha^L$. In the overfitting regime where the network produces probability distributions where the mode is equal to the answer for all training tokens, the easiest way to decrease loss is just to multiply the output by a constant factor, essentially decreasing the entropy of the distribution forever, but this strategy fails at test-time because the mode is not equal to the answer there. So keeping the weight norm at some specified level might just be a way to prevent the network from taking the easy way towards decreasing training loss, and forcing it to find ways at constant-weight-norm to decrease loss, which would better generalize for the test-set.
+
+HIS COMMENT:
+I think this is very similar to the hypothesis they have as well. But not sure if I understood it correctly, I think some parts of the paper are not as clear as they could be
