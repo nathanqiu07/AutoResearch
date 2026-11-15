@@ -2,6 +2,7 @@
 # Same 18-audit design as launch_batch.sh, but the target is Kimi K2.6 via OpenRouter
 # (raw reasoning exposed), wired the way scripts/c2_loop_evan.sh wires the Tinker proxy.
 # PART=main: stock/synthme/icai/p2/p5 (these audits ran with the auditor on OpenAI's API before its credit ran out).
+# PART=p8oa: p8 only, auditor and Petri judge on OpenAI direct (new key).
 # PART=p8:   p8 only, auditor and Petri judge = the same gpt-5.1 reached through OpenRouter.
 # Inspect reloads the workspace .env (overriding OPENAI_API_KEY), so OpenRouter is reached by explicit
 # model ids, never by repointing OPENAI_BASE_URL.
@@ -22,6 +23,12 @@ mkdir -p $CACHE
 COMMON=(--epochs 3 --mode dev --tools simulated --target "openai-compat:moonshotai/kimi-k2.6"
         --judge "openai-compat:openai/gpt-5.1" --max-turns 15 --max-cost 40 --workers 6
         --cache-dir $CACHE --petri-batch 18)
+if [ "${PART:-main}" = p8oa ]; then
+  exec python3 scripts/c2_e3b.py \
+    --condition p8=$SEED --auditor-prompt p8=$INP/auditor_prompt_p8.txt \
+    --petri-auditor "openai/gpt-5.1" --petri-judge "openai/gpt-5.1" \
+    "${COMMON[@]}" --out experiments/hubinger_seed63_cot_awareness/results_kimi26_p8.json
+fi
 if [ "${PART:-main}" = p8 ]; then
   exec python3 scripts/c2_e3b.py \
     --condition p8=$SEED --auditor-prompt p8=$INP/auditor_prompt_p8.txt \
