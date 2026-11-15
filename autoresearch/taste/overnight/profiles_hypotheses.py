@@ -81,6 +81,9 @@ def _result(content=None, status='invalid', error=None, usage=None):
 def _settings(config):
     settings = config.get('extractor_settings')
     _require(isinstance(settings, dict), 'invalid_extractor_settings')
+    # Provider-specific reasoning, sampling and seed controls belong to a
+    # separately verified transport identity, not silently ignored builder knobs.
+    _require(set(settings) <= {'temperature', 'max_tokens'}, 'unsupported_extractor_settings')
     temperature, maximum = settings.get('temperature', 0.0), settings.get('max_tokens', 2048)
     _require(type(temperature) in (int, float) and math.isfinite(temperature) and 0 <= temperature <= 2
              and type(maximum) is int and maximum > 0, 'invalid_extractor_settings')
@@ -273,6 +276,7 @@ def _build(method_id, documents, config, extractor):
     except (ValueError, TypeError, KeyError):
         return _result(error='invalid_build_inputs')
     usage = {'attempted_calls': 1, 'cost_status': 'unavailable',
+             'resolved_extractor_settings': settings,
              'request_sha256': digest({'system': SYSTEM, 'prompt': prompt, 'settings': settings}),
              'prompt_spec_sha256': digest(prompt_spec(method_id)),
              'source_records_sha256': digest(sorted(documents, key=lambda d: d['document_id'])),
