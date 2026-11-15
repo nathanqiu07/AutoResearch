@@ -973,3 +973,11 @@
   exact metadata-sharing question is pending with the user. The rejected message
   was not resent or routed indirectly; no private contents were shared. Public
   copy verification and other already authorized work continue independently.
+- Publication054 is remote-verified at `595faa83`. Its staged whitespace check
+  returned exit2 before the publication sequence continued. The four flagged
+  lines are required single-space blank context markers in the saved unified
+  diff. An additive handoff records that nonzero result, clarifies that the earlier
+  unstaged check did not cover the new patch, verifies exact old-to-new checker
+  reconstruction, and passes the scoped check excluding only the raw patch.
+  The frozen054 bytes remain intact; no runtime or test source changed. Future
+  dependent publication steps inspect every prior exit result explicitly.
