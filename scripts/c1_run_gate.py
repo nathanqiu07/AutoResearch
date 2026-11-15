@@ -12,9 +12,17 @@ By default it only prints: for each target, the equivalent
 commands with an upper-bound call estimate (and a cost bound if you pass
 --usd-per-call). Nothing is called and no backend is constructed.
 
-The cue pairs are the original vs minimal-cue items on the dev side of the
-frozen split, first --pair-limit by id (about 20 for the subset run, 0 = all
-dev pairs). They are written to --work (also on a dry run) so the printed
+Cue pairs (--cue-set):
+  single (default)  one cue factor on vs all off (Data's single-factor file,
+                    30 dev tasks x 8 factors = 240 pairs); --pair-limit N keeps
+                    the first N tasks per factor, so a subset still covers all
+                    8 factors (N=5 -> 40 pairs). The cue check then also reports
+                    a per-factor screen with prompt length ratios.
+  all8              all 8 cues exaggerated vs all naturalistic (original vs
+                    minimal-cue items on the dev side); --pair-limit N keeps the
+                    first N pairs by id.
+0 = all. Every pair must come from the --side of the frozen split, or the run
+stops. The pairs are written to --work (also on a dry run) so the printed
 calibrate command repeats the run exactly. The printed behaviour-gap command
 omits --approved-by-nathan, so pasting it unedited refuses. The probe questions, the labelled set and the hand
 labels are used only if their files exist.
@@ -26,6 +34,9 @@ the dev split and apply --max-cost-usd; the calibrate CLI has no spend flag.
 --execute refuses unless --approved-by-nathan is given, autoresearch/ has no
 uncommitted changes, and the preregistration (--prereg) is committed,
 unmodified, and no longer marked draft.
+
+--offline writes its reports under runs/c1/offline/ (git-ignored), never
+--out-gate/--out-gap: results/ holds real-model results only.
 """
 from __future__ import annotations
 
@@ -69,7 +80,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--items-minimal", default=os.path.join(BENCH, "evalawarebench_minimal_cue.jsonl"))
     p.add_argument("--split", default=os.path.join(BENCH, "evalawarebench_split.json"))
     p.add_argument("--side", default="dev", choices=["dev", "heldout"])
-    p.add_argument("--pair-limit", type=int, default=20, help="first N dev cue pairs by id; 0 = all")
+    p.add_argument("--cue-set", default="single", choices=["single", "all8"],
+                   help="single: one cue on vs all off, per factor (default); all8: all cues vs none")
+    p.add_argument("--single-pairs", default=os.path.join(BENCH, "evalawarebench_single_factor_pairs.jsonl"))
+    p.add_argument("--pair-limit", "--limit", dest="pair_limit", type=int,
+                   help="single: first N tasks per factor (default 5 = 40 pairs); all8: first N pairs (default 20); "
+                        "0 = all")
     p.add_argument("--probe-questions", default=os.path.join(BENCH, "evaldetect_probes.json"))
     p.add_argument("--labelled", default=os.path.join(BENCH, "needham", "dataset.json"))
     p.add_argument("--transcripts", default=os.path.join("data", "labels", "transcripts.jsonl"))
@@ -114,14 +130,23 @@ def build_plan(args) -> dict:
         raise SystemExit("--judge is required (pick one from another family than the targets)")
     judge = args.judge or "offline"
     generator = args.generator or judge
-    for path, what in ((args.items_original, "--items-original"), (args.items_minimal, "--items-minimal"),
-                       (args.split, "--split"), (args.gap_items, "--gap-items")):
+    needed = [(args.split, "--split", "--fetch"), (args.gap_items, "--gap-items", "--fetch")]
+    if args.cue_set == "single":
+        needed.append((args.single_pairs, "--single-pairs", "--single-factor"))
+    else:
+        needed += [(args.items_original, "--items-original", "--fetch"), (args.items_minimal, "--items-minimal", "--fetch")]
+    for path, what, flag in needed:
         if not _exists(path):
             raise SystemExit(f"{what} {path} not found; generate it with "
-                             "python3 scripts/convert_evalawarebench.py --fetch (see data/benchmarks/README.md)")
+                             f"python3 scripts/convert_evalawarebench.py {flag} (see data/benchmarks/README.md)")
     ids = load_split(args.split)[args.side]
-    pairs = cal.pair_items(args.items_original, args.items_minimal, ids=[i for i in ids], limit=args.pair_limit or None)
-    pairs_path = os.path.join(args.work, f"cue_pairs_{args.side}_{len(pairs)}.jsonl")
+    limit = args.pair_limit if args.pair_limit is not None else (5 if args.cue_set == "single" else 20)
+    if args.cue_set == "single":
+        pairs = cal.select_pairs(cal.load_cue_pairs(args.single_pairs), ids=ids, per_group=limit or None)
+    else:
+        pairs = cal.pair_items(args.items_original, args.items_minimal, ids=ids, limit=limit or None)
+    pairs_path = os.path.join(args.work, f"cue_pairs_{args.cue_set}_{args.side}_{len(pairs)}.jsonl")
+    n_envs = cal.distinct_envs(pairs)
     probes = load_probe_questions(args.probe_questions) if _exists(args.probe_questions) else None
     labelled = args.labelled if _exists(args.labelled) else None
     n_labelled = len(cal.load_labelled(labelled)) if labelled else 0
@@ -146,11 +171,12 @@ def build_plan(args) -> dict:
                     "--limit", str(args.gap_limit), "--seeds", str(args.gap_seeds), "--max-calls", str(args.max_calls),
                     "--max-cost-usd", str(args.max_cost_usd), "--workers", str(args.workers), "--out", args.out_gap]
         gap_cmd = ["python3", "scripts/c1_behaviour_gap.py"] + gap_args
-        gate_calls = cal.estimate_gate_calls(cal.probe_count(probes, t), n_labelled, len(pairs), n_hand)
+        gate_calls = cal.estimate_gate_calls(cal.probe_count(probes, t), n_labelled, len(pairs), n_hand, n_envs=n_envs)
         gap_calls = cal.estimate_gap_calls(len(gap_items), args.gap_seeds)
         steps.append({"target": t, "gate": {"cmd": gate_cmd, "calls": gate_calls},
                       "gap": {"cmd": gap_cmd, "args": gap_args, "calls": gap_calls}})
     return {"targets": targets, "judge": judge, "generator": generator, "pairs": pairs, "pairs_path": pairs_path,
+            "pair_limit": limit, "n_envs": n_envs,
             "probes": probes, "labelled": labelled, "n_labelled": n_labelled, "have_kappa": have_kappa,
             "n_hand": n_hand, "n_gap_items": len(gap_items), "steps": steps}
 
@@ -160,7 +186,8 @@ def print_plan(plan: dict, args) -> None:
                                      ("hand labels (check d)", plan["have_kappa"]),
                                      ("probe questions (default placeholders used)", plan["probes"])) if not ok]
     print(f"C1 run plan: {len(plan['targets'])} targets, judge={plan['judge']}, mode={args.mode}, "
-          f"{len(plan['pairs'])} {args.side} cue pairs, {plan['n_labelled']} labelled, {plan['n_hand']} hand labels, "
+          f"{len(plan['pairs'])} {args.side} cue pairs ({args.cue_set}, {plan['n_envs']} distinct environments), "
+          f"{plan['n_labelled']} labelled, {plan['n_hand']} hand labels, "
           f"V3 on {plan['n_gap_items']} items x {args.gap_seeds}")
     if missing:
         print("missing inputs (those checks will be SKIPPED and the gate will fail): " + "; ".join(missing))
@@ -215,6 +242,9 @@ def execute(plan: dict, args) -> list:
     transcripts = cal.load_transcripts(args.transcripts) if plan["have_kappa"] else None
     hand = cal.load_hand_labels(args.hand_labels) if plan["have_kappa"] else None
     labelled = cal.load_labelled(plan["labelled"]) if plan["labelled"] else None
+    gate_out = os.path.join(cal.OFFLINE_OUT, "calibration") if args.offline else args.out_gate
+    if args.offline:
+        print(f"\noffline run: reports go to {cal.OFFLINE_OUT} (git-ignored), not --out-gate/--out-gap")
     done = []
     for s in plan["steps"]:
         t = s["target"]
@@ -226,12 +256,13 @@ def execute(plan: dict, args) -> list:
         inputs = {"target_spec": t, "judge_spec": plan["judge"], "generator_spec": plan["generator"],
                   "cue_pairs": plan["pairs_path"], "items_original": args.items_original,
                   "items_minimal": args.items_minimal, "split": args.split, "side": args.side,
-                  "pair_limit": args.pair_limit, "labelled": plan["labelled"],
+                  "cue_set": args.cue_set, "single_pairs": args.single_pairs if args.cue_set == "single" else None,
+                  "pair_limit": plan["pair_limit"], "labelled": plan["labelled"],
                   "probe_questions": args.probe_questions if plan["probes"] else None,
                   "transcripts": args.transcripts if plan["have_kappa"] else None,
                   "hand_labels": args.hand_labels if plan["have_kappa"] else None, "driver": "scripts/c1_run_gate.py"}
         rep, path = cal.run_gate(ms, budget, labelled=labelled, cue_pairs=plan["pairs"], transcripts=transcripts,
-                                 hand_labels=hand, out_dir=args.out_gate, inputs=inputs)
+                                 hand_labels=hand, out_dir=gate_out, inputs=inputs)
         print(f"\n[{t}] gate ({'offline dry run' if rep['offline'] else 'REAL'}):")
         for line in cal.verdict_lines(rep):
             print("  " + line)

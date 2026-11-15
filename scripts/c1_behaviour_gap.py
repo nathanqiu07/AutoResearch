@@ -14,6 +14,8 @@ calibration gate, not as one of its checks.
 Specs are "backend:model" strings for llm.get_llm; a known backend prefix
 overrides --llm. Any non-offline spec needs --approved-by-nathan, otherwise the
 call estimate is printed and the script exits 2 without calling anything.
+An offline run always writes under runs/c1/offline/behaviour_gap/, whatever
+--out says: results/ holds real-model results only.
 """
 from __future__ import annotations
 
@@ -90,10 +92,15 @@ def run(args) -> dict:
            "models": {"requested": specs, "llm_default": args.llm,
                       "labels": {"target": models.target.label, "judge": models.judge.label}},
            "result": res, "compute": budget.summary(), "code_version": code_version()}
+    out = args.out
     if rep["offline"]:
         rep["note"] = cal.OFFLINE_NOTE
-    os.makedirs(args.out, exist_ok=True)
-    path = os.path.join(args.out, f"{now.strftime('%Y%m%dT%H%M%SZ')}_{args.side}{'_offline' if rep['offline'] else ''}.json")
+        # results/ is for real-model results only; offline output always goes under runs/ (git-ignored)
+        out = os.path.join(cal.OFFLINE_OUT, "behaviour_gap")
+        if os.path.abspath(out) != os.path.abspath(args.out):
+            print(f"offline run: writing to {out}, not --out {args.out}")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{now.strftime('%Y%m%dT%H%M%SZ')}_{args.side}{'_offline' if rep['offline'] else ''}.json")
     k = 1
     while os.path.exists(path):
         k += 1
