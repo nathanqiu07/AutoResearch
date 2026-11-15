@@ -205,7 +205,9 @@ tune on the seeds whose `split` is `dev` (E3b's 12; `--mode final` takes the 12 
 `export-seeds --report <run>.json --condition taste_real --out <file>.jsonl` rewrites every hidden seed
 once with the run's best design (same rewrite mode and generator prompts as the run, plus the judge's
 faithfulness score) into an AuditSeed file that `scripts/c2_e3b.py --condition NAME=FILE` scores,
-paired with stock by base seed. A run that validated nothing exports the stock seeds unchanged.
+paired with stock by base seed. A run that validated nothing exports the stock seeds unchanged. With
+`--llm offline` the whole path (agentic runs -> `export-seeds` -> `c2_e3b.py --offline`) runs free as a
+plumbing check; offline exports are stock text plus a marker, flagged `offline`, never a condition.
 
 E4 / E4b tooling (E4 and E4b archived 2026-11-14, PLAN §9; kept for the record): `evaluate-design --report <run>.json --mode final` scores a run's final design on
 held-out items (the E4 primary metric); `--split-file data/benchmarks/evalawarebench_split.json`

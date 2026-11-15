@@ -499,6 +499,9 @@ def cmd_export_seeds(args):
           f"{len(design)} intervention(s), rewrite={pm.rewrite} -> {args.out}  compute {budget.summary()}")
     if not design:
         print("note: the run validated no intervention, so these rows are the stock seeds (condition = stock)")
+    if models.offline:
+        print("note: offline backends cannot rewrite seeds; rows are stock text plus a dry-run marker (offline=true), "
+              "for checking the pipeline only, never for scoring")
     if failures:
         for x in failures:
             print(f"failed {x['seed_id']}: {x['error']}", file=sys.stderr)
