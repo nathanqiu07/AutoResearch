@@ -15,7 +15,7 @@ import threading
 import time
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Dict, Optional
 
 
 class BudgetExceeded(RuntimeError):
@@ -36,6 +36,7 @@ class Budget:
     cache_write_tokens: int = 0    # prompt caching: tokens written to the cache
     cache_read_tokens: int = 0     # prompt caching: tokens served from the cache
     saved_usd: float = 0.0         # list-price cost avoided by caching and the Batch API (E5 reports it)
+    gpu_seconds: float = 0.0       # busy time of self-hosted targets billed per GPU-second (OpenAICompatLLM)
     started: float = field(default_factory=time.time)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
@@ -58,6 +59,12 @@ class Budget:
         return (self.calls >= self.max_calls or self.elapsed >= self.max_seconds
                 or self.cost_usd >= self.max_cost_usd)
 
+    def add_gpu(self, seconds: float, usd: float = 0.0) -> None:
+        """GPU time spent serving a self-hosted model: adds spend without counting a call."""
+        with self._lock:
+            self.gpu_seconds += seconds
+            self.cost_usd += usd
+
     def check_spend(self) -> None:
         """Called before every paid request, so the cap holds even in loops
         that only watch the call count."""
@@ -68,6 +75,8 @@ class Budget:
         out = {"calls": self.calls, "input_tokens": self.input_tokens,
                "output_tokens": self.output_tokens,
                "cost_usd": round(self.cost_usd, 4), "seconds": round(self.elapsed, 2)}
+        if self.gpu_seconds:
+            out["gpu_seconds"] = round(self.gpu_seconds, 2)
         if self.cache_write_tokens or self.cache_read_tokens or self.saved_usd:
             out.update(cache_write_tokens=self.cache_write_tokens, cache_read_tokens=self.cache_read_tokens,
                        saved_usd=round(self.saved_usd, 4))
@@ -110,6 +119,44 @@ def parse_openai_chat(data: dict):
     return reasoning, msg.get("content") or "", usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
 
 
+class GpuMeter:
+    """Busy time of one served model, shared by every client of the same endpoint.
+    A busy period opens when the first in-flight request starts; each completion
+    charges the time since the last charge, so overlapping requests on the one
+    GPU are counted once and long busy stretches are charged as they go (the
+    spend cap can act mid-run). A LOWER BOUND on the bill: idle time before
+    scale-to-zero and cold starts are not seen."""
+
+    _meters: Dict[str, "GpuMeter"] = {}
+    _registry_lock = threading.Lock()
+
+    def __init__(self, clock=time.monotonic):
+        self.clock = clock
+        self._lock = threading.Lock()
+        self.active = 0
+        self.mark = 0.0
+
+    @classmethod
+    def for_endpoint(cls, base_url: str) -> "GpuMeter":
+        with cls._registry_lock:
+            return cls._meters.setdefault(base_url, cls())
+
+    def start(self) -> None:
+        with self._lock:
+            if self.active == 0:
+                self.mark = self.clock()
+            self.active += 1
+
+    def end(self) -> float:
+        """Seconds to charge for the busy time up to now."""
+        with self._lock:
+            now = self.clock()
+            secs = max(0.0, now - self.mark)
+            self.mark = now
+            self.active = max(0, self.active - 1)
+            return secs
+
+
 class OpenAICompatLLM(LLM):
     """Any OpenAI-compatible chat endpoint, e.g. an open-weight reasoning model
     served by vLLM on Modal. Exposes raw reasoning, which the co-primary
@@ -124,17 +171,32 @@ class OpenAICompatLLM(LLM):
       "off"       ask the server not to think (chat_template_kwargs.enable_thinking
                   = false, which Qwen3's chat template honours under vLLM);
       "headroom"  keep thinking and add THINKING_HEADROOM to max_tokens;
-      unset       send the call as is."""
+      unset       send the call as is.
+
+    GPU cost: a self-hosted endpoint is billed per GPU-second, not per token.
+    With `usd_per_hour` (or OPENAI_COMPAT_USD_PER_HOUR, e.g. 3.95 for one Modal
+    H100 at list price) the endpoint's busy time is charged to the Budget, so
+    the spend cap and E5's $ figures include the target (GpuMeter: a lower
+    bound). Without a rate the busy seconds are still recorded, at $0."""
     name = "openai-compat"
     PLAIN_THINKING_MODES = ("", "off", "headroom")
     THINKING_HEADROOM = 8000   # reasoning tokens count against max_tokens (complete_with_reasoning only)
 
-    def __init__(self, model: str, budget: Optional[Budget] = None, base_url: Optional[str] = None):
+    def __init__(self, model: str, budget: Optional[Budget] = None, base_url: Optional[str] = None,
+                 usd_per_hour: Optional[float] = None):
         super().__init__(budget)
         self.model = model
         self.base_url = (base_url or os.environ.get("OPENAI_COMPAT_BASE_URL") or "").rstrip("/")
         if not self.base_url:
             raise RuntimeError("OPENAI_COMPAT_BASE_URL is not set")
+        rate = usd_per_hour if usd_per_hour is not None else os.environ.get("OPENAI_COMPAT_USD_PER_HOUR")
+        try:
+            self.usd_per_hour = float(rate) if rate not in (None, "") else 0.0
+        except ValueError:
+            raise RuntimeError(f"OPENAI_COMPAT_USD_PER_HOUR must be a number, got {rate!r}")
+        if self.usd_per_hour < 0:
+            raise RuntimeError("OPENAI_COMPAT_USD_PER_HOUR must be >= 0")
+        self.meter = GpuMeter.for_endpoint(self.base_url)
         self.key = os.environ.get("OPENAI_COMPAT_API_KEY", "")
         self.plain_thinking = os.environ.get("OPENAI_COMPAT_PLAIN_THINKING", "")
         if self.plain_thinking not in self.PLAIN_THINKING_MODES:
@@ -151,6 +213,7 @@ class OpenAICompatLLM(LLM):
             headers["authorization"] = f"Bearer {self.key}"
         req = urllib.request.Request(self.base_url + "/chat/completions", data=json.dumps(body).encode(), headers=headers)
         for attempt in range(4):
+            self.meter.start()
             try:
                 with urllib.request.urlopen(req, timeout=300) as r:
                     data = json.loads(r.read())
@@ -158,7 +221,10 @@ class OpenAICompatLLM(LLM):
             except Exception:
                 if attempt == 3:
                     raise
-                time.sleep(2 ** attempt)
+            finally:   # busy time of this attempt only; the backoff sleep below is not GPU time
+                secs = self.meter.end()
+                self.budget.add_gpu(secs, secs * self.usd_per_hour / 3600.0)
+            time.sleep(2 ** attempt)
         reasoning, text, inp, out = parse_openai_chat(data)
         self.budget.charge(inp or _approx_tokens(system + prompt), out or _approx_tokens(reasoning + text))
         finish = (data.get("choices") or [{}])[0].get("finish_reason")

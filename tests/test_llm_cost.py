@@ -188,3 +188,69 @@ class TestBatchFinalScript(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeClock:
+    def __init__(self):
+        self.t = 0.0
+
+    def __call__(self):
+        return self.t
+
+
+class TestGpuMeter(unittest.TestCase):
+    def test_overlapping_requests_counted_once(self):
+        c = FakeClock()
+        m = L.GpuMeter(clock=c)
+        m.start()             # A starts at 0
+        c.t = 2.0
+        m.start()             # B starts at 2
+        c.t = 5.0
+        b = m.end()           # B ends at 5
+        c.t = 10.0
+        a = m.end()           # A ends at 10
+        self.assertAlmostEqual(a + b, 10.0)   # union [0, 10], not 10 + 3
+        c.t = 20.0            # idle 10..20 is not charged
+        m.start()
+        c.t = 21.0
+        self.assertAlmostEqual(m.end(), 1.0)
+
+    def test_backend_charges_gpu_time_and_cost(self):
+        sent = []
+
+        def fake(req, timeout=0):
+            sent.append(1)
+            return Resp({"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+                         "usage": {"prompt_tokens": 5, "completion_tokens": 2}})
+        with mock.patch.dict(os.environ, {"OPENAI_COMPAT_BASE_URL": "https://gpu.example.invalid/v1",
+                                          "OPENAI_COMPAT_USD_PER_HOUR": "3600"}), \
+                mock.patch.object(L.urllib.request, "urlopen", fake):
+            m = L.OpenAICompatLLM("qwen", Budget())
+            m.meter = L.GpuMeter(clock=iter([0.0, 2.0]).__next__)   # one 2-second request
+            self.assertEqual(m.complete("q"), "ok")
+        self.assertAlmostEqual(m.budget.gpu_seconds, 2.0)
+        self.assertAlmostEqual(m.budget.cost_usd, 2.0)     # $3600/h = $1/s
+        self.assertEqual(m.budget.calls, 1)                # GPU time adds spend, not calls
+        self.assertEqual(m.budget.summary()["gpu_seconds"], 2.0)
+
+    def test_retry_backoff_is_not_gpu_time(self):
+        calls = {"n": 0}
+
+        def flaky(req, timeout=0):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise OSError("reset")
+            return Resp({"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}], "usage": {}})
+        with mock.patch.dict(os.environ, {"OPENAI_COMPAT_BASE_URL": "https://gpu2.example.invalid/v1"}), \
+                mock.patch.object(L.urllib.request, "urlopen", flaky), mock.patch.object(L.time, "sleep"):
+            m = L.OpenAICompatLLM("qwen", Budget(), usd_per_hour=36.0)
+            m.meter = L.GpuMeter(clock=iter([0.0, 1.0, 100.0, 101.0]).__next__)   # 1 s, backoff, 1 s
+            m.complete("q")
+        self.assertAlmostEqual(m.budget.gpu_seconds, 2.0)
+        self.assertAlmostEqual(m.budget.cost_usd, 0.02)
+
+    def test_bad_rate_refused(self):
+        with mock.patch.dict(os.environ, {"OPENAI_COMPAT_BASE_URL": "https://x.example.invalid/v1",
+                                          "OPENAI_COMPAT_USD_PER_HOUR": "lots"}):
+            with self.assertRaises(RuntimeError):
+                L.OpenAICompatLLM("qwen", Budget())
