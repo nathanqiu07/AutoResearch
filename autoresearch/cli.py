@@ -381,7 +381,8 @@ def cmd_research(args):
                        shared=shared, calibration=cal, budget=budget, advisor=advisor, pool=pool,
                        decisions_dir=args.decisions_dir, market=market, contrarian=contrarian,
                        screen_measurer=screen,
-                       progress=display.Progress(con, accept_p=cfg.accept_p, confirm_p=cfg.confirm_p))
+                       progress=display.Progress(con, accept_p=cfg.accept_p, confirm_p=cfg.confirm_p,
+                                                 events_path=_events_path(args.out)))
     rep = r.run()
     rep["setting"] = args.setting
     rep["tools"] = args.tools if args.setting == "agentic" else None   # E3b: real (sandbox) vs simulated tools
@@ -417,6 +418,14 @@ def cmd_label(args):
             out.write(json.dumps({"a": a["features"], "b": b["features"], "chosen": ans,
                                   "context": f"{d['task']}: {a['change']} vs {b['change']}"}) + "\n")
     out.close()
+
+
+def _events_path(out_dir):
+    """<out_dir>/events.jsonl: the research loop's events, streamed as they happen."""
+    if not out_dir:
+        return None
+    os.makedirs(out_dir, exist_ok=True)
+    return os.path.join(out_dir, "events.jsonl")
 
 
 def _split_items(path, base, split_file=None):

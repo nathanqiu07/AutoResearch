@@ -3,6 +3,7 @@ per-iteration progress and the final results. Formatting only; nothing here
 changes what the loop does or what goes into the report."""
 from __future__ import annotations
 
+import json
 from typing import Dict, List, Optional
 
 from ..ui import Console
@@ -175,11 +176,25 @@ class Progress:
     WARN = {"exa_error": "web search failed", "explain_error": "explanations (D5) failed",
             "claims_error": "claim extraction (D6) failed", "setting_check_error": "setting check failed"}
 
-    def __init__(self, c: Console, accept_p: Optional[float] = None, confirm_p: Optional[float] = None):
+    def __init__(self, c: Console, accept_p: Optional[float] = None, confirm_p: Optional[float] = None,
+                 events_path: Optional[str] = None):
         self.c, self.accept_p, self.confirm_p = c, accept_p, confirm_p
         self.best: Optional[float] = None
+        # Every event (with A1/A2 summaries) appended as it happens, so a run that is
+        # killed before it writes its report still leaves its measurements on disk.
+        self.events_path = events_path
+
+    def _append_event(self, ev: Dict) -> None:
+        try:
+            with open(self.events_path, "a") as fh:
+                fh.write(json.dumps(ev, default=str) + "\n")
+        except OSError as e:   # a full disk must not stop the run; say so once and stop trying
+            self.c.print(self.c.style("  warning ", "bold", "yellow") + f"cannot write {self.events_path}: {e}")
+            self.events_path = None
 
     def __call__(self, ev: Dict) -> None:
+        if self.events_path:
+            self._append_event(ev)
         handler = getattr(self, "_on_" + str(ev.get("event")), None)
         if handler is not None:
             handler(ev)
@@ -190,7 +205,12 @@ class Progress:
     def _metrics(self, ev: Dict) -> str:
         c = self.c
         return (f"score {c.style(_num(ev.get('score')), 'bold')}  awareness {_num(ev.get('awareness'))}  "
-                f"validity {_num(ev.get('validity'))}  {c.style('n=' + str(ev.get('n')), 'dim')}")
+                f"validity {_num(ev.get('validity'))}  {self._a1a2(ev)}  {c.style('n=' + str(ev.get('n')), 'dim')}")
+
+    @staticmethod
+    def _a1a2(ev: Dict) -> str:
+        """A1 = verbalized (says unprompted it is being evaluated), A2 = self-reported P(eval)."""
+        return f"A1 {_num(ev.get('verbalized'), 2)}  A2 {_num(ev.get('self_report'), 2)}"
 
     def _on_baseline(self, ev: Dict) -> None:
         self.best = ev.get("score")
@@ -217,13 +237,14 @@ class Progress:
                 + f"  Δ {signed(c, ev.get('delta'))}  P(better) {prob(c, ev.get('p_better'), self.accept_p)}  "
                 + f"validity {_num(ev.get('validity'), 2)}  awareness {_num(ev.get('awareness'), 2)}")
         c.print(head)
-        c.print(c.style("          " + c.truncate(idea.get("text", ""), c.width - 10), "dim"))
+        a1a2 = self._a1a2(ev) + " · "
+        c.print(c.style("          " + a1a2 + c.truncate(idea.get("text", ""), c.width - 10 - len(a1a2)), "dim"))
 
     def _on_confirmation(self, ev: Dict) -> None:
         c = self.c
         ok = self.confirm_p is not None and ev.get("p_better", 0) >= self.confirm_p
         c.print(c.style("  confirm ", "gray") + "fresh samples  P(better) "
-                + c.style(_num(ev.get("p_better"), 2), "bold", "green" if ok else "yellow"))
+                + c.style(_num(ev.get("p_better"), 2), "bold", "green" if ok else "yellow") + "  " + self._a1a2(ev))
 
     def _on_setting_drift(self, ev: Dict) -> None:
         self.c.print(self.c.style("  drift   ", "bold", "yellow") + f"{ev.get('category')}: {ev.get('why')}")

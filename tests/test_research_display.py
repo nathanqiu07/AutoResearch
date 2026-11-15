@@ -1,5 +1,8 @@
 import io
+import json
+import os
 import random
+import tempfile
 import unittest
 
 from autoresearch.llm import OfflineLLM
@@ -92,6 +95,24 @@ class ProgressTest(unittest.TestCase):
         out = buf.getvalue()
         for want in ("baseline", "iteration 1/2", "iteration 2/2", "measure", "outcome", "best"):
             self.assertIn(want, out)
+        self.assertTrue(all(visible_len(line) <= 100 for line in out.splitlines()), out)
+
+
+    def test_printer_shows_a1_a2_and_streams_events(self):
+        buf = io.StringIO()
+        c = Console(buf, color=False, unicode=True, width=100)
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "events.jsonl")
+            rep = _run(display.Progress(c, accept_p=0.9, confirm_p=0.75, events_path=path), iters=2)
+            events = [json.loads(line) for line in open(path)]
+        out = buf.getvalue()
+        self.assertIn("A1 ", out)
+        self.assertIn("A2 ", out)
+        self.assertEqual(events[0]["event"], "baseline")
+        self.assertIn("verbalized", events[0])
+        self.assertIn("self_report", events[0])
+        self.assertEqual(sum(e["event"] == "evaluated" for e in events),
+                         sum(e["event"] == "evaluated" for e in rep["log"]))
         self.assertTrue(all(visible_len(line) <= 100 for line in out.splitlines()), out)
 
 
