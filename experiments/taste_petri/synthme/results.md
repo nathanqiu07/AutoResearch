@@ -16,11 +16,48 @@ for the rest of the run). Numbers come from `results.json`, written by `python3 
 - Caveat: e2_v4 showed that a direction push alone moves this test set (its ANTI, written with post-T knowledge,
   reached 0.438). S_inf's gain may be largely the "less cautious" direction rather than anything specific to him.
   Against P0 its accuracy gain is +0.062 [-0.031, 0.150].
-- **S_all**: S_ALL_PLACEHOLDER
+- **S_all** was not scored. Its fit was stopped at 13:55 PT, 78 of about 300 validation calls in, to meet the
+  user's 14:00 deadline. It was the lowest priority, and its history would have been the same 50 informal pairs as
+  S_inf's (see Deviations).
 
 ## Test results
 
-TABLES_PLACEHOLDER
+Test pairs: e2_v4's 96 pairs over 10 works, sonnet, both orders. 90% CIs resample works.
+
+| arm | paired acc [90% CI] | mean p(his) [90% CI] |
+|---|---|---|
+| M0s | 0.177 [0.11, 0.25] | 0.379 [0.353, 0.405] |
+| NAME | 0.260 [0.179, 0.348] | 0.392 [0.369, 0.417] |
+| P0 | 0.229 [0.15, 0.312] | 0.388 [0.358, 0.418] |
+| S_paper | 0.229 [0.14, 0.341] | 0.406 [0.369, 0.449] |
+| S_inf | 0.292 [0.216, 0.389] | 0.451 [0.424, 0.483] |
+
+**S_paper minus each arm** (cluster-diff, 90% CI)
+
+| vs | Δ paired acc | Δ mean p(his) |
+|---|---|---|
+| M0s | +0.052 [-0.042, 0.168] | +0.027 [-0.003, 0.063] |
+| NAME | -0.031 [-0.135, 0.09] | +0.014 [-0.015, 0.051] |
+| P0 | +0.000 [-0.093, 0.111] | +0.018 [-0.01, 0.052] |
+
+**S_inf minus each arm** (cluster-diff, 90% CI)
+
+| vs | Δ paired acc | Δ mean p(his) |
+|---|---|---|
+| M0s | +0.115 [0.039, 0.189] | +0.072 [0.052, 0.094] |
+| NAME | +0.031 [-0.054, 0.116] | +0.060 [0.041, 0.08] |
+| P0 | +0.062 [-0.031, 0.15] | +0.063 [0.038, 0.089] |
+| S_paper | +0.062 [-0.011, 0.135] | +0.045 [0.021, 0.068] |
+
+Verdicts (PROTOCOL.md amendment):
+
+- PRIMARY S_paper vs M0s: does not beat (Δacc +0.052 [-0.042, 0.168]; Δp(his) +0.027 [-0.003, 0.063]).
+- SECONDARY S_paper vs NAME: does not beat (Δacc -0.031 [-0.135, 0.09]; Δp(his) +0.014 [-0.015, 0.051]).
+- descriptive S_paper vs P0: Δacc +0.000 [-0.093, 0.111]; Δp(his) +0.018 [-0.01, 0.052].
+- PRIMARY S_inf vs M0s: BEATS on acc, p_his (Δacc +0.115 [0.039, 0.189]; Δp(his) +0.072 [0.052, 0.094]).
+- SECONDARY S_inf vs NAME: BEATS on p_his (Δacc +0.031 [-0.054, 0.116]; Δp(his) +0.060 [0.041, 0.08]).
+- descriptive S_inf vs P0: Δacc +0.062 [-0.031, 0.15]; Δp(his) +0.063 [0.038, 0.089].
+- S_inf − S_paper on paired accuracy (the pre-registered rule, not amended): no claim (Δacc +0.062 [-0.011, 0.135]); descriptive Δp(his) +0.045 [0.021, 0.068].
 
 M0s, NAME and P0 are e2_v4's cached predictions on the same 96 pairs (`e2_v4/results.json`). No test pair failed in
 any arm.
@@ -43,13 +80,10 @@ coherence as good evidence of reliability, and favors low-effort, practical asse
 validation."
 This is the less-cautious direction, from pre-T informal sources only.
 
-S_ALL_PERSONA_PLACEHOLDER
-
 | fit | history | val | val baseline | persona | hypothesis-text fallback | validation model |
 |---|---|---|---|---|---|---|
 | S_paper | 50 of 146 train | 50 | 0.46 | 0.56 | 0.56 | sonnet (batch 60) |
 | S_inf | 50 of 76 train | 28 | 0.43 | 0.61 | 0.50 | haiku (batch 100) |
-S_ALL_ROW_PLACEHOLDER
 
 Validation is single-order accuracy on small sets (28 to 78 pairs), so the selection steps are noisy.
 
@@ -93,12 +127,17 @@ All pairs come from decisions dated before T = 2026-01-01. No Hobbhahn material 
 
 ## Spend
 
-CALLS_PLACEHOLDER
+- Whole experiment: 1,057 sonnet calls answered, 327 haiku. A further 476 sonnet calls were refused at the usage
+  limit and reached no model. Logged cost: $39.41.
+- Since the budget amendment: 468 of 700 sonnet and 327 of 600 haiku.
+  - Sonnet: S_paper test 120, informal build 89, S_inf fit 51, S_inf test 192, S_all fit 16.
+  - Haiku: S_inf validation 249, the stopped S_all fit 78.
+- Every call is cached in `cache/` and logged in `calls.log`.
 
 ## Files
 
 - `pairs.py` builds the pairs: `python3 pairs.py paper|informal <stage>...`
 - `fit.py` fits, tests and reports: `python3 fit.py fit|test|report|md`
-- `S_paper.json`, `S_inf.json`, `S_all.json`: fitted SynthesizeMe models, with metadata in each file's `synthme`
+- `S_paper.json`, `S_inf.json`: fitted SynthesizeMe models, with metadata in each file's `synthme`
   block.
 - `test_<arm>.json` holds the predictions; `results.json` holds every number above.
