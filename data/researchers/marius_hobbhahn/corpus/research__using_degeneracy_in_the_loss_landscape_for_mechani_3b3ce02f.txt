@@ -1,0 +1,690 @@
+---
+url: https://arxiv.org/abs/2405.10927
+title: Using Degeneracy in the Loss Landscape for Mechanistic Interpretability
+publishedDate: 2024-05-17
+date_source: listing
+authors: ["Lucius Bushnaq", "Jake Mendel", "Stefan Heimersheim", "Dan Braun", "Nicholas Goldowsky-Dill", "Kaarel H\u00e4nni", "Cindy Wu", "Marius Hobbhahn"]
+author_position: last
+kind: paper
+exa_request_id: https://arxiv.org/abs/2405.10927
+---
+# Using Degeneracy in the Loss Landscape for Mechanistic Interpretability
+
+arXiv:2405.10927. cs.LG. Submitted 2024-05-17. Latest version v2, 2024-05-20.
+
+## Authors
+
+Lucius Bushnaq, Jake Mendel, Stefan Heimersheim, Dan Braun, Nicholas Goldowsky-Dill, Kaarel H\"anni, Cindy Wu, Marius Hobbhahn
+
+## Details
+
+- License: http://arxiv.org/licenses/nonexclusive-distrib/1.0/
+
+## Versions
+
+- v1: 2024-05-17
+- v2: 2024-05-20
+
+---
+
+Full text of v2.
+
+## Abstract
+
+Mechanistic Interpretability aims to reverse engineer the algorithms implemented by neural networks by studying their weights and activations. An obstacle to reverse engineering neural networks is that many of the parameters inside a network are not involved in the computation being implemented by the network. These degenerate parameters may obfuscate internal structure. Singular learning theory teaches us that neural network parameterizations are biased towards being more degenerate, and parameterizations with more degeneracy are likely to generalize further. We identify 3 ways that network parameters can be degenerate: linear dependence between activations in a layer; linear dependence between gradients passed back to a layer; ReLUs which fire on the same subset of datapoints. We also present a heuristic argument that modular networks are likely to be more degenerate, and we develop a metric for identifying modules in a network that is based on this argument. We propose that if we can represent a neural network in a way that is invariant to reparameterizations that exploit the degeneracies, then this representation is likely to be more interpretable, and we provide some evidence that such a representation is likely to have sparser interactions. We introduce the Interaction Basis, a tractable technique to obtain a representation that is invariant to degeneracies from linear dependence of activations or Jacobians.
+
+## 1 Introduction
+
+Mechanistic Interpretability aims to understand the algorithms implemented by neural networks (Olah et al., 2017; Elhage et al., 2021; Räuker et al., 2023; Olah et al., 2020; Meng et al., 2023; Geiger et al., 2021; Wang et al., 2022; Conmy et al., 2024). A key challenge in mechanistic interpretability is that neurons tend to fire on many unrelated inputs (Fusi et al., 2016; Nguyen et al., 2016; Olah et al., 2017; Geva et al., 2021; Goh et al., 2021) and any apparent circuits in the model often do not show a single clear functionality and do not have clear boundaries separating them from the rest of the network (Conmy et al., 2023; Chan et al., 2022).
+
+We suggest that a central problem for current methods of reverse engineering networks is that neural networks are degenerate: there are many different choices of parameters that implement the same function (Wei et al., 2022; Watanabe, 2009). For example, in a transformer attention head, only the product $W_{OV}=W_{O}W_{V}$ of the $W_{V}$ and $W_{O}$ matrices influences the network’s output, thus, many different choices of $W_{O}$ and $W_{V}$ are parameterizations of the same network (Elhage et al., 2021). This degeneracy makes parameters and activations an obfuscated view of a network’s computational features, hindering interpretability. While we have workarounds for known architecture-dependent degeneracies such as the $W_{OV}$ case, Singular Learning Theory (SLT, Watanabe, 2009, 2013) suggests that we should expect additional degeneracy in trained networks that generalize well.
+
+SLT quantifies the degeneracy of the loss landscape around a solution using the local learning coefficient (LLC) (Lau et al., 2023; Watanabe, 2009, 2013). More degenerate solutions lie in broader ‘basins’ of the loss landscape, where many alternative parameterizations implement a similar function. Networks with lower LLCs are more degenerate, implement more general algorithms, and generalize better to new data (Watanabe, 2009, 2013). These predictions of SLT are only straightforwardly applicable to the global minimum in the loss landscape; a generalization is required to apply these insights to real networks.
+
+In this paper we make the following contributions. First, in Section 2 we propose changes to SLT to make it useful for interpretability on real networks. Then, in Section 3 we characterize three ways in which neural networks can be degenerate. In Section 4, we prove a link between some of these degeneracies and sparsity in the interactions between features. In Section 5, we develop a technique for searching for modularity based on its relation to degeneracy in the loss landscape. Finally in Section 6, we propose a practical technique for removing some of these degeneracies in the form of the interaction basis.
+
+## 2 Singular learning theory and the effective parameter count
+
+If a neural network’s parameterisation is degenerate, this means there are many choices of parameters that achieve the same loss. At a global minimum in the loss landscape, more degeneracy in the parametrisation implies that the network lies in a broader basin of the loss. We can quantify how broad the basin is using Singular Learning Theory [SLT, Watanabe 2009, 2013; Wei et al. 2022].
+
+In Section 2.1, we provide an overview of the key concepts from SLT that we will make use of. In Section 2.2 we explain why the tools of SLT are not completely suitable for identifying degeneracy in model internals. As a proposal to resolve some of these limitations, we introduce the behavioral loss in Section 2.2.1, and finite data singular learning theory in Section 2.2.2. Together, these concepts will allow us to define the effective parameter count, a measure of the number of computationally-relevant parameters in the network. If we achieved our goal of a fully parameterisation-invariant representation of a neural network, its explicit parameter count would equal its effective parameter count.
+
+### 2.1 Background: the local learning coefficient
+
+The most important quantity in SLT is the learning coefficient $\lambda$. We define a data distribution $x\sim X$ and a family of models with $N$ parameters, parameterised by a vector $\theta$ in a parameter space $\Theta\subseteq\mathbb{R}^{N}$. We also define a population loss function $L(\theta|X)$ which is normalised so that $L(\theta_{0}|X)=0$ at the global minimum $\theta_{0}=\operatorname*{arg\,min}_{\theta}L(\theta|X)$. Then $\lambda$ is defined as (Watanabe, 2009):[^1]
+
+$$\displaystyle\lambda:=\lim_{\epsilon\to 0}\left[\epsilon\frac{\text{d}}{\text{d}\epsilon}\log\operatorname{V}(\epsilon)\right]\,, \tag{1}$$
+
+where $\operatorname{V}(\epsilon)$ is the volume of the region of parameter space $\Theta$ with loss less than $\epsilon$:
+
+$$\displaystyle\operatorname{V}(\epsilon):=\int_{\{\theta\in\Theta:\,L(\theta)<\epsilon\}}\text{d}\theta \tag{2}$$
+
+The learning coefficient quantifies the way the volume of a region of low loss changes as we ‘zoom in’ to lower and lower loss. It is a measure of basin broadness, and SLT predicts that networks are biased towards points in the loss landscape with lower learning coefficient.
+
+Since the loss landscape can have many different solutions with minimum loss, this definition does not necessarily single out a region corresponding to a single solution. Therefore Lau et al. (2023) introduce the local learning coefficient (LLC, denoted by $\hat{\lambda}$) as a way to use the machinery of SLT to study the loss landscape geometry in the neighbourhood of a particular local minimum at $\theta^{*}$ by restricting the volume in the definition of the learning coefficient to a neighbourhood of that minimum $\Theta_{\theta^{*}}\subset\Theta$ satisfying $\theta^{*}=\operatorname*{arg\,min}_{\theta\in\Theta_{\theta^{*}}}L(\theta|X)$. Then we define the local volume:
+
+$$\operatorname{V}_{\theta^{*}}(\epsilon)=\int_{\{\theta\in\Theta_{\theta^{*}}:\,L(\theta)<L(\theta^{*})+\epsilon\}}\text{d}\theta \tag{3}$$
+
+and the local learning coefficient:
+
+$$\hat{\lambda}(\theta^{*})=\lim_{\epsilon\to 0}\left[\epsilon\frac{\text{d}}{\text{d}\epsilon}\log\operatorname{V}_{\theta^{*}}(\epsilon)\right]\,. \tag{4}$$
+
+To see why the LLC can be thought of as counting the degeneracy in the network, consider a network with $N$ parameters, with $N_{\text{free}}$ degrees of freedom in the parameterisation (such that $N_{\text{free}}$ of the parameters can be freely varied together or independently, without affecting the loss). Then, we can approximate the loss by a Taylor series around the minimum:
+
+$$L(\theta|X)=L(\theta^{*})+\frac{1}{2}(\theta-\theta^{*})^{T}H(\theta^{*})(\theta-\theta^{*})+O(||\theta-\theta^{*}||^{3}) \tag{5}$$
+
+where $H(\theta^{*})$ is the Hessian at the mininum. Consider the case that all functionally relevant parameters all contribute a quadratic term to the loss to leading order, and degrees of freedom correspond to parameters which the loss does not depend on at all. In this case, Murfet (2020) explicitly calculate the LLC, showing that it equals $\frac{1}{2}(N-N_{\text{free}})$ — i.e. the LLC counts the number of functionally relevant parameters in the model.
+
+There is a sense that in such a model, the nominal parameter count is misleading, and if there are $N_{\text{free}}$ degrees of freedom then there are effectively only $N-N_{\text{free}}$ actual parameters in the model. Indeed, this is the right perspective to take for selecting a model class to fit data with. Watanabe (2013) demonstrates that for models with parameter-function maps that are not one-to-one, the Bayesian Information Criterion (Schwarz, 1978), which predicts which model fit to given data generalizes best (Hoogland, 2023), should be modified: the parameter count of the model $N$ should be replaced with $2\lambda$.
+
+In this simple example, the LLC is equal to half the rank of the Hessian at the minimum, and one might wonder if these two quantities are always related in this way. It turns out that they are only the same when the loss landscape can be written locally as a sum of quadratic terms, but this isn’t always true. For example, the loss landscape could be locally quartic in some directions, or the set of points with loss equal to 0 may form complicated self intersecting shapes like a cross. In these cases, it is the LLC, not the rank of the Hessian, that measures how much freedom there is to change parameters and how much we expect a particular model to generalise.
+
+### 2.2 Modifying SLT for interpretability
+
+We would like to use the local learning coefficient to quantify the number of degrees of freedom in the parameterisation of a neural network — the number of ways the parameters in a neural network can be changed while still implementing the same function, or at least a highly similar function. However, there are some obstacles to using the LLC for this purpose:
+
+1. The LLC $\hat{\lambda}(\theta^{*})$ measures the size of the region of equal loss around a particular local minimum $\theta^{*}\in\Theta$ in the loss landscape. This loss landscape is defined by a loss function and a dataset of inputs and labels. Unless the network achieves optimal loss on this dataset, points in the region could have equal loss even though they correspond to different functions, if these functions achieve the same average performance over the dataset. We do not want our measure of the number of degrees of freedom to include different functions which achieve the same overall loss.
+2. The local learning coefficient is only well defined at a local minimum of the loss, but we frequently want to interpret neural networks that have not been trained to convergence and are not at a minimum of the loss on their training distribution.
+3. We would like to be able to consider two very similar but not identical functions to be the same function, if they only differ in ways that can be considered noise. This is partially because, after finite training time, a network will not have fully converged on the cleanest version of an algorithm without any noise[^2]. However, the formal approach of SLT studies models in the limit of infinite data. This turns out to correspond to taking the limit $\epsilon\to 0$ in the definition of the LLC (equation 4) — after infinite data, the LLC is determined by the scaling of the volume function at loss equal to $L(\theta^{*})$. This means that the LLC contains information only about exact degeneracies in the parameterization — only about different parameterisations that are at the local minimum. Instead, we would prefer to work with a modified LLC which quantifies the number of parameterization choices which correspond to approximately identical functions.
+
+We introduce the behavioral loss as a resolution to problems (1) and (2), and finite data SLT as a resolution to problem (3).
+
+#### 2.2.1 Behavioral loss
+
+In this section, we describe how we can define the local learning coefficient of a network to avoid problems 1 and 2 listed above. We want to define a new loss function and corresponding loss landscape for the sake of the SLT formalism (we do not train with this loss) such that all the parameter choices in a region with zero loss correspond to the same function on the training dataset: the same map of inputs to outputs. This loss function, which we call the Behavioral Loss, $L_{B}$, is defined with respect to an original neural network with an original set of parameters $\theta^{*}$, and defines how similar the function $\mathbf{f}_{\theta}$ implemented by a different set of parameters $\theta$ is to the original function $\mathbf{f}_{\theta^{*}}$:
+
+$$L_{B}(\theta|\theta^{*},\operatorname{\mathcal{D}})=\frac{1}{n}\sum_{x\in\operatorname{\mathcal{D}}}\left|\left|\mathbf{f}_{\theta}(x)-\mathbf{f}_{\theta^{*}}(x)\right|\right|^{2} \tag{6}$$
+
+where $\operatorname{\mathcal{D}}$ is the training dataset and $||\mathbf{v}||$ denotes the $\ell^{2}$-norm of $\mathbf{v}$[^3]. By definition, this loss landscape always has a global minimum at the parameters the model actually uses $\theta=\theta^{*}$, solving problem 2 above. Additionally, parameter choices which achieve 0 behavioral loss must have the same input-output behaviour as $\mathbf{f}_{\theta}^{*}$ on the entire training dataset, solving problem 1. Note that achieving zero behavioral loss relative to a model with parameters $\theta^{*}$ is a stricter requirement than achieving the same loss as the model with parameters $\theta^{*}$ on the training data. Therefore, the behavioral loss LLC $\hat{\lambda}_{B}$ will be equal to, or higher than the training loss LLC $\hat{\lambda}$.
+
+#### 2.2.2 Singular learning theory at finite data
+
+Next we want to resolve the problem that standard SLT formulae concern only the limit of infinite data when the model is certainly at a local minimum of the loss landscape. We would like to think of a neural network trained on a finite amount of data as implementing a core algorithm we are interested in reverse engineering, plus some amount of ‘noise’ which may vary with the parameterisation and which is not important to interpret. For example, in a modular addition transformer (Nanda et al., 2023), there are parts of the network which can be ablated to improve loss: these parts of the network may be present because the model has not fully converged to a minimum yet. In this case, if we have two transformers trained on modular addition which have the same input-output behaviour after we have ablated parts to improve performance, then we would like to consider these models as implemtenting the same function ‘up to’ noise before we ablate those parts.
+
+In this section, we sketch how to modify SLT so that the LLC becomes a measure of how many different parameterisations implement nearly the same function, rather than exactly the same function. In this way, we can numerically vary how much the functions two different parameterisations implement are allowed to differ from each other on the training data.
+
+We start by explaining why SLT takes the limit $\epsilon\to 0$ in the definition of the learning coefficient (equation 1). SLT is a theory of Bayesian learning machines: learning machines which start with some prior over parameters which is nonzero everywhere $\varphi:\Theta\mapsto(0,1)$, and which learn by performing a Bayesian update on each datapoint they observe. After a dataset $\operatorname{\mathcal{D}}_{n}$ of $n$ datapoints, the posterior distribution over parameters is:
+
+$$\displaystyle p(\theta|\operatorname{\mathcal{D}}_{n})=\frac{e^{-nL(\theta|\operatorname{\mathcal{D}}_{n})}\varphi(\theta)}{p(\operatorname{\mathcal{D}}_{n})}\,. \tag{7}$$
+
+where $L(\theta|\operatorname{\mathcal{D}}_{n})$ is the negative log likelihood of the dataset given the model $\mathbf{f}_{\theta}$, which we identify with the loss function when making a connection between Bayesian learning and SGD (Murphy, 2012), and $p(\operatorname{\mathcal{D}}_{n})$ is a normalisation factor.
+
+The exponential dependence on $n$ ensures that in the limit $n\to\infty$, a Bayesian learning machine’s posterior is only nonzero at points of minimum loss. This means that the asymptotic behaviour of the learning machine depends only on properties of the loss landscape that are asymptotically close to having zero loss. This is the reason that we take $\epsilon\to 0$ in the definition of the learning coefficient.
+
+However, since the parameters $\theta^{*}$ we find after finite steps of SGD correspond to an algorithm plus noise, we want to consider the size of the region of parameter space that achieves a behavioral loss less than the noise size. From a bayesian learning perspective, in equation 7, we can see that for large but finite number of data points, most of the posterior concentrates around the regions of low loss, but it does not fully concentrate on the region with exactly minimum loss.
+
+Therefore, we simply refrain from taking the limit as the loss scale $\epsilon$ goes to $0$ in the definition of the learning coefficient, and consider the learning coefficient at a particular loss scale:
+
+$$\displaystyle\lambda(\epsilon):=\epsilon\frac{\text{d}}{\text{d}\epsilon}\log\operatorname{V}(\epsilon) \tag{8}$$
+
+To understand how the learning coefficient can vary with epsilon, consider an illustrative example: an extremely simple setup with a single parameter $w\in\mathbb{R}$, and a loss function $L(w)=c^{2}w^{2}+w^{4}$ with $c\ll 1$. This is a toy model of a scenario where there is a very small quadratic term in the learning coefficient. This term is only ‘visible’ to the learning coefficient when we zoom in to very small loss values. To see this, we must the calculate how the volume (equation 2) depends on the loss scale $\epsilon$. For large $\epsilon\gg c^{\frac{1}{4}}$, the quartic term dominates the loss and the region of loss less than $\epsilon$ is roughly the interval $[-\epsilon^{\frac{1}{4}},\epsilon^{\frac{1}{4}}]$. This gives $\operatorname{V}(\epsilon)\approx 2\epsilon^{\frac{1}{4}}$ so the learning coefficient is $\lambda(\epsilon\gg c^{\frac{1}{4}})=\frac{1}{4}$, the same as if the quadratic term were not present. On the other hand, for small enough $\epsilon\ll c^{\frac{1}{4}}$, the quadratic term becomes visible: $\operatorname{V}(\epsilon)\approx 2\epsilon^{\frac{1}{2}}/c^{2}$, so $\lambda(\epsilon\ll c^{\frac{1}{4}})=\frac{1}{2}$.
+
+Determining how to choose an appropriate cutoff $\epsilon$ is still an open problem. We suggest that researchers choose the value of the behavioral loss cutoff in the context of the question they would like to answer. For example, if one trains multiple models with different seeds on the same task, then the appropriate loss cutoff may be on the order of the variance between the seeds.
+
+Finally, we are able to quantify the amount of degeneracy in a neural network. We define the Effective Parameter Count of a neural network $\mathbf{f}_{\theta^{*}}$ at noise scale $\epsilon$ as two times the local learning coefficient $\lambda_{B}(\epsilon)$ of the behavioral loss with respect to the network at noise scale epsilon.
+
+$$N_{\text{eff}}(\epsilon):=2\lambda_{B}(\epsilon) \tag{9}$$
+
+We conjecture that a fully parameterisation invariant representation of a neural network which captures all the behaviour up to noise scale $\epsilon$ would require $N_{\text{eff}}(\epsilon)$ parameters.
+
+## 3 Internal structures that contribute to degeneracy
+
+In this section, we will show three ways the internal structure of neural networks can induce degrees of re-parametrization freedom $N_{\text{free}}$ in the loss landscape. Since $N_{\text{eff}}=N-N_{\text{free}}$, this is equivalent to showing three ways the internal structures of neural networks determine their effective parameter count. We do not expect that these three sources of re-parametrization freedom offer a complete account of all degeneracy in real networks. They are merely a starting point for relating the degeneracy of networks to their computational structure at all.
+
+For ease of presentation, most of the expressions in this section are only derived for the example case of fully connected networks. They can be generalized to transformers, though we do not show this explicitly here.
+
+In Section 3.1, we show a relationship between the effective parameter count and the dimensions of the spaces spanned by the network’s activation vectors (Section 3.1.1) and Jacobians (Section 3.1.2) recorded over the training data. In Section 3.2, we show a relationship between the number of distinct nonlinearities implemented in a layer of the network on the training data and the effective parameter count.
+
+### 3.1 Activations and Jacobians
+
+In this section, we show how a network having low dimensional hidden activations or Jacobians leads to re-parametrisation freedom.
+
+We begin by bringing the network’s Hessian, which gives the first non-zero term in the Taylor expansion of the loss around an optimum (See equation 5) into a more convenient form. Each local free direction in the loss landscape corresponds to an eigenvector of the Hessian with zero eigenvalue.[^4] Therefore, the rank of the Hessian can be used to obtain a lower bound for the learning coefficient.
+
+Consider the Hessian of a fully connected network, with parameters $\theta=\theta^{*}$, network inputs $x$ and network outputs $\mathbf{f}_{\theta}(x)$, on a behavioural loss $L_{B}\left(\theta|\theta^{*},\operatorname{\mathcal{D}}\right)$ evaluated on a dataset consisting of $|\operatorname{\mathcal{D}}|=n$ inputs. Using the chain rule, the Hessian at the global minimum $\theta=\theta^{*}$ can be written as:
+
+$$\displaystyle\left.\frac{\partial^{2}L_{B}\left(\theta|\theta^{*},\operatorname{\mathcal{D}}\right)}{\partial\theta^{l}_{i,j}\partial\theta^{l^{\prime}}_{i^{\prime},j^{\prime}}}\right|_{\theta=\theta^{*}} \displaystyle=\sum_{x\in\operatorname{\mathcal{D}}}\sum_{k,k^{\prime}}\left.\frac{\partial^{2}L_{B}\left(\theta|\theta^{*},\operatorname{\mathcal{D}}\right)}{\partial{f^{l_{\text{final}}}_{k}}\partial{f^{l_{\text{final}}}_{k^{\prime}}}}\right|_{\theta=\theta^{*}}\frac{\partial f^{l_{\text{final}}}_{k}(x)}{\partial\theta^{l^{\prime}}_{i^{\prime},j^{\prime}}}\frac{\partial f^{l_{\text{final}}}_{k^{\prime}}(x)}{\partial\theta^{l}_{i,j}} \tag{10}$$
+
+$$\displaystyle\overset{\rm MSE\ loss}{=}\frac{1}{n}\sum_{x\in\operatorname{\mathcal{D}}}\sum_{k}\frac{\partial f^{l_{\text{final}}}_{k}(x)}{\partial\theta^{l^{\prime}}_{i^{\prime},j^{\prime}}}\frac{\partial f^{l_{\text{final}}}_{k}(x)}{\partial\theta^{l}_{i,j}}$$
+
+for $l=1,\dots l_{\text{final}};\>j=1,\dots,d^{l};\>i=1,\dots,d^{l+1}$. In the second line, we have used that the loss function is MSE from outputs at $\theta=\theta^{*}$ to simplify the expression, and we have also used that the first derivatives of the loss are zero at the minimum[^5]. Thus, the Hessian is equal to a Gram matrix of the network’s weight gradients $\frac{\partial f^{l_{\text{final}}}_{k}}{\partial\theta^{l}_{i,j}}$, and linear dependence of entries of the weight gradients over the training set $\operatorname{\mathcal{D}}$ corresponds to zero eigenvalues in the Hessian.
+
+We can apply the chain rule again to rewrite the gradient vector on each datapoint as an outer product of Jacobians and activations:
+
+$$\displaystyle\frac{\partial f^{l_{\text{final}}}_{k}(x)}{\partial\theta^{l}_{i,j}} \displaystyle=\frac{\partial f^{l_{\text{final}}}_{k}(x)}{\partial p^{l+1}_{i}}f^{l}_{j}(x) \tag{11}$$
+
+where the Jacobian is taken with respect to preactivations to layer $l+1$:
+
+$$\mathbf{p}^{l+1}(x)=W^{l}\mathbf{f}^{l}(x). \tag{12}$$
+
+Thus, every degree of linear dependence in the activations $f^{l}_{j}$ or Jacobians $\frac{\partial f^{l_{\text{final}}}_{k}}{\partial p^{l+1}_{i}}$ in a layer $l$ of the network also causes degrees of linear dependence in the weight gradient $\frac{\partial f^{l_{\text{final}}}_{k}(x)}{\partial\theta^{l}_{i,j}}$ of the network, potentially resulting in re-parametrisation freedom for the network. In the next two sections, we explore how linear dependence in the activations and Jacobians respectively impact the effective parameter count.
+
+#### 3.1.1 Activation vectors spanning a low dimensional subspace
+
+Looking at equation 11, each degree of linear dependence of the activations $f^{l}_{j}$ in a hidden layer $l$ of width $d^{l}$ over the training dataset $\operatorname{\mathcal{D}}$,
+
+$$\sum_{j}c_{j}f^{l}_{j}(x)=0\,\,\forall x\in\operatorname{\mathcal{D}}\,, \tag{13}$$
+
+corresponds to $d^{l+1}$ linearly dependent entries in the weight gradient $\frac{\partial f^{l_{\text{final}}}_{k}}{\partial\theta^{l}_{i,j}}$, $d^{l+1}$ eigenvectors of the Hessian with eigenvalue zero, and $d^{l+1}$ fully independent free directions in the loss landscape than span a fully free $d^{l+1}$ dimensional hyperplane. So the effective parameter count $N_{\text{eff}}$ will be lower than the nominal number of parameters in the model $N$ by $d^{l+1}$ for each such degree of linear dependence in the hidden representations.
+
+More generally, we can take a PCA of the activation vectors in layer $l$ by diagonalising the Gram matrix of activations
+
+$$\displaystyle G^{l} \displaystyle=\frac{1}{n}\sum_{x\in\operatorname{\mathcal{D}}}\mathbf{f}^{l}(x){\mathbf{f}^{l}(x)}^{T} \tag{14}$$
+
+$$\displaystyle=:{U^{l}}^{T}D_{G}^{l}U^{l}$$
+
+If there is linear dependence between the activations on the dataset, some of the singular values (eigenvalues of $G^{l}$) will be zero. If we transform into rotated layer coordinates $\tilde{\mathbf{f}}^{l}(x)=U^{l}\mathbf{f}^{l}(x),\tilde{W}^{l}=W^{l}{U^{l}}^{T}$, then the parameters of the transformed weight matrix in rows which connect to the directions with zero variance can be changed freely without changing the product $\tilde{W}^{l}\tilde{\mathbf{f}}^{l}$.
+
+In reality, a gram matrix of activation vectors will never have eigenvalues that are exactly 0. However, if a particular eigenvalue has size $\sqrt{\frac{1}{n}\sum_{x\in\operatorname{\mathcal{D}}}\left({\tilde{f}^{l}}_{j}(x)\right)^{2}}=O(\epsilon^{k})$ for some $\epsilon\ll 1$, the transformed parameters inside ${\tilde{W}^{l}}$ can be changed by $O(\epsilon^{\frac{1}{2}-k})$ while only impacting the loss $L$ by $O(\epsilon)$.
+
+This suggests that, under the finite-data SLT picture introduced in Section 2.2.2, singular values of the set of activation vectors that are less than $\epsilon^{\frac{1}{2}}$ for noise scale $\epsilon$ result in a lower effective parameter count, with $d^{l+1}$ effective parameters less for every small singular value. So, if we view the PCA components in a layer $l$ as the ’elementary variables’ of that layer, then the fewer elementary variables the network has in total, the lower the effective parameter count will be.
+
+##### Relationship to weight norm
+
+One might be concerned that linear dependencies between the activation vectors on the training dataset might not hold for activation vectors outside the training dataset, such that the entries of the weight matrix that we are treating as free do in fact affect the off-distribution outputs of the network.
+
+However, SOTA optimisers often use weight decay or $\ell^{2}$ weight regularisation during training to improve network generalization (Loshchilov and Hutter, 2019). This biases training towards networks with a smaller total $\ell^{2}$-weight norm, $||\theta||_{2}=\sum_{l=1}^{l_{\text{final}}}||W^{l}||_{F}$. Since the Frobenius norm $||W^{l}||_{F}$ is invariant under orthogonal transformations, the weight regularisation can equivalently be thought of as biasing training towards low $||\tilde{W}^{l}||_{F}$. Since the entries of $\tilde{W}^{l}$ which connect to the zero principal components do not affect the output, the training will be biased to push them to 0. This is an example of weight regularisation improving generalisation performance: if, at inference time, an activation vector has variation in a direction not seen during training, a regularised model ignores that component of the activation vector.
+
+#### 3.1.2 Jacobians spanning a low dimensional subspace
+
+We have shown that if the set of activation vectors in some layer have linear dependence over a dataset, then some parameters are free to vary without affecting outputs on that dataset. A similar story can be told when the Jacobians $J^{l}_{ij}=\frac{\partial f^{l_{\text{final}}}_{i}(x)}{\partial p^{l+1}_{j}}$ do not span the full space of the layer. As with the activations, we look for zero eigenvalues in the gram matrix of the Jacobians:
+
+$$\displaystyle K^{l} \displaystyle=\frac{1}{n}\sum_{x\in\operatorname{\mathcal{D}}}\sum_{j}{J^{l}}^{T}J^{l} \tag{15}$$
+
+$$\displaystyle=:{R^{l}}^{T}D^{l}_{P}R^{l}$$
+
+Any zero eigenvalue in this gram matrix leads to $d^{l}$ zero eigenvalues in the Hessian, analogous to the previous section. We can transform into rotated layer coordinates $\tilde{W}^{l}=R^{l}W^{l}$, $\tilde{J}^{l}=J^{l}R^{l}{R^{l}}^{T}$and the parameters of the transformed weight matrix in columns which connect to the directions with zero variance can be changed freely without changing the product $\tilde{J}^{l}\tilde{W}^{l}$. However, unlike with the activation PCA components, the $d^{l}$ free directions in the Hessian from Jacobians spanning a low-dimensional subspace may not always correspond to $d^{l}$ full degrees of freedom in the parametrization. This is due to the potential presence of terms above second order in the perturbative expansion around the loss optimum, see equation 5, which can cause the loss to change if the parameters are varied along those directions despite the Hessian being zero Watanabe (2009).
+
+##### Jacobians between hidden layers
+
+Note that we can decompose each Jacobian from layer $l$ to layer $l_{\text{final}}$ into a product of Jacobians between adjacent layers by the chain rule:
+
+$$\frac{\partial\mathbf{f}^{l_{\text{final}}}(x)}{\partial\mathbf{p}^{l+1}_{i}}=\frac{\partial\mathbf{f}^{l_{\text{final}}}(x)}{\partial\mathbf{f}^{l_{\text{final}}-1}}\frac{\partial\mathbf{f}^{l_{\text{final}}-1}(x)}{\partial\mathbf{f}^{l_{\text{final}}-2}}\dots\frac{\partial\mathbf{f}^{l+2}(x)}{\partial\mathbf{f}^{l+1}}\frac{\partial\mathbf{f}^{l+1}(x)}{\partial\mathbf{p}^{l+1}}\,. \tag{16}$$
+
+Thus, any rank drop in a gram matrix of Jacobians from layer $l+k$ to layer $l+k+1$ necessarily also leads to a rank drop in the gram matrix of the Jacobians from layer $l$ to layer $l_{\text{final}}$, and thus $d^{l}$ zero eigenvalues in the Hessian.
+
+### 3.2 Synchronized nonlinearities
+
+In this section, we demonstrate a third example of internal structure that affects the effective parameter count of the model. The two examples we presented in the previous sections might be thought of as showing how the network having fewer relevant variables in its representation in a layer leads to more degeneracy. The example we present in this section shows how the network performing “fewer operations” leads to more degeneracy.
+
+In a dense layer with piecewise linear activation functions (ReLU or LeakyReLU), the effective parameter count is reduced if two neurons have the same set of data points for which they are ‘on’ and ‘off’. We call neurons with this property synchronized with each other. For simplicity, in this section, we will consider a dense feedforward network with ReLU nonlinearities at each layer, and the same hidden width $d$ throughout.
+
+We define the neuron firing pattern
+
+$$\displaystyle r^{l}_{i}(x)=\frac{f^{l}_{i}(x)}{p^{l}_{i}(x)}\text{\ if\ }p^{l}_{i}(x)\neq 0,\ \text{else}\ r^{l}_{i}(x)=1\,, \tag{17}$$
+
+where $p^{l}_{i}(x)=\sum_{j}W^{l-1}_{i,j}f^{l-1}_{j}(x)$ is the preactivation of neuron $i$. We call two neurons $i$ and $j$ synchronized if they always fire simultaneously on the training data, $r^{l}_{i}(x)=r^{l}_{j}(x)\,\forall x\in\operatorname{\mathcal{D}}$.
+
+##### All synchronized
+
+As a pedagogical aid, and to demonstrate a point on how the effective parameter count is invariant to linear layer transitions, we first consider the case of all the neurons in layer $l+1$ being synchronized together in the same firing pattern $r^{l+1}(x)$. Then we can write:
+
+$$\displaystyle\mathbf{f}^{l+2}(x) \displaystyle=\operatorname{ReLU}\left(W^{l+1}\operatorname{ReLU}(W^{l}\mathbf{f}^{l}(x))\right)=\operatorname{ReLU}\left(W^{l+1}r^{l+1}(x)W^{l}\mathbf{f}^{l}(x)\right)\,,$$
+
+meaning $W^{l}$ and $W^{l+1}$ effectively act as a single $d\times d$ dimensional matrix $\tilde{W}=W^{l+1}W^{l}$. Thus, any setting of the weights $W^{l}$ and $W^{l+1}$ that yield the same $\tilde{W}$ do not change the network’s outputs on the training data, so long as we avoid changing any of the $r^{l+1}_{i}(x)$. We can ensure that the $r^{l+1}_{i}(x)$ do not change as we vary the weights by restricting ourselves to alternate weight matrices
+
+$$\displaystyle W^{l+1}\to W^{l+1}C^{-1},W^{l}\to CW^{l}\quad\text{with $C$ invertible and}\quad C_{i,j}\geq 0\,\forall i,j\,. \tag{18}$$
+
+Note that a linear layer (without activation function, i.e. $f_{i}=p_{i}$) is just a special case of all neurons being synchronized $\forall i,x:r^{l+1}_{i}(x)=1$. When $W^{l}$ is full rank, the drop in the effective parameter count from full synchronisation is the number of parameters in layer $l$. So we see that from the perspective of the effective parameter count, linear transitions ‘do not cost anything’ — including the linear transition in the model does not meaningfully increase the effective parameter count compared to skipping the layer entirely. We are simply passing variables to the next layer without computing anything new with them.[^6]
+
+##### synchronized blocks
+
+Now, we consider the general case of arbitrary neuron pairs in a layer being synchronized or approximately synchronized. We can organise neurons into sets $S_{a},a=1,\dots a_{\text{max}}$, with the same activation patterns $r^{l+1}_{S_{a}}(x)$ for all neurons in the set. We call these sets synchronized blocks. This works because synchronisation is a transitive property, if $r^{l+1}_{1}(x)=r^{l+1}_{2}(x)$ and $r^{l+1}_{1}(x)=r^{l+1}_{3}(x)$, then $r^{l+1}_{1}(x)=r^{l+1}_{3}(x)$.
+
+Each neuron belongs to one block, so $\sum^{a_{\text{max}}}_{a=1}|S_{a}|=d$. Then we have:
+
+$$\displaystyle f_{i}^{l+2}(x) \displaystyle=\operatorname{ReLU}\left(\sum_{j}\sum^{a_{\text{max}}}_{a=1}r^{l+1}_{S_{a}}(x)\sum_{k\in S_{a}}W^{l+1}_{ik}W^{l}_{kj}f_{j}^{l}(x)\right). \tag{19}$$
+
+We can replace $W^{l+1}\to W^{l+1}C^{-1},\>W^{l}\to CW^{l}$, where the matrix $C$ has a block-diagonal structure
+
+$$\displaystyle C=\begin{pmatrix}C_{[1]}&&0\\ &\ddots&\\ 0&&C_{[a_{\text{max}}]}\par\end{pmatrix}\quad\text{with invertible blocks}\quad C_{[a]}\in\mathbb{R}^{|S_{a}|\times|S_{a}|}$$
+
+$$\displaystyle C_{[a],k^{\prime},k}>0\,\forall k,k^{\prime}\in(1,\dots,|S_{a}|)\,.$$
+
+Just as we do not expect activations and gradients to have exact rank drops, we do not expect exact neuron synchronisation to be common in real models. Instead, we can consider two neurons to be approximately synchronized if their activations only meaningfully differ on a few datapoints. Numerically, we can define:
+
+$$\displaystyle|r^{l+1}_{a}|^{2}=\frac{1}{|\operatorname{\mathcal{D}}|}\sum_{x\in\operatorname{\mathcal{D}}}\sum_{i,i^{\prime}\in S_{a}}\left(r^{l+1}_{i}(x)p^{l+1}_{i}(x)-r^{l+1}_{i}(x)p^{l+1}_{i^{\prime}}(x)\right)^{2}\;. \tag{20}$$
+
+If $|r^{l+1}_{a}|^{2}$ is non-zero but small, choosing different weight matrices as above will only increase the loss by an amount proportional to $O(|r^{l+1}_{a}|^{2})$.
+
+##### Degeneracy counting
+
+: For each pair of synchronized neurons $r^{l+1}_{i}(x),r^{l+1}_{i^{\prime}}(x)$, we can set a pair of off-diagonal entries $C_{k,k^{\prime}},C_{k^{\prime},k}$ in $C$ to arbitrary positive values when we change the weights to $W^{l+1}\to W^{l+1}C^{-1},W^{l}\to CW^{l}$. If $W^{l}$ is full rank, the rows $k$ and $k^{\prime}$ are linearly independent, so this synchronized pair will result in two free directions in parameter space. Thus, we have as many free directions in parameter space as we have synchronized neurons. We can also count this as the number of the synchronized neurons in each block squared
+
+$$\displaystyle N^{l+1}=\sum^{a_{\text{max}}}_{a=1}|S_{a}|^{2}.$$
+
+We then see that $N^{l+1}$ is highest if all the neuron firing patterns are synchronized, and lowest when all neurons have different firing patterns.
+
+However, $W^{l}$ is not always full rank. Further, if we want to combine the degrees of freedom from neuron synchronisation with other degrees of freedom from this section, we have to be careful to avoid double-counting. If the activations in layer $l$ lie in low-dimensional subspaces, then some of the $d^{2}$ degrees of freedom above may already have been accounted for. If we remove those double-counted degrees of freedom and control for the rank of $W^{l}$, each synchronized block only provides additional degrees of freedom equal to the dimensionality of the space spanned by the preactivations of block $S_{a}$ over the dataset $\operatorname{\mathcal{D}}$ squared, which we denote
+
+$$s^{l+1}_{a}:=\text{dim}(\text{span}\{p^{l+1}_{k}|k\in S_{a}\})\,. \tag{21}$$
+
+So more generally, the additional amount of degeneracy the effective parameter count is lowered by will be
+
+$$N^{l+1}=\sum_{a}(s^{l+1}_{a})^{2}\,. \tag{22}$$
+
+The trivial case of self-synchronisation $i=i^{\prime}$ is not excluded here in this formula. It corresponds to the generic freedom to vary the diagonal entries of $C$, $C_{k,k}$ of a ReLU layer: scaling all the weights going into a neuron by $C_{k,k}\in\mathbb{R}^{+}$ and scaling all the weights out of the neuron by $1/C_{k,k}$ does not change network behavior.
+
+##### Attention
+
+A similar dynamic holds in the attention layers of transformers, with the attention patterns of different attention heads playing the role of the $\operatorname{ReLU}$ activation patterns. If two different attention heads $h_{1},h_{2}$ in the same attention layer have synchronized attention patterns on the training data set, their value matrices $W^{h_{1}}_{V},W^{h_{2}}_{V}$ can be changed to add elements in the span of the value vectors of one head to the other head, with the output matrices $W^{h_{1}}_{O},W^{h_{2}}_{O}$ that project results back into the residual stream being modified to undo the change. If $W^{h_{1}}_{V},W^{h_{2}}_{V}$ are full rank, this results in $2d^{2}_{\text{head}}$ degrees of freedom in the loss landscape for each synchronized attention head, in addition to the generic $d^{2}_{\text{head}}$ degrees of freedom per attention head that are present in every transformer model. If $W^{h_{1}}_{V},W^{h_{2}}_{V}$ is not full rank, we account for this similarly as we did with the neurons above.
+
+## 4 Interaction sparsity from parameterisation-invariance
+
+In the introduction, we argued that if we can represent a neural network in a parameterisation-invariant way, then this representation is likely to be a good starting point for reverse-engineering the computation in the network. The intuition behind this claim is that in the standard representation, parts of the network which do not affect the outputs act to obfuscate and hide the relevant computational structure — once these are stripped away, computational structure is likely to become easier to see. One way this could manifest is through the new representation having greater interaction sparsity.
+
+In this section, we demonstrate that picking the right representation can indeed lead to sparser interactions throughout the network. Specifically, we show that we can find a representation such that, for every drop in the effective parameter count caused by either (a) activation vectors not spanning the activation space (Section 3.1.1) or (b) neuron synchronisation (Section 3.2), there is at least one pair of basis directions in adjacent layers of the network that do not interact.
+
+The role of this section is to provide a first example of a representation of a network which has been made invariant to some reparameterisations, and show that this representation has correspondingly fewer interactions between variables. The algorithm sketch used to find the representation here is not very suitable for selecting sparsely connected bases in practical applications, since it is somewhat cumbersome to extend to non-exact linear dependencies. We introduce a way to choose a basis for the activations spaces that is more suitable for practical applications in Section 6.
+
+Consider a dense feedforward network with ReLU activation functions, with $N_{\text{free}}$ degrees of freedom in its parameterization that arise from a combination of
+
+1. The gram matrix of activation vectors in some layers being low rank, see Section 3.1.1.
+2. Blocks of neurons being synchronized, see Section 3.2.
+
+We will now show that we can find a representation of the network that
+
+1. exploits the degrees of freedom due to low-dimensional activations to sparsify interactions through a re-parametrisation.
+2. exploits the degrees of freedom from neuron synchronisation to sparsify interactions through a coordinate transformation, without losing the sparsity gained in step 1.
+
+##### Sparsifying using low dimensional activations
+
+Here, we show how to exploit the degrees of freedom in the network due to low-dimensional activations in the input layer to sparsify interactions.
+
+Suppose that the gram matrix of activations $\mathbf{f}^{(1)}(x)$ of the input layer, $G^{(1)}=\frac{1}{n}\sum_{x}f^{(1)}_{i}(x)f^{(1)}_{j}(x)$ is not full rank. This means that we can take a set of $\text{rank}\left(G^{(1)}\right)$ neurons as a basis for the space. This will be fewer neurons than the width $d^{(1)}$ of the input payer. Writing
+
+$$\forall j\in(\text{rank}\left(G^{(1)}\right)+1,\dots,d^{(1)}):f^{(1)}_{j}=\sum_{i=1}^{\text{rank}\left(G^{(1)}\right)}(c_{j})_{i}f^{(1)}_{i}\,, \tag{23}$$
+
+we can replace the weights $W^{(1)}$ with new weights
+
+$$\displaystyle\tilde{W}^{(1)}_{ij}:=\begin{cases}W^{(1)}_{ij}+\sum_{k=\text{rank}\left(G^{(1)}\right)+1}^{d^{(1)}}(c_{k})_{j}W_{ik}&1\leq j\leq\text{rank}\left(G^{(1)}\right)\\ 0&\text{rank}\left(G^{(1)}\right)<j\leq d^{(1)}\end{cases} \tag{24}$$
+
+In this way we can disconnect $(d^{(1)}-\text{rank}\left(G^{(1)}\right))$ many neurons from the next layer without changing the activations in layer 2 at all on the training dataset, since $\tilde{W}^{(1)}\mathbf{f}^{(1)}=W^{(1)}\mathbf{f}^{(1)}$. For every degree of linear dependence we may have had in layer $1$, we now have $d^{(2)}$ weights set to zero, where $d^{(2)}$ is the width of the second MLP layer. Since two neurons that are connected by a weight of 0 do not interact, this means that we can associate each drop in the effective parameter count caused by linear dependence between activations in layer 1 with a pair of nodes in the interaction graph which do not interact.
+
+##### Sparsifying using synchronized neurons
+
+Now, we show that we can exploit the degrees of freedom in the network from the synchronisation of neurons in the first hidden layer to sparsify interactions without losing any of the sparsity we gained in the previous step.
+
+Taking the example of the second layer $\mathbf{f}^{(2)}$, we want to find a new coordinate basis $\hat{\mathbf{f}}^{(2)}=C^{(2)}\mathbf{f}^{(2)}$ in which there is at least one pair of variables $(\hat{f}_{i}^{(2)},f^{(1)}_{j})$ that does not interact for each drop in the effective parameter count caused by neuron synchronisation.
+
+To choose this basis, we start by finding all pairs of neuron firing patterns $r^{l}_{i}(x)$ in layer $2$ that are synchronized and group them into sets of synchronized blocks. Continuing with the same notation as in Section 3.2, we denote the blocks of synchronized neurons $S_{a},a\in(1,\dots,a_{\text{max}})$, with size $|S_{a}|$, and we use the notation $M_{[a]}$ to denote the matrix in $\mathbb{R}^{s_{a}\times s_{a}}$ with entries given by $M_{ij}\>\forall i,j\in S_{a}$. Then, we choose the transformation $C^{(2)}$ to be block diagonal
+
+$$\displaystyle C^{2}=\begin{pmatrix}C^{2}_{[1]}&&0\\ &\ddots&\\ 0&&C^{2}_{[a_{\text{max}}]}\par\end{pmatrix}\,, \tag{25}$$
+
+with the blocks given by the inverse[^7] of the $|S_{a}|\times|S_{a}|$ blocks of $\tilde{W}^{(1)}$:
+
+$$\displaystyle C^{(2)}_{[a]}=\left(\tilde{W}^{(1)}_{[a]}\right)^{-1}\,, \tag{26}$$
+
+$$\displaystyle\tilde{W}^{(1)}_{[a]}=\begin{pmatrix}W^{(1)}_{\sigma_{a-1}+1,\sigma_{a-1}+1}&\cdots&W^{(1)}_{\sigma_{a},\sigma_{a-1}+1}\\ \vdots&\ddots&\vdots\\ W^{(1)}_{\sigma_{a-1}+1,\sigma_{a}}&\cdots&W^{(1)}_{\sigma_{a},\sigma_{a}}\end{pmatrix}\quad\text{for}\,\sigma_{a}=\sum_{b=1}^{a}s_{b} \tag{27}$$
+
+This coordinate transformation will set one interaction to zero per drop in the effective parameter count caused by neuron synchronisation. To see this, we first consider that $C^{(2)}$ commutes with the nonlinearity applied between layers 1 and 2
+
+$$\forall x:C^{(2)}\text{ReLU}\left(W^{(1)}\mathbf{f}^{(1)}(x)\right)=\text{ReLU}\left(C^{(2)}W^{(1)}\mathbf{f}^{(1)}(x)\right) \tag{28}$$
+
+The product $\hat{W}^{(1)}=C^{(2)}\tilde{W}^{(1)}$ will thus have block diagonal entries equal to the identity $\hat{W}^{(1)}_{[a]}=\mathbf{I}_{|S_{a}|}$. This means $\hat{W}^{(1)}$ will at minimum have an additional $\sum_{a}{(s^{(2)}_{a})}^{2}-d^{(2)}$ entries that are zero — one non-interacting pair of nodes per degree of non-generic parametrization freedom caused by neuron synchronization, see equations 21, 22. These absent interactions are distinct from those due to the activation vectors in layer 1 not spanning the full activation space we found in the previous step. Thus, the minimum absent interactions add up to be equal or greater to the degrees of freedom in the loss landscape stemming from low dimensional activations in the input layer $f^{(1)}$ or synchronized neurons in the first hidden layer $f^{(2)}$.
+
+##### Repeat for every layer
+
+Now, we can repeat the previous two steps for all layers, moving recursively from the input layer to the output layer. We check if the activation vectors in layer 2 do not span the activation space and pick new weights $\tilde{W}^{(2)}$ accordingly. Then we check if any neurons in layer three are synchronized and transform $\hat{\mathbf{f}}^{(3)}=C^{(3)}\mathbf{f}^{(3)}$ accordingly. We repeat this for every layer in the network.
+
+We thus obtain new weight matrices, and a new basis for the activations of every layer in the network. Treating the new basis vectors in each layer as nodes in a graph, we can build a graph representing the interactions in the network. This graph will have two properties:
+
+1. It has at least one interaction that is zero for every drop in the effective parameter count introduced by neuron synchronisation or activation vectors spanning a low dimensional subspace
+2. It is invariant to reparameterisations that exploit these degeneracies.
+
+## 5 Modularity may contribute to degeneracy
+
+A core goal of interpretability is breaking up a neural network into smaller parts, such that we can understand the entire network by understanding the individual parts. In this section we propose a particular notion of modularity that could be used to identify these smaller parts. We argue that this notion of modularity is likely to occur in real networks due to its relation to the LLC.
+
+The core claim of this section is that more modular networks are biased towards lower LLC. We argue that if modules in a network interact less (i.e the network is more modular) this yields a higher total degeneracy and thus a lower LLC. Each module has internal degeneracies: if two modules do not interact then the degeneracies in each are independent of each other, so the total amount of degeneracy in the network (from these modules) is at least the sum of the amount of degeneracy within each module. However, if the modules are interacting, then the degeneracies may interact with each other, and the total amount of degeneracy in the network can be less. Therefore, networks which have non- or weakly- interacting modules typically have more degeneracy and thus a lower LLC, which means that neural networks are biased towards solutions which are modular.
+
+The argument in this section does not preclude non-modular networks from having a lower LLC than modular networks in any specific instance. Instead, this section presents an argument that, all else equal, modularity is associated with a lower effective parameter count. This argument could fail in practice if more modularity turns out to increase the effective parameter count of models for a different reason, or if real neural networks simply do not have low-loss modular solutions.
+
+In Section 5.1 we define interacting and non-interacting degeneracies, and show that the total degeneracy is higher in when individual degeneracies do not interact. In Section 5.2 we quantify how modularity affects the LLC by studying a series of increasingly realistic scenarios. First, we consider the case of twomodules which do not interact at all in Section 5.2.1. Then we explore how to modify the analysis for modules which have a small number of interacting variables in Section 5.2.2. Finally, in Section 5.2.3 we extend our analysis to allow for the strength of interactions to vary. We arrive at a modularity metric which can be used to search for modules in a computational graph.
+
+### 5.1 Interacting and non-interacting degeneracies
+
+Figure 1: Example of a loss landscape with interacting free directions, from (Carroll, 2023), lightly edited. The loss does not change when changing $w_{1}$ alone or $w_{2}$ alone, so there are two free directions in the landscape. However, the loss does change when changing both $w_{1}$ and $w_{2}$ together, so the set of zero loss is cross-shaped rather than spanning the whole plane. Thus, despite there apparently being two free directions, the effective parameter count that characterises the dimensionality of the low loss volume is $1$ rather than $0$. Non-interacting sets of parameters have no joined terms like this in the loss function, so their free directions always span full subspaces with each other.
+
+If a network’s parameterization has a degeneracy, then there is some way the parameters of the network can change without changing the input-output behavior of the network. This change corresponds to a direction that can be traversed through the parameter space along which the behavioral loss stays zero. We call such a direction a free direction in the parameter space. It’s also possible for a parameterization to have multiple degeneracies and thus multiple free directions.
+
+We call a set of free directions non-interacting if traversing along one free direction does not affect whether the other directions remain free. In this case, the set of non-interacting free directions span an entire free subspace of the parameter space. In a parameter space with $\theta=(w_{1},w_{2},w_{3})$ and loss given by $L(w_{1},w_{2},w_{3})=w_{1}^{2}$, we are free to pick any value of $w_{2}$ and $w_{3}$ while remaining at the minimum of the loss provided that $w_{1}=0$. The area of constant loss is a 2-dimensional plane.
+
+The set of free directions is called interacting if traversing along one free direction does affect whether other directions remain free. For an extreme example, consider the loss function $L(w_{1},w_{2})=w_{1}^{2}w_{2}^{2}$ (figure 1) at its minimum (0,0). In this case there are two free directions, but when we traverse along one free direction the other direction ceases to be free. The area of constant loss does not span a full subspace (a 2-dimensional plane); here is resembles a cross (see Figure 1) which is a 1-dimensional object.
+
+We can explicitly calculate the number of degrees of freedom (the difference between the effective parameter count (equation 9) and the nominal parameter count) in each of these two loss landscapes. We find that the first landscape has two degrees of freedom but the second has only one. These are two extremes of fully interacting and fully non-interacting free directions. It is also possible to construct intermediate loss landscapes in which the number of degrees of freedom arising from two free directions is a non-integer value between 1 and 2. In general, for a given set of free directions, the lowest the effective parameter count can be is the non-interacting case.
+
+### 5.2 Degeneracies in separate modules only interact if the modules are interacting
+
+In this section we quantify the increase in the effective parameter count, and equivalently the LLC, from perfect and near-perfect modularity. We show that a network consisting of non-interacting modules has a low effective parameter count, and that a network with modules which interact through a single variable has only a slightly higher effective paraeter count.
+
+Consider a modular neural network $\mathbf{f}_{\theta}(x)$ consisting of two parallel modules $M_{1}$ and $M_{2}$. The modules take in different variables $x_{1},x_{2}$ from the input $x=(x_{1},x_{2})$, and the output of the network is the concatenation of the module outputs $\mathbf{f}_{\theta}(x)=(M_{1}(x_{1}),M_{2}(x_{2}))$. We assign every activation direction in the network to either $M_{1}$ or $M_{2}$.
+
+We split the parameter space $\Theta$ into 3 subspaces: $\Theta=\Theta_{1}\oplus\Theta_{2}\oplus\Theta_{1\leftrightarrow 2}$. $\theta_{1}\in\Theta_{1}$ are the parameters inside $M_{1}$ (i.e.parameters that affect interactions between two activations within $M_{1}$), $\theta_{2}$ is the space of the parameters inside $M_{2}$, and $\theta_{1\leftrightarrow 2}$ is the space of parameters which affect interactions between activations of both modules.
+
+#### 5.2.1 Non-interacting case
+
+We start by analyzing a network consisting of two perfectly separated modules; the values of activations in $M_{1}$ have no effect on activations in $M_{2}$, i.e. $\theta_{1\leftrightarrow 2}=0$ and the network output is given by
+
+$$\mathbf{f}_{\theta}(x)=(M_{1}(\theta_{1},x_{1}),M_{2}(\theta_{2},x_{2})). \tag{29}$$
+
+Consider now two free directions in parameter space, where one lies entirely in $\Theta_{1}$, and the other lies entirely in $\Theta_{2}$. Since $M_{1}$ and $M_{2}$ share no variables and do not interact, there is no way for a change to parameters along one free direction to affect the freedom of the other direction. Therefore, one dimensional degeneracies that are in different disconnected modules must be non-interacting. By contrast, if $M_{1}$ and $M_{2}$ were connected, their free directions could interact.
+
+We break up the behavioral loss with respect to this network into three terms:
+
+$$L_{B}(\theta|\theta^{*},\operatorname{\mathcal{D}})=L_{1}(\theta_{1}|\theta^{*}_{1},\operatorname{\mathcal{D}})+L_{2}(\theta_{2}|\theta^{*}_{2},\operatorname{\mathcal{D}})+L_{1\leftrightarrow 2}(\theta_{1},\theta_{2},\theta_{1\leftrightarrow 2}|\theta^{*}_{1},\theta^{*}_{2},0,\operatorname{\mathcal{D}}) \tag{30}$$
+
+$L_{1}$ and $L_{2}$ are the parts of the behavioral loss than involve only $\theta_{1}$ and $\theta_{2}$ respectively, and $L_{1\leftrightarrow 2}$ contains all the other parts. So long as we ensure $\theta_{1\leftrightarrow 2}=0$, we have $L_{1\leftrightarrow 2}=0$. Then a calculation shows that the overall number of degrees of freedom ($N_{\text{free}}=N-N_{\text{eff}}$) for this behavioral loss, restricted to the subspace in which $\theta_{1\leftrightarrow 2}=0$, is equal to the sum of the number of degrees of freedom in each module.
+
+There could be additional free directions involving moving $\theta_{1\leftrightarrow 2}$ away from $0$. These free directions are not guaranteed not to interact with the free directions in each module, and our argument says nothing about how large additional contributions to the effective parameter count from varying $\theta_{1\leftrightarrow 2}$ may be.
+
+#### 5.2.2 Adding in interactions between modules
+
+Next, we consider the case that there are a small set of activations $v_{1},\dots,v_{m}$ inside $M_{1}$ that causally affect the value of some activations inside $M_{2}$ (due to not all the parameters in $\theta_{1\leftrightarrow 2}$ being 0). This means that the two modules are now interacting with each other. In that case, the only degeneracies in $M_{1}$ which are guaranteed not to interact with the degeneracies in $M_{2}$ are those which do not affect the value of any of the $v_{i}$.
+
+Picture $M_{1}$ as a causal graph, where the nodes are activations and the edges are weights or nonlinearities. The nodes inside $M_{1}$ are connected to the ‘outside’ of $M_{1}$ via (a) the input layer, where $M_{1}$ takes in inputs, (b) the output layer, where $M_{1}$ passes on its outputs, and (c) the ‘mediating’ nodes $v_{i}$ where variations affect what happens inside $M_{2}$. The free directions inside $M_{1}$ that are guaranteed not to interact with free directions outside $M_{1}$ are those directions that leave this entire interaction surface invariant: the directions which do not change any of the mediating nodes as we traverse along them. Each mediating node that is present is an additional constraint on which free directions are guaranteed to be non-interacting. The more approximately independent nodes that are part of that interaction surface, the fewer free directions in $M_{1}$ might be generically expected to satisfy these constraints.
+
+In the previous section, we argued that the degrees of freedom of the network with noninteracting modules, restricted to the subset of parameter space in which $\theta_{1\leftrightarrow 2}=0$, was equal to the sum of the degrees of freedom in each module. In this section, $\theta_{1\leftrightarrow 2}^{*}\neq 0$, but modifying the argument to restrict to the subset of parameter space in which $\theta_{1\leftrightarrow 2}=\theta_{1\leftrightarrow 2}^{*}$ is not sufficient to fix the argument, because the degeneracies interact.
+
+To fix the argument, we introduce the constrained loss function for parameters in $M_{1}$:
+
+$$L_{1,C}(\theta_{1}|\theta_{1}^{*},\operatorname{\mathcal{D}},v_{1},\dots,v_{m})=L_{1}(\theta_{1}|\theta_{1}^{*},\operatorname{\mathcal{D}})+\frac{1}{n}\sum_{i=1}^{m}\sum_{x\in\operatorname{\mathcal{D}}}{\left(v_{1}(\theta_{1}^{*},x)-v_{1}(\theta_{1},x)\right)}^{2} \tag{31}$$
+
+This loss function is the same as the part of the behavioral loss that depends only on parameters in $M_{1}$, except that it has extra MSE terms added to ensure that the points with very small loss also preserve the values of $v_{1},\dots,v_{m}$ on all datapoints. This means its learning coefficient is higher than for the unconstrained behavioral loss. The key property of the constrained loss landscape is that free directions in are guaranteed to be non interacting with free directions in the loss landscape $L_{2}$. Therefore, we are able to say that the total effective parameter count of the network consisting of two interacting modules, when constrained to the subspace $\theta_{1\leftrightarrow 2}=\theta_{1\leftrightarrow 2}^{*}$, really is twice the sum of the learning coefficient for the loss function $L_{2}$, and for the loss function $L_{1,C}$[^8].
+
+As before, there could be additional free directions involving moving $\theta_{1\leftrightarrow 2}$ away from $\theta_{1\leftrightarrow 2}^{*}$, which may interact with the free directions in each module. Since we have not characterized the effect of these free directions on the effective parameter count, we cannot confidently conclude that networks with more separated modules reliably have lower effective parameter counts overall. For example, it may be possible that on most real-world loss landscapes, there are many more non-modular solutions than modular ones, and that typically the place in parameter space with lowest loss and lowest effective parameter count is not modular. However, we are not aware of any compelling reason why non-modular networks have some advantage in terms of having low effective parameter counts, to combat the advantage of modular networks discussed in this section.
+
+#### 5.2.3 Varying the strength of an interaction
+
+In the precious section, we discussed the case that two modules interact via $m$ nodes. However, this model had no notion of how strong an interaction is — every node inside $M_{1}$ either is not on the interaction surface, or it is, and all nodes on the interaction surface affects the nodes inside $M_{2}$ the same amount. In real networks, the extent to which one activation can affect another is continuous. Therefore, we’d like to be able to answer questions like the following:
+
+> Suppose that we have two networks both consisting of two modules, $M_{1}$ and $M_{2}$. In the first network, there is a single node inside $M_{1}$ that strongly influences $M_{2}$, and in the second there are two nodes inside $M_{1}$ that both weakly influence $M_{2}$. Which of these two networks is likely to have a lower effective parameter count?
+
+In this section we’ll attempt to answer this question. To do so, we will make use of the notion of an effective parameter count at a finite loss cutoff $\epsilon$ (Section 2.2.2). We show that the magnitude of the total connections through different independent mediating nodes $v_{1},v_{2}$ seems to add approximately logarithmically to determine the effective ‘size’ of the total interaction surface between modules.
+
+As before, we consider two modules $M_{1}$ and $M_{2}$, connected through a number of mediating variables $v_{1},\dots,v_{m}$ that are part of $M_{1}$ and which $M_{2}$ depends on. Let each of these mediating variables connect to $M_{2}$ through a single weight, $w_{1},\dots,w_{n}$[^9].
+
+If $w_{i}$ is sufficiently small relative to the loss cutoff $\epsilon$, the connection between modules via $v_{i}$ will be so small that it can be considered no connection at all from the perspective of interactions between free directions in different modules. This would be if the loss increases when we traverse along both free directions simultaneously by an amount that is smaller than $\epsilon$.
+
+Quantitatively, if we traverse along a free direction in $\Theta_{1}$ that changes the value of $v_{i}(\theta_{1}|x)$, then for small enough $\epsilon$ (and a network with locally smooth-enough activation functions), the resulting change in the MSE loss of the whole network $L$ will be proportional to $w^{2}_{i}$. If $w_{i}=O\left(\epsilon^{\frac{1}{2}}\right)$, that means the connection is ‘effectively zero’ relative to the given cutoff $\epsilon$, in the sense that the volume of points with $L(\theta)<\epsilon$ is not substantially impacted by the terms in the loss involving $w_{i}$.
+
+Now we consider larger connections $w_{i}=\epsilon^{k_{i}}$ with $k_{i}\in(0,\frac{1}{2})$. We can model this situation by taking the size of $w_{i}$ into account in the constrained loss (equation 31). We define the weighted constrained loss by a sum over mean squared errors for preserving each mediating variable, weighted by the size of the variable:
+
+$$\displaystyle L_{1,C}(\theta_{1}|\theta_{1}^{*},\theta_{1\leftrightarrow 2}^{*},\operatorname{\mathcal{D}},v_{1},\dots,v_{m})=L_{1}(\theta_{1}|\theta_{1}^{*},\operatorname{\mathcal{D}})+\frac{1}{n}\sum^{m}_{i=1}\epsilon^{2k_{i}}\sum_{x\in\operatorname{\mathcal{D}}}{\left(v_{i}(\theta_{1}^{*},x)-v_{i}(\theta_{1},x)\right)}^{2} \tag{32}$$
+
+where we’ve made $L_{1,C}$ depend on $\theta^{*}_{1\leftrightarrow 2}$ here because $w_{i}$ are parameters in $\theta^{*}_{1\leftrightarrow 2}$. We are interested then in how much smaller the learning coefficient for loss landscape $L_{1}$ is than the learning coefficient on landscape $L_{1,C}$, as a function of loss cutoff $\epsilon$. This depends heavily on the details of the model. If the constraints are completely independent, we could perhaps model the presence of each constraint as destroying some number $\gamma_{i}$ of degrees of freedom compared to the model in which the constraints were not present (and the modules were fully non-interacting).
+
+$$\displaystyle N_{\text{eff, C}}=N_{\text{eff}}+\sum^{m}_{i=1}\gamma_{i}\,.$$
+
+Now, we seek an expression for $\gamma_{i}$ in terms of $w_{i}$. Since we require $L_{B}(\theta)<\epsilon$, and each term in $L_{B}$ is positive, we also have that each constraint $MSE$ must be smaller than $\epsilon$. Rearranging, we find that
+
+$$\displaystyle\frac{1}{n}\sum_{x\in\operatorname{\mathcal{D}}}\left(v_{i}(\theta_{1}^{*},x)-v_{i}(\theta_{1},x)\right)^{2}=\epsilon^{1-2k_{i}}=\tilde{\epsilon}\,. \tag{33}$$
+
+Therefore, the weights $\epsilon^{2k_{i}}$ of each constraint effectively correspond to measuring the volume of points satisfying that constraint at a larger loss cutoff $\tilde{\epsilon}_{i}=\epsilon^{1-2k_{i}}$. Now, we make an assumption that if all the weights were 1, then each constraint would be responsible for removing a similar number $\tilde{\gamma}$ of degrees of freedom from the network. In other words, each constraint would restrict the volume of parameter space that achieves loss less than $\epsilon$ by the same amount. Then, we can rescale this region by the factor $\epsilon^{1-2k_{i}}$ and we find that:
+
+$$\displaystyle\gamma_{i}=\left(1-2k_{i}\right)\tilde{\gamma}=\left(1-2\frac{\log{w_{i}}}{\log{\epsilon}}\right)\tilde{\gamma}\,, \tag{34}$$
+
+Therefore, the size of the logarithm of the weight $w_{i}$ relative to the logarithm of the cutoff $\epsilon$ becomes a prefactor reducing the number of degrees of freedom removed by constraint $i$. If $w_{i}=1$, then $\gamma_{i}=\tilde{\gamma}$, and if $w_{i}\leq\epsilon^{\frac{1}{2}}$, then $\gamma_{i}=0$[^10].
+
+With this in mind, let us return to the question introduced at the start of this section. We will call the network with two weak interactions between modules network $A$, with two mediating nodes $v_{A,1},v_{A,2}$ and mediating weights $w_{A,1}=w_{A,2}$. Likewise, we denote the network with one strong interaction between modules by network $B$, with one mediating node $v_{B,1}$ and one mediating weight $w_{B}$. How large must $w_{B}$ be compared to $w_{A,1}$ and $w_{A,2}$ for the interactions between modules in network $B$ to effectively remove the same number of degrees of freedom as the interactions between modules in network $A$? Using equation LABEL:eq:log_scale, we find that
+
+$$\displaystyle\log{\left(\frac{w_{B}}{\epsilon^{\frac{1}{2}}}\right)}=\log{\left(\frac{w_{A,1}}{\epsilon^{\frac{1}{2}}}\right)}+\log{\left(\frac{w_{A,2}}{\epsilon^{\frac{1}{2}}}\right)}\,. \tag{35}$$
+
+So, the analysis in this section implies that connections through different mediating nodes should be considered to add together logarithmically for the purpose of estimating the number of interaction terms between degrees of freedom that live in different modules. In practice, the constraints different mediating variables impose on the loss 32 are likely rarely completely independent, so this should be seen as a rough approximation to be used as a starting guess for the relevant scale of the problem.
+
+If circuits in neural networks correspond to modules, the analysis in this section implies that we could identify circuits in networks by searching for a partition of the interaction graph of the network into modules which minimises the sum of logs of cutoff-normalised interaction strengths between modules.
+
+## 6 The Interaction Basis
+
+In this section, we propose a technique for representing a neural network as an interaction graph that is invariant to reparameterisations that exploit the freedoms in Sections 3.1.1 and 3.1.2. The technique consists of performing a basis transformation in each layer of the network to represent the activations in a different basis that we call the Interaction Basis.
+
+This basis transformation removes degeneracies in actviations and Jacobians of the layer to make the basis smaller. The basis is also intended to ‘disentangle’ interactions between adjacent layers as much as possible. While we do not know whether it accomplishes this in general, we do show that it does so when the layer transitions are linear. In that case, the layer transition becomes diagonal (appendix A). The interaction basis is invariant to invertible linear transformations,[^11] meaning the basis itself is a largely coordinate-independent object, much like an eigendecomposition (see Section 6.2).
+
+We conjecture that if we apply the interaction basis transformation to a real neural network, the resulting representation is likely to be more interpretable. In a companion paper, Bushnaq et al. (2024), we develop the interaction basis further and test this hypothesis.
+
+### 6.1 Motivating the interaction basis
+
+To find a transformation of network’s weights and activations that is invariant to reparameterisations based on low-rank activations or low-rank Jacobians, we take equation 10, and use equation 11 to rewrite it as
+
+$$\displaystyle H^{l,l^{\prime}}_{ij,i^{\prime}j^{\prime}}(\theta^{*})=\left.\frac{\partial^{2}L}{\partial\theta^{l}_{i,j}\partial\theta^{l^{\prime}}_{i^{\prime},j^{\prime}}}\right|_{\theta=\theta^{*}} \displaystyle=\frac{1}{n}\sum_{x\in\operatorname{\mathcal{D}}}f^{l}_{j}(x)f^{l^{\prime}}_{j^{\prime}}(x)\sum_{k}\frac{\partial f^{l_{\text{final}}}_{k}(x)}{\partial p^{l+1}_{i}}\frac{\partial f^{l_{\text{final}}}_{k}(x)}{\partial p^{l^{\prime}+1}_{i^{\prime}}}. \tag{36}$$
+
+Next, we make two presumptions of independence (Christiano et al., 2022), assuming that
+
+1. We can take expectations over the activations and Jacobians in each layer independently
+2. Different layers are somewhat independent such that the Hessian eigenvectors can be largely localised to a particular layer
+
+Both of these assumptions are investigated in Martens and Grosse (2020), who test their validity in small networks and use it to derive a cheap approximation to the Hessian and its inverse.
+
+This allows us to approximate the Hessian as
+
+$$\displaystyle H^{l,l^{\prime}}_{ij,i^{\prime}j^{\prime}}(\theta^{*}) \displaystyle\approx\delta_{l,l^{\prime}}\left[\frac{1}{n}\sum_{x\in\operatorname{\mathcal{D}}}f^{l}_{j}(x)f^{l}_{j^{\prime}}(x)\right]\left[\frac{1}{n}\sum_{x\in\operatorname{\mathcal{D}}}\sum_{k}\frac{\partial f^{l_{\text{final}}}_{k}(x)}{\partial p^{l+1}_{i}}\frac{\partial f^{l_{\text{final}}}_{k}(x)}{\partial p^{l+1}_{i^{\prime}}}\right]\,. \tag{37}$$
+
+This effectively turns the Hessian into a product of two matrices, a gram matrix of activations in each layer
+
+$$\displaystyle G^{l}_{jj^{\prime}}=\frac{1}{n}\sum_{x\in\operatorname{\mathcal{D}}}f^{l}_{j}(x)f^{l}_{j^{\prime}}(x) \tag{38}$$
+
+and a Gram matrix of Jacobians with respect to the next layer’s preactivations
+
+$$\displaystyle K^{l}_{ii^{\prime}}=\frac{1}{n}\sum_{x\in\operatorname{\mathcal{D}}}\sum_{k}\frac{\partial f^{l_{\text{final}}}_{k}(x)}{\partial p^{l+1}_{i}}\frac{\partial f^{l_{\text{final}}}_{k}(x)}{\partial p^{l+1}_{i^{\prime}}}\,. \tag{39}$$
+
+We can then find the eigenvectors of this approximated Hessian by separately diagonalising these two matrices.
+
+We would like to find a basis for $f^{l}$ that excludes directions connected exclusively to zero eigenvectors of the Hessian. That is, we want to exclude directions in $f^{l}$ that lie along zero eigenvectors of $G^{l}$, and directions that are mapped by the weight matrix $W^{l}$ to lie along zero eigenvectors of $K^{l}$.
+
+To do this, we can backpropagate the Jacobians in equation 39 one step further to include the weight matrices $W^{l}$:
+
+$$\displaystyle M^{l}_{ii^{\prime}}=\frac{1}{n}\sum_{x\in\operatorname{\mathcal{D}}}\sum_{k}\frac{\partial f^{l_{\text{final}}}_{k}(x)}{\partial f^{l}_{i}}\frac{\partial f^{l_{\text{final}}}_{k}(x)}{\partial f^{l}_{i^{\prime}}}\,. \tag{40}$$
+
+and then search for a basis in $f^{l}$ that diagonalises $M^{l}$ and $G^{l}$ at the same time. This basis will have one basis vector less for each zero eigenvalue of the Gram matrices of the activations and Jacobians, respectively. It will also exclude directions that lie in the null space of $W^{l}$.
+
+The matrices $G^{l},M^{l}$ are symmetric, so we can write $G^{l}={U^{l}}^{T}D_{G}^{l}U^{l}$ and $M^{l}={V^{l}}^{T}D_{M}^{l}V^{l}$ for diagonal $D_{G},D_{M}$ and orthogonal $U^{l},V^{l}$.
+
+We can find a basis transformation $\hat{\mathbf{f}}=C^{l}\mathbf{f}^{l}$ in which both $G^{l}$ and $M^{l}$ are diagonal, in two steps:
+
+1. Apply a whitening transformation with respect to $G^{l}$: $\tilde{\mathbf{f}}^{l}=\left({D^{l}_{G}}^{1/2}\right)^{+}U^{l}$, where the plus denotes the Moore-Penrose pseudoinverse. If the activations in layer $l$ do not span the full activation space, then the gram matrix $G^{l}$ must not be full rank, and some diagonal entries of $D^{l}_{G}$ are zero. By choosing this pseudoinverse, we effectively eliminate all the degeneracies from low-rank activations from our final basis. In this basis, $\tilde{G}^{l}_{ij}=\delta_{ij}$
+2. Now that $G^{l}$ is whitened, we can apply the transformation by $V^{l}$ which diagonalises $M^{l}$ without un-diagonalisng $G^{l}$ since the identity matrix is isotropic[^12]. At this point both $M^{l}$ and $G^{l}$ are diagonal and $C^{l}$ is defined up to multiplication by a diagonal matrix. We choose to multiply at the end by $\left({D^{l}_{M}}^{1/2}\right)^{+}$ because this eliminates degeneracies from low rank Jacobians.
+
+We call the basis $\hat{\mathbf{f}}^{l}=\left({D^{l}_{M}}^{1/2}\right)^{+}V^{l}\left({D^{l}_{G}}^{1/2}\right)^{+}U^{l}\mathbf{f}^{l}$ the interaction basis. Basis vectors in this basis are aligned with the directions that affect the output most — in the case of a deep linear network, this means that transforming to the interaction basis provably performs an SVD of each weight matrix, resulting in basis directions which are aligned with the principal components of the output of the network (see appendix A).
+
+We made two simplifying assumptions of independence about the Hessian to motivate this basis. While they have been used in other contexts to some success, these are still strong assumptions. Future work might investigate alternative techniques for finding a basis without these assumptions. This might only be possible with an overcomplete basis, which could connect the framework of this paper to superposition.
+
+### 6.2 Invariance to linear transformations
+
+The Interaction Basis is largely a coordinate-independent object, in the sense that it is invariant under linear transformations. If we apply a transformation $\mathbf{f}^{l}\to\mathbf{f}_{R}^{l}=R\mathbf{f}^{l},W^{l}\to W_{R}^{l}=W^{l}R^{-1}$ to the activation space, the final interaction basis is unchanged ($\hat{\mathbf{f}}^{l}_{R}=\hat{\mathbf{f}}^{l}$) for any $R\in\text{GL}_{d^{l}}(\mathbb{R})$ up to trivial axis reflections, unless $M^{l}$ has repeated eigenvalues.
+
+To show this, first note that in the whitened basis $\tilde{\mathbf{f}^{l}}=\left({D^{l}_{G}}^{1/2}\right)^{+}U^{l}\mathbf{f}^{l}$, $G^{l}$ is by definition always transformed to the identity matrix
+
+$$\displaystyle\tilde{G}^{l}=\left({D^{l}_{G}}^{1/2}\right)^{+}G^{l}\left(\left({D^{l}_{G}}^{1/2}\right)^{+}\right)^{T}=\mathbf{I}\,. \tag{41}$$
+
+So if we whiten after applying the transformation $R$, $\tilde{\mathbf{f}}^{l}_{R}$ can only differ from $\tilde{\mathbf{f}}^{l}$ by an orthogonal transformation. Call this orthogonal matrix $Q_{R}$. In the whitened basis, $M_{R}^{l}$ will then be:
+
+$$\displaystyle M_{R}^{l} \displaystyle=Q_{R}M^{l}Q^{T}_{R}\,. \tag{42}$$
+
+So $M^{l}_{R}$ and $M^{l}$ only differ by an orthogonal transformation. The interaction basis will be the eigenbasis of $M^{l}_{R}$ and $M^{l}$, respectively. So long as a real matrix does not have degenerate eigenvalues, its eigendecomposition is basis invariant if a convention for the eigenvector normalisation is chosen, up to reflections. So if $M^{l}$ does not have multiple identical eigenvalues, the interaction basis we end up in is the same up to reflections whether we transformed with $R$ first or not. If $M^{l}$ does have identical eigenvalues, the basis will still be identical up to orthogonal transforms in the eigenspaces of $M^{l}$.
+
+## 7 Related Work
+
+##### Explaining generalisation
+
+The inductive biases of deep neural networks that leads them to generalise well past their training data has been an object of extensive study (Zhang et al., 2021). Attempts to understand generalisation involve studying simplicity biases (Mingard et al., 2021) and are closely related to attempts to quantify model complexity, for example via VC dimension (Vapnik, 1998), Radamacher complexity (Mohri et al., 2018) or less widely known methods (Liang et al., 2019; Novak et al., 2018). This paper is heavily influenced by Singular Learning Theory (Watanabe, 2009) which uses the local learning coefficient (Lau et al., 2023) to quantify the effective number of parameters in the model via the flatness of minima in the loss landscape. The flatness of minima has been found to predict model generalisation, for example in Li et al. (2018) for networks trained on CIFAR-10. SLT has been used to study the formation of internal structure in neural networks (Chen et al., 2023; Hoogland et al., 2024). Understanding the internals of neural networks through the geometry of their loss landscapes was also proposed as a research direction in (Hoogland et al., 2023).
+
+##### Local structure of the loss landscape
+
+Other works have investigated the structure of neural network loss landscapes and their degeneracies around solutions found in training. In (Martens and Grosse, 2020), it was proposed that the Hessian matrix of MLPs can be approximated as being factorisable into independent outer products of activations and gradients, and that its eigenvectors might be approximated as being localised in particular layer of the network. This approximation was later extended to CNNs, RNNs, and transformers in Grosse and Martens (2016); Martens et al. (2018); Grosse et al. (2023). The approximation was used to compress models by pruning weights along directions with small Hessian eigenvalues by Wang et al. (2019). For deep linear networks, an analytical expression for the learning coefficient was derived in Aoyagi (2024). Generic degeneracies in the loss shared by all models with an MLP ReLU architecture were investigated in Carrol (2021), and degeneracies of one hidden layer MLPs with tanh activation functions in Farrugia-Roberts (2022). It has been found that most minima in the loss landscape can often be connected by a continuous path of minimum loss, for example in Draxler et al. (2019) for models trained on CIFAR.
+
+##### Selection for modularity
+
+In Filan et al. (2021), it was found that MLPs and CNNs trained on vision tasks showed more modularity in the weights connecting their neurons than comparable random networks. The observed tendency for biological networks created by evolution to be modular has been widely investigated, with various explanations for the phenomenon being proposed. Clune et al. (2013) offer a good overview of this work for machine learning researchers, and suggests direct minimisation of connection costs between components as a primary driver of modularity in biological networks. Kashtan and Alon (2005) proposes that genetic algorithms select systems to be modular because this makes them more robust to modular changes in the systems’ environments. In Liu et al. (2023), connection costs were used to regularise MLPs trained on various tasks including modular addition to be more modular in their weights, in order to make them more interpretable.
+
+## 8 Conclusion
+
+We introduced the idea that the presence of degeneracy in neural networks’ parameterizations may be a source of challenges for reverse engineering them. We identified some of the sources of this degeneracy, and suggested a technique (the interaction basis) for removing this degeneracy from the representation of the network. We argued that this representation is likely to have sparser interactions, and we introduced a formula for searching for modules in the new represenation of the network based on a toy model of how modularity affects degeneracy. The follow-up paper Bushnaq et al. (2024) tests a variant of the interaction basis, finding that it results in representations which are sparse, modular and interpretable on toy models but it is much less useful when applied to LLMs.
+
+## 9 Contribution Statement
+
+LB developed the ideas in this paper with contributions from JM and KH. JM and LB developed the presentation of these ideas together. JM led the writing, with substantial support from LB, and feedback from SH and NGD. SH, DB, and NGD ran experiments to provide feedback on early versions of the interaction basis. CW ran experiments to test neuron synchronisation.
+
+## 10 Acknowledgements
+
+We thank Daniel Murfet, Tom McGrath, James Fox, and Lawrence Chan for comments on the manuscript, to Dmitry Vaintrob for suggesting the concept of finite data SLT, and to Vivek Hebbar, Jesse Hoogland and Linda Linsefors for valuable discussions. Apollo Research is a fiscally sponsored project of Rethink Priorities.
+
+## References
+
+- Aoyagi (2024) Miki Aoyagi. Consideration on the learning efficiency of multiple-layered neural networks with linear units. Neural Networks, 172:106132, 04 2024. doi: 10.1016/j.neunet.2024.106132.
+- Bushnaq et al. (2024) Lucius Bushnaq, Stefan Heimersheim, Nicholas Goldowsky-Dill, Dan Braun, Jake Mendel, Kaarel Hänni, Avery Griffin, Jörn Stöhler, Magdalena Wache, and Marius Hobbhahn. The Local Interaction Basis: Identifying Computationally-Relevant and Sparsely Interacting Features in Neural Networks. arXiv e-prints, art. arXiv:2405.10928, May 2024.
+- Carrol (2021) Liam Carrol. Phase transitions in neural networks. Master’s thesis, School of Computing and Information Systems, The University of Melbourne, October 2021. URL http://therisingsea.org/notes/MSc-Carroll.pdf.
+- Carroll (2023) Liam Carroll. Dslt 1. the rlct measures the effective dimension of neural networks, Jun 2023. URL https://www.alignmentforum.org/posts/4eZtmwaqhAgdJQDEg/dslt-1-the-rlct-measures-the-effective-dimension-of-neural.
+- Chan et al. (2022) Lawrence Chan, Adria Garriga-Alonso, Nix Goldowsky-Dill, Ryan Greenblatt, Jenny Nitishinskaya, Ansh Radhakrishnan, Buck Shlegeris, and Nate Thomas. Causal scrubbing: A method for rigorously testing interpretability hypotheses. Alignment Forum, 2022. URL https://www.alignmentforum.org/posts/JvZhhzycHu2Yd57RN/causal-scrubbing-a-method-for-rigorously-testing.
+- Chen et al. (2023) Zhongtian Chen, Edmund Lau, Jake Mendel, Susan Wei, and Daniel Murfet. Dynamical versus bayesian phase transitions in a toy model of superposition. arXiv preprint arXiv:2310.06301, 2023.
+- Christiano et al. (2022) Paul Christiano, Eric Neyman, and Mark Xu. Formalizing the presumption of independence. arXiv preprint arXiv:2211.06738, 2022.
+- Clune et al. (2013) Jeff Clune, Jean-Baptiste Mouret, and Hod Lipson. The evolutionary origins of modularity. Proceedings of the Royal Society B: Biological Sciences, 280(1755):20122863, March 2013. ISSN 1471-2954. doi: 10.1098/rspb.2012.2863. URL http://dx.doi.org/10.1098/rspb.2012.2863.
+- Conmy et al. (2023) Arthur Conmy, Augustine N. Mavor-Parker, Aengus Lynch, Stefan Heimersheim, and Adrià Garriga-Alonso. Towards automated circuit discovery for mechanistic interpretability, 2023.
+- Conmy et al. (2024) Arthur Conmy, Augustine Mavor-Parker, Aengus Lynch, Stefan Heimersheim, and Adrià Garriga-Alonso. Towards automated circuit discovery for mechanistic interpretability. Advances in Neural Information Processing Systems, 36, 2024.
+- Draxler et al. (2019) Felix Draxler, Kambis Veschgini, Manfred Salmhofer, and Fred A. Hamprecht. Essentially no barriers in neural network energy landscape, 2019.
+- Elhage et al. (2021) Nelson Elhage, Neel Nanda, Catherine Olsson, Tom Henighan, Nicholas Joseph, Ben Mann, Amanda Askell, Yuntao Bai, Anna Chen, Tom Conerly, Nova DasSarma, Dawn Drain, Deep Ganguli, Zac Hatfield-Dodds, Danny Hernandez, Andy Jones, Jackson Kernion, Liane Lovitt, Kamal Ndousse, Dario Amodei, Tom Brown, Jack Clark, Jared Kaplan, Sam McCandlish, and Chris Olah. A mathematical framework for transformer circuits. Transformer Circuits Thread, 2021. https://transformer-circuits.pub/2021/framework/index.html.
+- Farrugia-Roberts (2022) Matthew Farrugia-Roberts. Structural degeneracy in neural networks. Master’s thesis, School of Computing and Information Systems, The University of Melbourne, December 2022. URL https://far.in.net/mthesis.
+- Filan et al. (2021) Daniel Filan, Stephen Casper, Shlomi Hod, Cody Wild, Andrew Critch, and Stuart Russell. Clusterability in neural networks, 2021.
+- Fusi et al. (2016) Stefano Fusi, Earl K Miller, and Mattia Rigotti. Why neurons mix: high dimensionality for higher cognition. Current Opinion in Neurobiology, 37:66–74, 2016. ISSN 0959-4388. doi: https://doi.org/10.1016/j.conb.2016.01.010. URL https://www.sciencedirect.com/science/article/pii/S0959438816000118. Neurobiology of cognitive behavior.
+- Geiger et al. (2021) Atticus Geiger, Hanson Lu, Thomas Icard, and Christopher Potts. Causal abstractions of neural networks. Advances in Neural Information Processing Systems, 34:9574–9586, 2021.
+- Geva et al. (2021) Mor Geva, Roei Schuster, Jonathan Berant, and Omer Levy. Transformer Feed-Forward Layers Are Key-Value Memories, September 2021. URL http://arxiv.org/abs/2012.14913. arXiv:2012.14913 [cs].
+- Goh et al. (2021) Gabriel Goh, Nick Cammarata †, Chelsea Voss †, Shan Carter, Michael Petrov, Ludwig Schubert, Alec Radford, and Chris Olah. Multimodal neurons in artificial neural networks. Distill, 2021. doi: 10.23915/distill.00030. https://distill.pub/2021/multimodal-neurons.
+- Grosse and Martens (2016) Roger Grosse and James Martens. A kronecker-factored approximate fisher matrix for convolution layers, 2016.
+- Grosse et al. (2023) Roger Grosse, Juhan Bae, Cem Anil, Nelson Elhage, Alex Tamkin, Amirhossein Tajdini, Benoit Steiner, Dustin Li, Esin Durmus, Ethan Perez, Evan Hubinger, Kamilė Lukošiūtė, Karina Nguyen, Nicholas Joseph, Sam McCandlish, Jared Kaplan, and Samuel R. Bowman. Studying large language model generalization with influence functions, 2023.
+- Hoogland (2023) Jesse Hoogland. Neural networks generalise because of this one weird trick. https://www.lesswrong.com/posts/fovfuFdpuEwQzJu2w/neural-networks-generalize-because-of-this-one-weird-trick, January 2023.
+- Hoogland et al. (2023) Jesse Hoogland, Alexander Gietelink Oldenziel, Daniel Murfet, and Stan van Wingerden. Towards developmental interpretability, Jul 2023. URL https://www.alignmentforum.org/posts/TjaeCWvLZtEDAS5Ex/towards-developmental-interpretability.
+- Hoogland et al. (2024) Jesse Hoogland, George Wang, Matthew Farrugia-Roberts, Liam Carroll, Susan Wei, and Daniel Murfet. The developmental landscape of in-context learning, 2024.
+- Kashtan and Alon (2005) Nadav Kashtan and Uri Alon. Spontaneous evolution of modularity and network motifs. Proceedings of the National Academy of Sciences of the United States of America, 102:13773–8, 10 2005. doi: 10.1073/pnas.0503610102.
+- Lau et al. (2023) Edmund Lau, Daniel Murfet, and Susan Wei. Quantifying degeneracy in singular models via the learning coefficient. arXiv preprint arXiv:2308.12108, 2023.
+- Li et al. (2018) Hao Li, Zheng Xu, Gavin Taylor, Christoph Studer, and Tom Goldstein. Visualizing the loss landscape of neural nets, 2018.
+- Liang et al. (2019) Tengyuan Liang, Tomaso Poggio, Alexander Rakhlin, and James Stokes. Fisher-rao metric, geometry, and complexity of neural networks. In The 22nd international conference on artificial intelligence and statistics, pages 888–896. PMLR, 2019.
+- Liu et al. (2023) Ziming Liu, Eric Gan, and Max Tegmark. Seeing is believing: Brain-inspired modular training for mechanistic interpretability, 2023.
+- Loshchilov and Hutter (2019) Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization, 2019.
+- Martens and Grosse (2020) James Martens and Roger Grosse. Optimizing neural networks with kronecker-factored approximate curvature, 2020.
+- Martens et al. (2018) James Martens, Jimmy Ba, and Matt Johnson. Kronecker-factored curvature approximations for recurrent neural networks. In International Conference on Learning Representations, 2018. URL https://openreview.net/forum?id=HyMTkQZAb.
+- Meng et al. (2023) Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov. Locating and editing factual associations in gpt, 2023.
+- Mingard et al. (2021) Chris Mingard, Guillermo Valle-Pérez, Joar Skalse, and Ard A Louis. Is sgd a bayesian sampler? well, almost. Journal of Machine Learning Research, 22(79):1–64, 2021.
+- Mohri et al. (2018) Mehryar Mohri, Afshin Rostamizadeh, and Ameet Talwalkar. Foundations of machine learning. MIT press, 2018.
+- Murfet (2020) Daniel Murfet. Singular learning theory iv: the rlct. http://www.therisingsea.org/notes/metauni/slt4.pdf, April 2020. Lecture notes.
+- Murphy (2012) Kevin P Murphy. Machine Learning: A Probabilistic Perspective. MIT press, 2012.
+- Nanda et al. (2023) Neel Nanda, Lawrence Chan, Tom Lieberum, Jess Smith, and Jacob Steinhardt. Progress measures for grokking via mechanistic interpretability, 2023.
+- Nguyen et al. (2016) Anh Nguyen, Jason Yosinski, and Jeff Clune. Multifaceted feature visualization: Uncovering the different types of features learned by each neuron in deep neural networks, 2016.
+- Novak et al. (2018) Roman Novak, Yasaman Bahri, Daniel A Abolafia, Jeffrey Pennington, and Jascha Sohl-Dickstein. Sensitivity and generalization in neural networks: an empirical study. arXiv preprint arXiv:1802.08760, 2018.
+- Olah et al. (2017) Chris Olah, Alexander Mordvintsev, and Ludwig Schubert. Feature visualization. Distill, 2017. doi: 10.23915/distill.00007. https://distill.pub/2017/feature-visualization.
+- Olah et al. (2020) Chris Olah, Nick Cammarata, Ludwig Schubert, Gabriel Goh, Michael Petrov, and Shan Carter. Zoom in: An introduction to circuits. Distill, 5(3):e00024–001, 2020.
+- Räuker et al. (2023) Tilman Räuker, Anson Ho, Stephen Casper, and Dylan Hadfield-Menell. Toward transparent ai: A survey on interpreting the inner structures of deep neural networks, 2023.
+- Schwarz (1978) Gideon Schwarz. Estimating the dimension of a model. The annals of statistics, pages 461–464, 1978.
+- Vapnik (1998) Vladimir N. Vapnik. Statistical Learning Theory. Wiley-Interscience, 1998.
+- Wang et al. (2019) Chaoqi Wang, Roger Grosse, Sanja Fidler, and Guodong Zhang. Eigendamage: Structured pruning in the kronecker-factored eigenbasis, 2019.
+- Wang et al. (2022) Kevin Wang, Alexandre Variengien, Arthur Conmy, Buck Shlegeris, and Jacob Steinhardt. Interpretability in the wild: a circuit for indirect object identification in gpt-2 small. arXiv preprint arXiv:2211.00593, 2022.
+- Watanabe (2009) Sumio Watanabe. Algebraic geometry and statistical learning theory, volume 25. Cambridge university press, 2009.
+- Watanabe (2013) Sumio Watanabe. A widely applicable bayesian information criterion. The Journal of Machine Learning Research, 14(1):867–897, 2013.
+- Wei et al. (2022) Susan Wei, Daniel Murfet, Mingming Gong, Hui Li, Jesse Gell-Redman, and Thomas Quella. Deep learning is singular, and that’s good. IEEE Transactions on Neural Networks and Learning Systems, 2022.
+- Zhang et al. (2021) Chiyuan Zhang, Samy Bengio, Moritz Hardt, Benjamin Recht, and Oriol Vinyals. Understanding deep learning (still) requires rethinking generalization. Communications of the ACM, 64(3):107–115, 2021.
+
+## Appendix A The local interaction basis on deep linear networks
+
+The interaction basis diagonalizes interactions between neural network layers if the layer transitions are linear. We derive this property for this local interaction basis, a modified interaction basis in which gradients to the final layer are replaced with gradients to the immediately subsequent layer, in order to sparsify interactions between adjacent layers. In the experimental follow up to this paper, Bushnaq et al. [2024] discuss the local interaction basis in more detail before testing it on real networks. In this appendix, we show that the local interaction basis diagonalizes the interactions between neural network layers if the layer transitions are linear. The derivation for the non-local interaction basis follows the same structure.
+
+In the absence of nonlinearities, a deep neural network is just a series of matrix multiplications (once an extra component is added to activation vectors with a constant value of 1, to include the bias). The sparsest way to describe this series of matrix multiplications is to multiply out the network into one multiplication, and then to rotate into the left singular basis of this matrix in the inputs, and the right singular basis in the outputs. To see that transforming to the local interaction basis does indeed perform an SVD for deep linear networks, consider the penultimate layer of the network. We neglect mean centering to make this derivation cleaner, and start by transforming in layer $l_{\text{final}}-1$ to a basis which whitens the activations:
+
+$$\displaystyle f^{l_{\text{final}}} \displaystyle=W^{l_{\text{final}}-1}f^{l_{\text{final}}-1}$$
+
+$$\displaystyle=\underbrace{W^{l_{\text{final}}-1}\left(U^{l_{\text{final}}-1}\right)^{T}\left(D^{l_{\text{final}}-1}\right)^{\frac{1}{2}}}_{W^{\prime l_{\text{final}}-1}}\underbrace{\left((D^{l_{\text{final}}-1})^{\frac{1}{2}}\right)^{+}U^{l_{\text{final}}-1}f^{l_{\text{final}}-1}}_{f^{\prime l_{\text{final}}-1}}$$
+
+We’ve wrapped these transformations into definitions of $W^{\prime l_{\text{final}}-1}$ and $f^{\prime l_{\text{final}}-1}$. We’ll show that the other transformations perform an SVD of $W^{\prime l_{\text{final}}-1}$. First, we have to transform to the (uncentered) PCA basis in the final layer.
+
+$$\displaystyle G^{l_{\text{final}}}_{ij} \displaystyle=\frac{1}{n}\sum_{x}f^{l_{\text{final}}}_{i^{\prime}}(x)f^{l_{\text{final}}}_{j^{\prime}}(x)$$
+
+$$\displaystyle=\frac{1}{n}\sum_{x}W^{l_{\text{final}}-1}_{i^{\prime}k}f^{l_{\text{final}}-1}_{k}W^{l_{\text{final}}-1}_{j^{\prime}m}f^{l_{\text{final}}-1}_{m}$$
+
+$$\displaystyle G^{l_{\text{final}}} \displaystyle=W^{l_{\text{final}}-1}G^{l_{\text{final}}-1}{W^{l_{\text{final}}-1}}^{T}$$
+
+$$\displaystyle=W^{\prime l_{\text{final}}-1}{W^{\prime l_{\text{final}}-1}}^{T}$$
+
+where we have leveraged that $G^{l_{\text{final}}-1}={U^{l_{\text{final}}-1}}^{T}D^{l_{\text{final}}-1}U^{l_{\text{final}}-1}$ by definition in the last step. Writing $W^{\prime l_{\text{final}}-1}=U_{W^{\prime}}\Sigma_{W^{\prime}}V_{W^{\prime}}^{T}$, we have that $G^{L}=U_{W^{\prime}}\Sigma_{W^{\prime}}^{2}U_{W^{\prime}}^{T}$, so $U^{L}=U_{W^{\prime}}^{T}$. Since there is no layer after the final layer, the $M$ matrix is not defined for the final layer, so the LI basis in the final layer is just the PCA basis[^13].
+
+$$\displaystyle\hat{f}^{l_{\text{final}}} \displaystyle=U^{l_{\text{final}}}f^{l_{\text{final}}}=U_{W^{\prime}}^{T}W^{\prime l_{\text{final}}-1}f^{\prime l_{\text{final}}-1} \tag{43}$$
+
+For the final part of the transformation into the LIB, we need to calculate $M$, which depends on the jacobian from the LIB functions in the next layer to the PCA functions in the current layer:
+
+$$\displaystyle M^{l_{\text{final}}-1}_{j,j^{\prime}} \displaystyle=\frac{1}{n}\sum_{x}\frac{\partial\hat{f}^{l_{\text{final}}}_{i}(x)}{\partial f^{\prime l_{\text{final}}-1}_{j}}\frac{\partial\hat{f}^{l_{\text{final}}}_{i}(x)}{\partial f^{\prime l_{\text{final}}-1}_{j^{\prime}}}$$
+
+$$\displaystyle M^{l_{\text{final}}-1} \displaystyle={W^{l_{\text{final}}-1}}^{T}U_{W^{\prime}}U_{W^{\prime}}^{T}W^{l_{\text{final}}-1}={W^{\prime l_{\text{final}}-1}}^{T}W^{\prime l_{\text{final}}-1}$$
+
+$$\displaystyle=V_{W^{\prime}}\Sigma_{W^{\prime}}^{2}V_{W^{\prime}}^{T}$$
+
+$$\displaystyle=:{V^{l_{\text{final}}-1}}^{T}\Lambda^{l_{\text{final}}-1}V^{l_{\text{final}}-1}$$
+
+so $V^{l_{\text{final}}-1}$ = $V_{W^{\prime}}^{T}$ and $\Lambda^{l_{\text{final}}-1}=\Sigma_{W^{\prime}}^{2}$. Now,
+
+$$\displaystyle\hat{f}^{l_{\text{final}}-1} \displaystyle=C^{l_{\text{final}}-1}f^{l_{\text{final}}-1}$$
+
+$$\displaystyle={\Lambda^{l_{\text{final}}-1}}^{\frac{1}{2}}V^{l_{\text{final}}-1}f^{\prime l_{\text{final}}-1}$$
+
+Using equation 43, we have:
+
+$$\displaystyle\hat{f}^{L} \displaystyle=U_{W^{\prime}}^{T}W^{\prime l_{\text{final}}-1}V_{W^{\prime}}^{T}\left({\Lambda^{l_{\text{final}}-1}}^{\frac{1}{2}}\right)^{+}\hat{f}^{l_{\text{final}}-1}$$
+
+$$\displaystyle=\Sigma_{W^{\prime}}\left({\Lambda^{l_{\text{final}}-1}}^{\frac{1}{2}}\right)^{+}\hat{f}^{l_{\text{final}}-1} \tag{44}$$
+
+$$\displaystyle=\hat{f}^{l_{\text{final}}-1}$$
+
+For layers which are not the final layer in the network, the procedure is very similar. As before, we have:
+
+$$f^{\prime l}:=\left(\left(D^{l}\right)^{\frac{1}{2}}\right)^{+}U^{l}f^{l}\qquad\qquad W^{\prime l}:=W^{l}\left(U^{l}\right)^{T}\left(D^{l}\right)^{\frac{1}{2}}$$
+
+$$G^{l+1}=W^{\prime l}{W^{\prime l}}^{T},\qquad U^{l+1}=U^{T}_{W^{\prime l}}$$
+
+Now, we need to remember that $\hat{f}^{l+1}=C^{l+1}f^{l+1}$:
+
+$$\displaystyle f^{\prime l+1} \displaystyle=\left(\left(D^{l+1}\right)^{\frac{1}{2}}\right)^{+}U^{l+1}W^{\prime l}f^{\prime l}$$
+
+$$\displaystyle=\Sigma_{W^{\prime l}}^{+}U^{T}_{W^{\prime l}}W^{\prime l}f^{\prime l}$$
+
+$$\displaystyle=V_{W^{\prime l}}^{T}f^{\prime l}$$
+
+$$\displaystyle\hat{f}^{l+1} \displaystyle={\Lambda^{l+1}}^{\frac{1}{2}}V^{l+1}f^{\prime l+1}$$
+
+$$\displaystyle={\Lambda^{l+1}}^{\frac{1}{2}}V^{l+1}V_{W^{\prime l}}^{T}f^{\prime l}$$
+
+$$\displaystyle M^{l}_{j,j^{\prime}} \displaystyle=\frac{1}{n}\sum_{x}\frac{\partial\hat{f}^{l+1}_{i}(x)}{\partial f^{\prime l}_{j}}\frac{\partial\hat{f}^{l+1}_{i}(x)}{\partial f^{\prime l}_{j^{\prime}}}$$
+
+$$\displaystyle M^{l} \displaystyle=V_{W^{\prime l}}{V^{l+1}}^{T}{\Lambda^{l+1}}V^{l+1}V_{W^{\prime l}}^{T}$$
+
+Once again, note that this expression for $M^{l}$ is manifestly diagonal, so
+
+$$V^{l}=V^{l+1}V^{T}_{W^{\prime l}},\qquad\qquad\Lambda^{l}=\Lambda^{l+1}$$
+
+So, $V^{l}$ is exactly what we need in order to diagonalize the relationship, and we end up with
+
+$$\displaystyle\hat{f}^{l+1} \displaystyle={\Lambda^{l+1}}^{\frac{1}{2}}V^{l+1}V_{W^{\prime l}}^{T}{V^{l}}^{T}{{\Lambda^{l}}^{\frac{1}{2}}}^{+}\hat{f}^{l}$$
+
+$$\displaystyle=\hat{f}^{l} \tag{45}$$
+
+So, each layer of the network is the same as the final layer, which is the final activations rotated into the PCA basis, but without whitening.
+
+[^1]: See Watanabe (2009) for a more rigorous definition of the learning coefficient.
+
+[^2]: Indeed, sometimes it is possible to remove this noise and improve performance (Nanda et al., 2023)
+
+[^3]: We arbitrarily chose an MSE loss here, but conceptually we require a loss which is non-negative and satisfies identity of indiscernibles: $L=0\iff\forall x:\mathbf{f}_{\theta}(x)=\mathbf{f}_{\theta^{*}}(x)$. For example, when studying an LLM, it may be more suitable to use KL-divergence.
+
+[^4]: The reverse does not hold, due to higher order terms in the expansion in equation 5. See (Watanabe, 2009, 2013).
+
+[^5]: If we were to use a different behavioural loss such as KL divergence, this would mean that the term $\left.\frac{\partial^{2}L}{f^{l_{\text{final}}}_{k}f^{l_{\text{final}}}_{k^{\prime}}}\right|_{\theta=\theta^{*}}$ would not be equal to $\delta_{kk^{\prime}}.$ This means that different output activations (logits for a language model) would be weighted differently, but the story of this section would be largely the same.
+
+[^6]: See (Aoyagi, 2024) for a more complete treatment of effective parameter counts in deep linear networks.
+
+[^7]: Technically the pseudoinverse, because $\tilde{W}^{(1)}_{[a]}$ does not need to be invertible.
+
+[^8]: For simplicity in this section, we have considered the case in which nodes in $M_{1}$ affect nodes in $M_{2}$ but the converse is not true. If we wanted interactions to be bidirectional, we could modify the argument of this section by introducing a second constrained loss function $L_{2,C}$.
+
+[^9]: We could also consider $w_{i}$ to be the sum of weights connecting node $v_{i}$ to $M_{2}$.
+
+[^10]: For $w_{i}<\epsilon^{\frac{1}{2}}$, this is effectively zero from the resolution available at loss cutoff $\epsilon$.
+
+[^11]: Technically, as we will see, it is only invariant to up to the uniqueness of the eigenvectors of a certain matrix. But that usually just amounts to a freedom under reflections of coordinate axes in practice.
+
+[^12]: We need to be careful which coordinate basis we are working in: the entries of $V^{l}$ in the basis that whitens $G^{l}$ and in the standard basis are different.
+
+[^13]: This is also true in the nonlocal interaction basis, since $\frac{\partial f^{l_{\text{final}}}_{i}(x)}{\partial f^{l_{\text{final}}}_{j}}=\delta_{ij}$

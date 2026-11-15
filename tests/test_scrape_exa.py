@@ -131,6 +131,32 @@ class HarvestTest(unittest.TestCase):
         self.assertTrue(os.path.basename(files[0]).startswith("other__"))
         self.assertEqual(self.front_matter(files[0])["publishedDate"], "2025-04-03")
 
+    def test_listed_work_is_kept_with_the_listing_authors_and_date(self):
+        known = {"https://www.lesswrong.com/posts/Zz1": {"authors": ["Dylan Bowman", "Marius Hobbhahn"],
+                                                          "published": "2026-10-08", "title": "Embedded evals"}}
+        self.exa = FakeExa([page("https://www.lesswrong.com/posts/Zz1/embedded-evals", "2026-10-09", "Dylan Bowman")])
+        scrape.scrape_exa("Marius Hobbhahn", self.root, self.exa, "2025-01-01", "2026-12-31",
+                          arxiv_meta=no_arxiv_meta, known=known)
+        fm = self.front_matter(self.corpus()[0])
+        self.assertEqual((fm["publishedDate"], fm["date_source"], fm["author_position"]),
+                         ("2026-10-08", "listing", "last"))
+
+    def test_listed_work_is_fetched_by_its_listed_url(self):
+        listed_url = "http://www.blog.example/2022-08-14-post/"
+        known = {listed_url: {"authors": ["Marius Hobbhahn"], "published": "2022-08-14", "title": "Post"}}
+        self.exa = FakeExa([page(listed_url, "2022-08-14", None)])
+        self.exa.contents = lambda urls, text_chars=4000, **kw: (
+            [] if kw.get("subpages") else [self.exa.pages[u] for u in urls if u in self.exa.pages])
+        scrape.scrape_exa("Marius Hobbhahn", self.root, self.exa, "2022-01-01", "2022-12-31",
+                          arxiv_meta=no_arxiv_meta, known=known)
+        self.assertEqual(len(self.corpus()), 1)
+
+    def test_index_pages_are_dropped(self):
+        self.harvest([page("https://watcher.apolloresearch.ai/blog", "2025-09-02", "Marius Hobbhahn"),
+                      page("https://greaterwrong.com/users/marius-hobbhahn", "2025-09-30", "Marius Hobbhahn")])
+        self.assertEqual(self.corpus(), [])
+        self.assertEqual({r["reason"] for r in self.manifest()}, {"index_page"})
+
     def test_search_windows_cover_the_whole_range(self):
         self.harvest([], start="2024-01-01", end="2024-12-31")
         windows = sorted({(s["start_date"], s["end_date"]) for s in self.exa.searches})

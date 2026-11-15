@@ -22,7 +22,7 @@ Stages, each reading only earlier stages' files, each resumable:
                                                             history_timesplit.jsonl, heldout_timesplit.jsonl
   review    optional human check of held-out distractors    review_timesplit.jsonl
 
-    python3 -m autoresearch.taste.timesplit harvest --researcher <slug> --name "<Full Name>" --start YYYY-MM-DD --end YYYY-MM-DD
+    python3 -m autoresearch.taste.timesplit harvest --researcher <slug> --name "<Full Name>" --start YYYY-MM-DD --end YYYY-MM-DD [--lesswrong <slug>] [--feed <rss url>]
     python3 -m autoresearch.taste.timesplit extract --researcher <slug>
     python3 -m autoresearch.taste.timesplit check --researcher <slug> --max-usd 60
     python3 -m autoresearch.taste.timesplit distract --researcher <slug> --cutoff YYYY-MM-DD --max-usd 20
@@ -560,6 +560,8 @@ def main(argv=None):
             c.add_argument("--name", required=True, help="the researcher's full name")
             c.add_argument("--start", required=True)
             c.add_argument("--end", required=True)
+            c.add_argument("--lesswrong", help="his LessWrong user slug; every post he wrote or co-wrote is fetched")
+            c.add_argument("--feed", help="his personal blog's RSS feed URL")
         if name in ("distract", "pairs"):
             c.add_argument("--cutoff", required=True, help="YYYY-MM-DD; work from this date on is held out")
         if name in ("check", "distract", "pairs"):
@@ -580,8 +582,18 @@ def main(argv=None):
         from ..integrations.exa import ExaClient
         client = ExaClient(cache_dir=EXA_CACHE)
     if args.command == "harvest":
-        from .scrape import scrape_exa
-        print(json.dumps(scrape_exa(args.name, researcher.root, client, args.start, args.end)))
+        from .scrape import (
+            list_arxiv_author,
+            list_feed,
+            list_lesswrong_user,
+            scrape_exa,
+        )
+        known = list_arxiv_author(args.name)
+        if args.lesswrong:
+            known.update(list_lesswrong_user(args.lesswrong))
+        if args.feed:
+            known.update(list_feed(args.feed, args.name))
+        print(json.dumps(scrape_exa(args.name, researcher.root, client, args.start, args.end, known=known)))
         return
     if args.command == "extract":
         print(json.dumps(dict(exa_extract(researcher, client), exa_cost=round(client.cost, 4))))

@@ -1,0 +1,273 @@
+---
+url: https://www.lesswrong.com/posts/WfdxXhszxFc3BxZ8r
+title: More findings on maximal data dimension
+publishedDate: 2023-02-02
+date_source: listing
+authors: ["Marius Hobbhahn"]
+author_position: solo
+kind: post
+exa_request_id: https://www.lesswrong.com/posts/WfdxXhszxFc3BxZ8r/more-findings-on-maximal-data-dimension
+---
+# More findings on maximal data dimension
+
+* By [Marius Hobbhahn](/users/marius-hobbhahn)
+* 2023-02-02 18:33:53Z
+* 27 points
+* Tag: [Interpretability (ML & AI)](/w/interpretability-ml-and-ai)
+* Tag: [MATS Program](/w/mats-program)
+* Tag: [AI](/w/ai)
+* Frontpage
+* Comments: 1
+* Post URL (HTML): [/posts/WfdxXhszxFc3BxZ8r/more-findings-on-maximal-data-dimension](/posts/WfdxXhszxFc3BxZ8r/more-findings-on-maximal-data-dimension)
+* Post URL (Markdown): [/api/post/more-findings-on-maximal-data-dimension](/api/post/more-findings-on-maximal-data-dimension)
+* Comments URL (Markdown): [/api/post/more-findings-on-maximal-data-dimension/comments](/api/post/more-findings-on-maximal-data-dimension/comments)
+* Post URL (Markdown, compact): [/api/post/more-findings-on-maximal-data-dimension?compact=1](/api/post/more-findings-on-maximal-data-dimension?compact=1)
+
+Produced as part of the [SERI ML Alignment Theory Scholars Program](https://www.serimats.org/) \- Winter 2022 Cohort.
+
+I’d like to thank Wes Gurnee, Aryan Bhatt, Eric Purdy and Stefan Heimersheim for discussions and Evan Hubinger, Neel Nanda, Adam Jermyn and Chris Olah for mentorship and feedback. 
+
+The post contains a lot of figures, so the suggested length is deceiving. Code can be found in [this](https://colab.research.google.com/drive/12qNPTr_CsiWNKBbna_12RvZovPEhaNlw?usp=sharing) colab notebook. 
+
+This is the second in a series of N posts on trying to understand memorization in NNs. 
+
+Executive summary
+=================
+
+I look at a variety of settings and experiments to better understand memorization in toy models. My primary motivation is to increase our general understanding of NNs but I also suspect that understanding memorization better might increase our ability to detect backdoors/trojans. This post specifically focuses on measuring memorization with the maximal data dimensionality metric.
+
+In a comment to the “[Superposition, Memorization and double descent](https://transformer-circuits.pub/2023/toy-double-descent/index.html)” paper, Chris Olah introduces maximal data dimensionality D*, a metric that supposedly tells to which degree a network memorized a datapoint compared to using features that are shared between datapoints. I extend the research on this metric with the following findings
+
+1. In the double descent setting, the metric describes exactly what we would predict, i.e. with few inputs the network memorizes all datapoints and with a lot of input it learns some features. 
+2. On MNIST, I can reproduce the shape of the D* curve and also the findings that memorized datapoints have high D*, datapoints that share many features are in the middle and datapoints that the network is confused about have low D*. However, I was surprised to find that the datapoints the network misclassified on the training data are evenly distributed across the D* spectrum. I would have expected them to all have low D* didn’t learn them.
+3. When we train the network to different levels of accuracy, we find that the distribution of errors is actually slightly left-heavy instead of right-heavy. I have not yet understood why it is the case but I’d be interest in follow-up research to see whether it tells us something interesting. 
+4. Different classes are not evenly distributed across the spectrum, e.g. “8” is far more regular than “5” according to D*. This is what we would expect.
+5. Across different hidden sizes, the shape of the D* curve stays nearly the same but the spearman rank correlation between the datapoints increases the larger the difference in hidden size. This means the more similar the number of neurons, the more similar is the in which D* sorts the datapoints. 
+6. Networks of the same size trained on the same data with different seeds show nearly identical D* curves and have high spearman rank correlation. This is what we would expect.
+7. Different dataset sizes produce different shapes of D*, e.g. larger datasets have more shared features (they are flatter in the middle). This seems plausible.
+8. Different levels of weight decay have nearly no effect on the shape of D*. The minor effect they have is the opposite of what I would have expected. 
+9. The shape of D* changes very little between initialization and the final training run. This was unexpected and I have no good explanation for this phenomenon yet. When we measure D* over different batches we find the same phenomenon. 
+
+Working with D* can be a bit tricky (see Appendix for practical tips). The more I played around with D*, the more I’m convinced that it tells us something interesting. Particularly the question about misclassifications and error rates and the unexpectedly small change during initialization and final training run seem like they could tell us something about NNs that we don’t yet know. 
+
+Maximal data dimensionality
+===========================
+
+There are two models used in this post. Almost all experiments are run on a simple classification MLP trained with cross-entropy loss.
+
+$h = ReLU(W_1 x + b_1)$
+
+$X’ \approx W_2 h + b_2$
+
+![](https://lh6.googleusercontent.com/WnV7UYzw7iT_F0YZhnXQjN4s__fvYsfkint7y1aFOMeJyLEegS-yM7LpzPoPIqAQJXT2A7jZ-EbmAcXHnWfEpM59fmjfY_8LIzDOcpTkChYcYL5LePhMUcVhbIxYgHq53p1JIkvEmDVdIzOhl1kY0NY)
+
+A small subsection of the experiments uses the ReLU output model introduced in the [superposition paper](https://transformer-circuits.pub/2022/toy_model/index.html) and the [memorization and double descent paper](https://transformer-circuits.pub/2023/toy-double-descent/index.html). 
+
+$X’ \approx \text{ReLU}(W^T Wx + b)$
+
+![](https://lh4.googleusercontent.com/Qsc2vRMfQ6QmO-_8RxPhHI6W0v-5fP-LWZSkj7VZ393IzvpeJPpZljy587xt5xx9UYIjyicc3xpWBpJuZ3JQj0hT3M4hlvoc168SMKj413hBXIu0KAqJBdr8Qjnx0Kor9XAUZAyIxKf6F5ztFNua75o)
+
+Double descent & maximal data dimensionality
+--------------------------------------------
+
+The beginning of this section is copied from the previous post and added for context.
+
+We replicate the double descent phenomenon discussed in the [memorization paper](https://transformer-circuits.pub/2023/toy-double-descent/index.html). In the paper, they use the ReLU Output model with $m=2$ but normalize all inputs. We further adapt this setting in two ways for this section--we use 1000 features instead of 10000 and sparsity 0.99 instead of 0.999. We also cut off the dataset size much earlier than in the original paper. We use the schedulers as described in the paper and can confirm that they make a difference.
+
+Even with these modifications, we can reproduce the double descent phenomenon. The double descent happens exactly 10x earlier than in the original paper which is a result of the 10x smaller features (as indicated by [Adam Jermyn’s replication](https://transformer-circuits.pub/2023/toy-double-descent/index.html#comment-jermyn-1) of the original findings). We can also reproduce the progression from memorization to generalization in the columns of W (blue) and hidden activations (red) and the findings on dimensionality as shown below.
+
+![](https://lh5.googleusercontent.com/L8ZVwjxXr4Ti0A1CQPUXx0ilAbMYwk_rjWqV20rI9D-xaJXMDwAO6hefMS1CErNBcWcD7a8SJ9G4QxOOkkb81tWCwnXLW-TcO9sduT_CeRTqcuVDZKp5McSLzSn24w1ckO5gEXbescFlmQrFqhRJJvg)
+
+![](https://lh4.googleusercontent.com/wGxk-oUcrtTeU5bHs0n3IIhGnafAEBPRET4-ZjoVYoE1xXm-FQI6OPT-l1WaLGZP7zkbNa4IncKmEUv-qP14D6JP20i0UFFsTggbU6c-l7DlSseEjH38H_D8qmid11i-2OvTlhojOtPybIOgAAp0P8c)
+
+We can plot the fractional dimensionality of the samples and features as described in the paper.
+
+![](https://lh5.googleusercontent.com/cIuOv8yyJZvLGYtWroKJGqWsS2QIPb-e-3gt_hAUWJP3vSf5m1AQxn7IAT2plQkNk-MnluNNSkUVONqiVRhqhYme1-BtuPfIPHgokegjnXo-lBfdIFPlIH181fkEprkhWNGjWN5azyDadQCmjQEDrQM)
+
+![](https://lh3.googleusercontent.com/yZwrOhCEcCNWyqIk8odhzA-PcZEwVPLDtBp3OyHhsWpNINmMqzkL0UbxM0b5Mqtr6QXeMBdGd5cDSrma1OFAsk3-aIJ32QdjUaj5b5NN6QiSNsvPdoPeyyHeEfvVZYW0KQcmxvx61RP63ssx5gi21Ng)
+
+In a comment on the memorization and double descent paper, Chris Olah introduces the maximal data dimensionality D* as a metric to distinguish between memorized and general examples showcased on an MNIST classifier. 
+
+![](https://lh4.googleusercontent.com/TR53yncI87QQLJ4GjirQm6jUMqa_L_9Z-SRcRW9IIYsUoxyU-32xkHU5ZckKo0cFow7WZb4mQUQ4RB5KezGbeVop2au7Wl2hirOZp3xC4rzg1wuPSyKpeGGk-X6wcnUkvSVPVjWmt10xcv4CuKumopQ)
+
+In the MNIST case, the metric suggests that there are a couple of memorized datapoints (which have features that they don’t share with other datapoints; thus high D*), mostly general datapoints (which share at least some features; thus medium D*) and some pathological datapoints (which haven’t been learned; thus low D*). Computing D* requires some optimization which makes it tricky to get right in practice. Note, that an insufficiently optimized D* curve will look interpretable but provide incorrect conclusions (thanks to Chris Olah for pointing this out). I have added a section on practical tips on computing D* in the appendix. 
+
+We apply D* to all dataset sizes of the double descent run. Our prediction is that something interesting happens around the point when the model switches from memorization to generalization. Specifically, we predict that the lines before the flipping point are high and flat (since all memorized datapoints get their own direction) and the lines after the point are lower and have a downward slope, i.e. the typical curve we already saw in the paper (since there are actually shared features). Furthermore, we would expect that all the features that have not been learned have a lower D* than the features that have been learned, so there should be some sort of plateau in the beginning for the learned features in runs with larger datasets.
+
+The bottom picture seems like it shows all of these trends but the fact that we stretch the curves to the same length might distort our perception. We can also make out the plateau in the beginning of the curves with many data points. This seems like mild evidence that D* metric captures the desired phenomena. 
+
+![](https://lh4.googleusercontent.com/YC9OFT9ByafLcm6onhSl8ZpOHTr32tGda4-w1fxmWZlgGalYK9rKmP5O9l0ZQVim-DNjDCvuLh58N8hxm5XvlZKy1tAGvQXaXSNvlkcq8hrDax9h78bw9YTKDo4AFEAXF6XxtC5C8mjOLX8HPwQ35ZI)
+
+### Replicating the MNIST setting
+
+Furthermore, we can replicate the findings in Chris Olah’s comment on MNIST by fitting D* on a network that was trained on 50000 random samples of the MNIST training set. However, there are minimal differences in the curve, e.g. we don’t have the change in slope at ~90%.[^tw6m7vnrtlg]  The curve takes a very similar shape as in the original post and we also find the same clustering, i.e. memorized examples on the left of the plot, general features in the middle, inputs with very similar features close to the right and really weird inputs at the very end of the right side (see figures below). 
+
+![](https://lh4.googleusercontent.com/cxafjKr2TKOvo7hJhYT_WhRnhEFggRgihEmBx-E2dPJ66I7KtygJFTEZzXiZMhobd1V1OZpHgUh3xsajM06WGp_Q1UMJc3dbfjmERqkFmufSF8z-qfoCRtPg53HlWqgj-RF3varc_8HWRceY2ah8DLg)
+
+![](https://39669.cdn.cke-cs.com/rQvD3VnunXZu34m86e5f/images/0660bd00e7b22f580f7f899501399ea1a1503028ad8b938f.png)
+
+*Samples for non-normalized inputs. For normalized, see appendix. **Left:** Left-hand side of the spectrum; **Middle:** close to right-hand side; **Right**: right-hand side.* 
+
+Note that Chris Olah normalizes the inputs in the original comment (i.e. x’ = x/x.norm())[^v1473wt3mvh] because the unnormalized network will otherwise treat all the fat numbers, i.e. where lots of pixels are activated, as exceptions (as you can see for the unnormalized plots above). Thus, we plot the D* curves for normalized and unnormalized inputs. In the appendix, we show samples for the normalized version. 
+
+One unexpected finding is that the distribution of incorrect predictions on the training data was pretty much uniform across the spectrum. A priori, one would expect that most of the incorrect examples are on the right-hand side of the spectrum as they contain features that are not shared among the inputs or are “weird” in some other sense. We will later see that the distribution of errors is actually left-heavy which is exactly the opposite of what we would expect. 
+
+It’s not clear to me what this tells us. The misclassified inputs certainly look weird to me (see figure below, ordered row-wise by decreasing D* like you would read a book). The fact that these outliers are distributed nearly uniformly across the curve either could either tell us that we don’t understand the metric yet, a deep insight about NNs, that the NN doesn’t “think” these datapoints are weird or that D* just has some flaws as a metric. 
+
+![](https://lh5.googleusercontent.com/7vqmJmGbSd0c_psaZDtmCJFyeqdflw8yvU26RqR1VvYAqZcC7UZnAFrGvMajFmSw14smnCV2aBmcgTJeRrwzH6VotV-ouXxHjOldACHlsIUgonle41ACtvXStwgADExKqhBzTga_W3Iz7cAsLCROZ_U)
+
+### Distribution of classes across D*
+
+As we would expect, the classes are not equally distributed across the spectrum, e.g. zeros are further left than ones on average. The most straightforward interpretation of this is that ones are more regular (thus lower D*) than zeros. This effect is even stronger for the normalized datapoints (see appendix).
+
+![](https://lh3.googleusercontent.com/orcDlXYvTna0dvP1NxpGiztEHLzcB0E6VFm1mzgFHcIbQWFzR2Q6_n5JIfHeJQckaJgXct33YaWcPaIl6_5uc6cqPzN6witEq9eNknfT4fIwoggqEttIJhaTAE-ecERaxPgibzKE-ZqpVqk_CU0KPbU)
+
+Since this metric shows a couple of interesting properties, we investigate it more deeply in the following section. 
+
+More findings on data dimensionality
+------------------------------------
+
+### The distribution of error rates
+
+In the previous section, we saw that the misclassificatied training datapoints seemed to be evenly distributed across the spectrum of D*. This is unexpected since we would think that especially weird examples are more likely to be misclassified, i.e. examples on the right-hand side of the spectrum. To test whether the finding above is an outlier or part of a larger pattern, we plot the error distribution at different training error rates. We train models from scratch to 1,2,3,8,18 and 40 iterations and plot D*, the location of all misclassified datapoints and a histogram over the misclassification rate per bin. The plots for normalized datapoints look even more left-heavy (see appendix). 
+
+![](https://lh5.googleusercontent.com/zw9Tzaiu7_oo9HLE1AD_IIPvG96AnjhTbFSkkUwt-O5kiyOXddOlG2hld-Te6wn363gtBWzppWFnyv_9FYltN27N7B7AK2y-6teY5iijSd6JiVo9I94DtklZs6qnfz0xcVFnx16daIWLq_qiUAONMEM)
+
+I’m not quite sure what the implication of this finding is. It could be a pathology of the metric, a new finding about NNs, a specific problem with MNIST, etc. I’m excited about further research on this question and happy to assist people who want to get started. 
+
+### Different hidden sizes
+
+To test more qualities of maximal data dimensionality, we vary the hidden size on an MNIST classifier. We do this for the superposition setting (ReLU output model trained with MSE in autoencoder setting) from the previous section (see appendix) and a classic MLP setting (MLP trained with cross-entropy loss; see this section). We run the experiments on 5000 samples instead of 50000 to reduce the runtime of experiments. In addition to the maximal data dimensionality, we also show the loss and accuracy below. 
+
+![](https://lh5.googleusercontent.com/52v8_N0wHidSTlj974yh0RglTk5ftpEA4-6ExcIBKsZWVyRgwQG0pEBY_RIaOKDU9g6z61pVRkFe9fYl4gXhC-gpAtAKk050Jd3MwLMhoEl2bCGNvEXd8kjaOHr2AptmwXiLQODpIxLZ53FbMI7GEOk)
+
+It seems like the shape for the different hidden sizes is roughly the same in all settings and merely differs in its magnitude. The magnitude trends are totally in line with what you would expect--the more neurons a network has, the more unique its features can be and thus the higher the maximal data dimensionality. The similarities in shape could have multiple possible explanations. This could mean that linear networks of different hidden sizes all roughly learn the same function just with more feature sharing. Intuitively, this would mean that the network always memorizes a couple of inputs (left end), shares features across most inputs (middle part) and has a couple of inputs that are very hard to categorize in the previous two framings (right end). Since the sum of all D* always has to be equivalent to the number of non-dead neurons, we can fairly precisely predict the distance between the curves. Secondly, only the smallest hidden sizes do not have 100% training accuracy. This could explain the difference in behavior at the right end of the spectrum, i.e. why networks with larger hidden sizes have a shorter tail (with the exception of 512 for some reason). 
+
+We compute the spearman rank correlation between D* for the different hidden sizes. The closer two hidden sizes are, the larger their spearman rank correlation. This means that networks that are more similar in size order the datapoints more similarly and could indicate something like “networks that are closer in size learn more similar features”. There might also be a more technical explanation for this phenomenon that I don’t understand yet. 
+
+![](https://lh4.googleusercontent.com/UOPEkYFay8LGyCIurheC8b-QE7eLMcCSkYY5rkpPdcwzYmFjr_UlCa-cIOAcjOlwzrKFYULOC282Xd15IQTcLFEPW8sYX3lEVk4bD_hNukMf2oyrFX-ilMf2juwUHJ6LfBsW78SGecd_9lt0Z2oaN5A)
+
+### Different random seeds
+
+To further test the consistency of D*, we train the same architecture on the same data and only vary the random seed. 
+
+![](https://lh6.googleusercontent.com/1Z-BexjH76uWf5FjWGGIgFZFEbHrAL3LKqhXJzffEtD_KpJhFwrLuYTkx-bywq874EhXkVb_D0bqukjHwVNWnHpBB5RRPTHsKhdf9Fxhw2CkWyZCEc4HMcXUip3s_04iZU6kpCk2gV727nc4eA2W7Xk)
+
+The shape of the curve looks nearly identical for all seeds. An interesting finding is that the right-hand tail of the networks vary a lot in length, i.e. seed 6 stops at 1e-2 and seed 5 goes up to 1e-4. I think this is either an implementation issue or a weird pathology of D*. Since all networks have been trained to 100% training accuracy, it can’t come from misclassified training data.
+
+We can also observe that the spearman rank correlation is larger than 0.87 between all of them. It is not clear whether the remaining differences in spearman rank correlations can be explained by random variations, e.g. two nearly identical datapoints having slightly different D* in different runs, or is due to the network learning slightly different features in each run. 
+
+![](https://lh3.googleusercontent.com/tvElao26Udq8Twh12_kf6byn3XsNBxeYN4d8hSXOJ4D0PDqZGgsC4U2IV1h4EvpZBINQa11EellBqt0qHZ7KV1FrVt7YesqB34FFE7I00fI206hABNpJanpZYNDhbo7mKCGIRPPTqiSQG01sK07EhTc)
+
+### Different dataset sizes
+
+Furthermore, we investigate the effect of larger dataset sizes from the MNIST training set. In all cases, the run has a couple of very large and very low maximal data dimensionalities. We can see that larger dataset sizes have flatter distributions. This could be explained by having more datapoints that fall under the “detectable with standard features”  regime in the middle. 
+
+![](https://lh3.googleusercontent.com/JNNg-Yi2NuvXHRopEb_yDKV2Bhr6DxRkHqowRIcSEn5bpMLyYdTiKJzE9ai3Uczle5oiwtOaofI9_hPWpcIa5nZ7-kCovsv3_EPw-RfScENN-wGlJalhTNlYJJTRYDIvoBFFa6MoREuWADH9yw_EcfU)
+
+When we contrast the findings from different data sizes on MNIST with the findings on different dataset sizes in the double descent case, we see that the different curves overlap (i.e. the lines cross in the graph) in the MNIST case but don’t overlap in the double descent case. A plausible explanation for this phenomenon would be that models trained on small batches of MNIST already learn features (thus lower D* in the middle) while they only memorize in the double descent setting (thus higher D* everywhere). 
+
+### Different levels of weight decay
+
+To test more properties of D*, we compare networks that were trained on the same data with different weight decays. A priori, we would expect the network to memorize less and use more general features with more weight decay. This would imply a flatter curve. 
+
+In practice, weight decay does not really change D* that much. There is a small effect that the right-hand side is slightly lower (which is the opposite of our prediction), but that doesn’t have to mean anything in particular. 
+
+![](https://lh6.googleusercontent.com/5h4TwJEdWXnyiZajlMiOMB_YpVEv7t0XIvCZaga_JED2UzvjZqJ-dHBcUnEfqNkkliEb6o64GOoWi9Awn5N0PZ5TUvtW4AVGK6ZqzDsv1n70HGEidsjXDxH20-htlTgRATI2RHrGuC4LaWl097cgqsA)
+
+### D* during training
+
+Another noteworthy finding is that the D* curves have always looked basically the same in most settings. 
+
+Thus, to test if this shape is just a pathology of the metric, we apply D* at different stages of the training process. The curves do not change a lot during training and the spearman rank correlation between the curves is very high (see below), even for the randomly initialized network with the rest. This could either be a result of this particular setting, an interesting insight about NNs (i.e. that they don’t change their features a lot during training) or just a pathology of D* as a metric. I’m interested in follow-up research on this question.
+
+![](https://lh4.googleusercontent.com/dMCwq0zapBdPyih6X0Wh6NFtn1NdAojmO-LdGJfZxxQ1wcEWLuQG7CX9aoBzesFvWo-VywRusMkJBVAc4Gq3Uy95a1Qp8TYsBLGtMtEiY166URRS4QOOGK6-Cq4E5MkaEWUtvbAZQuS5xaDqm02VTEk)
+
+![](https://lh3.googleusercontent.com/S7gFyPGmqjeOkUri077RvzcvrpwMivp3m2jADKBiZirHcVzlkUhhpNhMAElO6X7-IhaX9ZHFkBse0HNt-Za1juqtvXHQnAxDL1jJL368QztLqJb0bORtKwfhVsLct_d3gDnVsqnZRDpmWLHDT4G1f0A)
+
+### D* in the first batches
+
+We measure D* for the first 10 batches on 5000 randomly chosen MNIST data points with batchsize 500. Thus, after the final batch, the network has seen every datapoint exactly once. We can see that the D* curve barely changes between the batches and the spearman rank correlation is very high. This further confirms our findings from above. 
+
+![](https://lh3.googleusercontent.com/bxJfdb_2ZQCTN0UzFpC59aBkrjlmsR9sEWYN2XP_ZvSocFLkuVzpstwTnYIbz3V9wZcOB-bZg39LWH4_J47QpD5yAbgy_JkpfYTRIClwyGvQMWo3Ce1-iDum4Bp-Y-ijOjuzQIq9mKC-L_-UQdFtDuk)
+
+![](https://lh6.googleusercontent.com/5kNel9tNFONdF_wQfipSDUuDgIrWNk6CzHXl3EwSf-kZo51uQ0X9vOfQsTHFfYeNk7ZEgS-n4Skb1r6AKav4l1np1czppd4ULxRYS1eUlnkprtHywH9blVA4Cads14vA4EXJjC8qAB1VM7GqILt8HYo)
+
+Intermediate conclusions
+========================
+
+After working with D* for a bit and looking at some of its properties, I’m more convinced that it tells us something meaningful. However, the fact that the misclassified training data are not clustered on the right-hand side and the small changes of D* during training are unexpected to me. I’d be excited about follow-up research on these questions and might do it in the future if I find the time. 
+
+Currently, I’m trying to understand memorization in small toy transformers in the hope to understand the phenomenon better. In the near future, I hope to be able to use this knowledge to improve our understanding of anomaly detection. 
+
+Appendix
+========
+
+Practical considerations about D*
+---------------------------------
+
+Running D* in the naive way (e.g. with a for loop) will likely take forever and also give you incorrect results. To get the metric to run properly, I had to do the following things. 
+
+1. **Precompute the inner product of hidden vectors** (full credit to Chris Olah for showing me this trick)**.** The denominator of the metric contains the sum over the squares of dot products between v and $h_j$: $\sum_j (v \cdot h_j)^2$. This can be rewritten as $\sum_j (v \cdot h_j)^2 = \sum_j v \cdot h_j h_j^T \cdot v^T$. Thus we can precompute $H = h h^T$ and reuse it. 
+2. **Parallelize the computation.** With the precomputed H, we can create a batch of all v’s and compute the result in parallel on a GPU, e.g. with batched matrix multiplications. You can find an implementation in my code. The difference between running the parallel version vs. the sequential version is roughly 60 seconds vs 5 hours for 50000 examples on MNIST. 
+3. **Use the same tricks as for NN optimization.** Specifically, I used a linear warmup scheduler followed by a cosine annealing scheduler and it improved the quality of the results noticeably. 
+4. **Double-check if you converged** (full credit to Chris Olah for showing me this trick). To check if you have converged with your D*, you should take the sum over D* and see if it sums to the number of non-dead (i.e. not killed by the ReLU) neurons. In case it is the same or extremely close to that, you have converged, otherwise, you have to fine-tune your optimization process for D* further. 
+
+If you don’t do any of the above, you will likely get incorrect results but won’t notice. If D* has not converged, it will still have an interpretable shape and you will read a lot into it that isn’t actually true. 
+
+Replicating findings on data dimensionality
+-------------------------------------------
+
+![](https://39669.cdn.cke-cs.com/rQvD3VnunXZu34m86e5f/images/298955ec1ddfbb425f59d5b38c9c6fcad5f769cc2952f243.png)
+
+*Samples for normalized inputs. For non-normalized, see main text. **Left:** Left-hand side of the spectrum; **Middle:** close to right-hand side; **Right**: right-hand side.* 
+
+All 21 incorrect classifications for the normalized case. 
+
+![](https://lh5.googleusercontent.com/CyfKwZDRoV6fm-3xG5JjzLfgpuLkFbcjdiWOWWgC0TfnRX4gUGGRWnPtTwQZYfcCqbpp2oyrCVespOZMgyPFj5hYDOsUtY8FSZHciNsMxApM1nYWOEGZ87WgRbR-FgdaE4m0sm9LHpIcuELAUVSFD70)
+
+The distribution of classes across the spectrum for the normalized case. 
+
+![](https://lh4.googleusercontent.com/yieWO2sE4pTeA_f_8feQtAH9z-rOqdHgsS7V-tAciGYc3NGENXTNgL11T-CpYGR7CyXcc8kqdhr1uRj59dj4qpnSEZsCQviQ3Ee3bJi-hIxefVfMgGb7U1YZDQf9oj2_jtpponojIa3XaQ7AnBWf9DQ)
+
+More findings on D*
+-------------------
+
+The number of misclassifications for normalized inputs is also left-heavy similar to the findings we had for the non-normalized datapoints. 
+
+![](https://lh3.googleusercontent.com/96uxAz7_LtZA40X7WguG0oCAS8v0_jUiLvTMokL4KWapG-yAefrNZ2g6MN-j7cCjFkcR89Bz8oPz9M7kSlJMFAHYcU0a3yOwWhMXHPOC-rJWx_7TKZdb6xE-mRhinqaI-jtDm7pBZ2_3pW84LsUFmgE)
+
+In the main post, we showed D* for an MLP setting. Here we show it for the ReLU Hidden model. It mostly looks the same but there are some weird outliers for hidden size 512. Since the MLP setting is closer to real-world applications, we drop the ReLU Hidden model for all further MNIST experiments. 
+
+![](https://lh4.googleusercontent.com/1efJwlLW4RaTypteCSmwrK0vGYpdumUr7yFLoonVrXcKDk1WdicJrNOVDZsD8HOlxpocAh__qhHittpzA7J8GniN2KkQ8UzIyi6OIyRqcJnEnQTFe2pDYn0LVioX_g59isAgCu2Kg_4bWeuW1uyInM4)
+
+We also test D* for different levels of weight decay. We would expect weight decay to produce flatter curves since we intuitively force it to use more features for the same data. 
+
+Randomly initialized network
+
+![](https://lh3.googleusercontent.com/oL-71G5YMYGBa6cNppKVzN25XSY-IKHPYaI9rwCNI0f7viFrMkBWPy2D2s9FHrh-RF7vxLexvDSX2nJu_4ACsBS9y0-B4phCWXr3ak4j7sQpWJrTdhi7BK8A9IbXgVOTA82WD7qY2VNLJPAZlKsosiE)
+
+ 
+ 
+
+[^tw6m7vnrtlg]: Not sure where the difference comes from. Could be dataselection, random seed, weight decay, training run length, etc. Lots of different possibilities here. 
+
+[^v1473wt3mvh]: L2 norm
+
+Top Comments Index
+------------------
+
+### Comment by [StefanHex](/users/stefan42)
+
+* 2023-03-08 01:05:57Z
+* Karma: 3
+* Voting system: namesAttachedReactions
+* Approval votes: 2
+* Total votes: 2
+* HTML permalink: [/posts/WfdxXhszxFc3BxZ8r/more-findings-on-maximal-data-dimension/comment/v4yiCmbwQdYgQbJp5](/posts/WfdxXhszxFc3BxZ8r/more-findings-on-maximal-data-dimension/comment/v4yiCmbwQdYgQbJp5)
+* Markdown permalink: [/api/post/more-findings-on-maximal-data-dimension/comments/v4yiCmbwQdYgQbJp5](/api/post/more-findings-on-maximal-data-dimension/comments/v4yiCmbwQdYgQbJp5)
+
+### Navigation
+
+* [Front page](https://www.lesswrong.com/api/home)
+* [Markdown API documentation](https://www.lesswrong.com/api/SKILL.md)

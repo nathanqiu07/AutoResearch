@@ -1,0 +1,423 @@
+---
+url: https://www.lesswrong.com/posts/KzwB4ovzrZ8DYWgpw
+title: More findings on Memorization and double descent
+publishedDate: 2023-02-01
+date_source: listing
+authors: ["Marius Hobbhahn"]
+author_position: solo
+kind: post
+exa_request_id: https://www.lesswrong.com/posts/KzwB4ovzrZ8DYWgpw/more-findings-on-memorization-and-double-descent
+---
+# More findings on Memorization and double descent
+
+* By [Marius Hobbhahn](/users/marius-hobbhahn)
+* 2023-02-01 18:26:41Z
+* 53 points
+* Tag: [Double Descent](/w/double-descent)
+* Tag: [Interpretability (ML & AI)](/w/interpretability-ml-and-ai)
+* Tag: [MATS Program](/w/mats-program)
+* Tag: [AI](/w/ai)
+* Frontpage
+* Comments: 2
+* Post URL (HTML): [/posts/KzwB4ovzrZ8DYWgpw/more-findings-on-memorization-and-double-descent](/posts/KzwB4ovzrZ8DYWgpw/more-findings-on-memorization-and-double-descent)
+* Post URL (Markdown): [/api/post/more-findings-on-memorization-and-double-descent](/api/post/more-findings-on-memorization-and-double-descent)
+* Comments URL (Markdown): [/api/post/more-findings-on-memorization-and-double-descent/comments](/api/post/more-findings-on-memorization-and-double-descent/comments)
+* Post URL (Markdown, compact): [/api/post/more-findings-on-memorization-and-double-descent?compact=1](/api/post/more-findings-on-memorization-and-double-descent?compact=1)
+
+Produced as part of the [SERI ML Alignment Theory Scholars Program](https://www.serimats.org/) \- Winter 2022 Cohort.
+
+I’d like to thank Wes Gurnee, Aryan Bhatt, Eric Purdy and Stefan Heimersheim for discussions and Evan Hubinger, Neel Nanda, Adam Jermyn and Chris Olah for mentorship and feedback. 
+
+The post contains a lot of figures, so the suggested length is deceiving. Code can be found in these three colab notebooks [[1]](https://colab.research.google.com/drive/12qNPTr_CsiWNKBbna_12RvZovPEhaNlw?usp=sharing)[[2]](https://colab.research.google.com/drive/1OYYLDiwFHXz6zoCYuFddkim1o9a4jKXI?usp=sharing)[[3]](https://colab.research.google.com/drive/128nvRaYb0eZRVZi4r-IIZ4iO9oEGwlol?usp=sharing). 
+
+I have split the post into two parts. The first one is concerned with double descent and other general findings in memorization and the second focuses on measuring memorization using the maximum data dimensionality metric. This is the first post in a series of N posts on memorization in transformers. 
+
+Executive summary
+=================
+
+I look at a variety of settings and experiments to better understand memorization in toy models. My primary motivation is to increase our general understanding of NNs but I also suspect that understanding memorization better might increase our ability to detect backdoors/trojans. 
+
+1. The work heavily builds on two papers by Anthropic, “[Toy models of superposition](https://transformer-circuits.pub/2022/toy_model/index.html#demonstrating)” and “[Superposition, Memorization and double descent](https://transformer-circuits.pub/2023/toy-double-descent/index.html)”. I successfully replicate a subset of their findings. 
+2. I specifically look at three different setups of NNs that I speculate are most relevant to understanding memorization in the non-attention parts of transformers.
+ 1. **Bottlenecks** between layers, i.e. when projecting from high-dimensional spaces (e.g. MLPs) into lower dimensions (e.g. the residual stream). This is similar to the setting in the [toy models of superposition](https://transformer-circuits.pub/2022/toy_model/index.html#demonstrating) paper and its [sequel](https://transformer-circuits.pub/2023/toy-double-descent/index.html).
+ 2. **MLP blocks**, i.e. when projecting from lower-dimensional spaces (e.g. the residual stream) into higher dimensions with ReLU non-linearities. 
+ 3. **The final layer**, i.e. when projecting from the end of the residual stream into the vocab space. The main difference to the previous scenarios is that we use the cross-entropy loss for the experiments which has a different inductive bias than the MSE loss.
+3. I’m able to find the double descent phenomenon in all three settings. My takeaway from this is that the transition between memorization and learning general features seems to be a very regular and predictable phenomenon (assuming you know the sparsity and number of features of your network). Furthermore, it seems like the network is “confused” (e.g. has much higher test loss) when it is right between memorization and generalization. 
+4. I test the limits of reconstruction in different settings, i.e. the ability of the neural network to reconstruct its inputs given different dataset sizes, hidden sizes, number of features, importance distributions and sparsities. The findings mostly confirm what we would predict, e.g. more sparsity or larger hidden sizes lead to better reconstructions. A speculative claim is that if we had better measures of sparsity and importance in real-world models, we might be able to derive scaling laws that could tell us how many “concepts” a network has learned.[^b1qeqe0vcxg]
+5. Interpreting NNs that memorized in the simplest settings is extremely straightforward--the network literally creates a dictionary that you can just read off the weights. However, even small increases in complexity make this dictionary much harder to read and I have not yet found a method to decompile it into a human-readable form (maybe in the next posts). 
+
+Isolated components
+===================
+
+In the following, we isolate three settings that seem like important components of memorization. They are supposed to model the non-attention parts of a transformer (primarily because I speculate that memorization mostly happens in the non-attention parts). 
+
+Bottleneck
+----------
+
+By bottleneck we mean a situation in which a model projects from many into fewer dimensions, e.g. from an MLP into the residual stream. We use first use the ReLU output model from the original papers.
+
+$X’ \approx \text{ReLU}(W^T Wx + b)$
+
+![](https://lh6.googleusercontent.com/IgJCuN3U_kB22TSMYHA3aenkpZUltYT_bpN4IXN76Yl7DT2Pfano0dmJZouaN-EVZPzR23QRqPc64r-j4uAZXZePBjPYlg9PXcintuoVGq2V_59WcuoGCwkJrc6bWdI0heuC-ujNzkBkFtX4bl6YiRs)
+
+### Replicating work on superposition
+
+We are able to reproduce the main findings of the “basic results” section of the [superposition paper](https://transformer-circuits.pub/2022/toy_model/index.html#demonstrating). For a model with $n=20$ data points, $m=5$ features and an importance distribution of $I_i = 0.7^i$, we get basically the same outcomes and plots as in the original paper when sweeping over different sparsities S. 
+
+In the following we first plot $W^T W$ with corresponding bias terms on the side and then the norms $||W_i||$ of the corresponding Ws in the column below. The color corresponds to the superposition metric $\sum_j (\hat{x}_i  x_j)^2$, where yellow means a lot of superposition and black means no superposition and $\hat{x_i}$ is x rescaled to unit length. 
+
+![](https://lh6.googleusercontent.com/SjLi8dUrKrMVB2xTmf6pKZz6pMfHt7PowV5Qn-PrGFtCONxDbOsAIJ0VEteYv1m7DyGdFGDqh6iU_gVcLAIsdlFcLjJsm6-39chf3yPgfjDrfboAWoCZCXfJPMI31Mp2DP4MdF4XZEmwv5oh8bwi0og)
+
+![](https://lh3.googleusercontent.com/gPAQL914PcGrqYbQBeiB1IkSrQqP3tRcdjZ7ugUpyZxDj_w451BzGQtxMw1CysZ5j5pwJVv23QfOedX3hMNnt8mYTAQiR5kcINAVCtN2G4hgMp4u4WS_JjwXjBOa-MLUrlRpXXr1h3twU0k2kevX-xg)
+
+There is one small caveat, namely that these results seem to be very responsive to the initialization of the bias term. If we don’t initialize it with zeros, the results look significantly different (not shown here; see [Adam Jermyn’s work on monosemanticity](/api/post/LvznjZuygoeoTpSE6) for possible explanations). 
+
+A plausible and unsurprising implication of this finding is that the residual stream (which is much lower dimensional than the embeddings or MLPs) likely contains most or all of its information in superposition. Therefore, probably no feature is important enough to get its own dimension in the residual stream (and there is no reason for features to be in a privileged basis) and we have to look at directions rather than individual dimensions to understand the network.
+
+### Replicating work on memorization & double descent
+
+We replicate the double descent phenomenon discussed in the [memorization paper](https://transformer-circuits.pub/2023/toy-double-descent/index.html). In the paper, they still use the ReLU Output model with $m=2$ but normalize all inputs. We further adapt this setting in two ways for this post--we use 1000 features instead of 10000 and sparsity 0.99 instead of 0.999. We also cut off the dataset size much earlier than in the original paper. We use the schedulers as described in the paper and can confirm that they make a difference.
+
+Even with these modifications, we can reproduce the double descent phenomenon. The double descent happens exactly 10x earlier than in the original paper which is a result of the 10x smaller features (as indicated by [Adam Jermyn’s replication](https://transformer-circuits.pub/2023/toy-double-descent/index.html#comment-jermyn-1) of the original findings). We can also reproduce the progression from memorization to generalization in the columns of W (blue) and hidden activations (red) and the findings on dimensionality as shown below.
+
+![](https://lh5.googleusercontent.com/JiuBTx3l1yfcYpXCWLFwXUrZ02_FLnudY7qaQBlPq1qeb22mgM6_SZylek-RZPO2sQtjG-vt7_p__1NSLR23UW3YgMIjLaSZvDRRPOY2D_ww7d0hS2fITZxa-zdXGrUcfPhMYdP1zqDLSvKzLxY9gJM)
+
+![](https://lh3.googleusercontent.com/fjHPy3au1ZP1T_AeBS1IN3-XxCm5F3wropJp8jM1tuAiRIWiH6ZO1EYDDYwXfA9TFucAcuephylc7DCbqTLsp78zGZ7-kAe2bxJKBUWhJLmGhQoScnbagCKeBfGQvwv3B-yL9NdRnsQd_15LwjIMErk)
+
+We can also plot the fractional dimensionality of the samples and features as described in the paper
+
+![](https://lh4.googleusercontent.com/woS1urlc2VWQ0xRJePv4cIOCrED9W1FSo_4y8_ZChoDxS7BfE5tlMfAf_whXFg6Z50yfQuzS54i2I4NmXiE8MagBP_nGHKDCp3Dxf10tCOSC2tOkMFjcbbZlvvLYleW_xJX9eyoJG9hZf1i2BWEaXiI)
+
+![](https://lh5.googleusercontent.com/ful3xbi_ZLfQXivyS8gh2YZWYr1KYT6Kk9CzyCX6BXOW_LS5v7PcN_VbYxJ2SFsJkJsa9IFJROQvVCK5e-bu0HfI7vecW26VeoV-8eMBniQrsQjcDaRySsTuJclxaGdCjB44hntu5UfvSRsJsR-YYPo)
+
+We explore the transition between memorization and generalization through the lens of the maximum data dimensionality metric in the second post. 
+
+### The limits of reconstruction
+
+In the context of transformers, we’re interested in the limits of reconstruction under different conditions. We might think of this roughly as “how much knowledge can the network put into the residual stream?” since the bottleneck setting models a projection from a high-dimensional into a lower-dimensional space. 
+
+Thus, we plot the log-loss (MSE) and accuracy for different levels of importance, sparsity, feature sizes and hidden sizes below. To get an approximation of the accuracy, we forward one-hot vectors through the network and measure if the argmax of the output is the same as for the input.[^pr5v36l32z]
+
+In the first setting, we have noisy inputs with different levels of sparsity and exponentially decreasing importance.[^hdfws4dsww]
+
+![](https://lh6.googleusercontent.com/Xp_ODcBKljUul7MKI6xz3weCftiLE37QpjvYTlAJAsszL0V-c1ooa9LF-cttoFV_v3syG8CNXJ79H-lLJEqNIIRSVZdjDL8jZ6o6jwbM-49bp3QY5mPU2OKeJd6sAwLxsygNf1lM0XdsoYbf7Sg_mig)
+
+In the second setting, we keep the noise but switch to uniform importance.
+
+![](https://lh3.googleusercontent.com/HFXWAXNUkitG_peCabzEwTygfwVmlEfD7U-OHqrH-pxajh9cg2n4_B4bFERLi_hdP_veria0CUdHLCLp6XZMbI1Pbw1mL3dm12aw9hiwQTIePR-BwmIqmu2GPprfJVawum4ewTCxvg0DqHgTnVRhaZs)
+
+And finally, we get rid of the noise and train the network on one-hot vectors. 
+
+On the left, we show the results for a setting with exponentially decreasing importance and on the right, we show uniform importance. The fact that the model doesn’t have 100% accuracy in all settings on the right-hand side is likely due to weight decay and other hyperparameters. 
+
+![](https://lh6.googleusercontent.com/KnDuCTiGRFYi4Ul-cMfqTreZHQV474IJY6W-9xK9s0PIFgCDWJEffMkTM9yLLFx-EL_-dnYPtutOSVnD4CfQoI9l8ZyccgAOf_4TPmji_zb1Gpar6WsOJvKQ8db6KG-vjycVFn3yjhkFEdEeC4f6R1s)
+
+Findings from the above figures:
+
+* **Importance:** uniform importance creates a worse loss but a better accuracy than decreasing importance. This is exactly what we would expect since the network with decreasing importance focuses on fewer features and ignores those with the lowest importance.
+* **Sparsity:** The sparser the vector is, the better the reconstruction loss and accuracy. This aligns with what we expect since less interference usually leads to better outcomes in NN training. 
+* **Noise:** Removing the noise and training the network on the features directly improves performance since the network is now only limited by the training procedure (e.g. weight decay) and floating point precision. Nevertheless, the importance variable nudges the network to prioritize some features and thus effectively ignores others even if it could in theory represent all of them. 
+
+Most of the findings in the previous section seem relatively regular, e.g. the flipping from memorization to generalization during the double descent happens at the same point across different seeds and the effects of dataset size, noise, and importance also seem to follow some pattern. Obviously, this is just a toy setting and the real world is much messier but it makes me slightly more optimistic that we could understand these patterns in real-world networks if we were able to approximate key variables like the noise distribution or the importance of different features. 
+
+Furthermore, the number of “facts” we can cram into the residual stream seems to vary a lot between the settings. Under the roughest conditions, i.e. decreasing importance with zero sparsity, the network can only recreate roughly as many one-hot vectors as it has neurons. In the noiseless and uniform setting, on the other hand, it can store a practically unbounded number of concepts. Thus, if real-world text turns out to be fairly sparse, we should expect even small LLMs like GPT2-small to be able to store millions of concepts in superposition in the residual stream ([Conjecture's recent post](/api/post/z6QQJbtpkEAX3Aojj) on engineering monosemanticity supports this hypothesis).
+
+The reason this would be interesting for alignment and interpretability is that it would give us better intuitions for what capacity we should expect a network to have. Maybe it wouldn’t even make sense to search for specific niche concepts in small transformers because it turns out that they, e.g., can only reliably represent 10k different concepts. On the other hand, research on this question might increase capabilities faster than alignment and I’m thus not sure if it is worth researching further.
+
+MLP block
+---------
+
+The common narrative in ML is that the MLP layers are effectively a lookup table (see e.g. “[Transformer Feed-Forward Layers Are Key-Value Memories](https://arxiv.org/abs/2012.14913)”). This is probably a part of the correct explanation but the true story is likely much more complicated. Nevertheless, it would be helpful to understand how NNs represent their mappings in settings where they are forced to memorize, i.e. can’t learn any general features and basically have to build a dictionary. 
+
+There are many simple behavioral metrics that suggest when a network is a lookup table, e.g. if the training accuracy is 100% and the test accuracy is 0%, this seems like a strong indicator for memorization. However, if we want to provide mechanistic evidence that a model only memorizes, we effectively have to decompile the dictionary into something human-readable and show that all inputs have a unique one-to-one mapping to their corresponding output. In simple toy models, this is easy but even in slightly more complicated toy models, this turns out to be non-trivial. This gets further complicated by the fact that most NNs tend to do a mix of memorization and generalization.
+
+The first section contains replications of some of the findings of Anthropic’s superposition paper which uses a ReLU hidden model and then we switch to the setting found in real transformers, i.e. a conventional MLP in an auto-encoder setting. 
+
+### Replicating MLP section from superposition paper
+
+The superposition paper contains a section called “Superposition in a Privileged Basis” in which they switch their setting to the “ReLU hidden model”. 
+
+![](https://lh5.googleusercontent.com/RmyksChgVOGUPo2JO-JVIyKLcSwHIVLFxIbZx_e0s7LR6xiKmcojZjCjVCTj1_TX0Q6XhdLcpC62DunCBCcwiGajXFGNFyRGjT2i3nPWjhl3RuwKEk1Q5sIgviKO8Ljh_XefwUDfSm0pm7xpB9KP208)
+
+$h = ReLU(Wx)$
+
+$x’ ~= ReLU(W^T h + b)$
+
+They train a small model with $n=10$ inputs, $m=5$ features and $I^i = 0.75^i$ importance for varying values of sparsity and can show that increasing sparsity leads to increasing superposition. 
+
+In the first plot, we look at the first weight of the ReLU hidden model (10 inputs, 5 features). In the case of zero sparsity, the network creates five monosemantic features that we can see in the weights. The more we increase sparsity, the more convoluted the layer becomes. In the second plot, we see the corresponding stack plots (every column in the stack plot represents one column in W) with superposition indications as colors. As we can see, more sparsity implies more polysemanticity. 
+
+I can replicate all of the findings, i.e. my results look basically the same as theirs. 
+
+![](https://lh3.googleusercontent.com/s2c8qeZAEwKTgTyDIMwtLLyhqSRphrp9ekY-MZ3weGNpikDfSPAz2t31Vjcpck1vLAlPoehO7eTh7ZEdfV0xO2BpmQgrYmqVY5eprCLDcOvw3jtuttaKQqAYxUrYtoWSOcE0OVKQwPPQmds118ZhPKk)
+
+While the ReLU hidden layer toy model yields interesting findings on superposition, most real-world networks use a slightly different setting. Therefore, for the rest of the section, we will switch to a standard MLP setting, i.e. two layers with independent weights, two bias terms and one ReLU between the layers but not after the second one. 
+
+$h = ReLU(W_1 x + b_1)$
+
+$X’ = W_2 h + b_2$
+
+![](https://lh6.googleusercontent.com/-z5y5xQ3qd4bj3m5H7ajToz_8Ai40dPjp5wRISd2quryA_iCJ5uDcsLy9sGACbiy7lX5HlzeT5XBYjJ1ycQMih25e5jtj352DhniKv308CrPFhmu-YGQyVrEj1nRQnoOoOpttACjRe_9iYKuk_utvU4)
+
+For this section we will use an auto-encoder setting, i.e. train with an MSE loss. 
+
+In the most simple setting, e.g. orthogonal inputs without noise, we can read the dictionary right off the weights. We can also straightforwardly understand the role of the bias terms (see appendix for both). 
+
+### Does it show double descent?
+
+Once again, we are interested in whether the MLP setting shows something equivalent to the double descent setting from the bottleneck section. 
+
+We find that the MLP shows double descent. Here, the accuracy is defined as 1 if the argmax of the input match the argmax of the output and 0 otherwise. The hidden vectors are defined as Wx+b.
+
+![](https://lh3.googleusercontent.com/pbR-H12a7PHKD-n0v1jRU_p5PKVY2EG9kbik-1HdsyHphNtrnebWnPO2Wmw-_My1i2OudXuvUaDPFwdwM2oUyLfzqq40va9Ho0C0HphT3NGK6NkS1woag8VbrOQnQiJ5mRmYYAZt5NDygOVisTPOMnc)
+
+We can also look at the features and hidden vectors after the ReLU.
+
+![](https://lh5.googleusercontent.com/hN9Iwr0eYuMlZNul7ADPUl8Lu2FStqFF7yKW3RHlzJ-RbFAHN_gqQVdjmGfIiYrF-20wh6OiiFjk7nQCCjzVVyoCMKR4s0wIyEeH2of2dDq7jSShdinRlTio843w06xa1Ni_a-RNJpcePrfm7N7ydLM)
+
+And before the ReLU. 
+
+![](https://lh6.googleusercontent.com/RwrFu7MD4iTAT6GlIRLn8YDxivdD0dnz0rEMt1T4JzEYecpnjnfl5_POqyw44lkLievb3iOQuEf8Wjpn4vExA5ZuUcHltdf67jugBQeBxWqdK7YMOZucwSdi2S4_J_MxmUnCOrqhAMjp6gwcHyuDKDk)
+
+Furthermore, we find a very similar pattern for the dimensionality of features and datapoints as in the experiments for the output ReLU model. 
+
+![](https://lh4.googleusercontent.com/J3ll6--xO_Jf-Nkt8aVKqT9Nj9EHE_BUecomQvDOI6wJouezhkEtM5iKQmdTj9PTGhABjyiuygi2L6AFAYr-POXzbyptfm_51CJ91pKmgC-riScROA8Qde2g4bxgA0RRa2irr5Ezwp7MWTZlJGu-bIc)
+
+The horseshoe shapes around the transition between memorization and generalization can be understood as a circle moved by the bias term into the first quadrant. Since the ReLU kills all negative components, the bias term lifts the features into a more positive direction. We can see this by looking at the pre-bias activations (orange) which are not always positive and the bias (purple) which is always positive. This suggests that the ReLU network is doing something roughly similar to the ReLU output model but has to use the bias to shift most computations into the first quadrant. 
+
+![](https://lh3.googleusercontent.com/KPsEU00CtZaaaT0QQNclmWMP_6xRRgmjoGh9-IrpCzlNXZvtwKZKMzGLi_2SXyQGo-MqXd-ca_x7zWP7nlFYhUFBjFtu5HqxbhKzvS53MeIbpv_5YT6WKbMkqKHOCoFhv9exGbG0uib0mmPCR_bS3_c)
+
+Given that this adds complexity, we would expect a ReLU model to be worse at memorization but since it has a non-linearity, it can represent much more complicated features. 
+
+The rectangles around the origin in the early feature plots above are a result of weight initialization. For small dataset sizes some inputs are never used and the weights are thus not updated. The standard initialization in PyTorch is uniform which looks like a rectangle in 2D. If we change it to Gaussian initialization, the rectangles become circles.  
+
+We can also investigate the test loss and accuracy for different values of hidden size and dataset size. The double descent phenomenon seems to happen in all dimensions in a very similar fashion to the original paper, i.e. with increasing dataset size there is a transition region that happens across multiple hidden sizes. Furthermore, we see that the network learns features after the transition since the test accuracy is beyond random guessing level. 
+
+![](https://lh4.googleusercontent.com/Jyybb-IwIF5Y3A2PVz0xCUcugjjFxESgfSVJqP-8cNpvRI5gPM-32eInFhWSikm_jtGiYrEBsaNkGEP3pqssnyVjRXlaxuaI4iSCOyM7YQ3HP_ssINWMUC1a_dJEq9MLhaIQ48tsu_UlB_S1Vn5Q4uk)
+
+### Limits of reconstruction
+
+So far, we have primarily looked at settings where the feature size was bigger than the hidden size. However, in transformers, the MLP blocks are usually much bigger than the residual stream. Thus, we care more about the limitations of how much information the MLPs can reconstruct or use from the residual stream. 
+
+To test this hypothesis, we use two settings with similar setups. In both cases, we use a random matrix E to project a high-dimensional input into a smaller bottleneck (like a residual stream) and then use an MLP to reconstruct the original input. We use the same setting as in the previous sections, i.e. a fixed dataset of 1000 with a sparsity of 0.99 and varying number of features.  
+
+The difference between the two settings (called big fish and small fish due to their shapes in the figure) is what the networks are supposed to reconstruct. In the big fish setting (which was inspired by [Adam Jermyn’s work on monosemanticity](/api/post/LvznjZuygoeoTpSE6); it’s called feature decoder there; it’s also related to Conjectures [work on monosemanticity](/api/post/z6QQJbtpkEAX3Aojj)), the network is supposed to reconstruct the original input X, in the small fish setting, the network is supposed to learn the identity and reconstruct X’. Intuitively, the big fish setting measures something like “how many facts can we reconstruct from a previous MLP and then project back into a bigger residual stream” and the small fish setting measures something like “how many facts from the residual stream can be used as keys for the look-up table and be projected back” where the dictionary is the identity in this case. 
+
+E is a randomly drawn (standard Gaussian) matrix that is supposed to model an embedding. Standard Gaussian matrices have almost always the maximal possible rank, i.e. the size of the bottleneck in our case. 
+
+![](https://lh5.googleusercontent.com/oMtUrjRHgMzuZUrh9r4lxN1Wr65oogHakQwOkYSFGXLKXzOVIASSxlsQyqUNFW6ZNgWCXH2ZXUf9eLAihfBlHl6V0qo3obwQD00CewVWbi_lFVsorC0dOavqHnMEeB9lzCYPXuxccRpWk1NSuXfZssc)
+
+In the following, we will vary the feature size for the two different settings, starting with the big fish setting.
+
+![](https://lh4.googleusercontent.com/KusVQDDTw9_vJjzB4P-wMpeXITHU9yefEeS_D-8ykPSe6ARoKOxYBnfbe3hw-vy0DIDYb8f78AWO6fjbVmKHyfWwXVrjsxmapac0KwUcFe7pmFjK29a3noHEF8CPCgWs6dlww0t1ZYmtiS996EoJrm4)
+
+The clearest finding, in this case, is that the bottleneck size does not seem to affect the outcome by a lot and only the hidden size of the network is relevant for its reconstruction loss and accuracy. This suggests that the network is unable to reverse the random matrix projection unless it is given roughly as many dimensions as there are features in the input. It also further reinforces the idea that we can pack a lot of features into a relatively small space (i.e. the bottleneck) using superposition. 
+
+We repeat the same setup for the small fish ReLU model.
+
+![](https://lh6.googleusercontent.com/LDAQhYEr8aCM4k1i2gahveV1B3mRkCZ34X4SDbktSeOxMrTIECGYNhTZurzZ3KVHtJPeH6yJd0-bv5oR6gqgU3uJ7dJq31ELaB0HTgifWoBfgnsTsKkBHAaLXhGlIWdZwo9ceIH92UmRre-TQKEU-Yg)
+
+In this case, we can recover more inputs from the input to the network than in the previous setting. This suggests that computing the identity for superimposed vectors is an easier task for a ReLU network than reverting a random matrix projection (as in the big fish setting). However, the fact that it is still unable to reconstruct all inputs seems to imply that ReLU networks struggle with computations in superposition much more than networks without a ReLU between the layers (which is consistent with our previous findings). 
+
+Lastly, we investigate a variant of the small fish setting where we don’t reconstruct X’ (Credit to Chris Olah for suggesting this setup; it’s called re-projector in [Adam’s paper](/api/post/LvznjZuygoeoTpSE6)). Instead, we create a new random matrix E’ that maps X to X”. Then we force the network to reconstruct X” from X’. Mathematically, we investigate how well an MLP can map from one low-rank representation into another. Intuitively, it encourages to recover true features because it can’t learn the identity. The accuracy is computed by projecting one-hot vectors I through E (resulting in I’) and through E’ (resulting in I”). Then, we forward I’ through the network and compare if the argmax of X” is similar to the argmax of I”. 
+
+![](https://lh4.googleusercontent.com/EipuNk3rjhXd80MmNtvZw_F26tmdT2blCAeqz0E8uyOjR9sGZsZ9WdQaSOeKWcmK4cqPnwNTwBJnis52W2PPnV_2oeIQWJQ2N_uWB9J7N6VskTQn2SGYL09YfQLDXS9AmM8Q_c7gD1scGM3VCkRnZS8)
+
+These results look pretty similar to the big fish setting (confirming Adam Jermyn’s findings). A simple explanation for that would be that in both cases we force the MLP to actually do a computation (translating from a low-rank space into a different space). Given that the amount of information that can be reconstructed is limited primarily by the number of neurons (i.e. hidden size), it seems plausible that the size of the output space doesn’t make a large difference for the ability to reconstruct the input. 
+
+Final layer
+-----------
+
+The unembedding layer in a transformer maps the activations from the residual stream to the tokens in its vocabulary. In some sense, this is similar to the bottleneck setting where we compress a higher dimensional space into a lower dimensional space (e.g. the MLPs that write in the residual stream) and then back into a high-dimensional space (since the size of the vocabulary is usually bigger than the width of the residual stream). 
+
+The main difference between the bottleneck settings within the network and in the final layer is the loss function. In the linear layers, we used the MSE loss to approximate the real setting but in the final layer we should use the cross-entropy since that is the correct loss function in most transformers. 
+
+In the appendix, we show that networks in the simplest setting are straightforwardly interpretable, i.e. we can read the dictionary off the weights. 
+
+### Toy unembedding
+
+We investigate a toy unembedding that is similar to the bottleneck setting with the two differences that we don’t use ReLUs and train with cross-entropy loss instead of MSE. The intuition behind this setup is that the residual stream projects into the vocab space through the unembedding. Given that the CE loss has different inductive biases than the MSE loss, we want to understand the differences. 
+
+![](https://lh4.googleusercontent.com/cYqqX4bUsvuN_uhj0cPxEdQnggDojp3vDSBuN-KovwcvS99s-2jcwIkTKRguHXdrxzxTh6o6sOA2281VK7J4QzEJ1uFSxIO_v9mckmtFgmH3F2AhEKqsMXyGh3f10lDnJFBgqVp8ixuFaqP5c--OYxc)
+
+First, we find that the double descent phenomenon still holds in this setting, i.e. the cross-entropy test loss has a clear second peak and the test accuracy is approximately a mirrored version of the test loss. Secondly, we find that the features that were previously mostly circle shaped are now square-shaped during the transition from memorization to generalization. 
+
+![](https://lh5.googleusercontent.com/QGAeeOMYRxefoQqG7Q_S6cyNxL7ZcCAfsUXWYjZPWfT_qDEzEF_8QhFySmdp2km8FIIQzZtjV-Uih2PYMfhkSz4Sg3W6wHrCWCekOGOa80HrGsrbBxb-y0uCjGw4ShgqCtbiXXoWxxgUEUbws9m-xRo)
+
+![](https://lh6.googleusercontent.com/4wjNqAo1hoGYxQIW315hUxM7zKRDgHc-syTp-LIhvIEnfC742AV3_78av9PhX2I2l-H0MK9c-zYtkW_QDgNmmBBcS44V-jvH6H8_D8ItB1EYtivLrndwAK3eSRjHmqTM4hzyuNeZKp_UVF-vQbr-KcM)
+
+![](https://lh6.googleusercontent.com/qReLTRXJ_tlOoT1DADaDTFxcL8XcUhYVni7lQ3YG6ytvyLcPUMu7jIa8PTMuJXXz9ckT9YLi2ekm3unp8VrG4ntVeEhjV-ICBwF6e_Y5vAaNkH3BhgBMnHC2nfAmZjNAtjZK3ExfZTRP3QN3Y4Ko4po)
+
+We want to mechanistically understand how the network memorizes and where the square shape comes from. To this end, we investigate the $N=500$ setting where the square is most prominent. 
+
+In this particular setting, we use hard labels, i.e. the argmax of the input gets converted to the correct class. To ensure that the squares are not a result of hard labels, we test the same setting with soft labels, i.e. by using the input as the target. We find the same squares (see appendix). Furthermore, we also verify that using $W_1$ and $W_2$ instead of $W$ and $W^T$ is not the root of the squares (see appendix). 
+
+To understand where the squares come from we can mechanistically interpret how the network memorizes the inputs. We start by observing that W1 has a square shape, the hidden vectors have a sort of rose shape and W2 is a circle. 
+
+![](https://lh4.googleusercontent.com/lD5Gl_Z_QhYdF-kwXahtyrWkEatlS9L8DSFUZv8RU1ZayNh8G5gT7VNRTIcxZjrs4Cb7GUcgGm82MC2Vj8kUCkuHQcpePlWrp59QgSZIwAwYe9gDhun6d0PfeVhnCHm_BhtPSXw_hCuayRmFMfRu320)
+
+To get the logit for any input we compute the inner product of the hidden vectors and $W_2$ and then add the respective bias term (i.e. $Wh_i+b$). To understand how the network maps the hidden vectors to the correct logits, we split this step up into parts. We pick the first three hidden vectors and multiply them with $W_2$ respectively.
+
+The result can be seen as a rotation, stretching and scaling of $W_2$ by $h_i$. The values colored in black denote the term that corresponds to the maximum of the inputs. Note that the black dots are all in the first quadrant because there both vector entries are positive. 
+
+![](https://lh3.googleusercontent.com/mgvyHNGb5CQEuPHHewRTj-dfrKu3o_7xamaB2Bj5Um4VUhRPe-1lVYKoUizeRJ5grx00NbR473MqLUlH3ianfw5CbewjPrlSXMzhNirBEk7YN2YYeEszRtiP9KlQCdm8LKrpJSgyhyvJ_d1s3h2dS-M)
+
+Now we complete the second step of the logit computation, i.e. summing both components and adding the bias. This can be seen as projecting the circle into one dimension. 
+
+![](https://lh6.googleusercontent.com/sZ5_B-KLuM9352wcPfCB19FdnmSIMYjQ05R3QnZB4sEBtrAvw4uXtjcYbA9Z0xYv0IGg9Te03q_0xGnXrxX-0kxyf8E4bOSYAx176N4et7z7E5ByQKj-Jn3bNjIliphJYpid1FuWZfRBEuPxuvmOf5w)
+
+After that projection, we find that the output that corresponds to the correct class always ends up on top of all others after the bias was added. In the presented examples, the bias actually reduces the maximum but there are opposite examples as well (not shown). Importantly, since this setting includes hard labels, we only care about the position of the maximum. 
+
+Thus, we now understand the second part of the algorithm. The rose-shaped hidden activations rotate, stretch and scale the circle of $W_2$ into a position where the correct entry is in the first quadrant. Then the sum of both components and the bias ensure that the correct value is in fact the maximum of the outputs. 
+
+Now the second question is why do we need the rectangle to create this particular hidden pattern from the inputs. In our setting, $S=0.99$, $F=1000$ and $D=500$ which means there are 10 active features per datapoint on average and there are fewer datapoints than features. Thus, the model likely doesn’t learn any general features and just memorizes the data. Since the network has 100% training accuracy and 0% test accuracy, this seems very plausible. However, since we have 500 datapoints, some of them likely share features with each other.
+
+Thus, the task of $W_1$ boils down to “find a structure in 2D which allows you to map a 1000-dimensional input with roughly 10 non-zero uniformly distributed features into the required rose shape”. I have not fully understood why a rectangle is the best shape for this task but empirically the network seems to perform some sort of weighted vote to choose the position of the hidden vectors. Intuitively, it chooses the ratio of quadrants by taking a weighted vote between the corners of the square and adapt the position with points in the middle. My guess would be that the square shape makes it easier to balance uniformly distributed features across datapoints but I have no mathematical argument for this. 
+
+![](https://lh5.googleusercontent.com/AojDpKmMsHN3jHfObwBbLcGiDviaQTGGotSdkPUfDj2lvBxryLLDhL1ZSjvoP8BLQSKVOcVSv8Gkh0XwCBTrtl1Lt3U5sbPOUNEAFUXYKTeIqCRzd2XQURTipKeaLOMjfMlFzlbXpCe8M2Zpuv-DE4Q)
+
+Importantly, the square is not a consequence if a uniform initialization of $W_1$. The same pattern also emerges when we use Xavier initialization, i.e. normally distributed weights. 
+
+While it felt rewarding to understand the exact mechanism by which this network memorizes, unfortunately, there is not a lot of general insight from this example. This particular setting seems to be a special case and we don’t expect it to hold in real-world models. Furthermore, it doesn’t feel like we have gained that much meaningful insight into transformers which is why we will focus on small toy transformers in the next part of the series. 
+
+Intermediate conclusions
+========================
+
+My main takeaways from this research are
+
+1. The double descent phenomenon seems to be quite consistent across different settings, i.e. models go from memorization to feature learning when presented with more data.
+2. By definition memorization produces a dictionary. This dictionary can be easily read off the weights in the most simple cases but quickly gets much harder to understand for more complex networks. So far, I have not found a method to reliably decompile the dictionary from the weights and I currently suspect some parts of memorization will stay inherently messy (more on this in the next posts). 
+3. There are lots of regularities when networks reconstruct features, i.e. sparsity, importance, number of data points and number of features all have plausible implications. I’m cautiously optimistic that we could find scaling law-like descriptions of these relations.
+4. The intention of this post was to understand more about memorization in transformers. I think I understood lots of new things about small networks but I’m not sure how relevant any of this is for actual transformers. Thus, I will look at toy transformers in the next parts (after the maximum data dimension post). 
+
+Appendix
+========
+
+Linear block
+------------
+
+In the following, we see that we can easily read the weights and activations of small MLPs that memorize orthogonal data. 
+
+### Noiseless setting - orthogonal inputs
+
+To understand the basic case of what an MLP is doing when we force it to memorize we consider a setting where we have $n=20$ orthogonal inputs and $m=10$ neurons. We use a noiseless setting and use one-hot vectors as data. Thus, the network is supposed to memorize the identity. 
+
+In this case, the algorithm can be easily read off the weights, i.e. it is a dictionary where each weight corresponds to an activation. It really is just a sequence of two key-value pairs. 
+
+![](https://lh4.googleusercontent.com/fbg8ip0dK5vsPXuPtCqL4G9Sxn4yNkz0LqI9DkVHx5M2ySYnbJsZxmDRfHTlCgahYfiAvD5-5saGmxDDxQ-ne8LoclOKofcyPrHXUdpHEE3Qf9AltaXw94_6PyDYrDALXrTL8sL7nHqV5uPFiCKNlmo)
+
+In this simple toy setting, we can investigate the role of the first bias term. We can see that the first bias “counters” the ReLU in the sense that it lifts all activations before it barely above 0. 
+
+![](https://lh4.googleusercontent.com/dLq_RJv-0bJ498fylfl2FxW-ThDbuWmuv1q1Er1MGOiL0Ui51T21TQPJqh4MdQeE2mBH3EK2Zi2yNTdJs-sG4Anj5BBff_mvSCaCeWycMxJOoG-WL2uCnX1pdGhTT0xJEPOPWiJHABHyfsJ4DvwFSuI)
+
+The role of the second bias term is a bit more nebulous. Intuitively, it acts as an “equalizer”, i.e. it adds constants to the logits such that they are more evenly distributed which is favored by the cross-entropy loss. However, the weights of the second bias term seems to be, to a large extent, due to the initialization of weights in $W_2$ (not shown here).![](https://lh4.googleusercontent.com/woMd7xv6ukS3lfHF8OPC522d93yk-ZbJN0SNB6HAbOAGQ1SxyahfQNujv3G4mfyVIf3_0C-MdD-K3ibyfZ1XpCh_4bepJJox55almUIKasK4OFyqv-rUmxBM5F31baxW4FvSQGGV-Yx3pj--dOBycJU)
+
+When we compare the hidden size vs. dataset size scaling for orthogonal noiseless inputs (i.e. one-hot vectors), we see that an MLP trained with MSE struggles to accurately reconstruct the input when the hidden size is much lower than the dataset size. In the cases without ReLUs in the middle, we did not have this problem and it seems to suggest that the ReLU makes superposition harder. 
+
+![](https://lh5.googleusercontent.com/WJ3RaB3NWyYo4ekPX0qvBm7v9Z9dyso31nXKFvQCO4FKAK0NkEgtj4n7H-QxD9ti741bbb7nMSy6mR7imnKaH-knC-tggsUYhCUh81EkO7kLuLViOhVr4MFw3fZs2zyu1tljnjhXWBrGnKblInJke24)
+
+### Misc
+
+Cosine similarities for different combinations of data and hidden size. We find that the cosine similarities cluster around a certain range of values for some cases. Intuitively this would mean that they all have the same angle to each other which would make sense in the case of memorization. However, for other samples, the distribution is all over the place which makes me think that the cosine similarity, as applied here, basically tells us very little about memorization. 
+
+![](https://lh5.googleusercontent.com/iA7wVsD1Qx9sxTZXE7oWRi90llESoRbtnEnfqgKE1lq5otzyWETe8H_V1fQO6nEsjCO0bAxXxRyy-Op6d44HhCMg1NddObWgKM-jpEeELQkzeZwGq8u_3r5Z1FlHurdJ0AYdwGyEQ1RmkaC4U4cdjOI)
+
+MLP double descent but with the second ReLU term. 
+
+![](https://lh3.googleusercontent.com/wBBkGjdURNFeNjtfofkXfc3aoHchF5yJbHxFT8FRSoT4E2jm_G3bMnB95f8E7Nc5QT2MDI2PCPFwZBKTkBI0Qi5HNbylCa-cTHRVVxeTx7YmRUPI_kvIcCnFFEH5PcmT_aP9Co_v0dr2ZkKGVUztOXA)
+
+![](https://lh6.googleusercontent.com/fx71jqDA6NaId3Bhwl0TR_gNc6z6dEklLbIlFyBLHSSi-b6MCAhKg0RraylvAXas5owJzi9T64sE6rkhrL4GXMX-4ejYcIBZWrOb6BNVO5AlAilezJYGDC1CQZBXd2dp5IbFlxJ61IufXm10ksmK7nE)
+
+The squares still show up, so they are not an artifact of leaving out the ReLU term. By now we know that they come from the initialization, so this finding is not surprising. 
+
+Final layer
+-----------
+
+### Ignoring the residual stream for a second
+
+Let’s ignore the fact that there is a residual stream for a second and pretend that the outgoing layer of the final MLP directly connects to the unembedding. Without a layer norm, we can combine the final linear layer and the unembedding to one big matrix connecting neurons to logits. 
+
+![](https://lh4.googleusercontent.com/GX9HSPMGsfyze7ynRmDTuMF82uRNQHV66_FVP_d22UZLUTAD-9tpg-dSorB-NodUTQGFrbMYxSYXHXPJwuh8AuOayUYys8pHh12HWsAMOGIRF5zOI15t33_r5V8oS8_4jko3gBnRWF5WTUSOyQdvQEA)
+
+Usually this setting “opens up”, i.e. the vocab size is larger than the width of the final MLP (just barely true for GPT-3, might soon not be true anymore). Thus, we first try to understand such a setting in an MLP with a hidden size of 2 and 64 unique one-hot vectors as inputs. 
+
+We find that the first set of weights projects inputs in all directions but the bias “lifts” them above 0 and thus into the first quadrant such that they don’t get killed by the ReLU. The activations span nearly the entire 90-degree angle that they can use. Furthermore, activation vectors that are close to each other (i.e. have similar angles) tend to have different lengths. I suspect that makes it less likely that W2 confuses them for the same input. These activations then get multiplied with W2 and the bias makes sure that the correct value is selected (more details on this mechanism in the next section).  
+
+![](https://lh5.googleusercontent.com/FcAREJeZ62QQ3AM6Nd1K1HrmoHJIv2Ie_5fwmIEdcNYeVuO6u8nG_cKdszyblBokjamBVI77QXz9-f-_noVMf-8KgI1EjH9Hl4ejuL-hup1DPOwCyv1e29j8x_k3Yd5uE4ulksFj8zl1RKgGPhu_czE)
+
+We now switch to a familiar toy setting and look at an MLP with n=20 inputs and m=10 neurons. Once again, we can read the algorithm/dictionary off the weights. In the first setting, we train for 1000 epochs and in the second for 3000. 
+
+![](https://lh5.googleusercontent.com/bxhyUO-2e-MrK11uCM9pGF400_NyhJGH_QAtCZnLqosdTCrM6u7JfCLDZiJzOzImzCmLeTJXkJUfBwtq20R0kqoQYPsQTnImXaaVt4ukQufv619qUzrEt8h8bexL9TfL3uqPAtWJa4_RlAYVHCOA70I)
+
+![](https://lh5.googleusercontent.com/QqOBSmaxSWZ_fyyccGvylMs5lJ8t_ERbGXp8V9Q6qM-tAWHkheboqjlCKOVwhw1CI9669fNKpWbXXV4xVDF7cbY7b_vqmTohUkm-Rg_zIdx-olz9Tn-gUI2on14AVdMJv8yGSxQEGoKfl8qZhXk-apE)
+
+We can observe a couple of things here. First, MLPs trained with cross-entropy loss (and low weight decay) love big activations and strongly negative weights in $W_2$. The intuition here is that cross-entropy wants to make the correct logit go to +inf and all others to -inf (if we train for long enough). Since it is harder to increase one logit than to decrease N-1 others, the incentive is to make $W_2$ negative. Secondly, this shows that a naive application of the cosine similarity on the activations is not a good detector of memorization. This network has perfectly memorized the training data and yet the cosine similarities of the activations are very close to 1 (at least in the second case). 
+
+The biases take similar roles as in the MSE setting, i.e. the first bias term lifts all the activations above 0 and the second bias term balances the logits. 
+
+![](https://lh4.googleusercontent.com/rQDeC5G84M07kBj_ieYxtrQqKYEimmE_birA6tRCT7z6ZXlwCeJRbb9tBivUYd6ee0YDXVCdSd4YjTbEtEWwwznULwE1g7sPp9yIsxOrrlSg5JGxskRkKwpTGwSMFyN1zv-Y49DF3ySo3XswCaF5TqA)
+
+![](https://lh3.googleusercontent.com/IwIeowPmMnwNLoEyvRH1EMQzfGN5b51yN593BxD7tKqUbv38mebVsALVHexmkJZufPJJYnCn9ZeNuaL7yVA-rwulAlkvajPK-J46yJbQlmwjYqRfHWm4HF6Tj5OD7pQ9XPdgKnehHJC981gCwI2a_4o)
+
+Weight decay also plays a predictable role in this setting, i.e. a weight decay of 1 counteracts the desired of cross-entropy to make everything go to infinity. This mostly shows that cross-entropy has a different inductive bias than MSE and also that weight decay can lead to more easily interpretable results (at least in this setting).  
+
+![](https://lh6.googleusercontent.com/F95-qRaYoEaptdbYNizlBKYltUVQmtlQvfZEH63xQLCBeqnq6P_DubaLvv3twokca_Xs6g_S5s2VH62_5g646B8XDrLcfs6T-0RaXqO6nbq4rpgLRCUpZlmc1bUkai4Iq9KbfapzOxZRi3FPXV3hQEg)
+
+When we train the network on antipodal one-hot vectors (e.g. [1,0,...] -> 0, [-1,0,...] -> 1, etc.) the model effectively uses half of the weights for one input and the other half for the opposite input and these parts do not interact with each other. 
+
+![](https://lh3.googleusercontent.com/OqZQuhQKI6YAxulas16H-DFTMGgYw4q2UxJONL6E57xDQtxnqUy1VnvETldmv4UwL55d_KKz0i5aypo73I25D1hQjHPCRNsq0WwXGpEbBCPgNGnrCJ3zxYz1i_lyrh-5OUlUOYoGlrqnWu2RpU-3J6M)
+
+![](https://lh5.googleusercontent.com/w1KWGDMsNVTMOe5TdR6ukE6ILZewCdV3285s4BB2bkojiISRz4Afl2RD6E1_JbNS6LVQPRogltP-bRB592gSvuwH4YBmLyab_qQxe0IxAMZP6rhuv7vjEQMyqyLLYelmfVsl9D2xJqxvHOoL4vWHfms)
+
+In this case, we can still read the dictionary off the weights. However, we can already see that this will be hard or impossible in more complicated settings where the inputs are not orthogonal, etc.  
+
+When we look at the dataset size vs. hidden size scaling for MLPs trained with CE, we see that small hidden sizes do not pose any meaningful limit for reconstruction loss (white squares indicate 0 loss) or accuracy. This is possibly due to the fact that the cross entropy only requires creating an output that is bigger than all others while the MSE requires recreating absolute values. 
+
+![](https://lh4.googleusercontent.com/ZgXUgDYHVcO_ebMcu7-kSrGeqXum3WULpR5WUHBxhW-JSCUl5xD1rkYegHE1tKI3sJwtfLSUmg8HPbvmcluGlNtXzPeVQ4BY5EPmP9-NwCCbY0Ag3xQ7ydY1FneGXYYI8leXyqtQk4lla15m0i9nyzY)
+
+Intuitively, these results say something like “if the residual stream has many concepts in superposition, the unembedding will almost surely be able to decode them (modulo noise)” or in other words, the unembedding is unlikely to be a bottleneck for how many different concepts a transformer can learn. 
+
+### More findings on double descent
+
+Comparison to soft labels. Shows the squares again, so it’s not an artifact of hard labels. 
+
+![](https://lh6.googleusercontent.com/TieGP88cCAmLetezBwOoG4IybKOpcNpR9JLrUwwVZD6WZNZf3kYtEX4OEcA6KRBFcasbWz0tXtcdnZdrRR5bwJ45ivNLOdJ_mpPFq7RaJvG2VxCVqc5TQCQTY8hmXNe7oHkQ9NrIYSJpPBsB4QQhVxs)
+
+![](https://lh5.googleusercontent.com/h4AsVSPjDZFLENPVyHRukyuoeWhp46q6rJ6_8tJFBTCUcVsBUyYht-kjwixTWmWY4Csikdnh_vsjZVdvw2EyXjSJvcDR__4YzUsjKjG6S3_9W9xKCe_EDQQFlWLdXh3EB9BMaNpeXBYSbncTNuRjO8E)
+
+Double descent in the original setting with W1 and W2 instead of W, W.T. Also finds circles, so the squares don’t come from splitting W1 and W2. 
+
+![](https://lh4.googleusercontent.com/m3CsXKU1LsAHYm3n3VBbmuqekwqGTz1DIVINTfETbyPhPicPvpoYp3335f9uTnoAkN6wIeBTr0hIbfhEVSLdyeD80EK5mhnfmOyE1JGc88Ady3QuR1e1MgdFBQAO-6RbUsnQWnMkdQwjMQ9u1khI8q8)
+
+![](https://lh6.googleusercontent.com/CxSgtDcbAmfeI__7FiW4tLh3oL_dKKw1RQjA95C01ZKeaRtWC_bER5jJHAKJNEfJji2n0Te6Zo1IHeXLIbPuhdQDrSNhi9YjmmUmwKRJhIM3SRZ9iBcwdvLxpHbeGloklvptT6up3EH_-ZyfHccEgDc)
+
+### Misc
+
+When we use the cross-entropy loss, the cosine similarities are just always 1 if the weight decay is not high enough. This means that a naive application of the cosine similarity tells us not that many relevant things about memorization or at least we have to be careful with the setting. 
+
+![](https://lh5.googleusercontent.com/kTudZmqytMsSBSyV3varD2OaDUg7Z_IXj3d_xtyhJRWZdU7StChLFv_jM8ykILxd7gRBYDaUFF2BTU5xjkd3-mvVgGIIjCmKKPmJE9mpWAtY8f3TUJIQrY3AMvMNDcpIMoqA6rzi2-xNg417dIa9ykk) 
+ 
+
+[^b1qeqe0vcxg]: This work would pretty straightforwardly lead to capability gains, so I’m not sure it’s worth pursuing. 
+
+[^pr5v36l32z]: Note that importance is not factored into the accuracy but is factored into the log-loss. 
+
+[^hdfws4dsww]: The rule is: 100 ** -torch.linspace(0, 1, feature_size)
+
+Top Comments Index
+------------------
+
+### Comment by [bvbvbvbvbvbvbvbvbvbvbv](/users/bvbvbvbvbvbvbvbvbvbvbv)
+
+* 2023-02-06 12:51:43Z
+* Karma: 1
+* Voting system: namesAttachedReactions
+* Approval votes: 1
+* Total votes: 1
+* HTML permalink: [/posts/KzwB4ovzrZ8DYWgpw/more-findings-on-memorization-and-double-descent/comment/STbvLJqkCbpM9kRpS](/posts/KzwB4ovzrZ8DYWgpw/more-findings-on-memorization-and-double-descent/comment/STbvLJqkCbpM9kRpS)
+* Markdown permalink: [/api/post/more-findings-on-memorization-and-double-descent/comments/STbvLJqkCbpM9kRpS](/api/post/more-findings-on-memorization-and-double-descent/comments/STbvLJqkCbpM9kRpS)
+
+### Navigation
+
+* [Front page](https://www.lesswrong.com/api/home)
+* [Markdown API documentation](https://www.lesswrong.com/api/SKILL.md)

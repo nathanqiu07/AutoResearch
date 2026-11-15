@@ -13,6 +13,8 @@ import html
 import json
 import os
 import re
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -76,9 +78,9 @@ def import_x_archive(tweets_js: str, root: str):
 ARXIV_ID = re.compile(r"arxiv\.org/(?:abs|pdf|html)/(\d{4}\.\d{4,5})(?:v\d+)?", re.IGNORECASE)
 FORUM_POST = re.compile(r"(?:lesswrong\.com|alignmentforum\.org)/posts/([A-Za-z0-9]+)", re.IGNORECASE)
 TEXT_DATE = re.compile(r"\b(20\d\d-[01]\d-[0-3]\d)\b")
-# (category, domains, kind). Papers use Exa's "publication" category; the other sources are
-# picked by domain, since Exa's category enum has no tweet, talk or code value.
-HARVEST_SOURCES = (("publication", ["arxiv.org"], "paper"),
+# (category, domains, kind). Sources are picked by domain: Exa rejects its "publication"
+# category combined with arxiv.org, and its enum has no tweet, talk or code value.
+HARVEST_SOURCES = ((None, ["arxiv.org"], "paper"),
                    (None, ["lesswrong.com", "alignmentforum.org"], "post"),
                    (None, ["apolloresearch.ai"], "blog"),
                    (None, ["x.com", "twitter.com"], "tweet"),
@@ -107,9 +109,17 @@ def fetch_arxiv_meta(arxiv_ids):
     ids = sorted(set(arxiv_ids))
     for i in range(0, len(ids), 50):
         q = urllib.parse.urlencode({"id_list": ",".join(ids[i:i + 50]), "max_results": 50})
-        with urllib.request.urlopen(urllib.request.Request(
-                f"http://export.arxiv.org/api/query?{q}", headers=UA), timeout=60) as r:
-            tree = ET.fromstring(r.read())
+        # arXiv's API asks for at most one request every 3 seconds and answers 429 when pushed.
+        for attempt in range(5):
+            time.sleep(3 * 2 ** attempt)
+            try:
+                with urllib.request.urlopen(urllib.request.Request(
+                        f"https://export.arxiv.org/api/query?{q}", headers=UA), timeout=60) as r:
+                    tree = ET.fromstring(r.read())
+                break
+            except urllib.error.HTTPError as e:
+                if e.code != 429 or attempt == 4:
+                    raise
         ns = {"a": "http://www.w3.org/2005/Atom"}
         for e in tree.findall("a:entry", ns):
             m = ARXIV_ID.search(e.findtext("a:id", "", ns))
@@ -144,6 +154,10 @@ def author_position(authors, name):
     return "solo" if len(authors) == 1 else "first" if i == 0 else "last" if i == len(authors) - 1 else "middle"
 
 
+# A listing of someone's posts is not a document, and its later titles would leak past T.
+INDEX_PATH = re.compile(r"^/*(blog|research|posts|users/[^/]+)?/*$")
+
+
 def _kind(url: str) -> str:
     host = urllib.parse.urlparse(url).netloc.lower()
     for _, domains, kind in HARVEST_SOURCES:
@@ -162,11 +176,13 @@ def _windows(start: str, end: str, months: int):
         s = nxt
 
 
-def _authorship(item, name, meta):
+def _authorship(item, name, meta, known):
     """(authors, position or None, drop reason or None)."""
     url = item["url"]
     m = ARXIV_ID.search(url)
-    if m and m.group(1) in meta:
+    if url in known:
+        authors = known[url]["authors"]
+    elif m and m.group(1) in meta:
         authors = meta[m.group(1)]["authors"]
     elif item.get("author"):
         authors = [a.strip() for a in re.split(r"[,;]| and ", item["author"]) if a.strip()]
@@ -181,7 +197,9 @@ def _authorship(item, name, meta):
     return authors, pos, None if pos else "not_author"
 
 
-def _date(item, meta):
+def _date(item, meta, known):
+    if known.get(item["url"], {}).get("published"):
+        return known[item["url"]]["published"], "listing"
     m = ARXIV_ID.search(item["url"])
     if m and meta.get(m.group(1), {}).get("published"):
         return meta[m.group(1)]["published"], "arxiv_v1"
@@ -201,11 +219,16 @@ def _write_doc(root, prefix, fm, text):
     return path
 
 
-def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch_arxiv_meta):
+def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch_arxiv_meta, known=None):
     """Find, check and save everything `name` published between start and end (YYYY-MM-DD).
-    Writes corpus/*.txt and harvest_manifest.jsonl; returns counts and Exa spend."""
+    `known` maps canonical URLs from authoritative listings (his arXiv, LessWrong and blog
+    feeds) to {"authors", "published", "title"}; Exa search adds what they miss and Exa
+    fetches every text. Writes corpus/*.txt and harvest_manifest.jsonl."""
     surname = name.split()[-1]
-    found = {}
+    listed = {u: v for u, v in (known or {}).items() if start <= v["published"] <= end}
+    known = {canonical_url(u): v for u, v in listed.items()}
+    # Fetch by the listed URL: some sites serve only that form, not the canonical one.
+    found = {canonical_url(u): {"url": u, "title": v.get("title", "")} for u, v in listed.items()}
 
     def add(url, title=""):
         if url:
@@ -244,7 +267,7 @@ def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch
     crossposts = {}
     for urls in by_title.values():
         if len(urls) > 1:
-            urls.sort(key=lambda u: (_date(dict(items[u], url=u), meta)[0] or "9999", _kind(u) != "paper", u))
+            urls.sort(key=lambda u: (_date(dict(items[u], url=u), meta, known)[0] or "9999", _kind(u) != "paper", u))
             crossposts.update({u: urls[0] for u in urls[1:]})
 
     manifest, kept, tweets = [], 0, {}
@@ -253,9 +276,11 @@ def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch
             manifest.append({"url": curl, "title": item.get("title", ""), "reason": "crosspost_of",
                              "kept_as": crossposts[curl]})
             continue
-        item = dict(item, url=curl)
-        authors, pos, reason = _authorship(item, name, meta)
-        date, date_source = _date(item, meta)
+        item = dict(item, url=curl, title=item.get("title") or known.get(curl, {}).get("title", ""))
+        authors, pos, reason = _authorship(item, name, meta, known)
+        date, date_source = _date(item, meta, known)
+        if reason is None and INDEX_PATH.match(urllib.parse.urlparse(curl).path):
+            reason = "index_page"
         row = {"url": curl, "title": item.get("title", ""), "date": date, "reason": reason}
         if reason is None and _kind(curl) == "tweet":
             if not date:
@@ -285,4 +310,54 @@ def scrape_exa(name, root, client, start, end, window_months=3, arxiv_meta=fetch
     for r in manifest:
         if not r["reason"].startswith("kept") and r["reason"] != "crosspost_of":
             dropped[r["reason"]] = dropped.get(r["reason"], 0) + 1
-    return {"kept": kept, "dropped": dropped, "candidates": len(found), "exa_cost": round(client.cost, 4)}
+    missing = sorted(set(known) - set(items))
+    return {"kept": kept, "dropped": dropped, "candidates": len(found), "listed": len(known),
+            "listed_not_fetched": missing, "exa_cost": round(client.cost, 4)}
+
+
+# ---- authoritative listings of one person's work ---------------------------------
+
+def list_arxiv_author(name):
+    """{abs URL: {authors, published, title}} for arXiv papers listing `name` as an author."""
+    q = urllib.parse.urlencode({"search_query": f"au:{name.split()[-1]}", "max_results": 200})
+    time.sleep(3)
+    with urllib.request.urlopen(urllib.request.Request(f"https://export.arxiv.org/api/query?{q}", headers=UA),
+                                timeout=60) as r:
+        tree = ET.fromstring(r.read())
+    ns = {"a": "http://www.w3.org/2005/Atom"}
+    out = {}
+    for e in tree.findall("a:entry", ns):
+        authors = [a.findtext("a:name", "", ns) for a in e.findall("a:author", ns)]
+        m = ARXIV_ID.search(e.findtext("a:id", "", ns))
+        if m and author_position(authors, name):
+            out[f"https://arxiv.org/abs/{m.group(1)}"] = {
+                "authors": authors, "published": e.findtext("a:published", "", ns)[:10],
+                "title": " ".join(e.findtext("a:title", "", ns).split())}
+    return out
+
+
+def list_lesswrong_user(slug):
+    """{post URL: {authors, published, title}} for every LessWrong post the user wrote or co-wrote."""
+    def gql(query):
+        req = urllib.request.Request("https://www.lesswrong.com/graphql", data=json.dumps({"query": query}).encode(),
+                                     headers={"content-type": "application/json", **UA})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.loads(r.read())["data"]
+    uid = gql(f'{{ user(input:{{selector:{{slug:"{slug}"}}}}){{ result {{ _id }} }} }}')["user"]["result"]["_id"]
+    posts = gql(f'{{ posts(input:{{terms:{{view:"userPosts", userId:"{uid}", limit:500}}}}){{ results '
+                '{ pageUrl title postedAt user { displayName } coauthors { displayName } } } }')["posts"]["results"]
+    return {p["pageUrl"]: {"authors": [p["user"]["displayName"]] + [c["displayName"] for c in p.get("coauthors") or []],
+                           "published": p["postedAt"][:10], "title": p["title"]} for p in posts}
+
+
+def list_feed(url, name):
+    """{post URL: {authors, published, title}} from a personal blog's RSS feed."""
+    import email.utils
+    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60) as r:
+        tree = ET.fromstring(r.read())
+    out = {}
+    for item in tree.iter("item"):
+        when = email.utils.parsedate_to_datetime(item.findtext("pubDate", ""))
+        out[item.findtext("link", "").strip()] = {"authors": [name], "published": when.date().isoformat(),
+                                                  "title": item.findtext("title", "").strip()}
+    return out

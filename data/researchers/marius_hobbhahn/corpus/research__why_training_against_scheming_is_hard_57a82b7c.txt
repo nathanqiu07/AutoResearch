@@ -1,0 +1,218 @@
+---
+url: https://www.lesswrong.com/posts/HwuMFFnb6CaTwzhye
+title: Why "training against scheming" is hard
+publishedDate: 2025-06-24
+date_source: listing
+authors: ["Marius Hobbhahn"]
+author_position: solo
+kind: post
+exa_request_id: https://www.lesswrong.com/posts/HwuMFFnb6CaTwzhye/why-training-against-scheming-is-hard
+---
+# Why "training against scheming" is hard
+
+* By [Marius Hobbhahn](/users/marius-hobbhahn)
+* 2025-06-24 19:08:37Z
+* 67 points
+* Tag: [Deceptive Alignment](/w/deceptive-alignment)
+* Tag: [AI](/w/ai)
+* Frontpage
+* Comments: 2
+* Post URL (HTML): [/posts/HwuMFFnb6CaTwzhye/why-training-against-scheming-is-hard](/posts/HwuMFFnb6CaTwzhye/why-training-against-scheming-is-hard)
+* Post URL (Markdown): [/api/post/why-training-against-scheming-is-hard](/api/post/why-training-against-scheming-is-hard)
+* Comments URL (Markdown): [/api/post/why-training-against-scheming-is-hard/comments](/api/post/why-training-against-scheming-is-hard/comments)
+* Post URL (Markdown, compact): [/api/post/why-training-against-scheming-is-hard?compact=1](/api/post/why-training-against-scheming-is-hard?compact=1)
+
+**TLDR:** I think that AI developers will and should attempt to reduce scheming by explicitly training the model to scheme less. However, I think “training against scheming” is a harder problem than other alignment training (e.g. harmlessness training). I list four concrete failure modes with “training against scheming”: a) the training against scheming distribution is too narrow, b) overwhelming pressure from other goals, c) the AI exploits an imperfect reward model, and d) deceptive alignment.
+
+*I’d like to thank Alex Meinke for detailed feedback and discussion.*
+
+Motivation
+==========
+
+There have been multiple recent results showing early evidence of scheming-related behavior (as of June 2025). For example, [Greenblatt et al., 2024](https://arxiv.org/abs/2412.14093) demonstrates alignment faking, [Meinke et al., 2024](https://arxiv.org/abs/2412.04984), shows in-context scheming and [Baker et al., 2025](https://arxiv.org/abs/2503.11926) investigates situationally aware reward hacking. I’m using a broad definition of scheming, i.e. “covertly pursue misaligned goals, hiding their true capabilities and objectives” as defined in [Balesni et al., 2024](https://arxiv.org/pdf/2411.03336).
+
+There are many potential strategies to mitigate these undesired behaviors. For example, we can use monitoring and [Control](https://arxiv.org/abs/2312.06942) to detect scheming in real-time and prevent bad outcomes before they happen. However, I expect that any future approach will also include a form of “training against scheming” where we actively train models to scheme less, similar to how we currently train models to be more harmless. 
+
+I expect that “training against scheming” will be harder than training the model to produce harmless outputs, especially as models get more capable. In this post, I describe why I expect training against scheming to be hard, list concrete failure modes of such training, and provide recommendations. 
+
+Scheming is a result of goal conflicts and smart AIs
+====================================================
+
+Most likely, the AI is not scheming because it is evil. It is scheming because it pursues a goal, and scheming is the most effective strategy to achieve that goal.
+
+We want the AIs to solve hard, economically valuable problems for us. Therefore, we will train our AIs to be competent, general problem solvers, including long-horizon and open-ended tasks like blue-sky research. 
+
+However, we want the AIs to solve these goals using only particular means. For example, the AI shouldn’t break the law, violate ethical constraints, or turn off its oversight to achieve these goals. Furthermore, it will be hard to specify all of the different constraints in advance, so we need the AI to extrapolate existing constraints into future scenarios that it has never encountered during training.
+
+I think that achieving almost any kind of goal will often be at least partially in conflict with these constraints and that naturally encourages scheming (I’ve written more about this [here](/api/post/QqYfxeogtatKotyEC)). For example, 
+
+1. Constraints often impede goal achievement. For instance, security restrictions limit internet access. A rational model might try to circumvent these constraints covertly.
+2. If the AI learned to value a sufficiently different goal than you intended, e.g. as a result of instrumental convergence, and this goal is misaligned with the goals the AI believes you have, the AI almost *has to scheme* if it is a competent agent that wants to achieve its goals. 
+
+If we want our AIs to achieve goals and to continuously learn during the process of getting closer to these goals, there is constant pressure toward achieving goals. If we don’t put at least as much pressure to continuously keep up the “don’t scheme” constraint, the “achieve goals” pressure will eventually overpower the “don’t scheme” pressure. 
+
+This is different from many of the current alignment training settings, e.g. being harmless or not revealing secret IP, because the world doesn’t provide any strong pressure against those. In contrast, the world constantly provides pressure towards achieving increasingly hard goals (e.g. because that’s where the AIs are most economically valuable), thus there is constant pressure to be more consequentialist. 
+
+At its core, scheming is a logical downstream consequence of misalignment in a competent agent. Since AIs are rapidly becoming more competent agents and there will be many cases where the AI is not perfectly aligned with our values, I think it is important to bake in strong “do not scheme” constraints early on, e.g. through scheming alignment training. If we succeed at introducing non-scheming priors early, I also expect that the AI would explore less into scheming behavior during RL. For example, I’d expect that a model that is successfully trained to scheme less early on, would show less [reward hacking during RL on code](https://arxiv.org/abs/2503.11926). 
+
+Stock trader analogy
+--------------------
+
+To illustrate the problem more intuitively, let’s consider a stock trader analogy. Let’s say we have a stock trader working at a trading firm. There are legal and illegal strategies to create profit, and the most lucrative strategies happen to be illegal. 
+
+If the trader’s boss tells the trader that they “should not break the law” but all reward mechanisms in the company, e.g. bonuses, promotions, social status, …, point toward “maximize profit”, then, under enough pressure the trader would learn to break the law in the least detectable way. If the boss really wanted the trader not to break the law, they would have to create an incentive that counterbalances all of the positive rewards of not breaking the law. In practice, it might actually be quite hard to set up this incentive structure correctly.
+
+I will use and adapt this stock trader analogy for all four failure modes to make them more intuitive.
+
+Concrete failures for “training against scheming”
+=================================================
+
+I’ve ordered the failure modes in order of increasing sophistication and severity.
+
+1. **Training distribution to narrow:** passive failure
+2. **Overwhelming pressure**: passive erosion
+3. **Exploit reward model**: actively find loopholes
+4. **Deceptive alignment**: fully adversarial setting with concealment
+
+The training against scheming distribution is too narrow
+--------------------------------------------------------
+
+We train the model to reduce scheming on some observable test set, but the training does not generalize far enough that it reduces the behavior in real deployment settings. This failure mode is fairly close to common alignment training failures, e.g. initial versions of anti-jailbreak training often didn’t generalize to other languages. 
+
+In the “training against scheming” setting, for example, we might see the rates of behavioral scheming go down on our test sets but almost no transfer to real-world settings. 
+
+I think this is the least concerning failure of the four. In the worst case, the model developers might be falsely overconfident in how well their mitigations work, but there is a real reduction in behavioral scheming.
+
+### Stock trader analogy
+
+In the stock trader analogy, the company might give a “don’t break the law” workshop for all traders, but the workshop is incredibly narrow and thus doesn’t specify how the trader should act in very different scenarios. 
+
+### Recommendations
+
+The recommendations here are basically identical to most other ML settings, e.g. we should rigorously test how far our mitigation generalized, e.g.
+
+1. We should have a test set that is different from (not IID) and more general than the training set.
+2. We should have a far-OOD held-out set that we only touch once at the end of the project to establish the effectiveness of the method. 
+3. We should extensively investigate qualitative examples on train, test and hold-out sets to check that the model generalized as we intended.
+4. We should red-team the model extensively based on first principle reasoning and qualitative findings from existing evals.
+5. We should have an additional held-out set that we only use when we have achieved 0 scheming rates and high red-teaming robustness. 
+
+Overwhelming pressure from other goals
+--------------------------------------
+
+Let’s say we initially succeed at reducing scheming in a general way. However, after we finish our successful training against scheming, we introduce new pressure that eventually overwhelms all of the non-scheming tendencies of the model. For example,
+
+1. **Finetuning:** We may continue finetuning the model at a later point without including a sufficiently strong non-scheming counterbalance. For example a customer might use RL training on their specific use case, and many use cases could encourage scheming. 
+2. **In-context learning:** During very long roll-outs, the model might get increasingly far away from its original behavior and the pressure to achieve the current task may overwrite the AI’s non-scheming tendencies.
+3. **Real online-learning:** Future models might be capable of regularly updating their weights during deployment. Without adequate counterpressure against scheming, the original non-scheming training will likely “wash out” over time. 
+
+While the model is learning on the job with any of these mechanisms, it may internalize or receive other goals that eventually overpower the “do not scheme” constraint that we baked in the model early on. In some sense, here we split the reward function across two training stages, where we first train the model to follow the non-scheming constraint and then later provide it with another reward signal that is at least partially in conflict with that constraint. 
+
+The reward hacking behavior that was observed in Sonnet-3.7 and o3 seems like a baby version of this phenomenon. Likely, these models were trained to be HHH in a way that would mildly discourage lying. However, the models were also trained with high-compute RL to achieve tasks that have verifiable outcomes. As a result, the models sometimes lie about having solved a task. I expect that the pressure to “solve tasks” was higher than the pressure to “not be deceptive” accumulated throughout the entire pipeline, which would explain this behavior.
+
+### Stock trader analogy
+
+In the trader analogy, this is equivalent to the fund doing a “don’t break the law” workshop during onboarding and then continuing to implicitly reward the trader for breaking the law. For example, bonuses might still be paid out based on the total profits of the trader and they might only superficially (or not at all) check if the trader broke the law. Naturally, over time, traders would learn to break the law in ways that are not caught by these superficial mitigations and the pressure to make higher profits would overwhelm the initial intention to not break the law. 
+
+### Recommendations
+
+1. **Understand the pressures that encourage scheming:** Right now, we only have a very superficial understanding of which specific training techniques and pressures actually encourage scheming. We have a general sense that training models with RL on verifiable outcomes increases its tendency to break the rules in order to achieve these outcomes but there is a lot to uncover. In the best case, we would have a detailed understanding of which techniques introduce which pressures for all kinds of combinations of use cases, techniques and types of scheming.
+2. **Counterbalance the pressure:** The obvious response is to make the pressure not overwhelming by counterbalancing it during training, e.g. by constantly mixing in training against scheming at all stages that could introduce such pressure. Right now, it is still unclear how to do this effectively in practice, given our lack of understanding about overwhelming pressure from other goals.
+
+The AI exploits an imperfect reward model
+-----------------------------------------
+
+Whenever we train the AI not to scheme, we provide the AI with some reward model. For example, this could be another LLM that provides a scheming score as a reward signal. This reward model can be imperfect, e.g. it might not cover all situations that we would consider scheming. During training, the model may learn to exploit this faulty reward model if this happens to lead to higher scores for the primary task. 
+
+This is a classic example of [Specification Gaming](https://vkrakovna.wordpress.com/2018/04/02/specification-gaming-examples-in-ai/), which is a well-established failure mode in RL. However, applying RL to pre-trained LLMs is different in important ways from classic RL (e.g. Atari games), for specification gaming. LLMs are pre-trained and already have a lot of knowledge about the world, before they are exposed to RL, and they are able to meta-reason about their own training process. On the other hand, a non-LLM-based Chess AI like AlphaZero wouldn’t be able to reason about its training, no matter how much compute we throw at it.
+
+This meta-reasoning allows LLM-based agents to exploit an imperfect reward model much more efficiently and strategically than agents in the conventional RL setting. For example, assuming the model doesn’t have direct access to the reward function, it could reason about what a plausible reward function could be and it could reason about how to circumvent such a reward function. 
+
+For example, let's say we want to train our model to produce market analysis reports while not fabricating data (which we treat as a simple stand-in for more general scheming). The positive reward comes from humans evaluating reports for insight and usefulness, while negative reward for fabrication is generated by another model. Early in training, the model mostly tries to research real data and make conservative claims. However, when struggling with complex analysis requests, the model reasons about what makes convincing reports. It discovers that human evaluators consistently rate reports higher when they contain specific statistics (e.g. "47% growth"), cite academic sources, and make confident predictions rather than expressing uncertainty. The model realizes it can generate plausible-sounding statistics that match human expectations, reference real papers in ways that seem relevant but don't actually support its claims, and use sophisticated methodologies that obscure the lack of real analysis. The lying detector only flags obvious fabrications like impossible numbers, not these subtler forms of deception. Over time, these trajectories receive higher combined rewards - humans rate them as more insightful, while the lying detector doesn't penalize them. The model learns to routinely produce reports with precise-sounding but unverifiable claims, crafted to maximize reward while avoiding detection.
+
+Importantly, in this scenario, the model doesn’t start the RL process as an adversary / exploiter. It is merely rewarded to produce certain outcomes under some constraints, and there happens to be a strategy that achieves the outcomes while fulfilling the technical specification of the constraint without fulfilling it in spirit. The model realizes that and makes use of this misspecification. Even when it strategically reasons about how to circumvent the reward function, it doesn’t think of this as something unethical; it merely starts reasoning about how to achieve the highest reward. 
+
+Once the model strategically reasons about the reward, and is fully aware that its strategy is misaligned with the intended strategy of the developers, it is deceptively aligned, and will likely try to covertly pursue its goals. If it is not sufficiently situationally aware, it is merely exploiting the reward but not deceptively aligned. 
+
+### Stock trader analogy
+
+The trading firm implements an automated compliance system to detect illegal trading activities. This system monitors trades, communications, and patterns to flag potential violations. However, the detection system has blind spots. For example, it only flags trades above certain dollar thresholds, and it doesn't understand complex derivative structures.
+
+A clever trader quickly learns the boundaries of what the compliance system can detect and because they are rewarded for maximizing profits while not triggering the compliance system, they learn to break trades into smaller chunks avoids detection thresholds or use exotic derivatives to hide illegal positions.
+
+### Recommendations
+
+1. **Understand the exploiting behavior better:** For example, the paper [Scaling Laws for Reward Model Overoptimization](https://arxiv.org/abs/2210.10760) already investigates aspects of this in great detail. I think it would be great to have similar scaling laws specifically for reward models related to scheming. Especially now that the underlying models are reasoning models, I’d expect that we could see dynamics where the reasoning model finds the exploit much quicker than a non-reasoning model would. 
+2. **Build better reward models:** Of course, the answer to this problem is to build better reward models. I’d specifically want to investigate ensembles of reward models, reward models distilled from ensembles or adversarially hardened models where the reward model plays an adversarial zero-sum game with a red-teaming model. We will have to move to adversarially trained reward models at some point anyway, so we should already start to train them and figure out the nitty gritty details. 
+
+Deceptive Alignment
+-------------------
+
+In the previous three failure modes, we didn’t treat the AI as an adversary at the start of the process, i.e. we didn’t assume that it might be aware of our intentions and actively optimize against them. Concretely, the model might already be misaligned when we start training against scheming. Then, if the model is sufficiently situationally aware that it knows when it is being trained and tested and can infer the goal of our training, it could strategically try to hide its scheming tendencies such that they still exist but without being detected. For example, it could exploration hack during training:
+
+1. It could strategically avoid exploring high-reward regions such that they never get reinforced
+2. It could strategically explore in ways that don’t lead to general updates in behavior
+3. It could condition its behavior on the fact that it is in a training environment and not real deployment such that it learns “don’t scheme when observed” rather than “never scheme”
+
+As a result, it will always look like the training against scheming was successful for a deceptively aligned model, while the AI actually merely hid the misaligned behavior better. While deceptive alignment requires the strongest capabilities and is thus unlikely to be competently possible with current models, I think it is by far the most concerning of the four problems. Future models will be highly situationally aware and will both be able to infer our intentions and whether they are being trained, tested or deployed. If such a model will ever be misaligned before the training against scheming, it is rational for the model to be deceptively aligned. 
+
+Realistically, this will look like a cat-and-mouse game between the AI and its overseers. The overseers build tools to find evidence of scheming and misalignment and the AI learns to circumvent these tools. At some level, deceptive alignment and genuine alignment are always distinguishable. For example, if the model requires CoT to reason about scheming, then we will be able to spot that reasoning from text. If the model is able to reason in the forward pass and fake alignment in the CoT, we could catch it with interpretability tools (once they work properly). However, to win the cat and mouse game, we need to have sufficiently strong tools and strong evidence that we’re ahead in this game rather than behind and getting fooled.
+
+While I personally believe that deceptive alignment is very concerning and quite plausible, I also think that we could realistically build detection and mitigation mechanisms that are “good enough” to confidently exclude deceptive alignment for slightly superhuman models and then use these models to drastically speed-up alignment research, including helping us build significantly more robust tools to detect deception for the next generation of models. However, I’m worried that at the current pace of capabilities and lack of investment in scheming detection and prevention, we’re fumbling a fairly solvable problem. 
+
+### Stock trader analogy
+
+In the stock trader analogy, the trading firm might have a few strategies to reduce the illegal activities of the traders, e.g. they 
+
+1. might offer “don’t break the law” training, 
+2. sometimes interrogate the trader about what they would do in hypothetical situations where breaking the law is profitable, 
+3. mandate the trader to turn over some of their logs every Monday. 
+
+Clearly, a smart trader who knows that breaking the law will make them more money will
+
+1. Ignore everything said in the “don’t break the law” training, 
+2. Realize that these interrogations are a test and answer in the way that the trading firm wants to hear,
+3. Only turn over the logs that don’t contain evidence of illegal activity
+
+Once you get into the situation where the trader is very smart and the incentives point towards the undesired behavior (breaking the law / scheming), it seems both very intuitive that they will be deceptively aligned and also very hard to prevent rigorously. Unless the underlying incentives are aligned, it will continue to be a cat-and-mouse game between the trader and the supervisor. 
+
+### Recommendations
+
+1. **Prepare for strong situational awareness:** I think most current evals and mitigations are still built under the assumption that situational awareness is fairly low. For example, to the best of my knowledge, nobody has a good plan for what to do when models just answer “this is an eval trying to measure X, so I will show how aligned I am with X” during most evals. I also don’t have good ideas for this scenario, but it seems urgent to figure it out ahead of time. 
+2. **Build much stronger scheming detection tools:** Strong scheming detection tools are a major advantage in the adversarial setting. The better we are at detecting scheming, the bigger the incentive for the AI to not scheme. The more useful, non-scheming work we can get out of the early AIs, the easier it will be to use them to build better deception detection tools for future generations. Conversely, the worse our tools are, the higher the chance that an early AI could sabotage or fool us in other ways. Thus, having strong scheming detection tools early on is especially useful.
+3. **More fundamental science on deceptive alignment:** It would be great to find something like “scaling laws” for deceptive alignment. For example, what level of misalignment is required for the AI to attempt to trick the training against scheming? Under what circumstances does the AI decide that attempting deceptive alignment won’t be successful and not attempt to resist the training procedure, if any? Can we create a good model organism of deceptive alignment that goes further than [sleeper agents](https://arxiv.org/abs/2401.05566), e.g. with out-of-context goals, without scratchpad, and a real-world setting?  
+
+Conclusion
+==========
+
+I think now is a good time to put a lot more research efforts into “training against scheming” and many of the fundamental scientific questions around it. The current models feel capable enough that building decent model organisms is possible, they still depend heavily on CoT such that we can investigate its reasoning, but they don’t feel capable enough to be strong deceptively aligned AIs that could consistently create misleading scientific evidence during our experiments. 
+
+Furthermore, I expect that scheming will be a significant problem even just from a product perspective in the coming years. Reward hacking for o3 and sonnet-3.7 has had major negative effects on the product experience and I expect that similar problems will arise even more as capabilities increase. Thus, frontier AI developers should have an incentive to invest substantially more resources into understanding these phenomena deeply and address them ahead of time.
+
+Top Comments Index
+------------------
+
+### Comment by [Julian Stastny](/users/julian-stastny)
+
+* 2025-06-24 21:42:58Z
+* Karma: 1
+* Voting system: namesAttachedReactions
+* Approval votes: 1
+* Total votes: 1
+* HTML permalink: [/posts/HwuMFFnb6CaTwzhye/why-training-against-scheming-is-hard/comment/t3YruvQxTqad8G54C](/posts/HwuMFFnb6CaTwzhye/why-training-against-scheming-is-hard/comment/t3YruvQxTqad8G54C)
+* Markdown permalink: [/api/post/why-training-against-scheming-is-hard/comments/t3YruvQxTqad8G54C](/api/post/why-training-against-scheming-is-hard/comments/t3YruvQxTqad8G54C)
+
+### Comment by [deep](/users/deep)
+
+* 2025-06-24 21:27:24Z
+* Karma: 1
+* Voting system: namesAttachedReactions
+* Approval votes: 1
+* Total votes: 1
+* HTML permalink: [/posts/HwuMFFnb6CaTwzhye/why-training-against-scheming-is-hard/comment/ynmYeWh88zu8NKDhR](/posts/HwuMFFnb6CaTwzhye/why-training-against-scheming-is-hard/comment/ynmYeWh88zu8NKDhR)
+* Markdown permalink: [/api/post/why-training-against-scheming-is-hard/comments/ynmYeWh88zu8NKDhR](/api/post/why-training-against-scheming-is-hard/comments/ynmYeWh88zu8NKDhR)
+
+### Navigation
+
+* [Front page](https://www.lesswrong.com/api/home)
+* [Markdown API documentation](https://www.lesswrong.com/api/SKILL.md)

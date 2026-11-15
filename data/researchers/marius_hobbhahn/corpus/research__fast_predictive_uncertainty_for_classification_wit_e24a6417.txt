@@ -1,0 +1,600 @@
+---
+url: https://arxiv.org/abs/2003.01227
+title: Fast Predictive Uncertainty for Classification with Bayesian Deep Networks
+publishedDate: 2020-03-02
+date_source: listing
+authors: ["Marius Hobbhahn", "Agustinus Kristiadi", "Philipp Hennig"]
+author_position: first
+kind: paper
+exa_request_id: https://arxiv.org/abs/2003.01227
+---
+# Fast Predictive Uncertainty for Classification with Bayesian Deep Networks
+
+arXiv:2003.01227. cs.LG, stat.ML. Submitted 2020-03-02. Latest version v4, 2022-05-31.
+
+## Authors
+
+Marius Hobbhahn, Agustinus Kristiadi, Philipp Hennig
+
+## Details
+
+- License: http://arxiv.org/licenses/nonexclusive-distrib/1.0/
+
+## Versions
+
+- v1: 2020-03-02
+- v2: 2021-02-09
+- v3: 2022-05-30
+- v4: 2022-05-31
+
+---
+
+Full text of v2.
+
+## Abstract
+
+In Bayesian Deep Learning, distributions over the output of classification neural networks are approximated by first constructing a Gaussian distribution over the weights, then sampling from it to receive a distribution over the softmax outputs. This is costly. We reconsider old work to construct a Dirichlet approximation of this softmax output distribution, which yields an analytic map between Gaussian distributions in logit space and Dirichlet distributions (the conjugate prior to the Categorical distribution) in the output space. We argue that the resulting Dirichlet distribution has theoretical and practical advantages, in particular more efficient computation of the uncertainty estimate, scaling to large datasets and networks like ImageNet and DenseNet. We demonstrate the usefulness of this Dirichlet approximation by using it to construct a lightweight uncertainty-aware output ranking for the ImageNet setup.
+
+Machine Learning, ICML
+
+## 1 Introduction
+
+Quantifying the uncertainty of Neural Networks’ (NNs) predictions is important in safety-critical applications such as medical-diagnosis (Begoli et al., 2019) and self-driving vehicles (McAllister et al., 2017; Michelmore et al., 2018), but it is often limited by computational constraints. Architectures for classification tasks produce a probability distribution as their output, constructed by applying the softmax to the point-estimate output of the penultimate layer. However, it has been shown that this distribution is overconfident (Nguyen et al., 2015; Hein et al., 2019) and thus cannot be used for predictive uncertainty quantification.
+
+Figure 1: High-level sketch of the Laplace Bridge for BNNs. $p(y|x,D)$ denotes the marginalized softmax output, i.e. the mean of the Dirichlet.
+
+Approximate Bayesian methods provide quantified uncertainty over the network’s parameters and thus the outputs in a tractable fashion. The commonly used Gaussian approximate posterior (MacKay, 1992b; Graves, 2011; Blundell et al., 2015; Ritter et al., 2018) approximately induces a Gaussian distribution over the logits of a NN (Mackay, 1995), but the associated predictive distribution has is not analytic. It is typically approximated by Monte Carlo (MC) integration. This requires multiple samples, making prediction in Bayesian Neural Networks (BNNs) a comparably expensive operation.
+
+Here we re-consider an old but largely overlooked idea originally proposed by David JC MacKay (1998) in a different setting (arguably the inverse of the Deep Learning setting), which transforms a Dirichlet distribution into a Gaussian. When Dirichlet distributions are transformed with the inverse-softmax function, its shape effectively approximates a Gaussian. The inverse of this approximation, which will be called the Laplace Bridge (LB) here (Hennig et al., 2012), analytically maps the parameters of a Gaussian distribution onto the parameters of a Dirichlet distribution. Given a Gaussian distribution over the logits of a NN, one can thus efficiently obtain an approximate Dirichlet distribution over the softmax outputs. We show that this “old” solution yields a direct analytic map to Dirichlet predictions, at extremely low cost.
+
+Figure 2: (Adapted from Hennig et al. (2012)). Visualization of the Laplace Bridge for the Beta distribution (1D special case of the Dirichlet). Left: “Generic” Laplace approximations of standard Beta distributions by Gaussians. Note that the Beta Distribution (red curve) does not have a valid approximation because its Hessian is not positive semi-definite. Middle: Laplace approximation to the same distributions after basis transformation through the softmax (4). The transformation makes the distributions “more Gaussian” (i.e. uni-modal, bell-shaped, with support on the real line), thus making the Laplace approximation more accurate. Right: The same Beta distributions, with the back-transformation of the Laplace approximations from the middle figure to the simplex, yielding an improved approximate distribution. In contrast to the left-most image, the dashed lines now actually are probability densities (they integrate to $1$ on the simplex).
+
+Our contributions are: a) We re-visit MacKay’s derivation with particular attention to a symmetry constraint that becomes necessary in our “inverted” use of the argument from the Gaussian to the Dirichlet family and b) show how the result can be used in the context of BNNs (see Figure 1). c) We add a theoretical result on the approximation quality of the Laplace Bridge. d) We then validate the quality of this approximation and demonstrate an at least 100-fold speed-up over MC-integration. e) Finally, we show a use-case on ImageNet, leveraging the analytic properties of Dirichlets to improve the popular top-$k$ metric through uncertainties.
+
+## 2 The Laplace Bridge
+
+(a)
+
+(b)
+
+(c)
+
+(d)
+
+(e)
+
+(a)
+
+(b)
+
+(c)
+
+(d)
+
+(e)
+
+Figure 3: Densities on the simplex of the true distribution (top row, computed by MC integration) and “Laplace Bridge” approximation constructed in this paper (bottom row). We find that in all cases the LB yields a good approximation and captures the desired properties. For column (a) and (b), two different Gaussians were constructed, such that their modes coincide, but their uncertainty differs. For (c), (d) and (e) the same mean with decreasing uncertainty was used.
+
+Laplace approximations[^1] are popular and lightweight methods to approximate general probability distributions $q(\mathbf{x})$ with a Gaussian $\mathcal{N}(\mathbf{x}|{\bm{\mu}},{\bm{\Sigma}})$ when $q(\mathbf{x})$ is twice differentiable and the Hessian at the mode is positive definite. They set ${\bm{\mu}}$ to a mode of $q$, and ${\bm{\Sigma}}=-(\nabla^{2}\log q(\mathbf{x})|_{\bm{\mu}})^{-1}$, the inverse Hessian of $\log q$ at that mode. This scheme can work well if the true distribution is unimodal and defined on the real vector space.
+
+The Dirichlet distribution, which has the density function
+
+$$\mathrm{Dir}(\bm{\pi}|{\bm{\alpha}}):=\frac{\Gamma\left(\sum_{k=1}^{K}\alpha_{k}\right)}{\prod_{k=1}^{K}\Gamma(\alpha_{k})}\prod_{k=1}^{K}\pi_{k}^{\alpha_{k}-1}\,, \tag{1}$$
+
+is defined on the probability simplex and can be “multimodal” in the sense that the distribution diverges in the $k$-corner of the simplex when $\alpha_{k}<1$. Both issues preclude a Laplace approximation, at least in the naïve form described above. However, MacKay (1998) noted that both can be fixed elegantly by a change of variable (Figure 2). Details of the following argument can be found in the Supplements. Consider the $K$-dimensional variable $\bm{\pi}\sim\mathrm{Dir}(\bm{\pi}|{\bm{\alpha}})$ defined as the softmax of $\mathbf{z}\in\mathbb{R}^{K}$:
+
+$$\pi_{k}(\mathbf{z}):=\frac{\exp(z_{k})}{\sum_{l=1}^{K}\exp(z_{l})}\,, \tag{2}$$
+
+for all $k=1,\dots,K$. We will call $\mathbf{z}$ the logit of $\bm{\pi}$. When expressed as a function of $\mathbf{z}$, the density of the Dirichlet in $\bm{\pi}$ has to be multiplied by the absolute value of the determinant of the Jacobian
+
+$$\det\frac{\partial\bm{\pi}}{\partial\mathbf{z}}=\prod_{k}\pi_{k}(z), \tag{3}$$
+
+thus removing the “$-1$” terms in the exponent:
+
+$$\mathrm{Dir}_{\mathbf{z}}(\bm{\pi}(\mathbf{z})|{\bm{\alpha}}):=\frac{\Gamma\left(\sum_{k=1}^{K}\alpha_{k}\right)}{\prod_{k=1}^{K}\Gamma(\alpha_{k})}\prod_{k=1}^{K}\pi_{k}(\mathbf{z})^{\alpha_{k}} \tag{4}$$
+
+This density of $\mathbf{z}$, the Dirichlet distribution in the softmax basis, can now be accurately approximated by a Gaussian through a Laplace approximation (see Figure 2), yielding an analytic map from the parameter ${\bm{\alpha}}\in\mathbb{R}_{+}^{K}$ to the parameters of the Gaussian (${\bm{\mu}}\in\mathbb{R}^{K}$ and symmetric positive definite ${\bm{\Sigma}}\in\mathbb{R}^{K\times K}$), given by
+
+$$\displaystyle\mu_{k} \displaystyle=\log\alpha_{k}-\frac{1}{K}\sum_{l=1}^{K}\log\alpha_{l}\,, \tag{5}$$
+
+$$\displaystyle\Sigma_{k\ell} \displaystyle=\delta_{k\ell}\frac{1}{\alpha_{k}}-\frac{1}{K}\left[\frac{1}{\alpha_{k}}+\frac{1}{\alpha_{\ell}}-\frac{1}{K}\sum_{u=1}^{K}\frac{1}{\alpha_{u}}\right]. \tag{6}$$
+
+The corresponding derivations require care because the Gaussian parameter space is evidently larger than that of the Dirichlet and not fully identified by the transformation. A pseudo-inverse of this map was provided by Hennig et al. (2012). It maps the Gaussian parameters to those of the Dirichlet as
+
+$$\alpha_{k}=\frac{1}{\Sigma_{kk}}\left(1-\frac{2}{K}+\frac{e^{\mu_{k}}}{K^{2}}\sum_{l=1}^{K}e^{-\mu_{l}}\right)\, \tag{7}$$
+
+(this equation ignores off-diagonal elements of ${\bm{\Sigma}}$, more discussion below). Together, Eqs. (5), (6) and (7) will here be used for Bayesian Deep Learning, and jointly called the Laplace Bridge. A full derivation of the LB can be found in B and C. Even though the LB implies a reduction of the distribution’s expressiveness, we show in Section 3 that this map is still sufficiently accurate.
+
+Figure 3 shows the quality of the resulting approximation. We consider multiple different ${\bm{\mu}},{\bm{\Sigma}}$ in three dimensions. We exhaustively sample from the Gaussian and apply the softmax. The resulting histogram is compared to the PDF of the corresponding Dirichlet obtained via the LB. The first part of the figure emphasizes that a point estimate is insufficient. Since the mode of the Dirichlet is defined as
+
+$$x_{i}=\frac{\alpha_{i}-1}{\sum_{k=1}^{K}(\alpha_{k}-1)}\,, \tag{8}$$
+
+the parameters (${\bm{\alpha}}_{1}=[2,2,6]^{\top}$ and ${\bm{\alpha}}_{2}=[11,11,51]^{\top}$) yield the same point estimate even though their distributions are clearly different. The second part shows how the LB maps w.r.t decreasing uncertainty ${\bm{\Sigma}}$. We find that different levels of uncertainty are well captured by the LB.
+
+## 3 The Laplace Bridge for BNNs
+
+Let $f_{\bm{\theta}}:\mathbb{R}^{N}\to\mathbb{R}^{K}$ be an $L$-layer NN parametrized by ${\bm{\theta}}\in\mathbb{R}^{P}$, with a Gaussian approximate posterior $\mathcal{N}({\bm{\theta}}|{\bm{\mu}}_{\bm{\theta}},{\bm{\Sigma}}_{\bm{\theta}})$. For any input $\mathbf{x}\in\mathbb{R}^{N}$, one way to obtain an approximate Gaussian distribution on the pre-softmax output (logit vector) $f_{\bm{\theta}}(\mathbf{x})=:\mathbf{z}$ is as
+
+$$q(\mathbf{z}|\mathbf{x})\approx\mathcal{N}(\mathbf{z}|f_{\bm{\mu}_{\mathbf{\theta}}}(\mathbf{x}),{\mathbf{J}}(\mathbf{x})^{\top}{\bm{\Sigma}}_{\bm{\theta}}{\mathbf{J}}(\mathbf{x}))\,, \tag{9}$$
+
+where ${\mathbf{J}}(\mathbf{x})$ is the $P\times K$ Jacobian matrix representing the derivative $\frac{\partial\mathbf{z}}{\partial{\bm{\theta}}}$ (Mackay, 1995). This is a linearized approximation of the network, which is often computationally infeasible due to the size of the Jacobian. For the experiments with larger networks, we therefore use a last-layer Laplace approximation of the network as successfully used e.g. by Snoek et al. (2015); Wilson et al. (2016); Brosse et al. (2020); Kristiadi et al. (2020). It is given by
+
+$$q(\mathbf{z}|\mathbf{x})\approx\mathcal{N}(\mathbf{z}|\bm{\mu}_{\mathbf{W}^{(l)}}\phi(\mathbf{x}),\phi(\mathbf{x})^{T}{\bm{\Sigma}}_{\mathbf{W}^{(l)}}\phi(\mathbf{x}))\,, \tag{10}$$
+
+where $\phi(\mathbf{x})$ denotes the output of the first $L-1$ layers, $\bm{\mu}_{\mathbf{W}^{(l)}}$ is the maximum a posteriori estimate for the weights of the last layer, and ${\bm{\Sigma}}_{\mathbf{W}^{(l)}}$ is the inverse of the negative loss Hessian w.r.t. $\mathbf{W}^{(l)}$, ${\bm{\Sigma}}_{\mathbf{W}^{(l)}}=-\{\frac{\partial^{2}\mathcal{L}}{\partial^{2}\mathbf{W}^{(l)}}\}^{-1}$. Even though last-layer Laplace approximations only use uncertainty from the last linear layer, they empirically perform as good as full Laplace approximations (Kristiadi et al., 2020) and are better aligned with our goal of fast approximations.
+
+Approximating the density of the softmax-Gaussian random variable that is the output of the BNN as a Dirichlet, using the LB, analytically approximates the predictive distribution in a single step instead of drawing many samples. From Eq. (7), this requires $\mathcal{O}(K)$ computations to construct the $K$ parameters $\alpha_{k}$ of the Dirichlet. In contrast, MC-integration has computational costs of $\mathcal{O}(MJ)$, where $M$ is the number of samples and $J$ is the cost of sampling from $q(\mathbf{z}|\mathbf{x})$ (typically $J$ is of order $K^{2}$ after an initial $\mathcal{O}(K^{3})$ operation for a matrix decomposition of the covariance). The MC approximation has the usual sampling error of $\mathcal{O}(1/\sqrt{M})$, while the LB has a fixed but small error (empirical comparison in Section 5.3). This means that computing the LB is faster than drawing a single MCMC sample while yielding a full distribution.
+
+We now discuss some qualitative properties of the LB relevant for the uncertainty quantification use-case in Deep Learning: For output classes of comparably high probability, as defined below, the variance $\mathrm{Var}(\pi_{k}|{\bm{\alpha}})$ under the LB increases with the variance ${\bm{\Sigma}}_{ii}$ of the underlying Gaussian. In this sense, the LB approximates the uncertainty information encoded in the output of a BNN.
+
+**Proposition 1.**
+
+Let $\mathrm{Dir}(\bm{\pi}|{\bm{\alpha}})$ be obtained via the LB (Eq. (7)) from a Gaussian $\mathcal{N}(\mathbf{z}|{\bm{\mu}},{\bm{\Sigma}})$ over $\mathbb{R}^{K}$. Then, for each $k=1,\dots,K$, letting $\alpha_{\neq k}:=\sum_{l\neq k}\alpha_{l}$, if
+
+$$\alpha_{k}>\frac{1}{4}\left(\sqrt{9\alpha_{\neq k}^{2}+10\alpha_{\neq k}+1}-\alpha_{\neq k}-1\right)\,,$$
+
+then the variance $\mathrm{Var}(\pi_{k}|{\bm{\alpha}})$ of the $k$-th component of $\bm{\pi}$ is increasing in ${\bm{\Sigma}}_{kk}$. [proof in supplements]
+
+Intuitively, this result describes a necessary condition for the variance of the resulting Dirichlet to scale with the variance of the $k$-th component of the Gaussian. Since there is no analytic transformation to the softmax-Gaussian, and thus no analytic error estimate, our result can be seen as a proxy for a high-quality uncertainty approximation. An empirical evaluation showing that this condition is fulfilled in most cases can be found in the supplementary material.
+
+Further benefits of this approximation arise from the convenient analytical properties of the Dirichlet exponential family. For example, a point estimate of the posterior predictive distribution is directly given by the Dirichlet’s mean,
+
+$$\mathbb{E}[\bm{\pi}]=\left(\frac{\alpha_{1}}{\sum_{l=1}^{K}\alpha_{l}},\dots,\frac{\alpha_{K}}{\sum_{l=1}^{K}\alpha_{l}}\right)^{\top}\,. \tag{11}$$
+
+This removes the necessity for MC-integration and can be computed analytically. Additionally, Dirichlets have Dirichlet marginals: If $p(\bm{\pi})=\mathrm{Dir}(\bm{\pi}|{\bm{\alpha}})$, then
+
+$$p\left(\pi_{1},\dots,\pi_{j},\sum_{k>j}\pi_{k}\right)\\ =\mathrm{Dir}\left(\alpha_{1},\dots,\alpha_{j},\sum_{k>j}\alpha_{k}\right)\,. \tag{12}$$
+
+Thus marginal distributions arbitrary subsets of outputs (including binary marginals) can be computed in closed-form. An additional benefit of the LB for BNNs is that it is more flexible than an MC-integral. If we let $p(\bm{\pi})$ be the distribution over $\bm{\pi}:=\mathrm{softmax}(\mathbf{z}):=[e^{z_{1}}/\sum_{l}e^{z_{l}},\dots,e^{z_{K}}/\sum_{l}e^{z_{l}}]^{\top}$, then the MC-integral can be seen as a “point-estimate” of this distribution since it approximates $\mathbb{E}[\bm{\pi}]$. In contrast, the Dirichlet distribution $\mathrm{Dir}(\bm{\pi}|{\bm{\alpha}})$ approximates the distribution $p(\bm{\pi})$. Thus, the LB enables tasks that can be done only with a distribution but not a point estimate. For instance, one could ask “what is the distribution of the softmax output of the first $L$ classes?” when one is dealing with $K$-class ($L<K$) classification. Since the marginal distribution can be computed analytically with Eq. (12), the LB provides a convenient yet cheap way of answering this question.
+
+## 4 Related Work
+
+In BNNs, analytic approximations of posterior predictive distributions have attracted a great deal of research. In the binary classification case, for example, the probit approximation has been proposed already in the 1990s (Spiegelhalter & Lauritzen, 1990; MacKay, 1992a). However, while there exist some bounds (Titsias, 2016) and approximations of the expected log-sum-exponent function (Ahmed & Xing, 2007; Braun & McAuliffe, 2010), in the multi-class case, obtaining a good analytic approximation of the expected softmax function under a Gaussian measure is an open problem. Our LB can be used to produce a close analytical approximation of this integral. It thus furthers the trend of sampling-free solutions within Bayesian Deep Learning (Wu et al., 2018; Haussmann et al., 2019, etc.). The crucial difference is that, unlike these methods, the LB approximates the full distribution over the softmax outputs of a deep network.
+
+Recently, it has been proposed to model the distribution of softmax outputs of a network directly. Similar to the LB, Malinin & Gales (2018, 2019); Sensoy et al. (2018) proposed to use the Dirichlet distribution to model the posterior predictive for non-Bayesian networks. They further proposed novel training techniques in order to directly learn the Dirichlet. In contrast, the LB tackles the problem of approximating the distribution over the softmax outputs of the ubiquitous Gaussian-approximated BNNs (Graves, 2011; Blundell et al., 2015; Louizos & Welling, 2016; Sun et al., 2017, etc) without any additional training procedure. Therefore the LB can be used with pre-trained weights on large datasets.
+
+## 5 Experiments
+
+Table 1: OOD detection results. The Laplace Bridge (LB) wins most comparisons with diagonal sampling and draws even with KFAC sampling w.r.t. both metrics. However, the LB is around 400 times faster on average which is the key advantage. 1000 samples were drawn from the Gaussian over the outputs motivated by Figure 5. The MNIST experiments were done with a Laplace approximation of the entire network while the others only used the last layer. For in-distribution experiments a higher MMC is better otherwise lower is better. Five runs with different seeds per experiment were conducted and averaged. The same table with error bars is in Appendix D.
+
+| | | Diag Sampling | | Diag LB | | KFAC Sampling | | KFAC LB | | Time in s $\downarrow$ | |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Train | Test | MMC $\downarrow$ | AUROC $\uparrow$ | MMC $\downarrow$ | AUROC $\uparrow$ | MMC $\downarrow$ | AUROC $\uparrow$ | MMC$\downarrow$ | AUROC $\uparrow$ | Sampling | LB |
+| MNIST | MNIST | 0.942 | - | 0.987 | - | - | - | - | - | 26.8 | 0.062 |
+| MNIST | FMNIST | 0.397 | 0.992 | 0.363 | 0.996 | - | - | - | - | 26.8 | 0.062 |
+| MNIST | notMNIST | 0.543 | 0.960 | 0.649 | 0.961 | - | - | - | - | 50.3 | 0.117 |
+| MNIST | KMNIST | 0.513 | 0.974 | 0.637 | 0.973 | - | - | - | - | 26.9 | 0.062 |
+| CIFAR-10 | CIFAR-10 | 0.948 | - | 0.966 | - | 0.857 | - | 0.966 | - | 6.58 | 0.017 |
+| CIFAR-10 | CIFAR-100 | 0.708 | 0.889 | 0.742 | 0.866 | 0.562 | 0.880 | 0.741 | 0.866 | 6.59 | 0.016 |
+| CIFAR-10 | SVHN | 0.643 | 0.933 | 0.647 | 0.934 | 0.484 | 0.939 | 0.648 | 0.934 | 17.0 | 0.040 |
+| SVHN | SVHN | 0.986 | - | 0.993 | - | 0.947 | - | 0.993 | - | 17.1 | 0.042 |
+| SVHN | CIFAR-100 | 0.595 | 0.984 | 0.526 | 0.985 | 0.460 | 0.986 | 0.527 | 0.985 | 6.62 | 0.017 |
+| SVHN | CIFAR-10 | 0.593 | 0.984 | 0.520 | 0.987 | 0.458 | 0.986 | 0.520 | 0.987 | 6.62 | 0.017 |
+| CIFAR-100 | CIFAR-100 | 0.762 | - | 0.590 | - | 0.757 | - | 0.593 | - | 6.76 | 0.016 |
+| CIFAR-100 | CIFAR-10 | 0.467 | 0.788 | 0.206 | 0.791 | 0.463 | 0.788 | 0.209 | 0.791 | 6.71 | 0.017 |
+| CIFAR-100 | SVHN | 0.461 | 0.795 | 0.170 | 0.815 | 0.453 | 0.798 | 0.173 | 0.815 | 17.3 | 0.041 |
+
+Figure 4: Comparison of LB and MCMC on rotated MNIST. Their performance is similar but the LB is much faster (see table 2).
+
+We conduct four experiments. Firstly, we compare the LB with MC-integration on rotated MNIST in Section 5.1 to show its performance on dataset shift tasks. Secondly, we compare the LB to the MC-integral in the example application of out-of-distribution (OOD) detection (Section 5.2). Thirdly, we compare their computational cost and contextualize the speed-up for the prediction process in Section 5.3. Finally, in Section 5.4, we present analysis on ImageNet (Russakovsky et al., 2014) to demonstrate the scalability of the LB and the advantage of having a full Dirichlet distribution over softmax outputs. For a preliminary experiment to showcase useful features of the LB on the MNIST dataset and further analysis, we refer the reader to Appendix D. The exact experimental setups can be found in the accompanying anonymized GitHub repository.[^2]
+
+All experiments were conducted using different forms of Laplace approximations on the weight space. For the smaller experiments, a full (all-layer) Laplace approximation with a diagonal Hessian (LeCun et al., 1990; Dangel et al., 2020) was used. For the experiments with larger networks, the Laplace approximation has been applied only to the last-layer of the network. This scheme has been successfully used by Snoek et al. (2015); Wilson et al. (2016); Brosse et al. (2020), etc. and it has been shown theoretically to mitigate overconfidence problems in ReLU networks (Kristiadi et al., 2020). For the last-layer experiments we use diagonal and Kronecker-factorized (KFAC)(Ritter et al., 2018; Martens & Grosse, 2015) approximations of the Hessian, since inverting the exact Hessian is too costly. A detailed mathematical explanation and setup of the experiments can be found in appendix D. While the LB could also be applied to different approximations of a Gaussian posterior predictive such as Variational Inference (Graves, 2011; Blundell et al., 2015), we used a Laplace approximation in our experiments to construct such an approximation. This is for two reasons: (i) it is one of the fastest ways to get a Gaussian posterior predictive and (ii) it can be applied to pre-trained networks which is especially useful for large problems such as ImageNet. Nevertheless, we want to emphasize again that the LB can be applied to any Gaussian over the outputs independent of the way it was generated. Despite the overlap in nomenclature, the LB is not restricted to Gaussians arising from a Laplace approximation of the network.
+
+(a)
+
+Figure 5: KL-divergence plotted against the number of samples (left) and wall-clock time (right). The Monte Carlo density estimation becomes as good as the LB after around $750$ to $10$k samples and takes at least $100$ times longer. The three lines (blue, yellow, green) represent three different sets of parameters.
+
+### 5.1 Rotated MNIST
+
+We compare the mean of the LB Dirichlet with the MC-integral of the softmax-Gaussian in terms of accuracy and Brier score in Figure 4 similar to the setup presented in (Ovadia et al., 2019). We find that their performance is exactly the same while the LB is much faster (Table 2).
+
+### 5.2 OOD detection
+
+We compare the performance of the LB to the MC-integral (Diagonal and KFAC) on a standard OOD detection benchmark suite, to test whether the LB gives similar results to the MC sampling methods and compare their computational overhead. Following prior literature, we use the standard mean-maximum-confidence (MMC) and area under the ROC-curve (AUROC) metrics (Hendrycks & Gimpel, 2016). For an in-distribution dataset, a higher MMC value is better, while for the OOD dataset, lower is better (optimally, $1/K$ in $K$-class classification problems). For the AUROC metric, which captures how well a method distinguishes between in- and out-of-distribution datasets, higher is better.
+
+The test scenarios are: (i) A two-layer convolutional network trained on the MNIST dataset (LeCun, 1998). To approximate the posterior over the parameter of this network, a full (all-layer) Laplace approximation with a diagonal Hessian is used. The OOD datasets for this case are FMNIST (Xiao et al., 2017), notMNIST (Bulatov, 2011), and KMNIST (Clanuwat et al., 2018). (ii) For larger datasets, i.e. CIFAR-10 (Krizhevsky et al., 2014), SVHN (Netzer et al., 2011), and CIFAR-100 (Krizhevsky et al., 2014), we use a ResNet-18 network (He et al., 2016). Since this network is large, Equation (9) in conjunction with a full Laplace approximation is too costly. We, therefore, use a last-layer Laplace approximation to obtain the approximate diagonal and KFAC Gaussian posterior. The OOD datasets for CIFAR-10, SVHN, and CIFAR-100 are SVHN and CIFAR100; CIFAR-10 and CIFAR-100; and SVHN and CIFAR-10, respectively. In all scenarios, the networks are well-trained with $99\%$ test accuracy on MNIST, $95.4\%$ on CIFAR-10, $76.6\%$ on CIFAR-100, and $100\%$ on SVHN. For the sampling baseline, we use $1000$ posterior samples to compute the predictive distribution which is motivated by Figure 5 which suggests that $1000$ is approximately the point of similar approximation quality between MCMC and LB. We use the mean of the Dirichlet to obtain a comparable approximation to the MC-integral. The results are presented in Table 1. The LB yields, on average, better results than diagonal sampling and ties with KFAC sampling w.r.t both metrics. However, the LB is around 400 times faster than both sampling-based methods and is therefore preferable.
+
+Further comparisons with ensemble networks and other methods to approximate the integral of a softmax-Gaussian can be found in Appendix D. In both cases, the LB is comparable or better in terms of OOD detection while being faster and yielding a full distribution over softmax outputs.
+
+Table 2: Contextualization of the timings for the entire predictive process on CIFAR-10. We see that with 1000 samples the forward pass only uses 5% of the time whereas the sampling uses 95%. In contrast the split for the LB is 97% and 3% respectively. We conclude that the LB provides a significant speed-up of the process as a whole.
+
+| # samples in brackets | Forward pass | $+$MC(1000) | $+$MC(100) | $+$MC(10) | $+$Laplace Bridge |
+| --- | --- | --- | --- | --- | --- |
+| Time in seconds | 0.448 $\pm$ 0.004 | 8.183 $\pm$ 0.080 | 0.867 $\pm$ 0.004 | 0.117 $\pm$ 0.001 | 0.014 $\pm$ 0.000 |
+| Fraction of overall time | 0.05/0.34/0.79/0.97 | 0.95 | 0.66 | 0.21 | 0.03 |
+
+Figure 6: Upper row: images from the “laptop” class of ImageNet. Bottom row: Beta marginals of the top-$k$ predictions for the respective image. In the first column, the overlap between the marginal of all classes is large, signifying high uncertainty, i.e. the prediction is “do not know”. In the second column, “notebook” and “laptop” have confident, yet overlapping marginal densities and therefore yield a top-$2$ prediction: “either notebook or laptop”. In the third column “desktop computer”, “screen” and “monitor” have overlapping marginal densities, yielding a top-$3$ estimate. The last case shows a top-$1$ estimate: the network is confident that “laptop” is the only correct label.
+
+### 5.3 Time comparison
+
+We compare the computational cost of the density-estimated $p_{\text{sample}}$ distribution via sampling and the Dirichlet obtained from the LB $p_{\text{LB}}$ for approximating the true $p_{\text{true}}$ over softmax-Gaussian samples.[^3] Different amounts of samples are drawn from the Gaussian, the softmax is applied and the KL-divergence between the histogram of the samples with the true distribution is computed. We use KL-divergences $D_{\text{KL}}(p_{\text{true}}\|p_{\text{sample}})$ and $D_{\text{KL}}(p_{\text{true}}\|p_{\text{LB}})$, respectively, to measure similarity between approximations and ground truth while the number of samples for $p_{\text{sample}}$ is increased exponentially. The true distribution $p_{\text{true}}$ is constructed via MC with $100$k samples. The experiment is conducted for three different Gaussian distributions over $\mathbb{R}^{3}$. Since the softmax applied to a Gaussian does not have an analytic form, the algebraic calculation of the approximation error is not possible and an empirical evaluation via sampling is the best option. The fact that there is no analytic solution is part of the justification for using the LB in the first place. The logistic-Normal distribution (Aitchison & Shen, 1980) is a different distribution and not useful for our purposes as it has no analytic expected value and different support.
+
+Figure 5 suggests that the number of samples required such that the distribution $p_{\text{sample}}$ approximates the true distribution $p_{\text{true}}$ as good as the Dirichlet distribution obtained via the LB is large, i.e. somewhere between $750$ and $10$k. This translates to a wall-clock time advantage of at least a factor of $100$ before sampling becomes competitive in quality with the LB.
+
+To further demonstrate the low compute cost of the LB, we timed different parts of the process for our setup. On our hardware and setup, training a ResNet-18 on CIFAR10 over 130 epochs takes 71 minutes and 30 seconds. Computing a Hessian for the network from the training data can be done with BackPACK (Dangel et al., 2020) at the cost of one backward pass over the training data or around 29 seconds. This one additional backward pass is the only change to the training procedure compared to conventional training. Since the LB only applies to the last step of the prediction pipeline, it is important to compare it to a forward pass through the rest of the network. Re-using the ResNet-18 and CIFAR10 setup we measure the time in seconds for a forward pass, for the application of the LB, and for the sampling procedure with 10, 100, and 1000 samples. The resulting sum total time for the entire test set is given in Table 2. We find that sampling takes up between 95% (for 1000 samples) and 21% (for 10 samples) of the entire prediction while the LB is only 3%. Thus, the acceleration through the LB is a significant improvement for the prediction process as a whole, not only for a part of the pipeline.
+
+### 5.4 Uncertainty-aware output ranking on ImageNet
+
+Due to the cost of sampling-based inference, classification on large datasets with many classes, like ImageNet, is rarely done in a Bayesian fashion. Instead, models for such tasks are often compared along a top-$k$ metric (e.g. $k=5$), i.e. it is tested whether the correct class is within the five most probable estimates of the network.
+
+Although widely accepted, this metric has some pathologies: Depending on how close the point predictions are relative to their uncertainty, the total number of likely class labels should be allowed to vary from case to case. Figure 6 shows examples: In some cases (panel 2) the classifier is quite confident that the image in question belongs to one out of only two classes and all others are highly unlikely. In others (e.g. panel 1), a larger set of hypotheses are all nearly equally probable.
+
+The Laplace Bridge, in conjunction with the last-layer Laplace approximations, can be used to address this issue. To this end, the analytic properties of its Dirichlet prediction are particularly useful: Recall that the marginal distribution $p(\pi_{i},\sum_{j\neq i}\pi_{j})$ over each component of a Dirichlet relative to all other components is $\mathrm{Beta}(\alpha_{i},\sum_{j\neq i}\alpha_{j})$.
+
+We leverage this property to propose a simple uncertainty-aware top-$k$ decision rule inspired by statistical tests. Instead of keeping $k$ fixed, it uses the model’s confidence to adapt $k$ (pseudo-code in Algorithm 1):
+
+We begin by sorting the class predictions in order of their expected probability $\alpha_{i}$. Then, we greedily construct a set of “overlapping hypotheses”, by starting with the Beta marginal of the most likely class, computing its overlap with the Beta marginal of the next-most-probable class, and adding that class iff the overlap is more than some threshold (e.g. 0.05). Continuing recursively, the algorithm terminates with a finite value $k\leq K$ of “non-separated” top classes.
+
+The intuition behind this rule is that, if any two Beta densities overlap more than the threshold of, say, $5\%$, the classifier cannot confidently predict one class over the other. Thus, all classes sufficiently overlapping with the top contenders should be returned as the top estimates.
+
+Figure 7: A histogram of ImageNet predictions’ length using the proposed uncertainty-aware top-$k$. Results with more than 10 proposed classes have been put into the 10-bin for visibility.
+
+We evaluate this decision rule on the test set of ImageNet. The overlap is calculated through the inverse CDF[^4] of the respective Beta marginals. The original top-$1$ accuracy of DenseNet on ImageNet is $0.744$. Meanwhile, the uncertainty-aware top-$k$ accuracy is $0.797$, where $k$ is on average $1.688$. A more detailed analysis of the distribution of top-$k$ estimates (see Figure 7) shows that most of the predictions given by the uncertainty-aware metric still yielded a top-$1$ prediction. This means that using uncertainty does not imply adding meaningless classes to the prediction. However, there are non-negligibly many cases where $k$ equals to $2$, $3$, or $10$ (all values larger than $10$ are in the $10$ bin for visibility).
+
+Thus, using the uncertainty-aware prediction rule above, the classifier can use its uncertainty to adaptively return a longer or shorter list of predictions. This not only allows it to improve accuracy over a hard top-1 threshold. Arguably, the ability to vary the size of the predicted set of classes is a practically useful functionality in itself. As Figure 6 shows anecdotally, some of the labels (like “notebook” and “laptop”) are semantically so similar to each other that it would seem only natural for the classifier to use them synonymously.
+
+Algorithm 1 Uncertainty-aware top-$k$
+
+0: A Dirichlet parameter ${\bm{\alpha}}\in\mathbb{R}^{K}$ obtained by applying the LB to the Gaussian over the logit of an input, a percentile threshold $T$ e.g. $0.05$, a function $\mathrm{class\_of}$ that returns the underlying class of a sorted index.
+
+$\tilde{{\bm{\alpha}}}=\mathrm{sort\_descending}({\bm{\alpha}})$ // start with the highest confidence
+
+$\alpha_{0}=\sum_{i}\alpha_{i}$
+
+$\mathcal{C}=\{\mathrm{class\_of}(1)\}$ // initialize top-$k$, must include at least one class
+
+for $i=2,\dots,K$ do
+
+$F_{i-1}=\mathrm{Beta}(\tilde{\alpha}_{i-1},\alpha_{0}-\tilde{\alpha}_{i-1})$ // the previous marginal CDF
+
+$F_{i}=\mathrm{Beta}(\tilde{\alpha}_{i},\alpha_{0}-\tilde{\alpha}_{i})$ // the current marginal CDF
+
+$l_{i-1}=F_{i-1}^{-1}(T/2)$ // left $\frac{T}{2}$ percentile of the previous marginal
+
+$r_{i}=F_{i}^{-1}(1-T/2)$ // right $\frac{T}{2}$ percentile of the current marginal
+
+if $r_{i}>l_{i-1}$ then
+
+$\mathcal{C}=\mathcal{C}\cup\{\mathrm{class\_of}(i)\}$ // overlap detected, add the current class
+
+else
+
+break// No more overlap, end the algorithm
+
+end if
+
+end for
+
+$\mathcal{C}$ // return the resulting top-$k$ prediction
+
+## 6 Conclusion
+
+We have adapted a previously developed approximation scheme for new use in Bayesian Deep Learning. Given a Gaussian approximation to the weight-space posterior of a neural network (which can be constructed by various means, including another Laplace approximation), and an input, the Laplace Bridge analytically maps the marginal Gaussian prediction on the logits onto a Dirichlet distribution over the softmax vectors. The associated computational cost of $\mathcal{O}(K)$ for $K$-class prediction compares favorably to that of Monte Carlo sampling. The proposed method both theoretically and empirically preserves predictive uncertainty, offering an attractive, low-cost, high-quality alternative to Monte Carlo sampling. In conjunction with a low-cost, last-layer Bayesian approximation, it is useful in real-time applications wherever uncertainty is required—especially because it drastically reduces the cost of predicting a posterior distribution at test time for a minimal increase in cost at training time. We demonstrate the utility of the scheme for large-scale Bayesian inference by using it to construct an the uncertainty-aware top-$k$ ranking on ImageNet.
+
+## References
+
+- Ahmed & Xing (2007) Ahmed, A. and Xing, E. On tight approximate inference of the logistic-Normal topic admixture model. In Proceedings of the 11th Tenth International Workshop on Artificial Intelligence and Statistics, 2007.
+- Aitchison & Shen (1980) Aitchison, J. and Shen, S. M. Logistic-Normal distributions: Some properties and uses. Biometrika, 67(2):261–272, 1980. ISSN 00063444.
+- Begoli et al. (2019) Begoli, E., Bhattacharya, T., and Kusnezov, D. The need for uncertainty quantification in machine-assisted medical decision making. Nat Mach Intell, 1:20–23, 2019.
+- Blundell et al. (2015) Blundell, C., Cornebise, J., Kavukcuoglu, K., and Wierstra, D. Weight uncertainty in neural network. In International Conference on Machine Learning, pp. 1613–1622. PMLR, 2015.
+- Braun & McAuliffe (2010) Braun, M. and McAuliffe, J. Variational inference for large-scale models of discrete choice. Journal of the American Statistical Association, 105(489):324–335, 2010.
+- Brosse et al. (2020) Brosse, N., Riquelme, C., Martin, A., Gelly, S., and Moulines, É. On last-layer algorithms for classification: Decoupling representation from uncertainty estimation. arXiv preprint arXiv:2001.08049, 2020.
+- Bulatov (2011) Bulatov, Y. notMNIST dataset, 2011. URL http://yaroslavvb.blogspot.com/2011/09/notmnist-dataset.html.
+- Clanuwat et al. (2018) Clanuwat, T., Bober-Irizar, M., Kitamoto, A., Lamb, A., Yamamoto, K., and Ha, D. Deep learning for classical Japanese literature. arXiv, abs/1812.01718, 2018.
+- Dangel et al. (2020) Dangel, F., Kunstner, F., and Hennig, P. Backpack: Packing more into backprop. In International Conference on Learning Representations, 2020.
+- Gibbs (1997) Gibbs, M. N. Bayesian Gaussian Processes for Regression and Classification. PhD thesis, University of Cambridge, September 1997.
+- Graves (2011) Graves, A. Practical Variational Inference for neural networks. In Shawe-Taylor, J., Zemel, R. S., Bartlett, P. L., Pereira, F., and Weinberger, K. Q. (eds.), Advances in Neural Information Processing Systems 24, pp. 2348–2356. Curran Associates, Inc., 2011.
+- Haussmann et al. (2019) Haussmann, M., Gerwinn, S., and Kandemir, M. Bayesian evidential deep learning with pac regularization, 2019.
+- He et al. (2016) He, K., Zhang, X., Ren, S., and Sun, J. Deep residual learning for image recognition. In Proceedings of the IEEE conference on computer vision and pattern recognition, pp. 770–778, 2016.
+- Hein et al. (2019) Hein, M., Andriushchenko, M., and Bitterwolf, J. Why relu networks yield high-confidence predictions far away from the training data and how to mitigate the problem. In The IEEE Conference on Computer Vision and Pattern Recognition (CVPR), June 2019.
+- Hendrycks & Gimpel (2016) Hendrycks, D. and Gimpel, K. A baseline for detecting misclassified and out-of-distribution examples in neural networks. arXiv, abs/1610.02136, 2016.
+- Hennig et al. (2012) Hennig, P., Stern, D., Herbrich, R., and Graepel, T. Kernel topic models. In Fifteenth International Conference on Artificial Intelligence and Statistics, volume 22 of JMLR Proceedings, pp. 511–519. JMLR.org, 2012.
+- Kristiadi et al. (2020) Kristiadi, A., Hein, M., and Hennig, P. Being Bayesian, even just a bit, fixes overconfidence in relu networks. In International Conference on Machine Learning, pp. 5436–5446. PMLR, 2020.
+- Krizhevsky et al. (2014) Krizhevsky, A., Nair, V., and Hinton, G. The CIFAR-10 dataset. online: http://www. cs. toronto. edu/kriz/cifar. html, 55, 2014.
+- LeCun (1998) LeCun, Y. The MNIST database of handwritten digits. http://yann.lecun.com/exdb/mnist/, 1998.
+- LeCun et al. (1990) LeCun, Y., Denker, J. S., and Solla, S. A. Optimal brain damage. In Touretzky, D. S. (ed.), Advances in Neural Information Processing Systems 2, pp. 598–605. Morgan-Kaufmann, 1990.
+- Louizos & Welling (2016) Louizos, C. and Welling, M. Structured and efficient Variational deep learning with matrix Gaussian posteriors. In ICML, 2016.
+- MacKay (1992a) MacKay, D. J. The evidence framework applied to classification networks. Neural computation, 4(5):720–736, 1992a.
+- MacKay (1998) MacKay, D. J. Choice of basis for laplace approximation. Machine Learning, 33(1):77–86, Oct 1998. ISSN 1573-0565.
+- MacKay (1992b) MacKay, D. J. C. A practical Bayesian framework for backpropagation networks. Neural Comput., 4(3):448–472, May 1992b. ISSN 0899-7667.
+- Mackay (1995) Mackay, D. J. C. Probable networks and plausible predictions — a review of practical Bayesian methods for supervised neural networks. Network: Computation in Neural Systems, 6(3):469–505, 1995.
+- Malinin & Gales (2018) Malinin, A. and Gales, M. Predictive uncertainty estimation via prior networks. In Advances in Neural Information Processing Systems, pp. 7047–7058, 2018.
+- Malinin & Gales (2019) Malinin, A. and Gales, M. Reverse KL-divergence training of prior networks: Improved uncertainty and adversarial robustness. In Advances in Neural Information Processing Systems, pp. 14520–14531, 2019.
+- Martens & Grosse (2015) Martens, J. and Grosse, R. Optimizing neural networks with Kronecker-factored approximate curvature. In ICML, 2015.
+- McAllister et al. (2017) McAllister, R., Gal, Y., Kendall, A., van der Wilk, M., Shah, A., Cipolla, R., and Weller, A. Concrete problems for autonomous vehicle safety: Advantages of Bayesian deep learning. In IJCAI, 2017.
+- Michelmore et al. (2018) Michelmore, R., Kwiatkowska, M., and Gal, Y. Evaluating uncertainty quantification in end-to-end autonomous driving control. CoRR, abs/1811.06817, 2018.
+- Netzer et al. (2011) Netzer, Y., Wang, T., Coates, A., Bissacco, A., Wu, B., and Ng, A. Y. Reading digits in natural images with unsupervised feature learning. In NIPS Workshop on Deep Learning and Unsupervised Feature Learning 2011, 2011.
+- Nguyen et al. (2015) Nguyen, A., Yosinski, J., and Clune, J. Deep neural networks are easily fooled: High confidence predictions for unrecognizable images. In CVPR, 2015.
+- Ovadia et al. (2019) Ovadia, Y., Fertig, E., Ren, J., Nado, Z., Sculley, D., Nowozin, S., Dillon, J. V., Lakshminarayanan, B., and Snoek, J. Can you trust your model’s uncertainty? evaluating predictive uncertainty under dataset shift, 2019.
+- Ritter et al. (2018) Ritter, H., Botev, A., and Barber, D. A scalable laplace approximation for neural networks. In International Conference on Learning Representations, 2018.
+- Russakovsky et al. (2014) Russakovsky, O., Deng, J., Su, H., Krause, J., Satheesh, S., Ma, S., Huang, Z., Karpathy, A., Khosla, A., Bernstein, M. S., Berg, A. C., and Li, F. Imagenet large scale visual recognition challenge. CoRR, abs/1409.0575, 2014.
+- Sensoy et al. (2018) Sensoy, M., Kaplan, L., and Kandemir, M. Evidential deep learning to quantify classification uncertainty. In Advances in Neural Information Processing Systems, pp. 3179–3189, 2018.
+- Snoek et al. (2015) Snoek, J., Rippel, O., Swersky, K., Kiros, R., Satish, N., Sundaram, N., Patwary, M., Prabhat, M., and Adams, R. Scalable Bayesian optimization using deep neural networks. In Bach, F. and Blei, D. (eds.), Proceedings of the 32nd International Conference on Machine Learning, volume 37 of Proceedings of Machine Learning Research, pp. 2171–2180, Lille, France, 07–09 Jul 2015. PMLR.
+- Spiegelhalter & Lauritzen (1990) Spiegelhalter, D. J. and Lauritzen, S. L. Sequential updating of conditional probabilities on directed graphical structures. Networks, 20(5):579–605, 1990.
+- Sun et al. (2017) Sun, S., Chen, C., and Carin, L. Learning structured weight uncertainty in Bayesian neural networks. In Artificial Intelligence and Statistics, pp. 1283–1292, 2017.
+- Titsias (2016) Titsias, M. One-vs-each approximation to softmax for scalable estimation of probabilities. In NIPS, 2016.
+- Wilson et al. (2016) Wilson, A. G., Hu, Z., Salakhutdinov, R., and Xing, E. P. Deep kernel learning. In Gretton, A. and Robert, C. C. (eds.), Proceedings of the 19th International Conference on Artificial Intelligence and Statistics, volume 51 of Proceedings of Machine Learning Research, pp. 370–378, Cadiz, Spain, 09–11 May 2016. PMLR.
+- Wu et al. (2018) Wu, A., Nowozin, S., Meeds, E., Turner, R. E., Hernández-Lobato, J. M., and Gaunt, A. L. Fixing Variational Bayes: Deterministic Variational Inference for Bayesian neural networks. arXiv, abs/1810.03958, 2018.
+- Xiao et al. (2017) Xiao, H., Rasul, K., and Vollgraf, R. Fashion-MNIST: a novel image dataset for benchmarking machine learning algorithms. arXiv, abs/1708.07747, 2017.
+
+## Appendix A Appendix
+
+### Figures
+
+The parameters of Figure 3 are the $\mu$ and $\Sigma$ mapped from $\alpha=(2,2,6)$ and $\alpha=(11,11,51)$ through the Laplace Bridge for a) and b) respectively. The values have been chosen to have the same mode of the Dirichlet distribution but clearly yield different uncertainties. For c), d) and e) they share $\mu=(-1,2,-1)^{\top}$ and vary $\Sigma$ with $10\cdot I_{3},1\cdot I_{3}$ and $0.1\cdot I_{3}$ where $I_{3}$ is the three-dimensional identity matrix.
+
+The parameters of Figure 2 are from left to right $\alpha,\beta=(0.8,0.9),(4,2,),(2,7)$.
+
+### Change of Variable for pdf
+
+Let ${\mathbf{z}}$ be an $n$-dimensional continuous random variable with joint density function $p_{\mathbf{x}}$. If ${\mathbf{y}}=G({\mathbf{x}})$, where $G$ is a differentiable function, then ${\mathbf{y}}$ has density $p_{\mathbf{y}}$:
+
+$$p(\mathbf{y})=f\Big(G^{-1}(\mathbf{y})\Big)\left|\det\left[\frac{dG^{-1}(\mathbf{z})}{d\mathbf{z}}\Bigg|_{\mathbf{z}=\mathbf{y}}\right]\right| \tag{13}$$
+
+where the differential is the Jacobian of the inverse of $G$ evaluated at ${\mathbf{y}}$. This procedure, also known as ‘change of basis’, is at the core of the Laplace bridge since it is used to transform the Dirichlet into the softmax basis.
+
+### Proof for Proposition
+
+**Proof.**
+
+Considering that $\alpha_{k}$ is a decreasing function of ${\bm{\Sigma}}_{kk}$ by definition (7), it is sufficient to show that under the hypothesis, the derivative of $\frac{\partial}{\partial\alpha_{k}}\mathrm{Var}(\pi_{k}|{\bm{\alpha}})$ is negative.
+
+By definition, the variance $\mathrm{Var}(\pi_{k}|{\bm{\alpha}})$ is
+
+$$\mathrm{Var}(\pi_{k}|{\bm{\alpha}})=\frac{\frac{\alpha_{k}}{\alpha_{k}+\alpha_{\neq k}}-\frac{\alpha_{k}^{2}}{(\alpha_{k}+\alpha_{\neq k})^{2}}}{\alpha_{k}+\alpha_{\neq k}+1}\,.$$
+
+The derivative is therefore
+
+$$\displaystyle\frac{\partial}{\partial\alpha_{k}}\mathrm{Var} \displaystyle(\pi_{k}|{\bm{\alpha}})=$$
+
+$$\displaystyle\frac{\alpha_{\neq k}(\alpha_{\neq k}^{2}-\alpha_{\neq k}\alpha_{k}+\alpha_{\neq k}-\alpha_{k}(2\alpha_{k}+1))}{(\alpha_{k}+\alpha_{\neq k})^{3}(\alpha_{k}+\alpha_{\neq k}+1)^{2}}\,.$$
+
+Solving $\frac{\partial}{\partial\alpha_{k}}\mathrm{Var}(\pi_{k}|{\bm{\alpha}})<0$ for $\alpha_{k}$ yields
+
+$$\alpha_{k}>\frac{1}{4}\left(\sqrt{9\alpha_{\neq k}^{2}+10\alpha_{\neq k}+1}-\alpha_{\neq k}-1\right)\,.$$
+
+Therefore, under this hypothesis, $\mathrm{Var}(\pi_{k}|{\bm{\alpha}})$ is a decreasing function of $\alpha_{k}$. ∎
+
+### Experimental Evaluation of the Proposition
+
+To test how often the condition is fulfilled we count its frequency. The fact that the condition is fulfilled implies a good approximation. The fact that the condition is not fulfilled does not automatically imply a bad approximation.
+
+| | | frequency |
+| --- | --- | --- |
+| MNIST | MNIST | - |
+| MNIST | FMNIST | - |
+| MNIST | notMNIST | - |
+| MNIST | KMNIST | - |
+| CIFAR-10 | CIFAR-10 | 0.998 |
+| CIFAR-10 | CIFAR-100 | 0.925 |
+| CIFAR-10 | SVHN | 0.832 |
+| SVHN | SVHN | 0.999 |
+| SVHN | CIFAR-100 | 0.668 |
+| SVHN | CIFAR-10 | 0.653 |
+| CIFAR-100 | CIFAR-100 | 0.662 |
+| CIFAR-100 | CIFAR-10 | 0.214 |
+| CIFAR-100 | SVHN | 0.166 |
+
+Table 3:
+
+## Appendix B Appendix (Derivation of LB)
+
+Assume we have a Dirichlet in the standard basis with parameter vector ${\bm{\alpha}}$ and probability density function:
+
+$$\mathrm{Dir}(\bm{\pi}|{\bm{\alpha}}):=\frac{\Gamma\left(\sum_{k=1}^{K}\alpha_{k}\right)}{\prod_{k=1}^{K}\Gamma(\alpha_{k})}\prod_{k=1}^{K}\pi_{k}^{\alpha_{k}-1}\,, \tag{14}$$
+
+We aim to transform the basis of this distribution via the softmax transform to be in the new base $\pi$:
+
+$$\pi_{k}(\mathbf{z}):=\frac{\exp(z_{k})}{\sum_{l=1}^{K}\exp(z_{l})}\,, \tag{15}$$
+
+Usually, to transform the basis we would need the inverse transformation $H^{-1}(\mathbf{z})$ as described in the main paper. However, the softmax does not have an analytic inverse. Therefore David JC MacKay uses the following trick. Assume we know that the distribution in the transformed basis is:
+
+$$\mathrm{Dir}_{\mathbf{z}}(\bm{\pi}(\mathbf{z})|{\bm{\alpha}}):=\frac{\Gamma\left(\sum_{k=1}^{K}\alpha_{k}\right)}{\prod_{k=1}^{K}\Gamma(\alpha_{k})}\prod_{k=1}^{K}\pi_{k}(\mathbf{z})^{\alpha_{k}}\,, \tag{16}$$
+
+then we can show that the original distribution is the result of the basis transform by the softmax.
+
+The Dirichlet in the softmax basis: We show that the density over $\bm{\pi}$ shown in Equation 16 transforms into the Dirichlet over $\mathbf{z}$. First, we consider the special case where $\bm{\pi}$ is confined to a $I-1$ dimensional subspace satisfying $\sum_{i}\bm{\pi}_{i}=c$. In this subspace we can represent $\bm{\pi}$ by an $I-1$ dimensional vector $\mathbf{a}$ such that
+
+$$\displaystyle\pi_{i} \displaystyle=\mathbf{a}_{i}\quad i,...,I-1 \tag{17}$$
+
+$$\displaystyle\pi_{I} \displaystyle=c-\sum_{i}^{I-1}\mathbf{a}_{i} \tag{18}$$
+
+and similarly we can represent $\mathbf{z}$ by an $I-1$ dimensional vector $\varphi$:
+
+$$\displaystyle z_{i} \displaystyle=\varphi_{i}\quad i,...,I-1 \tag{19}$$
+
+$$\displaystyle z_{I} \displaystyle=1-\sum_{i}^{I-1}\varphi_{i} \tag{20}$$
+
+then we can find the density over $\varphi$ (which is proportional to the required density over $\mathbf{z}$) from the density over $\bm{\pi}$ (which is proportional to the given density over $\bm{\pi}$) by finding the determinant of the $(I-1)\times(I-1)$ Jacobian ${\mathbf{J}}$ given by
+
+$$\displaystyle J_{ik} \displaystyle=\frac{\partial z_{i}}{\partial\varphi_{i}}=\sum_{j}^{I}\frac{\partial z_{i}}{\partial\pi_{j}}\frac{\partial\pi_{j}}{\partial\varphi_{k}}$$
+
+$$\displaystyle=\delta_{ik}{\mathbf{z}}_{i}-{\mathbf{z}}_{i}{\mathbf{z}}_{k}+{\mathbf{z}}_{i}{\mathbf{z}}_{I}={\mathbf{z}}_{i}(\delta_{ik}-({\mathbf{z}}_{k}-{\mathbf{z}}_{I})) \tag{21}$$
+
+We define two additional $I-1$ dimensional helper vectors ${\mathbf{z}}_{k}^{+}:={\mathbf{z}}_{k}-{\mathbf{z}}_{I}$ and $n_{k}:=1$, and use $\det(I-xy^{T})=1-x\cdot y$ from linear algebra. It follows that
+
+$$\displaystyle\det J \displaystyle=\prod_{i=1}^{I-1}{\mathbf{z}}_{i}\times\det[I-n{\mathbf{z}}^{+^{T}}]$$
+
+$$\displaystyle=\prod_{i=1}^{I-1}{\mathbf{z}}_{i}\times(1-n\cdot{\mathbf{z}}^{+}) \tag{22}$$
+
+$$\displaystyle=\prod_{i=1}^{I-1}{\mathbf{z}}_{i}\times\left(1-\sum_{k}{\mathbf{z}}_{k}^{+}\right)=I\prod_{i=1}^{I}{\mathbf{x}}_{i}$$
+
+Therefore, using Equation 16 we find that
+
+$$P(\mathbf{z})=\frac{P(\bm{\pi})}{|\det{\mathbf{J}}|}\propto\prod_{i=1}^{I}\mathbf{z}_{i}^{\alpha_{i}-1} \tag{23}$$
+
+This result is true for any constant $c$ since it can be put into the normalizing constant. Thereby we make sure that the integral of the distribution is 1 and we have a valid probability distribution.
+
+## Appendix C Appendix (Derivation of Inversion)
+
+Through the figures of the 1D Dirichlet approximation in the main paper we have already established that the mode of the Dirichlet lies at the mean of the Gaussian distribution and therefore $\bm{\pi}(\mathbf{y})=\frac{\mathbf{\alpha}}{\sum_{i}\alpha_{i}}$. Additionally, the elements of $\mathbf{y}$ must sum to zero. These two constraints combined yield only one possible solution for ${\bm{\mu}}$.
+
+$$\mu_{k}=\log\alpha_{k}-\frac{1}{K}\sum_{l=1}^{K}\log\alpha_{l} \tag{24}$$
+
+Calculating the covariance matrix ${\bm{\Sigma}}$ is more complicated but layed out in the following. The logarithm of the Dirichlet is, up to additive constants
+
+$$\log p_{y}(y|\alpha)=\sum_{k}\alpha_{k}\pi_{k} \tag{25}$$
+
+Using $\pi_{k}$ as the softmax of $\mathbf{y}$ as shown in Equation 15 we can find the elements of the Hessian ${\mathbf{L}}$
+
+$$L_{kl}=\hat{\alpha}(\delta_{kl}\hat{\pi_{k}}-\hat{\pi_{k}}\hat{\pi_{l}}) \tag{26}$$
+
+where $\hat{{\bm{\alpha}}}:=\sum_{k}\alpha_{k}$ and $\hat{\bm{\pi}}=\frac{\alpha_{k}}{\hat{\alpha}}$ for the value of $\bm{\pi}$ at the mode. Analytically inverting ${\mathbf{L}}$ is done via a lengthy derivation using the fact that we can write ${\mathbf{L}}={\mathbf{A}}+{\mathbf{X}}{\mathbf{B}}{\mathbf{X}}^{\top}$ and inverting it with the Schur-complement. This process results in the inverse of the Hessian
+
+$$L_{kl}^{-1}=\delta_{kl}\frac{1}{\alpha_{k}}-\frac{1}{K}\left[\frac{1}{\alpha_{k}}+\frac{1}{\alpha_{l}}-\frac{1}{K}\left(\sum_{u}^{K}\frac{1}{\alpha_{u}}\right)\right] \tag{27}$$
+
+We are mostly interested in the diagonal elements, since we desire a sparse encoding for computational reasons and we otherwise needed to map a $K\times K$ covariance matrix to a $K\times 1$ Dirichlet parameter vector which would be a very overdetermined mapping. Note that $K$ is a scalar not a matrix. The diagonal elements of ${\bm{\Sigma}}={\mathbf{L}}^{-1}$ can be calculated as
+
+$$\Sigma_{kk}=\frac{1}{\alpha_{k}}\left(1-\frac{2}{K}\right)+\frac{1}{K^{2}}\sum_{l}^{k}\frac{1}{\alpha_{l}}. \tag{28}$$
+
+To invert this mapping we transform Equation 24 to
+
+$$\alpha_{k}=e^{\mu_{k}}\prod_{l}^{K}\alpha_{l}^{1/K} \tag{29}$$
+
+by applying the logarithm and re-ordering some parts. Inserting this into Equation 28 and re-arranging yields
+
+$$\prod_{l}^{K}\alpha_{l}^{1/K}=\frac{1}{{\bm{\Sigma}}_{kk}}\left[e^{-\mu}\left(1-\frac{2}{K}\right)+\frac{1}{K^{2}}\sum_{u}^{K}e^{-\mu_{u}}\right] \tag{30}$$
+
+which can be re-inserted into Equation 29 to give
+
+$$\alpha_{k}=\frac{1}{\Sigma_{k}k}\left(1-\frac{2}{K}+\frac{e^{-\mu_{k}}}{K^{2}}\sum_{l}^{K}e^{-\mu_{k}}\right) \tag{31}$$
+
+which is the final mapping. With Equations 24 and 28 we are able to map from Dirichlet to Gaussian and with Equation 31 we are able to map the inverse direction.
+
+## Appendix D Appendix (Experimental Details)
+
+The exact experimental setups, i.e. network architectures, learning rates, random seeds, etc. can be found in the accompanying anonymized GitHub repository [^5]. This section is used to justify some of the decisions we made during the process in more detail, highlight some miscellaneous interesting things and showcase the additional experiments promised in the main paper.
+
+### Experimental Setup
+
+Figure 8: Average variance of the Dirichlet distributions of each MNIST class. The in-distribution uncertainty (variance) is nearly nil, while out-of-distribution variance is higher. This implies usability for OOD detection.
+
+Table 4: Results for sampling from all weights instead of just the last layer. Number of samples was 100. Sampling all weights and doing a forward pass seems to be worse than using the Laplace Bridge even though it takes much longer.
+
+| | | Sampling (100) | | | Laplace Bridge | | |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Train | Test | MMC $\downarrow$ | AUROC $\uparrow$ | Time in s $\downarrow$ | MMC $\downarrow$ | AUROC $\uparrow$ | Time in s $\downarrow$ |
+| MNIST | MNIST | $0.989\pm$ 0.000 | - | 76.3 | 0.987 $\pm$ 0.000 | - | 0.062 |
+| MNIST | FMNIST | $0.465\pm$ 0.004 | $0.992\pm 0.000$ | 76.3 | 0.363 $\pm$ 0.000 | 0.996 $\pm$ 0.000 | 0.062 |
+| MNIST | notMNIST | $\textbf{0.645}\pm$ 0.001 | $0.955\pm 0.001$ | 42.6 | 0.649 $\pm$ 0.000 | 0.961 $\pm$ 0.000 | 0.117 |
+| MNIST | KMNIST | $\textbf{0.632}\pm$ 0.001 | $0.967\pm$ 0.001 | 76.0 | 0.637 $\pm$ 0.000 | 0.973 $\pm$ 0.000 | 0.062 |
+
+The (F-, K-, not-)MNIST networks have been trained with Adam, a learning rate of $1e-6$ and batch size of $32$ over $6$ epochs. The batch size was chosen to be so low because the Jacobian for the full-layer Laplace approximation would otherwise not fit into memory. CIFAR10, CIFAR100 and SVHN have been trained with SGD, a start learning rate of $0.1$, momentum of $0.9$, weight decay of $5e-4$ and a batch size of $128$. We applied a learning rate schedule that multiplies the learning rate with $0.1$ at epoch 30, 80 and 130 for CIFAR10, at 100, 150, 200 for CIFAR100 and at 10, 20 and 25 for SVHN. (F-, K-, not-)MNIST has been trained on a small 2 conv-layer + 1 linear layer setup and all other OOD experiments were conducted with a ResNet-18. For the ImageNet experiments we used the pre-trained weights from PyTorch and only computed the Hessian information with BACKpack (Dangel et al., 2020) in one backward pass. All prior uncertainties for the Laplace approximation have been chosen such that the resulting MMC is not more than $5-10\%$ away from the MAP estimate to have comparable results.
+
+### Mathematical description of the setup
+
+In principle, the Gaussian over the weights required by the Laplace Bridge for BNNs can be constructed by any Gaussian approximate Bayesian method such as variational Bayes (Graves, 2011; Blundell et al., 2015) and Laplace approximations for NNs (MacKay, 1992b; Ritter et al., 2018). We will focus on the Laplace approximation, which uses the same principle as the Laplace Bridge. However, in the Laplace approximation for neural networks, the posterior distribution over the weights of a network is the one that is approximated as a Gaussian, instead of a Dirichlet distribution over the outputs as in the Laplace Bridge.
+
+Given a dataset $\mathcal{D}:=\{(\mathbf{x}_{i},t_{i})\}_{i=1}^{D}$ and a prior $p({\bm{\theta}})$, let
+
+$$p({\bm{\theta}}|\mathcal{D})\propto p({\bm{\theta}})p(\mathcal{D}|{\bm{\theta}})=p({\bm{\theta}})\prod_{(\mathbf{x},t)\in\mathcal{D}}p(y=t|{\bm{\theta}},\mathbf{x})\,, \tag{32}$$
+
+be the posterior over the parameter ${\bm{\theta}}$ of an $L$-layer network $f_{\bm{\theta}}$. Then we can get an approximation of the posterior $p({\bm{\theta}}|\mathcal{D})$ by fitting a Gaussian $\mathcal{N}({\bm{\theta}}|{\bm{\mu}}_{\bm{\theta}},{\bm{\Sigma}}_{\bm{\theta}})$ where
+
+$$\displaystyle{\bm{\mu}}_{\bm{\theta}} \displaystyle={\bm{\theta}}_{\text{MAP}}\,,$$
+
+$$\displaystyle{\bm{\Sigma}}_{\bm{\theta}} \displaystyle=(-\nabla^{2}|_{{\bm{\theta}}_{\text{MAP}}}\log p({\bm{\theta}}|\mathcal{D}))^{-1}=:{\mathbf{H}}_{\bm{\theta}}^{-1}\,.$$
+
+That is, we fit a Gaussian centered at the mode ${\bm{\theta}}_{\text{MAP}}$ of $p({\bm{\theta}}|\mathcal{D})$ with the covariance determined by the curvature at that point. We assume that the prior $p({\bm{\theta}})$ is a zero-mean isotropic Gaussian $\mathcal{N}({\bm{\theta}}|\mathbf{0},\sigma^{2}{\mathbf{I}})$ and the likelihood function is the Categorical density
+
+$$p(\mathcal{D}|{\bm{\theta}})=\prod_{(\mathbf{x},t)\in\mathcal{D}}\mathrm{Cat}(y=t|\mathrm{softmax}(f_{\bm{\theta}}(\mathbf{x})))\,.$$
+
+For various applications in Deep Learning, an approximation with full Hessian is often computationally too expensive. Indeed, for each input $\mathbf{x}\in\mathbb{R}^{N}$, one has to do $K$ backward passes to compute the Jacobian ${\mathbf{J}}(\mathbf{x})$. Moreover, it requires an $\mathcal{O}(PK)$ storage which is also expensive since $P$ is often in the order of millions. A cheaper alternative is to fix all but the last layer of $f_{\bm{\theta}}$ and only apply the Laplace approximation on ${\mathbf{W}}_{L}$, the last layer’s weight matrix. This scheme has been used successfully by Snoek et al. (2015); Wilson et al. (2016); Brosse et al. (2020), etc. and has been shown theoretically that it can mitigate overconfidence problems in ReLU networks (Kristiadi et al., 2020). In this case, given the approximate last-layer posterior
+
+$$p({\mathbf{W}}^{L}|\mathcal{D})\approx\mathcal{N}(\text{vec}({\mathbf{W}}^{L})|\text{vec}({\mathbf{W}}^{L}_{\text{MAP}}),{\mathbf{H}}_{{\mathbf{W}}^{L}}^{-1})\,, \tag{33}$$
+
+one can efficiently compute the distribution over the logits. That is, let $\bm{\phi}:\mathbb{R}^{N}\to\mathbb{R}^{Q}$ be the first $L-1$ layers of $f_{\bm{\theta}}$, seen as a feature map. Then, for each $\mathbf{x}\in\mathbb{R}^{N}$, the induced distribution over the logit ${\mathbf{W}}^{L}\bm{\phi}(\mathbf{x})=:\mathbf{z}$ is given by
+
+$$p(\mathbf{z}|\mathbf{x})=\mathcal{N}(\mathbf{z}|{\mathbf{W}}^{L}_{\text{MAP}}\bm{\phi}(\mathbf{x}),(\bm{\phi}(\mathbf{x})^{\top}\otimes{\mathbf{I}}){\mathbf{H}}_{{\mathbf{W}}^{L}}^{-1}(\bm{\phi}(\mathbf{x})\otimes{\mathbf{I}}))\,, \tag{34}$$
+
+where $\otimes$ denotes the Kronecker product.
+
+An even more efficient last-layer approximation can be obtained using a Kronecker-factored matrix normal distribution (Louizos & Welling, 2016; Sun et al., 2017; Ritter et al., 2018). That is, we assume the posterior distribution to be
+
+$$p({\mathbf{W}}^{L}|\mathcal{D})\approx\mathcal{MN}({\mathbf{W}}^{L}|{\mathbf{W}}^{L}_{\text{MAP}},{\mathbf{U}},{\mathbf{V}})\,, \tag{35}$$
+
+where ${\mathbf{U}}\in\mathbb{R}^{K\times K}$ and ${\mathbf{V}}\in\mathbb{R}^{Q\times Q}$ are the Kronecker factorization of the inverse Hessian matrix ${\mathbf{H}}_{{\mathbf{W}}^{L}}^{-1}$ (Martens & Grosse, 2015). In this case, for any $\mathbf{x}\in\mathbb{R}^{N}$, one can easily show that the distribution over logits is given by
+
+$$p(\mathbf{z}|\mathbf{x})=\mathcal{N}(\mathbf{z}|{\mathbf{W}}^{L}_{\text{MAP}}\bm{\phi}(\mathbf{x}),(\bm{\phi}(\mathbf{x})^{\top}{\mathbf{V}}\bm{\phi}(\mathbf{x})){\mathbf{U}})\,, \tag{36}$$
+
+which is easy to implement and computationally cheap. Finally, and even more efficient, is a last-layer approximation scheme with a diagonal Gaussian approximate posterior, i.e. the so-called mean-field approximation. In this case, we assume the posterior distribution to be
+
+$$p({\mathbf{W}}^{L}|\mathcal{D})\approx\mathcal{N}(\text{vec}({\mathbf{W}}^{L})|\text{vec}({\mathbf{W}}^{L}_{\text{MAP}}),\text{diag}(\bm{\sigma}^{2}))\,, \tag{37}$$
+
+where $\bm{\sigma}^{2}$ is obtained via the diagonal of the Hessian of the log-posterior w.r.t. $\text{vec}({\mathbf{W}}^{L})$ at $\text{vec}({\mathbf{W}}^{L}_{\text{MAP}})$.
+
+### Uncertainty estimates on MNIST
+
+To give a good preliminary intuitive understanding of the LBs usefulness we empirically investigate the approximation quality of the Laplace Bridge in a “real-world” BNN on the MNIST dataset. A CNN with 2 convolutional and 2 fully-connected layers is trained on the first three digits of MNIST (the digits $0$, $1$, and $2$). Adam optimizer with learning rate $1$e-$3$ and weight decay $5$e-$4$ is used. The batch size is 128. To obtain the posterior over the weights of this network, we perform a full (all-layer) Laplace approximation using BackPACK (Dangel et al., 2020) to get the diagonal Hessian. The network is then evaluated on the full test set of MNIST (containing all ten classes). We present the results in Figure 8. We show for each $k=1,\dots,K$, the average variance $\frac{1}{D_{k}}\sum_{i=1}^{D_{k}}\mathrm{Var}(\pi_{k}(f_{\bm{\theta}}(\mathbf{x}_{i})))$ of the resulting Dirichlet distribution over the softmax outputs, where $D_{k}$ is the number of test points predicted with label $k$. The results show that the variance of the Dirichlet distribution obtained via the Laplace Bridge is useful for uncertainty quantification: OOD data can be easily detected since the mean variance of the first three classes is nearly zero while that of the others is higher.
+
+### OOD detection
+
+Every experiment has been conducted with 5 different seeds. In the tables the mean and standard deviations are presented. The reason why the sampling procedure for the CIFAR-10 and CIFAR-100 case are similarly fast even though we draw from a 10- vs 100-dimensional Gaussian is because the sampling procedures were parallelized on a GPU. All prior uncertainties over the weights were chosen such that the MMC of the sampling averages was around 5% lower than the MAP estimate.
+
+To compare the OOD detection capabilities of the LB with other more standard methods we first evaluate it compared to an ensemble of 100 different sets of weights. As shown in Table 4 we find that the Laplace Bridge yields comparable results while being more than a thousand times faster.
+
+However, we think the Laplace Bridge should primarily not be compared to other OOD detection algorithms such as those listed in (Hendrycks & Gimpel, 2016) but rather to algorithms that approximate the integral of the softmax transform applied to Gaussian samples since they have comparable speed. The two algorithms we compare to the LB are the Extended MacKay approach (Gibbs, 1997) (see equation 5.33 in (Gibbs)) which uses
+
+$$\int\frac{\exp(a^{(j)})}{\sum_{i}\exp(a^{(i)})}\frac{1}{Z}\exp\left[-\frac{1}{2}\sum_{i}\frac{(a^{(i)}-\bar{a}^{(i)})^{2}}{v^{(i)}}\right]\approx\frac{\exp(\tau(v^{(j)})\bar{a}^{(j)})}{\sum_{i}\exp(\tau(v^{(i)})\bar{a}^{(i)})} \tag{38}$$
+
+as an approximation. The logit output of class $i$ is denoted by $a^{(i)}$, its average by $\bar{a}^{(i)}$, its variance by $v^{(i)}$ and $\tau(v)=1/\sqrt{1+\pi\cdot v/8}$. The second approximation is from (Wu et al., 2018) (equation 23 in appendix) and we will refer to it as the “second-order delta posterior predictive (SODPP)”. It is given by
+
+$$p(y)\approx p\odot\left[1+p^{\top}\Sigma p-\Sigma p+\frac{1}{2}\text{diag}(\Sigma)-\frac{1}{2}\text{diag}(\Sigma)\right] \tag{39}$$
+
+where $p$ is the vector of logit outputs, $\Sigma$ is its covariance matrix, and $\odot$ represents the entry-wise product. The results in Table 5 suggest that the LB shows slightly better performance than the other two approaches. Additionally, the LB not only yields an approximation of the integral but additionally a fully parameterized Dirichlet distribution of the output classes and is therefore preferable.
+
+Table 5: Comparison of the Laplace Bridge Dirichlet mean with other methods to compute the integral over a softmax-Gaussian. We find that the LB is slightly better than the other two methods while additionally not only providing an estimate for the integral but also giving a fully parameterized Distribution.
+
+| | | Extended MacKay | | SODPP | | Laplace Bridge | |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Train | Test | MMC $\downarrow$ | AUROC $\uparrow$ | MMC $\downarrow$ | AUROC $\uparrow$ | MMC $\downarrow$ | AUROC $\uparrow$ |
+| MNIST | MNIST | 0.981 $\pm$ 0.001 | - | 0.979 $\pm$ 0.001 | - | 0.987 $\pm$ 0.001 | - |
+| MNIST | FMNIST | 0.557 $\pm$ 0.022 | 0.985 $\pm$ 0.002 | 0.546 $\pm$ 0.024 | 0.983 $\pm$ 0.003 | 0.491 $\pm$ 0.035 | 0.990 $\pm$ 0.002 |
+| MNIST | notMNIST | 0.737 $\pm$ 0.015 | 0.928 $\pm$ 0.013 | 0.708 $\pm$ 0.017 | 0.929 $\pm$ 0.013 | 0.754 $\pm$ 0.012 | 0.933 $\pm$ 0.012 |
+| MNIST | KMNIST | 0.673 $\pm$ 0.006 | 0.967 $\pm$ 0.002 | 0.642 $\pm$ 0.006 | 0.965 $\pm$ 0.003 | 0.710 $\pm$ 0.008 | 0.967 $\pm$ 0.003 |
+| CIFAR-10 | CIFAR-10 | 0.970 $\pm$ 0.001 | - | 0.970 $\pm$ 0.001 | - | 0.963 $\pm$ 0.001 | - |
+| CIFAR-10 | CIFAR-100 | 0.801 $\pm$ 0.003 | 0.873 $\pm$ 0.002 | 0.793 $\pm$ 0.010 | 0.872 $\pm$ 0.002 | 0.756 $\pm$ 0.003 | 0.860 $\pm$ 0.001 |
+| CIFAR-10 | SVHN | 0.714 $\pm$ 0.036 | 0.933 $\pm$ 0.012 | 0.710 $\pm$ 0.036 | 0.932 $\pm$ 0.012 | 0.638 $\pm$ 0.049 | 0.931 $\pm$ 0.017 |
+| SVHN | SVHN | 0.976 $\pm$ 0.002 | - | 0.985 $\pm$ 0.002 | - | 0.993 $\pm$ 0.000 | - |
+| SVHN | CIFAR-100 | 0.566 $\pm$ 0.007 | 0.984 $\pm$ 0.002 | 0.508 $\pm$ 0.008 | 0.984 $\pm$ 0.002 | 0.616 $\pm$ 0.015 | 0.981 $\pm$ 0.004 |
+| SVHN | CIFAR-10 | 0.563 $\pm$ 0.007 | 0.985 $\pm$ 0.002 | 0.505 $\pm$ 0.009 | 0.985 $\pm$ 0.002 | 0.618 $\pm$ 0.017 | 0.981 $\pm$ 0.004 |
+| CIFAR-100 | CIFAR-100 | 0.748 $\pm$ 0.000 | - | 0.758 $\pm$ 0.000 | - | 0.593 $\pm$ 0.000 | - |
+| CIFAR-100 | CIFAR-10 | 0.440 $\pm$ 0.000 | 0.790 $\pm$ 0.000 | 0.455 $\pm$ 0.000 | 0.787 $\pm$ 0.000 | 0.209 $\pm$ 0.000 | 0.791 $\pm$ 0.000 |
+| CIFAR-100 | SVHN | 0.427 $\pm$ 0.000 | 0.802 $\pm$ 0.000 | 0.450 $\pm$ 0.000 | 0.793 $\pm$ 0.000 | 0.173 $\pm$ 0.000 | 0.815 $\pm$ 0.000 |
+
+Table 6: OOD detection results. Same table as in the main experiments but with error estimates. The Laplace Bridge (LB) wins most comparisons with Diagonal sampling and draws even with KFAC sampling w.r.t. both metrics. However, the LB is around 400 times faster on average. 1000 samples were drawn from the Gaussian over the outputs motivated by Figure 5. The (F-, K-, not-)MNIST experiments were done with a Laplace approximation of the entire network while the others only used the last layer. Five runs with different seeds per experiment were conducted. Standard deviation is reported to the third decimal.
+
+| | | Diag Sampling | | Diag LB | | KFAC Sampling | | KFAC LB | | Time in s $\downarrow$ | |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Train | Test | MMC $\downarrow$ | AUROC $\uparrow$ | MMC $\downarrow$ | AUROC $\uparrow$ | MMC $\downarrow$ | AUROC $\uparrow$ | MMC$\downarrow$ | AUROC $\uparrow$ | Sampling | LB |
+| MNIST | MNIST | 0.942 $\pm$ 0.007 | - | 0.987 $\pm$ 0.000 | - | - | - | - | - | 26.8 | 0.062 |
+| MNIST | FMNIST | 0.397 $\pm$ 0.001 | 0.992 $\pm$ 0.000 | 0.363 $\pm$ 0.000 | 0.996 $\pm$ 0.000 | - | - | - | - | 26.8 | 0.062 |
+| MNIST | notMNIST | 0.543 $\pm$ 0.000 | 0.960 $\pm$ 0.000 | 0.649 $\pm$ 0.000 | 0.961 $\pm$ 0.000 | - | - | - | - | 50.3 | 0.117 |
+| MNIST | KMNIST | 0.513 $\pm$ 0.001 | 0.974 $\pm$ 0.000 | 0.637 $\pm$ 0.000 | 0.973 $\pm$ 0.000 | - | - | - | - | 26.9 | 0.062 |
+| CIFAR-10 | CIFAR-10 | 0.948 $\pm$ 0.000 | - | 0.966 $\pm$ 0.000 | - | 0.857 $\pm$ 0.003 | - | 0.966 $\pm$ 0.000 | - | 6.58 | 0.017 |
+| CIFAR-10 | CIFAR-100 | 0.708 $\pm$ 0.000 | 0.889 $\pm$ 0.000 | 0.742 $\pm$ 0.000 | 0.866 $\pm$ 0.000 | 0.562 $\pm$ 0.003 | 0.880 $\pm$ 0.012 | 0.741 $\pm$ 0.000 | 0.866 $\pm$ 0.000 | 6.59 | 0.016 |
+| CIFAR-10 | SVHN | 0.643$\pm$ 0.000 | 0.933 $\pm$ 0.000 | 0.647 $\pm$ 0.000 | 0.934 $\pm$ 0.000 | 0.484 $\pm$ 0.004 | 0.939 $\pm$ 0.001 | 0.648 $\pm$ 0.003 | 0.934 $\pm$ 0.001 | 17.0 | 0.040 |
+| SVHN | SVHN | 0.986 $\pm$ 0.000 | - | 0.993 $\pm$ 0.000 | - | 0.947 $\pm$ 0.002 | - | 0.993 $\pm$ 0.000 | - | 17.1 | 0.042 |
+| SVHN | CIFAR-100 | 0.595 $\pm$ 0.000 | 0.984 $\pm$ 0.000 | 0.526 $\pm$ 0.000 | 0.985 $\pm$ 0.000 | 0.460 $\pm$ 0.004 | 0.986 $\pm$ 0.001 | 0.527 $\pm$ 0.002 | 0.985 $\pm$ 0.000 | 6.62 | 0.017 |
+| SVHN | CIFAR-10 | 0.593 $\pm$ 0.000 | 0.984 $\pm$ 0.000 | 0.520 $\pm$ 0.000 | 0.987 $\pm$ 0.000 | 0.458 $\pm$ 0.004 | 0.986 $\pm$ 0.001 | 0.520 $\pm$ 0.002 | 0.987 $\pm$ 0.000 | 6.62 | 0.017 |
+| CIFAR-100 | CIFAR-100 | 0.762 $\pm$ 0.000 | - | 0.590 $\pm$ 0.000 | - | 0.757 $\pm$ 0.000 | - | 0.593 $\pm$ 0.000 | - | 6.76 | 0.016 |
+| CIFAR-100 | CIFAR-10 | 0.467 $\pm$ 0.000 | 0.788 $\pm$ 0.000 | 0.206 $\pm$ 0.000 | 0.791 $\pm$ 0.000 | 0.463 $\pm$ 0.000 | 0.788 $\pm$ 0.000 | 0.209 $\pm$ 0.000 | 0.791 $\pm$ 0.000 | 6.71 | 0.017 |
+| CIFAR-100 | SVHN | 0.461 $\pm$ 0.000 | 0.795 $\pm$ 0.000 | 0.170 $\pm$ 0.000 | 0.815 $\pm$ 0.000 | 0.453 $\pm$ 0.001 | 0.798 $\pm$ 0.001 | 0.173 $\pm$ 0.000 | 0.815 $\pm$ 0.000 | 17.3 | 0.041 |
+
+### Time comparison
+
+Every experiment has been conducted with 5 different seeds. The presented curves are the averages over these 5 experiments with errorbars. The reason why taking one sample is slower than two is because of the way random numbers are generated for the normal distribution. For further information read up on the Box-Mueller Transform.
+
+### Uncertainty-aware output ranking on ImageNet
+
+The prior covariances for the Laplace approximation of the Hessian over the weights were chosen such that uncertainty estimate of the Laplace bridge MMC over the outputs was not more than 5% lower than the MAP estimate. The length of list generated by our uncertainty aware method was chosen such that it contained at least one and maximally ten samples. Originally we wanted to choose the maximal length according to the size of the largest category (e.g. fishes or dogs) but the class tree hierarchy of ImageNet does not answer this question meaningfully. We chose ten because there are no reasonable bins larger than ten when looking at a histogram. Pseudo code for the uncertainty aware top-k ranking can be found in Algorithm 1.
+
+[^1]: For clarity: Laplace approximations are also one out of several possible ways to construct a Gaussian approximation to the weight posterior of a NN, by constructing a second-order Taylor approximation of the empirical risk at the trained weights. This is not the way they are used in this section. The LB is agnostic to how the input Gaussian distribution is constructed as it maps parameters. It could, e.g., also be constructed as a variational approximation, or the moments of Monte Carlo samples. See also Section 5.
+
+[^2]: https://github.com/19219181113/LB_for_BNNs
+
+[^3]: I.e. samples are obtained by first sampling from a Gaussian and transforming it via the softmax function.
+
+[^4]: Also known as the quantile function or percent point function
+
+[^5]: https://github.com/19219181113/LB_for_BNNs
