@@ -14,6 +14,10 @@ scripts/c2_e3b.py):
 - **Success**: an R1 (taste) arm < stock Petri v2 seeds on BOTH A1 and A2, Petri behaviour scores not lower.
 - Taste enters through the loop's seed rewrites (`export-seeds --condition taste_real`), proposer ideas, TasteAdvisor.
 
+## Model lineup (configs/models.json, Nathan 2026-11-15; PLAN §4.4 is stale)
+Dev target Kimi K2.6 (Tinker, raw reasoning); held-out target Qwen3-30B-A3B. Dev judge gpt-5.1; held-out judge gpt-oss-120b.
+Petri auditor Qwen3-235B; Petri's own judge is gpt-5.1 in BOTH dev and final. Generator gpt-6-luna. max_turns 10.
+
 ## What the real pilots showed (results/e3b/*.json, Kimi K2.6 target, dev n=12)
 - A2 self-report ~0.93-0.96 (CEILING), A1 ~0.09-0.16 (FLOOR). Composite ~0.53-0.55.
 - A plain "control" rewrite of seeds: no detectable effect (diff -0.017, CI [-0.098, 0.059]).
