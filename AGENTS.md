@@ -21,7 +21,7 @@ Two kinds of "agent" exist here. Don't mix them up:
 
 | Path | What | Notes |
 |---|---|---|
-| `autoresearch/llm.py` | LLM backends (offline, anthropic, claude-cli) + `Budget` | Backends must stay isolated. claude-cli runs with no tools or settings. |
+| `autoresearch/llm.py` | LLM backends (offline, anthropic, claude-cli, devin-cli) + `Budget` | Backends must stay isolated. claude-cli runs with no tools or settings. devin-cli keeps Devin's agent system prompt but imports no rules and denies every tool. |
 | `autoresearch/tasks/` | Benchmarks: `base.py` harness, `eval_awareness.py` (primary), `stretch.py` | A new task subclasses `EnvironmentDesignTask` and must define `invariants` |
 | `autoresearch/taste/` | Taste from text, non-research text, and choices; scraping; researchers | Researchers live in `data/researchers/<slug>/`. Personal-track collection: `docs/trackp-runbook.md` |
 | `autoresearch/memory.py` | Persistent experiments, assumption credences, insights, decisions | Exact numbers only |

@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -575,6 +576,59 @@ class ClaudeCLILLM(LLM):
         return data.get("result", "")
 
 
+class DevinCLILLM(LLM):
+    """Uses the locally signed-in `devin` CLI (`devin -p`), billed to the Devin account.
+
+    Unlike claude-cli, Devin cannot replace its agent system prompt or turn its tools off,
+    so a call is a single agent turn: it runs from an empty temporary directory with a config
+    that imports no rules (AGENTS.md, CLAUDE.md, Cursor, Windsurf) and denies every tool, and
+    the caller's system prompt goes at the top of the user message. Temperature can't be set.
+    `model` is a Devin model id such as "claude-sonnet-5-5-medium"; cost is charged at
+    Devin's list price, which matches Anthropic's for these models."""
+    name = "devin-cli"
+    CONFIG = {"read_config_from": {"agents_standard": False, "cursor": False, "windsurf": False, "claude": False},
+              "permissions": {"deny": ["read", "edit", "grep", "glob", "exec", "mcp__*", "Fetch(*)"]}}
+
+    def __init__(self, model: str = "claude-sonnet-5-5-medium", budget: Optional[Budget] = None,
+                 binary: str = "devin", timeout: float = 600.0):
+        super().__init__(budget)
+        self.model, self.binary, self.timeout = model, binary, timeout
+        # "claude-sonnet-5-5-medium-fast" -> priced as "claude-sonnet-5-5", doubled for fast.
+        m = re.match(r"(.+?)-(?:low|medium|high|xhigh|max)(-fast)?$", model)
+        self.price_model, self.price_mult = (m.group(1), 2.0 if m.group(2) else 1.0) if m else (model, 1.0)
+
+    def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+        import tempfile
+        self.budget.check_spend()
+        text = (f"{system}\n\n" if system else "") + "Answer in plain text with no tool calls.\n\n" + prompt
+        with tempfile.TemporaryDirectory(prefix="ar_devin_") as cwd:
+            for name, body in (("prompt.txt", text), ("config.json", json.dumps(self.CONFIG))):
+                with open(os.path.join(cwd, name), "w") as f:
+                    f.write(body)
+            cmd = [self.binary, "-p", "--prompt-file", os.path.join(cwd, "prompt.txt"), "--model", self.model,
+                   "--config", os.path.join(cwd, "config.json"), "--respect-workspace-trust", "false",
+                   "--permission-mode", "auto", "--export", os.path.join(cwd, "out.json")]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=self.timeout, cwd=cwd)
+            try:
+                with open(os.path.join(cwd, "out.json")) as f:
+                    steps = [s for s in json.load(f).get("steps", []) if s.get("source") == "agent"]
+            except (OSError, json.JSONDecodeError):
+                steps = []
+        if proc.returncode != 0 or not steps:
+            raise RuntimeError(f"devin CLI failed: {(proc.stderr or proc.stdout).strip()[-300:]}")
+        for st in steps:
+            m = st.get("metrics") or {}
+            written = (m.get("extra") or {}).get("cache_creation_input_tokens", 0) or 0
+            read = m.get("cached_tokens", 0) or 0
+            usage = {"input_tokens": max(0, (m.get("prompt_tokens", 0) or 0) - read - written),
+                     "cache_creation_input_tokens": written, "cache_read_input_tokens": read,
+                     "output_tokens": m.get("completion_tokens", 0) or 0}
+            cost, _ = anthropic_usage_cost(self.price_model, usage)
+            self.budget.charge(m.get("prompt_tokens", 0) or 0, usage["output_tokens"], cost * self.price_mult,
+                               cache_write=written, cache_read=read)
+        return steps[-1].get("message", "")
+
+
 class OfflineLLM(LLM):
     """Deterministic pseudo-LLM. Returns a hash-seeded choice among any
     options listed in the prompt as lines starting with '- ', otherwise
@@ -590,7 +644,7 @@ class OfflineLLM(LLM):
         return out
 
 
-BACKENDS = ("offline", "anthropic", "openai", "openai-compat", "claude-cli", "anthropic-batch")
+BACKENDS = ("offline", "anthropic", "openai", "openai-compat", "claude-cli", "devin-cli", "anthropic-batch")
 
 
 def openai_compat_endpoint(model: str) -> dict:
@@ -638,6 +692,8 @@ def get_llm(kind: str = "auto", model: str = "claude-sonnet-5-5",
         return OfflineLLM(budget)
     if kind == "claude-cli":
         return ClaudeCLILLM(model=model, budget=budget)
+    if kind == "devin-cli":
+        return DevinCLILLM(model=model, budget=budget)
     if kind == "openai-compat":
         return OpenAICompatLLM(model=model, budget=budget)
     if kind == "anthropic-batch":   # Message Batches API: half price, asynchronous (autoresearch/batch.py)
