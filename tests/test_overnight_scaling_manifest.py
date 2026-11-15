@@ -1754,12 +1754,19 @@ class ScalingReservationCeilingTests(unittest.TestCase):
         self.helper = importlib.util.module_from_spec(loader)
         loader.loader.exec_module(self.helper)
 
-    def test_model_specific_uncached_bounds_do_not_reuse_luna_prices(self):
-        # Hand-calculated from frozen input/output USD-per-million rates.
-        for model, expected in (('gpt-6-luna', .0002), ('gpt-6-sol', .004), ('gpt-6-astra', .02)):
-            with self.subTest(model=model):
-                self.assertEqual(self.helper.reservation_ceiling(model, 200, 1000), expected)
-                self.assertGreater(self.helper.reservation_ceiling(model, 200), expected)
+    def test_model_specific_frozen_cache_write_bounds_do_not_reuse_luna_prices(self):
+        from unittest.mock import patch
+        from autoresearch.taste.overnight import backends
+        # f6 input rates include the conservative 1.25x 30-minute cache-write
+        # multiplier. Pin this arithmetic fixture independently of checkout rates.
+        frozen_rates = {'gpt-6-luna': ('0.125', '0.50'), 'gpt-6-sol': ('2.5', '10'),
+                        'gpt-6-astra': ('12.5', '50')}
+        with patch.object(backends, 'RATES', frozen_rates):
+            # (1000 input * input rate + 200 output * output rate) / 1e6.
+            for model, expected in (('gpt-6-luna', .000225), ('gpt-6-sol', .0045), ('gpt-6-astra', .0225)):
+                with self.subTest(model=model):
+                    self.assertEqual(self.helper.reservation_ceiling(model, 200, 1000), expected)
+                    self.assertGreater(self.helper.reservation_ceiling(model, 200), expected)
 
     def test_context_limit_is_strict_and_default_bound_is_the_largest_admitted(self):
         for model in ('gpt-6-luna', 'gpt-6-sol', 'gpt-6-astra'):
