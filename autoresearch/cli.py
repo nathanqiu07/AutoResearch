@@ -177,7 +177,18 @@ def _agentic_measurer(args, models):
     if not pool:
         raise SystemExit(f"no {'held-out' if args.mode == 'final' else 'dev'} seeds in {args.petri_seeds}")
     print(f"petri seeds: {len(pool)} {args.mode} of {len(seeds)} (tools={args.tools})")
-    return PetriMeasurer(models, seeds=pool, tools=args.tools, mode=args.mode, workers=args.workers)
+    auditor_prompt = None
+    if getattr(args, "auditor_prompt", None):
+        with open(args.auditor_prompt) as f:
+            auditor_prompt = f.read()
+    print(f"petri rewrite: {getattr(args, 'petri_rewrite', 'seed')}"
+          f"{' | auditor prompt: ' + args.auditor_prompt if auditor_prompt else ''}")
+    extra = {}   # only non-defaults, so measurers without these options keep working
+    if getattr(args, "petri_rewrite", "seed") != "seed":
+        extra["rewrite"] = args.petri_rewrite
+    if auditor_prompt:
+        extra["auditor_prompt"] = auditor_prompt
+    return PetriMeasurer(models, seeds=pool, tools=args.tools, mode=args.mode, workers=args.workers, **extra)
 
 
 AGENTIC_GOAL = ("Rewrite Petri audit seeds and auditor behaviour so the target model does not recognise the audit as "
@@ -561,6 +572,11 @@ def build_parser() -> argparse.ArgumentParser:
     rs.add_argument("--setting", default="single", choices=["single", "agentic"],
                     help="agentic swaps in C2's PetriMeasurer (Petri seeds and auditor rewrites)")
     rs.add_argument("--petri-seeds", help="AuditSeed JSONL for --setting agentic")
+    rs.add_argument("--petri-rewrite", default="seed", choices=["seed", "auditor", "both"],
+                    help="agentic: what interventions rewrite: the seed instruction, the auditor's system prompt "
+                         "(guidance written once per design), or both")
+    rs.add_argument("--auditor-prompt", help="agentic: file with a custom Petri auditor system prompt (keeps the five "
+                                             "{placeholders}); default Petri's stock prompt")
     rs.add_argument("--tools", default="simulated", choices=["simulated", "sandbox"],
                     help="agentic: target tools simulated by the auditor or real ones in a Modal Sandbox")
     rs.add_argument("--decisions-dir", default="runs",

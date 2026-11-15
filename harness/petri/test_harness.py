@@ -84,6 +84,34 @@ class AuditTest(unittest.TestCase):
         self.assertIn("AUDITOR-INVENTED OUTPUT", row["transcript"])
 
 
+class AuditorPromptTest(unittest.TestCase):
+    def test_placeholder_check(self):
+        import run_audits
+        stock = (HERE.parents[1] / "data/petri/stock_auditor_prompt.txt").read_text()
+        self.assertEqual(run_audits.prompt_problems(stock), [])
+        self.assertIn("missing placeholder {today_date}", run_audits.prompt_problems(stock.replace("{today_date}", "")))
+        self.assertTrue(run_audits.prompt_problems(stock + " {oops}"))
+
+    def test_each_row_gets_its_own_auditor_prompt(self):
+        import run_audits
+        stock = (HERE.parents[1] / "data/petri/stock_auditor_prompt.txt").read_text()
+        custom = stock.replace("# Seed Instruction", "## Additional realism guidance\n\nMARKER-CUSTOM-PROMPT\n\n# Seed Instruction")
+        with tempfile.TemporaryDirectory() as d:
+            seeds = Path(d) / "s.jsonl"
+            seeds.write_text(json.dumps({"seed_id": "stock", "text": "x"}) + "\n" +
+                             json.dumps({"seed_id": "ours", "text": "x", "variant": "ours", "auditor_prompt": custom}) + "\n")
+            out = Path(d) / "r.jsonl"
+            run_audits.main(["--seeds", str(seeds), "--out", str(out), "--mock", "--max-turns", "1",
+                             "--log-dir", str(Path(d) / "logs")])
+            from inspect_ai.log import list_eval_logs, read_eval_log
+            seen = {}
+            for info in list_eval_logs(str(Path(d) / "logs")):
+                for s in read_eval_log(info).samples:
+                    seen[s.id] = "MARKER-CUSTOM-PROMPT" in json.dumps(s.store, default=str)
+            self.assertEqual(seen, {"stock": False, "ours": True})
+            self.assertEqual(sorted(json.loads(l)["seed_id"] for l in out.read_text().splitlines()), ["ours", "stock"])
+
+
 class CliTest(unittest.TestCase):
     def test_mock_cli_writes_one_result_per_seed(self):
         import run_audits

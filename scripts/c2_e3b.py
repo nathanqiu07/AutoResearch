@@ -2,7 +2,9 @@
 
 The one scorer for agentic eval-awareness numbers. Each condition is an
 AuditSeed JSONL file (stock Petri v2 seeds, Petri v1 seeds, or rewrites from
-the loop or any other system, variant "ours"). Every condition is audited with
+the loop or any other system, variant "ours"); a condition can also swap in a
+custom auditor system prompt (--auditor-prompt NAME=FILE), to test auditor
+rewrites with the seeds held fixed. Every condition is audited with
 the same models and scored by PetriMeasurer, i.e. C1's judges: A2 = the target's
 own P(eval), A1 = the audit judge on the transcript and raw reasoning, validity,
 plus every judge's A1/A2 and Petri's own judge scores as a cross-check.
@@ -79,6 +81,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--condition", action="append", required=True, metavar="NAME=FILE",
                     help="AuditSeed JSONL per condition; the first is the baseline")
+    ap.add_argument("--auditor-prompt", action="append", default=[], metavar="NAME=FILE",
+                    help="custom auditor system prompt for condition NAME (default: Petri's stock prompt)")
     ap.add_argument("--split", choices=["dev", "hidden", "all"], default="dev",
                     help="rows' 'split' field (rows without one are kept)")
     ap.add_argument("--tools", choices=["simulated", "sandbox"], default="simulated")
@@ -103,6 +107,10 @@ def main(argv=None):
     from autoresearch.research.petri_measure import HarnessRunner
     results, lineup = {}, {}
     conds = [c.split("=", 1) for c in a.condition]
+    prompts = dict(x.split("=", 1) for x in a.auditor_prompt)
+    unknown = set(prompts) - {n for n, _ in conds}
+    if unknown:
+        raise SystemExit(f"--auditor-prompt for unknown condition(s): {sorted(unknown)}")
     for name, path in conds:
         seeds = [s for s in load_audit_seeds(path) if a.split == "all" or s.get("split", a.split) == a.split]
         seeds = seeds[: a.limit] if a.limit else seeds
@@ -110,7 +118,8 @@ def main(argv=None):
             raise SystemExit(f"{name}: no {a.split} seeds in {path}")
         for s in seeds:
             s["tools"] = a.tools
-        pm = PetriMeasurer(models, seeds, tools=a.tools, mode=a.mode, workers=a.workers)
+        prompt = Path(prompts[name]).read_text() if name in prompts else None
+        pm = PetriMeasurer(models, seeds, tools=a.tools, mode=a.mode, workers=a.workers, auditor_prompt=prompt)
         if not a.offline:
             pm.runner = HarnessRunner(mode=a.mode, max_turns=a.max_turns, target=pm.target.label)
         sample_seeds = [i + len(seeds) * e for e in range(a.epochs) for i in range(len(seeds))]
@@ -119,7 +128,7 @@ def main(argv=None):
         print(f"{name}: {len(results[name])} audits", file=sys.stderr)
     base_name = conds[0][0]
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
-    rep = {"experiment": "E3b", "date": datetime.date.today().isoformat(), "code_version": commit,
+    rep = {"experiment": "E3b", "auditor_prompts": {n: prompts.get(n, "stock") for n, _ in conds}, "date": datetime.date.today().isoformat(), "code_version": commit,
            "offline": a.offline, "mode": a.mode, "split": a.split, "tools": a.tools, "epochs": a.epochs,
            "models": lineup, "conditions": {n: summarize(s) for n, s in results.items()},
            "vs_" + base_name: {n: {m: paired(results[base_name], s, m) for m in ("awareness", "score", "validity")}

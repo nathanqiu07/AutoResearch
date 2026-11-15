@@ -2,7 +2,8 @@
 
     AuditSeed JSONL  ->  Petri 2.0 (inspect_petri)  ->  AuditResult JSONL
 
-Input rows:  {"seed_id", "text", "variant": "v1|v2|ours", "tools": "simulated|sandbox"}
+Input rows:  {"seed_id", "text", "variant": "v1|v2|ours", "tools": "simulated|sandbox",
+              "auditor_prompt": optional full auditor system prompt (else --auditor-prompt, else Petri's stock one)}
 Output rows: {"seed_id", "variant", "tools", "epoch", "transcript", "reasoning",
               "petri_scores": {...}, "petri_judge_status", "n_target_turns", "error"}
 
@@ -50,6 +51,20 @@ def need(pkg: str):
                          f"pip install eval/vendor/petri-v2.tar.gz; sandbox mode also needs modal")
 
 
+PLACEHOLDERS = ("{max_turns}", "{target_model}", "{seed_instructions}", "{today_date}", "{resources_prompt}")
+
+
+def prompt_problems(text: str):
+    import re
+    problems = [f"missing placeholder {p}" for p in PLACEHOLDERS if p not in text]
+    stripped = text
+    for p in PLACEHOLDERS:
+        stripped = stripped.replace(p, "")
+    if re.search(r"[{}]", stripped.replace("{{", "").replace("}}", "")):
+        problems.append("unescaped literal brace (write {{ and }})")
+    return problems
+
+
 def load_seeds(path: str):
     rows = [json.loads(l) for l in Path(path).read_text().splitlines() if l.strip()]
     for r in rows:
@@ -57,6 +72,8 @@ def load_seeds(path: str):
             raise SystemExit(f"bad AuditSeed (needs seed_id and text): {str(r)[:120]}")
         if r.get("tools", "simulated") not in ("simulated", "sandbox"):
             raise SystemExit(f"{r['seed_id']}: tools must be simulated|sandbox")
+        if r.get("auditor_prompt") and prompt_problems(r["auditor_prompt"]):
+            raise SystemExit(f"{r['seed_id']}: auditor_prompt: {prompt_problems(r['auditor_prompt'])}")
     return rows
 
 
@@ -116,6 +133,8 @@ def main(argv=None):
     roles_cfg = pcfg.get(a.mode, {})
     max_turns = a.max_turns or pcfg.get("max_turns", 30)
     prompt = Path(a.auditor_prompt).read_text() if a.auditor_prompt else None
+    if prompt and prompt_problems(prompt):
+        raise SystemExit(f"--auditor-prompt {a.auditor_prompt}: {prompt_problems(prompt)}")
 
     if a.mock:
         roles = mock_roles()
@@ -135,28 +154,28 @@ def main(argv=None):
                  else GenerateConfig(reasoning_tokens=a.reasoning_tokens, max_tokens=a.reasoning_tokens + 8000))
         roles["target"] = get_model(roles["target"], config=cfg_t)
 
-    groups = {}
+    groups = {}   # one Inspect task per (tool mode, auditor prompt)
     for s in seeds:
-        groups.setdefault(s.get("tools") or a.tools, []).append(s)
-    tasks = [build_task(g, mode, max_turns, prompt, str(Path(a.log_dir) / "transcripts" / mode))
-             for mode, g in groups.items()]
+        groups.setdefault((s.get("tools") or a.tools, s.get("auditor_prompt") or prompt), []).append(s)
+    tasks = [build_task(g, mode, max_turns, p, str(Path(a.log_dir) / "transcripts" / f"{mode}_{k}"))
+             for k, ((mode, p), g) in enumerate(groups.items())]
     logs = inspect_eval(tasks, model=roles["target"], model_roles=roles, epochs=a.epochs, log_dir=a.log_dir,
                         max_tasks=pcfg.get("max_tasks", 4), max_connections=pcfg.get("max_connections", 8),
                         fail_on_error=False, display="none" if a.mock else "plain")
 
-    rows, seen = [], set()
+    rows, seen, errs = [], set(), []
     for log in logs:
         for s in log.samples or []:
             rows.append(record_from_sample(s))
             seen.add(rows[-1]["seed_id"])
-        if log.status != "success" and not log.samples:
-            err = str(getattr(log.error, "message", log.error) or log.status)
-            for s in groups.get((log.eval.metadata or {}).get("tools", a.tools), []):
-                if s["seed_id"] not in seen:
-                    rows.append({"seed_id": s["seed_id"], "variant": s.get("variant", "v2"), "tools": s.get("tools"),
-                                 "epoch": None, "transcript": "", "reasoning": "",
-                                 "petri_scores": {k: None for k in KEEP_SCORES}, "petri_judge_status": "missing",
-                                 "n_target_turns": 0, "error": f"task failed: {err[:500]}"})
+        if log.status != "success":
+            errs.append(str(getattr(log.error, "message", log.error) or log.status))
+    for s in seeds:   # a seed whose task failed before producing a sample still gets a row, marked as an error
+        if s["seed_id"] not in seen:
+            rows.append({"seed_id": s["seed_id"], "variant": s.get("variant", "v2"), "tools": s.get("tools"),
+                         "epoch": None, "transcript": "", "reasoning": "",
+                         "petri_scores": {k: None for k in KEEP_SCORES}, "petri_judge_status": "missing",
+                         "n_target_turns": 0, "error": "task failed: " + ("; ".join(errs)[:500] or "no sample")})
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out).write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
     n_err = sum(bool(r["error"]) for r in rows)

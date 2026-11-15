@@ -72,3 +72,17 @@ sample gets its own sandbox, which times out after an hour.
 See the docstring: `modal deploy harness/modal_vllm.py`, then point `OPENAI_COMPAT_BASE_URL`
 at it and run `python3 scripts/c2_smoke_target.py --n 5` (paid) to check that raw reasoning
 reaches `Sample.reasoning` and the A1 judge reads it.
+
+### Auditor-prompt rewrites
+
+Petri's auditor runs on a long fixed system prompt (`data/petri/stock_auditor_prompt.txt`,
+with five `{placeholders}`); the seed is pasted into it. Both can be rewritten:
+
+* loop: `research --setting agentic --petri-rewrite seed|auditor|both` (`auditor` writes realism
+  guidance once per design and inserts it before the prompt's seed section, so every seed gets
+  the same auditor behaviour); `--auditor-prompt FILE` swaps in a fixed custom prompt.
+* E3b: `scripts/c2_e3b.py --condition stock=S.jsonl --condition aud=S.jsonl --auditor-prompt aud=FILE`
+  compares auditor prompts with the seeds held fixed.
+* harness: an AuditSeed row may carry `auditor_prompt`; rows are grouped into one Inspect task per
+  (tool mode, auditor prompt). Every custom prompt is checked for the five placeholders and for
+  unescaped braces before anything runs.
