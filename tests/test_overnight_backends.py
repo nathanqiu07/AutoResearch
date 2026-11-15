@@ -2,6 +2,7 @@ import io
 import json
 import tempfile
 import unittest
+import urllib.error
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
@@ -141,6 +142,56 @@ class BackendTests(unittest.TestCase):
         self.assertNotIn("synthetic-key", str(error.exception))
         self.assertGreater(backend.cost_summary()["reserved_usd"], 0)
         self.assertEqual(backend.ledger.summary()["uncertain"], 1)
+
+    def test_safe_http_timeout_and_url_types_survive_without_exception_text(self):
+        cases = [
+            (urllib.error.HTTPError("https://secret.example/private", 429, "SECRET provider body", {}, io.BytesIO(b"SECRET")), "HTTPError", 429),
+            (urllib.error.HTTPError("https://secret.example/private", 503, "SECRET provider body", {}, io.BytesIO(b"SECRET")), "HTTPError", 503),
+            (TimeoutError("SECRET timeout details"), "TimeoutError", None),
+            (urllib.error.URLError("SECRET URL reason"), "URLError", None),
+            (RuntimeError("SECRET opaque error"), "other", None),
+        ]
+        for index, (error, expected_type, status) in enumerate(cases):
+            with self.subTest(expected_type=expected_type, status=status):
+                ledger = self.b.DollarLedger(Path(self.temp.name) / ("safe-%d.sqlite3" % index),
+                                             max_usd=1, deadline="2099-01-01T00:00:00Z", max_inflight=2)
+                backend = self.b.OpenAIResponsesBackend(model="gpt-6-luna", reasoning="medium", ledger=ledger, max_usd=0.1)
+                with patch.dict("os.environ", {"OPENAI_API_KEY": "SECRET credential"}), \
+                     patch("urllib.request.urlopen", side_effect=error) as network:
+                    with self.assertRaises(RuntimeError) as caught:
+                        backend.complete("synthetic", max_tokens=128)
+                    self.assertEqual(getattr(caught.exception, "safe_error", None),
+                                     {"exception_type": expected_type, "http_status": status})
+                    self.assertNotIn("SECRET", str(caught.exception))
+                    with self.assertRaises(RuntimeError):
+                        backend.complete("synthetic", max_tokens=128)
+                self.assertEqual(network.call_count, 1)
+                self.assertGreater(ledger.summary()["reserved_usd"], 0)
+                self.assertEqual(ledger.summary()["uncertain"], 1)
+
+    def test_runner_persists_only_safe_metadata_for_bad_response_and_keeps_hold(self):
+        from tests import test_overnight_runner as rf
+        for name, response, expected_type in (("json", io.BytesIO(b'SECRET malformed JSON'), "JSONDecodeError"),
+                                               ("usage", self.response(usage={}), "ValueError")):
+            with self.subTest(name=name):
+                case = rf.RunnerTests(); case.setUp(); self.addCleanup(case.doCleanups)
+                ledger = self.b.DollarLedger(Path(self.temp.name) / (name + ".sqlite3"), max_usd=1,
+                                             deadline="2099-01-01T00:00:00Z", max_inflight=2)
+                case.consumer = self.b.OpenAIResponsesBackend(model="gpt-6-luna", reasoning="medium", ledger=ledger, max_usd=0.1, timeout=5)
+                manifest = case.manifest(stage="dev", deadline="2099-01-01T00:00:00Z",
+                    allocation={"max_calls": 2, "max_seconds": 30, "max_usd": 0.1, "cost_mode": "priced_api", "authorization_source": "synthetic transport test"})
+                with patch.dict("os.environ", {"OPENAI_API_KEY": "SECRET credential"}), \
+                     patch("urllib.request.urlopen", return_value=response) as network:
+                    result = case.run_job(manifest)
+                failed = list(Path(case.temp.name).rglob("0001-failed.json"))
+                self.assertEqual(len(failed), 1)
+                trace = json.loads(failed[0].read_text())
+                self.assertEqual(trace.get("backend_error"), {"exception_type": expected_type, "http_status": 200})
+                self.assertEqual(set(trace["backend_error"]), {"exception_type", "http_status"})
+                self.assertNotIn("SECRET", json.dumps(trace))
+                self.assertEqual(result["usage"]["uncertain_attempts"], 1)
+                self.assertGreater(result["usage"]["reserved_api_usd"], 0)
+                self.assertEqual(network.call_count, 1)
 
     def test_incomplete_response_preserves_reported_usage_and_reservation(self):
         backend = self.backend(model="gpt-6-sol", reasoning="medium")

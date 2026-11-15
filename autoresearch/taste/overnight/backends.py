@@ -12,6 +12,7 @@ import math
 import os
 import sqlite3
 import threading
+import urllib.error
 import urllib.request
 import uuid
 from contextlib import contextmanager
@@ -32,6 +33,30 @@ PRICING_SOURCES = ["https://developers.openai.com/api/docs/pricing",
                    "https://developers.openai.com/api/docs/models/gpt-6-luna",
                    "https://developers.openai.com/api/docs/models/gpt-6-sol",
                    "https://developers.openai.com/api/docs/models/gpt-6-astra"]
+
+
+class BackendCallFailure(RuntimeError):
+    """Only fixed exception type and numeric HTTP status may leave the adapter."""
+    def __init__(self, exception_type, http_status=None):
+        super().__init__("Responses request failed or incomplete; reservation retained and lane held; no retry")
+        allowed = {"HTTPError", "URLError", "TimeoutError", "JSONDecodeError", "ValueError", "other"}
+        self._exception_type = exception_type if exception_type in allowed else "other"
+        self._http_status = http_status if type(http_status) is int and 100 <= http_status <= 599 else None
+
+    @property
+    def safe_error(self):
+        return {"exception_type": self._exception_type, "http_status": self._http_status}
+
+
+def _safe_call_failure(exc, http_status):
+    kind = "other"
+    for cls in (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
+        if isinstance(exc, cls):
+            kind = cls.__name__
+            break
+    if isinstance(exc, urllib.error.HTTPError):
+        http_status = exc.code
+    return BackendCallFailure(kind, http_status)
 
 
 def _money(value, rounding=ROUND_CEILING):
@@ -218,6 +243,7 @@ class OpenAIResponsesBackend(LLM):
             self._inflight += 1
         input_tokens, output_tokens, succeeded = 0, 0, False
         input_known, output_known = False, False
+        http_status = None
         try:
             headers = {"Content-Type": "application/json", "Authorization": "Bearer " + os.environ["OPENAI_API_KEY"]}
             for variable, header in (("OPENAI_ORG_ID", "OpenAI-Organization"), ("OPENAI_PROJECT_ID", "OpenAI-Project")):
@@ -225,7 +251,8 @@ class OpenAIResponsesBackend(LLM):
                     headers[header] = os.environ[variable]
             request = urllib.request.Request(self.base_url, data=encoded, headers=headers, method="POST")
             with urllib.request.urlopen(request, timeout=min(self.timeout, remaining)) as response:
-                if getattr(response, "status", 200) != 200:
+                http_status = getattr(response, "status", 200)
+                if http_status != 200:
                     raise ValueError("unexpected response status")
                 raw = response.read(8_000_001)
             if len(raw) > 8_000_000:
@@ -268,8 +295,8 @@ class OpenAIResponsesBackend(LLM):
                 raise ValueError("empty output")
             succeeded = True
             return text
-        except Exception:
-            raise RuntimeError("Responses request failed or incomplete; reservation retained and lane held; no retry") from None
+        except Exception as exc:
+            raise _safe_call_failure(exc, http_status) from None
         finally:
             cost = self._price(input_tokens, output_tokens)
             self.budget.charge(input_tokens, output_tokens, float(cost))
