@@ -367,7 +367,7 @@ def _add_model_args(sp, mode_default: str, max_calls: int):
     sp.add_argument("--generator", default="sonnet")
     sp.add_argument("--target", default="haiku", help="model under study; keep it different from the judge")
     sp.add_argument("--judge", default="sonnet")
-    sp.add_argument("--target-llm", choices=["anthropic", "claude-cli", "openai-compat", "offline"],
+    sp.add_argument("--target-llm", choices=["anthropic", "anthropic-batch", "claude-cli", "openai-compat", "offline"],
                     help="backend for the target only, e.g. openai-compat for an open reasoning model on vLLM/Modal")
     sp.add_argument("--mode", default=mode_default, choices=["dev", "final"],
                     help="final swaps in the held-out target/judges and the held-out benchmark split")
@@ -498,7 +498,8 @@ def cmd_label_transcripts(args):
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="autoresearch")
-    p.add_argument("--llm", default="auto", choices=["auto", "offline", "anthropic", "claude-cli", "openai-compat"])
+    p.add_argument("--llm", default="auto", choices=["auto", "offline", "anthropic", "anthropic-batch", "claude-cli",
+                                                    "openai-compat"])
     p.add_argument("--model", default="claude-sonnet-5-5")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("researchers").set_defaults(fn=cmd_researchers)

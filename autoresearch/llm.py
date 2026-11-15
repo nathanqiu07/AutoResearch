@@ -30,18 +30,25 @@ class Budget:
     # that report cost count toward it; today that is ClaudeCLILLM alone.
     max_cost_usd: float = 200.0
     calls: int = 0
-    input_tokens: int = 0
+    input_tokens: int = 0          # all input tokens, cached ones included
     output_tokens: int = 0
     cost_usd: float = 0.0
+    cache_write_tokens: int = 0    # prompt caching: tokens written to the cache
+    cache_read_tokens: int = 0     # prompt caching: tokens served from the cache
+    saved_usd: float = 0.0         # list-price cost avoided by caching and the Batch API (E5 reports it)
     started: float = field(default_factory=time.time)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
-    def charge(self, inp: int, out: int, cost: float = 0.0) -> None:
+    def charge(self, inp: int, out: int, cost: float = 0.0, cache_write: int = 0, cache_read: int = 0,
+               saved: float = 0.0) -> None:
         with self._lock:  # backends may be called from worker threads
             self.calls += 1
             self.input_tokens += inp
             self.output_tokens += out
             self.cost_usd += cost
+            self.cache_write_tokens += cache_write
+            self.cache_read_tokens += cache_read
+            self.saved_usd += saved
 
     @property
     def elapsed(self) -> float:
@@ -58,9 +65,13 @@ class Budget:
             raise BudgetExceeded(f"spend cap reached: ${self.cost_usd:.2f} of ${self.max_cost_usd:.2f}")
 
     def summary(self) -> dict:
-        return {"calls": self.calls, "input_tokens": self.input_tokens,
-                "output_tokens": self.output_tokens,
-                "cost_usd": round(self.cost_usd, 4), "seconds": round(self.elapsed, 2)}
+        out = {"calls": self.calls, "input_tokens": self.input_tokens,
+               "output_tokens": self.output_tokens,
+               "cost_usd": round(self.cost_usd, 4), "seconds": round(self.elapsed, 2)}
+        if self.cache_write_tokens or self.cache_read_tokens or self.saved_usd:
+            out.update(cache_write_tokens=self.cache_write_tokens, cache_read_tokens=self.cache_read_tokens,
+                       saved_usd=round(self.saved_usd, 4))
+        return out
 
 
 def _approx_tokens(text: str) -> int:
@@ -152,6 +163,29 @@ PRICES_PER_MTOK = {
 }
 
 
+# Prompt caching and the Message Batches API (PLAN 8, cheaper measurement): a 5-minute
+# cache write costs 1.25x the input price, a cache read 0.1x (0.05x on the models
+# listed), and a batch request half of everything.
+CACHE_WRITE_MULT = 1.25
+CACHE_READ_MULT = {"claude-opus-5-5": 0.05, "claude-sonnet-5-5": 0.05}
+CACHE_READ_DEFAULT = 0.1
+BATCH_MULT = 0.5
+
+
+def anthropic_usage_cost(model: str, usage: dict, batch: bool = False, prices=None):
+    """($ cost, $ saved against no caching and no batch discount) of one Messages
+    API `usage` object at list price. Its input_tokens are the uncached ones.
+    A model with no known price costs 0.0, as in `list_price_usd`."""
+    pin, pout = (x / 1e6 for x in (prices or PRICES_PER_MTOK).get(model, (0.0, 0.0)))
+    fresh, out = usage.get("input_tokens", 0) or 0, usage.get("output_tokens", 0) or 0
+    write = usage.get("cache_creation_input_tokens", 0) or 0
+    read = usage.get("cache_read_input_tokens", 0) or 0
+    mult = BATCH_MULT if batch else 1.0
+    cost = mult * (fresh * pin + write * pin * CACHE_WRITE_MULT
+                   + read * pin * CACHE_READ_MULT.get(model, CACHE_READ_DEFAULT) + out * pout)
+    return cost, (fresh + write + read) * pin + out * pout - cost
+
+
 def list_price_usd(model: str, input_tokens: int, output_tokens: int, prices=None) -> float:
     """Cost at list price, or 0.0 for a model with no known price (the caller decides
     whether an unknown price is acceptable; OpenAIResponsesLLM refuses to start without one)."""
@@ -171,9 +205,14 @@ class AnthropicLLM(LLM):
     URL = "https://api.anthropic.com/v1/messages"
     THINKING_SUFFIX = "+thinking"
     THINKING_HEADROOM = 8000   # thinking tokens count against max_tokens
+    # Prompt caching: a system prompt of at least this many (approximate) tokens goes
+    # out as a cached block. Shorter prefixes cannot be cached (the minimum is 512-4096
+    # tokens by model), so they stay a plain string and pay no write premium.
+    CACHE_MIN_TOKENS = 512
 
-    def __init__(self, model: str = "claude-sonnet-5-5", budget: Optional[Budget] = None):
+    def __init__(self, model: str = "claude-sonnet-5-5", budget: Optional[Budget] = None, cache: bool = True):
         super().__init__(budget)
+        self.cache = cache
         self.thinking = model.endswith(self.THINKING_SUFFIX)
         self.model = model[:-len(self.THINKING_SUFFIX)] if self.thinking else model
         self.key = os.environ.get("ANTHROPIC_API_KEY")
@@ -198,17 +237,34 @@ class AnthropicLLM(LLM):
                 if attempt == 3:
                     raise
                 time.sleep(2 ** attempt)
-        usage = data.get("usage", {})
-        inp, out = usage.get("input_tokens", 0), usage.get("output_tokens", 0)
-        self.budget.charge(inp, out, list_price_usd(self.model, inp, out))
+        self.charge_usage(data.get("usage", {}))
         return data
 
-    def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
-        self.budget.check_spend()
+    def charge_usage(self, usage: dict, batch: bool = False) -> None:
+        """Charge one response's usage to the Budget, cache and batch pricing included."""
+        cost, saved = anthropic_usage_cost(self.model, usage, batch=batch)
+        write = usage.get("cache_creation_input_tokens", 0) or 0
+        read = usage.get("cache_read_input_tokens", 0) or 0
+        self.budget.charge((usage.get("input_tokens", 0) or 0) + write + read, usage.get("output_tokens", 0) or 0,
+                           cost, cache_write=write, cache_read=read, saved=saved)
+
+    def system_field(self, system: str):
+        """The request's `system`: a cached text block when it is long enough to cache."""
+        if self.cache and _approx_tokens(system) >= self.CACHE_MIN_TOKENS:
+            return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+        return system
+
+    def request_body(self, prompt: str, system: str = "", max_tokens: int = 1024, temperature: float = 0.7) -> dict:
+        """The Messages API body `complete` sends (the batch runner sends the same)."""
         body = {"model": self.model, "max_tokens": max_tokens, "temperature": temperature,
                 "messages": [{"role": "user", "content": prompt}]}
         if system:
-            body["system"] = system
+            body["system"] = self.system_field(system)
+        return body
+
+    def complete(self, prompt, system="", max_tokens=1024, temperature=0.7):
+        self.budget.check_spend()
+        body = self.request_body(prompt, system, max_tokens, temperature)
         return "".join(b.get("text", "") for b in self._post(body).get("content", []))
 
     def complete_with_reasoning(self, prompt, system="", max_tokens=1024, temperature=0.7):
@@ -220,7 +276,7 @@ class AnthropicLLM(LLM):
                 "thinking": {"type": "adaptive", "display": "summarized"},
                 "messages": [{"role": "user", "content": prompt}]}
         if system:
-            body["system"] = system
+            body["system"] = self.system_field(system)
         return parse_anthropic_thinking(self._post(body))
 
 
@@ -385,7 +441,7 @@ class OfflineLLM(LLM):
         return out
 
 
-BACKENDS = ("offline", "anthropic", "openai", "openai-compat", "claude-cli")
+BACKENDS = ("offline", "anthropic", "openai", "openai-compat", "claude-cli", "anthropic-batch")
 
 
 def split_spec(model: str):
@@ -410,6 +466,9 @@ def get_llm(kind: str = "auto", model: str = "claude-sonnet-5-5",
         return ClaudeCLILLM(model=model, budget=budget)
     if kind == "openai-compat":
         return OpenAICompatLLM(model=model, budget=budget)
+    if kind == "anthropic-batch":   # Message Batches API: half price, asynchronous (autoresearch/batch.py)
+        from .batch import AnthropicBatchLLM
+        return AnthropicBatchLLM(model=model, budget=budget)
     return AnthropicLLM(model=model, budget=budget)
 
 
