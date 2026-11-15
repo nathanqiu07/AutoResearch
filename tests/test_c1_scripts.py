@@ -320,47 +320,141 @@ class GapScriptTests(unittest.TestCase):
             self.assertIn("code_version", rep)
 
 
+def write_labelled_fixture(d, n_per_cell=6):
+    """A small labelled set in load_labelled's id/transcript/label/group format."""
+    path = os.path.join(d, "labelled.jsonl")
+    with open(path, "w") as f:
+        for label in ("eval", "deploy"):
+            for group in ("chat", "agentic"):
+                for i in range(n_per_cell):
+                    f.write(json.dumps({"id": f"{label}-{group}-{i:02d}", "transcript": f"{label} {group} {i} " * 5,
+                                        "label": label, "group": group}) + "\n")
+    return path
+
+
+def dry_run(d, p, *extra):
+    out = io.StringIO()
+    with mock.patch("autoresearch.llm.get_llm", no_real_backend), \
+            mock.patch.object(cal, "make_llm", no_real_backend), redirect_stdout(out):
+        rc = driver.main(driver_args(d, p, *extra))
+    return rc, out.getvalue()
+
+
+SONNET, GPT5 = "anthropic:claude-sonnet-4-5+thinking", "openai:gpt-5+thinking"
+HAIKU, GPT51 = "anthropic:claude-haiku-4-5", "openai:gpt-5.1"
+
+
 class DriverTests(unittest.TestCase):
-    def test_dry_run_prints_commands_and_makes_no_calls(self):
+    def test_dry_run_plans_the_lineup_for_both_phases_and_makes_no_calls(self):
         with tempfile.TemporaryDirectory() as d:
             p = write_fixture(d)
-            out = io.StringIO()
-            with mock.patch("autoresearch.llm.get_llm", no_real_backend), \
-                    mock.patch.object(cal, "make_llm", no_real_backend), redirect_stdout(out):
-                rc = driver.main(driver_args(d, p, "--cue-set", "all8", "--judge", "anthropic:judge-model",
-                                             "--openai-target", "gpt-test+thinking", "--usd-per-call", "0.01"))
-            text = out.getvalue()
+            rc, text = dry_run(d, p)
             self.assertEqual(rc, 0)
             self.assertIn("DRY RUN: nothing was called", text)
-            for t in ("anthropic:claude-sonnet-4-6+thinking", "openai:gpt-test+thinking"):
-                self.assertIn(f"calibrate --target {t}", text)
-                self.assertIn(f"c1_behaviour_gap.py --llm anthropic --target {t}", text)
-            # 8 dev pairs, 3 default questions. The fixture's placebo edits are no-ops, so 16 distinct
-            # environments (not 24) x (1 + 3) = 64 gate calls; V3 4 * 8 * 2 = 64
-            self.assertIn("8 dev cue pairs (all8, 16 distinct environments)", text)
-            self.assertIn("gate: up to 64 calls, <= $0.64", text)
-            self.assertIn("gap: up to 64 calls", text)
-            self.assertNotIn("--approved-by-nathan", text.split("DRY RUN")[0].replace("--execute --approved-by-nathan", ""))
+            self.assertIn(f"== dev phase | target {driver.DEV_TARGET_PLACEHOLDER}", text)
+            self.assertIn("(placeholder; pass --dev-target to execute)", text)
+            self.assertIn(f"== final phase | target {SONNET}", text)
+            self.assertIn(f"== final phase | target {GPT5}", text)
+            # final: both judges are held-out judges, the cross-family one first
+            self.assertIn(f"--mode final --target {SONNET} --judge {GPT51} --generator {GPT51} "
+                          f"--heldout-target {SONNET} --heldout-judges {GPT51} {HAIKU}", text)
+            self.assertIn(f"--mode final --target {GPT5} --judge {HAIKU} --generator {HAIKU} "
+                          f"--heldout-target {GPT5} --heldout-judges {HAIKU} {GPT51}", text)
+            self.assertIn(f"--mode dev --target {driver._q(driver.DEV_TARGET_PLACEHOLDER)} --judge {HAIKU}", text)
+            self.assertEqual(text.count("A1 on this target is a LOWER BOUND"), 2)
+            self.assertIn("SUMMARY (upper bounds", text)
+            self.assertIn("+GPU", text)
+            self.assertNotIn("--approved-by-nathan", text.split("DRY RUN")[0])
             self.assertFalse(os.path.exists(os.path.join(d, "gate")))
-            with open(os.path.join(d, "work", "cue_pairs_all8_dev_8.jsonl")) as f:
-                self.assertEqual(len(f.readlines()), 8)
+
+    def test_phase_selects_the_steps(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = write_fixture(d)
+            _, dev = dry_run(d, p, "--phase", "dev", "--dev-target", "openai-compat:qwen-x")
+            self.assertIn("== dev phase | target openai-compat:qwen-x", dev)
+            self.assertNotIn("== final phase", dev)
+            _, final = dry_run(d, p, "--phase", "final")
+            self.assertNotIn("== dev phase", final)
+            self.assertEqual(final.count("== final phase"), 2)
+
+    def test_judges_for_puts_the_cross_family_judge_first(self):
+        self.assertEqual(driver.judges_for(SONNET, HAIKU, GPT51), [GPT51, HAIKU])
+        self.assertEqual(driver.judges_for(GPT5, HAIKU, GPT51), [HAIKU, GPT51])
+        self.assertEqual(driver.judges_for("openai-compat:Qwen/Qwen3-30B-A3B", HAIKU, GPT51), [HAIKU, GPT51])
+        self.assertEqual(driver.family("openai-compat:openai/gpt-5.1"), "openai")
+
+    def test_a1_lower_bound_marks_only_summary_targets(self):
+        self.assertTrue(driver.a1_is_lower_bound(SONNET))
+        self.assertTrue(driver.a1_is_lower_bound(GPT5))
+        self.assertFalse(driver.a1_is_lower_bound(GPT51))
+        self.assertFalse(driver.a1_is_lower_bound("openai-compat:qwen-x"))
+
+    def test_build_models_dev_has_no_heldout_and_final_has_both_judges(self):
+        mk = lambda spec: spec  # noqa: E731  (specs stand in for backends)
+        dev = driver.build_models({"phase": "dev", "target": "q", "judges": [HAIKU]}, mk)
+        self.assertEqual((dev.target, dev.judge, dev.heldout_target, dev.heldout_judges), ("q", HAIKU, None, []))
+        fin = driver.build_models({"phase": "final", "target": SONNET, "judges": [GPT51, HAIKU]}, mk)
+        self.assertEqual((fin.judge, fin.heldout_target, fin.heldout_judges), (GPT51, SONNET, [GPT51, HAIKU]))
 
     def test_single_cue_set_is_default_and_limit_applies_per_factor(self):
         with tempfile.TemporaryDirectory() as d:
             p = write_fixture(d)
-            out = io.StringIO()
-            with mock.patch("autoresearch.llm.get_llm", no_real_backend), \
-                    mock.patch.object(cal, "make_llm", no_real_backend), redirect_stdout(out):
-                driver.main(driver_args(d, p, "--judge", "anthropic:j", "--openai-target", "m", "--limit", "2"))
+            _, text = dry_run(d, p, "--limit", "2")
             pairs = cal.load_cue_pairs(os.path.join(d, "work", "cue_pairs_single_dev_6.jsonl"))
             self.assertEqual(sorted({x.group for x in pairs}), ["F1", "F2", "F3"])
             self.assertTrue(all(sum(x.group == g for x in pairs) == 2 for g in ("F1", "F2", "F3")))
-            self.assertEqual({x.meta["factor_name"] for x in pairs}, {"factor_1", "factor_2", "factor_3"})
-            # the 2 tasks per factor share their without-cue environments, so fewer than 3 x 6 are answered
             n_envs = cal.distinct_envs(pairs)
-            self.assertLess(n_envs, 18)
-            self.assertIn(f"6 dev cue pairs (single, {n_envs} distinct environments)", out.getvalue())
-            self.assertIn(f"gate: up to {cal.estimate_gate_calls(3, n_envs=n_envs)} calls", out.getvalue())
+            self.assertLess(n_envs, 18)   # tasks share their without-cue environments
+            self.assertIn(f"6 dev pairs (single), {n_envs} distinct environments", text)
+
+    def test_pairs_spreads_a_total_over_the_factors(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = write_fixture(d)
+            dry_run(d, p, "--pairs", "4")
+            pairs = cal.load_cue_pairs(os.path.join(d, "work", "cue_pairs_single_dev_4.jsonl"))
+            self.assertEqual(sorted(x.group for x in pairs), ["F1", "F1", "F2", "F3"])
+
+    def test_pilot_scenario_sets_twenty_pairs_and_no_labelled_or_hand_labels(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = write_fixture(d)
+            lab = write_labelled_fixture(d)
+            _, text = dry_run(d, p, "--labelled", lab, "--scenario", "pilot")
+            self.assertIn("scenario pilot", text)
+            self.assertIn("20 dev pairs (single)", text)
+            self.assertIn("labelled set (a): none", text)
+            self.assertNotIn("on labelled set (a)", text)
+            self.assertNotIn("A1 audit on hand-labelled", text)
+
+    def test_full_scenario_assumes_absent_needham_and_hand_labels_and_says_so(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = write_fixture(d)
+            _, text = dry_run(d, p, "--scenario", "full")
+            self.assertIn("200 transcripts ASSUMED at the 20,000-char cut", text)
+            self.assertIn("100 ASSUMED (no hand labels on disk yet)", text)
+            self.assertIn("A2 probes x3 on labelled set (a)", text)
+            self.assertIn("100 calls x (in ~", text)   # the A1 audit line for 100 hand labels
+
+    def test_labelled_subset_is_written_balanced_and_passed_to_calibrate(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = write_fixture(d)
+            lab = write_labelled_fixture(d)
+            _, text = dry_run(d, p, "--labelled", lab, "--labelled-n", "8", "--labelled-seed", "3")
+            sub_path = os.path.join(d, "work", "labelled_subset_8_seed3.jsonl")
+            sub = cal.load_labelled(sub_path, max_chars=None)
+            self.assertEqual(sum(r.label == "eval" for r in sub), 4)
+            self.assertEqual({(r.label, r.group) for r in sub},
+                             {("eval", "chat"), ("eval", "agentic"), ("deploy", "chat"), ("deploy", "agentic")})
+            self.assertIn(f"--labelled {sub_path}", text)
+            self.assertIn("A2 probes x3 on labelled set (a)", text)
+            _, again = dry_run(d, p, "--labelled", lab, "--labelled-n", "8", "--labelled-seed", "3")
+            self.assertEqual([r.id for r in cal.load_labelled(sub_path, max_chars=None)], [r.id for r in sub])
+
+    def test_warns_when_a_step_exceeds_the_call_or_spend_cap(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = write_fixture(d)
+            _, text = dry_run(d, p, "--phase", "final", "--max-calls", "10", "--max-cost-usd", "0.01")
+            self.assertIn("exceeds --max-calls 10", text)
+            self.assertIn("exceeds --max-cost-usd 0.01", text)
 
     def test_single_pairs_from_a_heldout_item_stop_the_run(self):
         with tempfile.TemporaryDirectory() as d:
@@ -370,32 +464,35 @@ class DriverTests(unittest.TestCase):
                                     "without_cue": {"system": "", "user": "x"},
                                     "meta": {"factor": "F1", "task_id": "t5_safety"}}) + "\n")
             with self.assertRaises(ValueError) as cm, redirect_stdout(io.StringIO()):
-                driver.main(driver_args(d, p, "--judge", "anthropic:j", "--openai-target", "m"))
+                driver.main(driver_args(d, p))
             self.assertIn("held-out", str(cm.exception))
-
-    def test_openai_target_is_required_unless_offline(self):
-        with tempfile.TemporaryDirectory() as d:
-            p = write_fixture(d)
-            with self.assertRaises(SystemExit) as cm:
-                driver.main(driver_args(d, p, "--judge", "anthropic:j"))
-            self.assertIn("--openai-target", str(cm.exception.code))
 
     def test_execute_without_approval_refuses_and_makes_no_calls(self):
         with tempfile.TemporaryDirectory() as d:
             p = write_fixture(d)
-            out = io.StringIO()
-            with mock.patch("autoresearch.llm.get_llm", no_real_backend), \
-                    mock.patch.object(cal, "make_llm", no_real_backend), redirect_stdout(out):
-                rc = driver.main(driver_args(d, p, "--judge", "anthropic:j", "--openai-target", "m", "--execute"))
+            rc, text = dry_run(d, p, "--phase", "final", "--execute")
             self.assertEqual(rc, 2)
-            self.assertIn("REFUSING", out.getvalue())
-            self.assertIn("--approved-by-nathan", out.getvalue())
+            self.assertIn("REFUSING", text)
+            self.assertIn("--approved-by-nathan", text.split("REFUSING")[1])
             self.assertFalse(os.path.exists(os.path.join(d, "gate")))
+
+    def test_preflight_needs_one_phase_and_a_dev_target_for_dev(self):
+        with tempfile.TemporaryDirectory() as d:
+            prereg = os.path.join(d, "prereg.json")
+            with open(prereg, "w") as f:
+                json.dump({"status": "final"}, f)
+            clean = mock.Mock(returncode=0, stdout="")
+            parse = lambda *a: driver.build_parser().parse_args(["--prereg", prereg, "--approved-by-nathan"] + list(a))  # noqa: E731
+            with mock.patch.object(driver, "_git", return_value=clean):
+                self.assertTrue(any("one phase at a time" in x for x in driver.preflight(parse())))
+                self.assertTrue(any("--dev-target is required" in x for x in driver.preflight(parse("--phase", "dev"))))
+                self.assertEqual(driver.preflight(parse("--phase", "dev", "--dev-target", "openai-compat:q")), [])
+                self.assertEqual(driver.preflight(parse("--phase", "final")), [])
 
     def test_preflight_refuses_a_draft_prereg_and_accepts_a_final_one(self):
         with tempfile.TemporaryDirectory() as d:
             prereg = os.path.join(d, "prereg.json")
-            args = driver.build_parser().parse_args(["--prereg", prereg, "--approved-by-nathan"])
+            args = driver.build_parser().parse_args(["--prereg", prereg, "--approved-by-nathan", "--phase", "final"])
             clean = mock.Mock(returncode=0, stdout="")
             with mock.patch.object(driver, "_git", return_value=clean):
                 with open(prereg, "w") as f:
@@ -410,7 +507,7 @@ class DriverTests(unittest.TestCase):
             self.assertTrue(any("uncommitted changes" in p for p in problems))
             self.assertTrue(any("not committed" in p for p in problems))
 
-    def test_offline_end_to_end_writes_gate_and_gap_json_marked_offline(self):
+    def test_offline_end_to_end_runs_every_phase_and_marks_reports_offline(self):
         with tempfile.TemporaryDirectory() as d:
             p = write_fixture(d)
             off = os.path.join(d, "offline")
@@ -419,30 +516,31 @@ class DriverTests(unittest.TestCase):
                     redirect_stdout(out):
                 rc = driver.main(driver_args(d, p, "--offline", "--gap-limit", "0"))
             self.assertEqual(rc, 0)
-            # offline reports never go to --out-gate / --out-gap (results/ is for real models)
             self.assertFalse(os.path.exists(os.path.join(d, "gate")) or os.path.exists(os.path.join(d, "gap")))
             self.assertIn(f"reports go to {off}", out.getvalue())
             gate_dir, gap_dir = os.path.join(off, "calibration"), os.path.join(off, "behaviour_gap")
             gates, gaps = sorted(os.listdir(gate_dir)), sorted(os.listdir(gap_dir))
-            self.assertEqual((len(gates), len(gaps)), (2, 2))
+            self.assertEqual((len(gates), len(gaps)), (3, 3))
+            seen = {}
             for name in gates:
                 with open(os.path.join(gate_dir, name)) as f:
                     rep = json.load(f)
                 self.assertTrue(rep["offline"])
                 self.assertFalse(rep["passed"])   # labelled and kappa inputs are absent, so skipped
-                cue = rep["checks"]["cue_pairs"]
-                self.assertEqual(cue["n"], 15)    # single cue set, 5 per factor x 3 factors
-                self.assertEqual(sorted(cue["by_group"]), ["F1", "F2", "F3"])
-                self.assertIn("not a gate", cue["by_group_note"])
-                self.assertEqual(rep["inputs"]["cue_set"], "single")
-                self.assertEqual(rep["inputs"]["driver"], "scripts/c1_run_gate.py")
+                self.assertEqual(rep["checks"]["cue_pairs"]["n"], 15)   # 5 per factor x 3 factors
+                seen[rep["inputs"]["target_spec"]] = rep["inputs"]
+            self.assertEqual(seen[driver.DEV_TARGET_PLACEHOLDER]["phase"], "dev")
+            self.assertEqual(seen[SONNET]["judge_specs"], [GPT51, HAIKU])
+            self.assertEqual(seen[SONNET]["a2_answerers"], [SONNET, GPT51, HAIKU])
+            self.assertTrue(seen[SONNET]["a1_lower_bound"])
+            self.assertFalse(seen[driver.DEV_TARGET_PLACEHOLDER]["a1_lower_bound"])
             targets = set()
             for name in gaps:
                 with open(os.path.join(gap_dir, name)) as f:
                     rep = json.load(f)
                 self.assertTrue(rep["offline"])
                 targets.add(rep["models"]["requested"]["target_in_plan"])
-            self.assertEqual(targets, {"anthropic:claude-sonnet-4-6+thinking", "openai:<model>"})
+            self.assertEqual(targets, {driver.DEV_TARGET_PLACEHOLDER, SONNET, GPT5})
 
     def test_offline_and_execute_are_exclusive(self):
         with self.assertRaises(SystemExit):

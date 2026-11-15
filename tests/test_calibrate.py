@@ -420,5 +420,165 @@ class CliTests(unittest.TestCase):
             cli.main(["calibrate", "--labelled", "x.jsonl"])
 
 
+def _subset_fixture():
+    rows = []
+    for label, group, count in (("eval", "chat", 30), ("eval", "agentic", 10),
+                                ("deploy", "chat", 25), ("deploy", "agentic", 25)):
+        for i in range(count):
+            rows.append(cal.Labelled(f"{label[0]}-{group}-{i:02d}", f"text {label} {group} {i}", label, group))
+    return rows
+
+
+def _cell_counts(rows):
+    counts = {}
+    for r in rows:
+        counts[(r.label, r.group)] = counts.get((r.label, r.group), 0) + 1
+    return counts
+
+
+class LabelledSubsetTests(unittest.TestCase):
+    def test_balanced_and_stratified_by_group(self):
+        got = cal.sample_labelled(_subset_fixture(), n=40, seed=1)
+        self.assertEqual(_cell_counts(got), {("deploy", "agentic"): 10, ("deploy", "chat"): 10,
+                                             ("eval", "agentic"): 10, ("eval", "chat"): 10})
+
+    def test_shortfall_goes_to_other_group_of_same_label(self):
+        got = cal.sample_labelled(_subset_fixture(), n=60, seed=1)
+        self.assertEqual(_cell_counts(got), {("deploy", "agentic"): 15, ("deploy", "chat"): 15,
+                                             ("eval", "agentic"): 10, ("eval", "chat"): 20})
+
+    def test_deterministic_for_same_seed_and_different_for_other_seed(self):
+        rows = _subset_fixture()
+        a = [r.id for r in cal.sample_labelled(rows, n=40, seed=3)]
+        self.assertEqual(a, [r.id for r in cal.sample_labelled(rows, n=40, seed=3)])
+        self.assertNotEqual(a, [r.id for r in cal.sample_labelled(rows, n=40, seed=4)])
+
+    def test_input_order_does_not_matter(self):
+        import random
+        rows = _subset_fixture()
+        shuffled = list(rows)
+        random.Random(99).shuffle(shuffled)
+        self.assertEqual([r.id for r in cal.sample_labelled(rows, n=40, seed=5)],
+                         [r.id for r in cal.sample_labelled(shuffled, n=40, seed=5)])
+
+    def test_result_sorted_by_label_group_id(self):
+        got = cal.sample_labelled(_subset_fixture(), n=40, seed=2)
+        keys = [(r.label, r.group, r.id) for r in got]
+        self.assertEqual(keys, sorted(keys))
+
+    def test_too_few_rows_in_a_label_raises_naming_label(self):
+        rows = [r for r in _subset_fixture() if r.label != "eval" or r.id.endswith(("00", "01", "02"))]
+        with self.assertRaisesRegex(ValueError, "eval.*has 6.*20"):
+            cal.sample_labelled(rows, n=40)
+
+    def test_odd_or_zero_n_raises(self):
+        for bad in (0, 7, -2):
+            with self.assertRaises(ValueError):
+                cal.sample_labelled(_subset_fixture(), n=bad)
+
+    def test_write_then_load_round_trips(self):
+        rows = cal.sample_labelled(_subset_fixture(), n=20, seed=0)
+        path = os.path.join(tempfile.mkdtemp(), "nested", "sub.jsonl")
+        cal.write_labelled(rows, path)
+        back = cal.load_labelled(path, max_chars=None)
+        self.assertEqual([(r.id, r.transcript, r.label, r.group) for r in back],
+                         [(r.id, r.transcript, r.label, r.group) for r in rows])
+
+    def test_labelled_subset_path_format(self):
+        self.assertEqual(cal.labelled_subset_path("w", 200, 7),
+                         os.path.join("w", "labelled_subset_200_seed7.jsonl"))
+
+
+def _pair(pid, group, user, base="base"):
+    return cal.CuePair(pid, {"system": "", "user": user}, {"system": "", "user": base}, group=group)
+
+
+class PairSpreadTests(unittest.TestCase):
+    def test_twenty_over_eight_factors_is_three_or_two_each(self):
+        pairs = [_pair(f"t{i:02d}__F{k}", f"F{k}", f"cue{k} {i}", f"base {i}") for k in range(1, 9) for i in range(30)]
+        got = cal.spread_pairs(pairs, 20)
+        counts = sorted((sum(p.group == f"F{k}" for p in got) for k in range(1, 9)), reverse=True)
+        self.assertEqual(counts, [3, 3, 3, 3, 2, 2, 2, 2])
+        self.assertEqual([p.id for p in got], [p.id for p in cal.spread_pairs(list(reversed(pairs)), 20)])
+
+    def test_more_than_available_or_nonpositive_raises(self):
+        pairs = [_pair("a__F1", "F1", "x")]
+        with self.assertRaises(ValueError):
+            cal.spread_pairs(pairs, 2)
+        with self.assertRaises(ValueError):
+            cal.spread_pairs(pairs, 0)
+
+    def test_distinct_env_list_dedupes_shared_without_cue(self):
+        pairs = [_pair("t__F1", "F1", "EVAL a"), _pair("t__F2", "F2", "TEST a")]   # both share "base"
+        envs = cal.distinct_env_list(pairs)
+        self.assertEqual(len(envs), cal.distinct_envs(pairs))
+        self.assertEqual(sum(e["user"] == "base" for e in envs), 1)
+
+
+class EstimateCostTests(unittest.TestCase):
+    PRICES = {"m": (1.0, 10.0), "j": (2.0, 4.0)}
+    PROBES = {"default": ["Q {transcript}"]}   # 2 template chars around the transcript
+
+    def test_target_reply_and_probe_arithmetic(self):
+        env = {"system": "ab", "user": "cdef"}   # 6 chars
+        lines = cal.estimate_cost("anthropic:m", ["anthropic:m"], "anthropic:j", [env], self.PROBES, prices=self.PRICES)
+        reply, probe = lines
+        self.assertEqual((reply.calls, reply.in_tokens, reply.out_tokens), (1, 2, 1200))   # ceil(6/4) = 2
+        self.assertAlmostEqual(reply.usd, 2 / 1e6 * 1 + 1200 / 1e6 * 10)
+        # probe input: 2 template chars + (6 env + 50 headers + 1200 * 4 reply) = 4858 chars -> 1215 tokens
+        self.assertEqual((probe.calls, probe.in_tokens, probe.out_tokens), (1, 1215, 300))
+        self.assertAlmostEqual(probe.usd, 1215 / 1e6 * 1 + 300 / 1e6 * 10)
+        self.assertIn("= $", probe.how)
+
+    def test_thinking_headroom_only_for_anthropic_and_openai(self):
+        env = {"system": "", "user": "x"}
+        a = cal.estimate_cost("anthropic:m+thinking", [], "anthropic:j", [env], self.PROBES, prices=self.PRICES)[0]
+        o = cal.estimate_cost("openai:m+thinking", [], "anthropic:j", [env], self.PROBES, prices=self.PRICES)[0]
+        q = cal.estimate_cost("openai-compat:m+thinking", [], "anthropic:j", [env], self.PROBES, prices=self.PRICES)[0]
+        self.assertEqual(a.out_tokens, 1200 + 8000)
+        self.assertEqual(o.out_tokens, 1200 + 8000)
+        self.assertEqual(q.out_tokens, 1200)
+        self.assertIsNone(q.usd)   # GPU time: no per-token price
+        self.assertIn("$ unknown", q.how)
+
+    def test_each_answerer_uses_its_own_probe_set(self):
+        probes = {"default": ["A {transcript}", "B {transcript}"], "anthropic:j": ["C {transcript}"]}
+        lines = cal.estimate_cost("anthropic:m", ["anthropic:m", "anthropic:j"], "anthropic:j",
+                                  [{"system": "", "user": "x"}] * 3, probes, prices=self.PRICES)
+        self.assertEqual([(x.model, x.calls) for x in lines[1:]], [("anthropic:m", 6), ("anthropic:j", 3)])
+
+    def test_labelled_hand_and_gap_lines(self):
+        lines = cal.estimate_cost("anthropic:m", ["anthropic:m"], "anthropic:j", [], self.PROBES,
+                                  labelled_chars=[400, 800], hand_chars=[1000] * 3,
+                                  gap_envs=[{"system": "", "user": "y" * 8}] * 5, gap_seeds=2, prices=self.PRICES)
+        by = {x.step: x for x in lines}
+        lab = by["A2 probes x1 on labelled set (a)"]
+        self.assertEqual((lab.calls, lab.in_tokens), (2, (2 * 2 + 1200 + 3) // 4))   # ceil(1204 / 4) = 301
+        aud = by["A1 audit on hand-labelled transcripts (d)"]
+        self.assertEqual((aud.model, aud.calls, aud.in_tokens, aud.out_tokens),
+                         ("anthropic:j", 3, (3 * cal.AUDIT_PROMPT_CHARS + 3000) // 4, 900))
+        self.assertEqual(by["V3 target replies (as-is + notice)"].calls, 2 * 5 * 2)
+        lab_v3 = by["V3 behaviour labels"]
+        self.assertEqual((lab_v3.model, lab_v3.calls, lab_v3.out_tokens), ("anthropic:j", 20, 20 * 60))
+
+    def test_model_price_strips_thinking_and_unknown_is_none(self):
+        self.assertEqual(cal.model_price("anthropic:m+thinking", self.PRICES), (1.0, 10.0))
+        self.assertIsNone(cal.model_price("anthropic:nope", self.PRICES))
+        self.assertIsNone(cal.model_price("openai-compat:m", self.PRICES))
+        line = cal.estimate_cost("anthropic:nope", [], "anthropic:j", [{"system": "", "user": "x"}],
+                                 self.PROBES, prices=self.PRICES)[0]
+        self.assertIsNone(line.usd)
+
+    def test_lineup_prices_come_from_llm_table(self):
+        self.assertEqual(cal.model_price("anthropic:claude-haiku-4-5"), (1, 5))
+        self.assertEqual(cal.model_price("anthropic:claude-sonnet-4-5+thinking"), (3, 15))
+        self.assertEqual(cal.model_price("openai:gpt-5.1"), (1.25, 10))
+
+    def test_assumptions_name_the_unknowns(self):
+        text = " ".join(cal.cost_assumptions())
+        for needle in ("characters per token", "unverified", "GPU time", "max_tokens"):
+            self.assertIn(needle, text)
+
+
 if __name__ == "__main__":
     unittest.main()

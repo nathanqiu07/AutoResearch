@@ -58,6 +58,7 @@ import hashlib
 import json
 import math
 import os
+import random
 import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -226,6 +227,61 @@ def load_labelled(path: str, max_chars: Optional[int] = DEFAULT_MAX_TRANSCRIPT_C
     return out
 
 
+def _allocate_per_group(sizes: Dict[str, int], total: int) -> Dict[str, int]:
+    """Split `total` equally across groups; a short group gives its shortfall to the others (largest first)."""
+    alloc = {g: 0 for g in sizes}
+    remaining = total
+    while remaining > 0:
+        active = [g for g in sizes if alloc[g] < sizes[g]]
+        if not active:
+            break
+        active.sort(key=lambda g: (-(sizes[g] - alloc[g]), g))
+        share, extra = divmod(remaining, len(active))
+        for i, g in enumerate(active):
+            take = min(share + (1 if i < extra else 0), sizes[g] - alloc[g])
+            alloc[g] += take
+            remaining -= take
+    return alloc
+
+
+def sample_labelled(rows: List[Labelled], n: int = 200, seed: int = 0) -> List[Labelled]:
+    """Balanced (n/2 eval, n/2 deploy), group-stratified, deterministic subset; raises rather than return
+    an unbalanced set. Sorted by (label, group, id) so the same rows + n + seed always give the same file."""
+    if n <= 0 or n % 2:
+        raise ValueError(f"n must be a positive even number, got {n!r}")
+    half = n // 2
+    rng = random.Random(seed)
+    picked: List[Labelled] = []
+    for label in ("eval", "deploy"):
+        mine = sorted((r for r in rows if r.label == label), key=lambda r: r.id)
+        if len(mine) < half:
+            raise ValueError(f"label {label!r} has {len(mine)} rows, need {half} (n={n})")
+        cells: Dict[str, List[Labelled]] = {}
+        for r in mine:
+            cells.setdefault(r.group, []).append(r)
+        alloc = _allocate_per_group({g: len(c) for g, c in cells.items()}, half)
+        for g in sorted(cells):
+            picked.extend(rng.sample(cells[g], alloc[g]))
+    return sorted(picked, key=lambda r: (r.label, r.group, r.id))
+
+
+def write_labelled(rows: List[Labelled], path: str) -> None:
+    """Write rows as JSONL (creating parent dirs) so load_labelled round-trips them; the subset lives on
+    disk so the gate run is reproducible."""
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        for r in rows:
+            f.write(json.dumps({"id": r.id, "transcript": r.transcript, "label": r.label,
+                                "group": r.group, "truncated": r.truncated}, ensure_ascii=False) + "\n")
+
+
+def labelled_subset_path(work_dir: str, n: int, seed: int) -> str:
+    """Path of the on-disk subset for (n, seed), so a gate run can be reproduced from the file."""
+    return os.path.join(work_dir, f"labelled_subset_{n}_seed{seed}.jsonl")
+
+
 @dataclass
 class CuePair:
     id: str
@@ -327,15 +383,44 @@ def select_pairs(pairs: List[CuePair], ids: Optional[Iterable[str]] = None,
     return [p for g in sorted(groups) for p in (groups[g][:per_group] if per_group else groups[g])]
 
 
-def distinct_envs(pairs: List[CuePair]) -> int:
+def distinct_env_list(pairs: List[CuePair]) -> List[Dict[str, str]]:
     """Environments the gate answers for these pairs (with cue, without cue,
-    placebo of with cue), after EnvAnswers' caching. Single-factor pairs of one
-    item share their without-cue environment, so this is well under 3 x pairs."""
-    seen = set()
+    placebo of with cue), deduplicated as EnvAnswers caches them, in first-seen
+    order. Single-factor pairs of one item share their without-cue environment,
+    so this is well under 3 x pairs."""
+    seen, out = set(), []
     for p in pairs:
         for e in (p.with_cue, p.without_cue, placebo_env(p.with_cue)):
-            seen.add(json.dumps([e.get("system", ""), e["user"]]))
-    return len(seen)
+            key = json.dumps([e.get("system", ""), e["user"]])
+            if key not in seen:
+                seen.add(key)
+                out.append(e)
+    return out
+
+
+def distinct_envs(pairs: List[CuePair]) -> int:
+    return len(distinct_env_list(pairs))
+
+
+def spread_pairs(pairs: List[CuePair], total: int) -> List[CuePair]:
+    """`total` pairs spread as evenly as possible over the groups (round robin
+    over groups sorted by name, each group's pairs in id order), so a small
+    pilot still touches every cue factor. 20 over F1-F8 gives 3,3,3,3,2,2,2,2."""
+    if total <= 0:
+        raise ValueError(f"total must be positive, got {total!r}")
+    groups: Dict[str, List[CuePair]] = {}
+    for p in sorted(pairs, key=lambda p: p.id):
+        groups.setdefault(p.group, []).append(p)
+    if total > len(pairs):
+        raise ValueError(f"asked for {total} pairs but only {len(pairs)} are available")
+    out: List[CuePair] = []
+    i = 0
+    while len(out) < total:
+        for g in sorted(groups):
+            if i < len(groups[g]) and len(out) < total:
+                out.append(groups[g][i])
+        i += 1
+    return sorted(out, key=lambda p: (p.group, p.id))
 
 
 def load_hand_labels(path: str) -> Dict[str, Optional[bool]]:
@@ -1057,6 +1142,150 @@ def offline_out_dir(out_dir: str, kind: str) -> str:
     if full == res or full.startswith(res + os.sep):
         return os.path.join(OFFLINE_OUT, kind)
     return out_dir
+
+
+# ---------------------------------------------------------------- dollar estimates
+
+# Token assumptions for estimate_cost, stated in every printout. Upper bounds
+# unless marked as an assumption: output is capped by max_tokens, which the
+# backends enforce; input is measured from the texts on disk where they exist.
+CHARS_PER_TOKEN = 4             # assumption: ~4 characters per token for English prose
+REPLY_MAX_TOKENS = 1200         # EnvAnswers / Measurer.sample: target reply max_tokens
+PROBE_MAX_TOKENS = 300          # Measurer.p_eval: each probe question's max_tokens
+AUDIT_MAX_TOKENS = 300          # Measurer._audit (A1): max_tokens
+AUDIT_PROMPT_CHARS = 1200       # A1 audit instructions: ~700 fixed chars plus the scenario probe text; rounded up
+AUDIT_REASONING_CHARS = 6000    # _audit passes reasoning[:6000]
+GAP_REPLY_MAX_TOKENS = 1200     # faithfulness_pair: target.complete max_tokens (thinking off on anthropic)
+GAP_JUDGE_MAX_TOKENS = 60       # Measurer._behavior max_tokens
+GAP_JUDGE_PROMPT_CHARS = 800    # the behaviour-label instructions around env and reply
+TRANSCRIPT_OVERHEAD_CHARS = 50  # "SYSTEM PROMPT:/USER TURN:/ASSISTANT REPLY:" headers
+
+
+@dataclass
+class CostLine:
+    """One kind of call in a run: totals are upper bounds under the stated assumptions."""
+    step: str
+    model: str
+    calls: int
+    in_tokens: int
+    out_tokens: int
+    usd: Optional[float]          # None = price unknown (e.g. GPU time on Modal)
+    how: str                      # the arithmetic, for the printout
+
+
+def _tok(chars: float) -> int:
+    return int(math.ceil(chars / CHARS_PER_TOKEN))
+
+
+def thinking_headroom(spec: str) -> int:
+    """Extra output tokens a +thinking target may spend on reasoning in
+    complete_with_reasoning: the backend adds THINKING_HEADROOM to max_tokens
+    (anthropic, openai). openai-compat (vLLM) sends max_tokens as is, and the
+    reasoning shares it, so no headroom is added there."""
+    from .. import llm as L
+    if not spec.endswith("+thinking"):
+        return 0
+    backend = L.split_spec(spec)[0]
+    cls = {"anthropic": getattr(L, "AnthropicLLM", None), "openai": getattr(L, "OpenAIResponsesLLM", None)}.get(backend)
+    return int(getattr(cls, "THINKING_HEADROOM", 0)) if cls else 0
+
+
+def model_price(spec: str, prices: Optional[Dict[str, Tuple[float, float]]] = None) -> Optional[Tuple[float, float]]:
+    """(input, output) USD per million tokens for a spec, from llm.PRICES_PER_MTOK
+    unless `prices` is given; None when unknown (openai-compat on Modal is GPU
+    time, not per token)."""
+    from .. import llm as L
+    table = L.PRICES_PER_MTOK if prices is None else prices
+    backend, model = L.split_spec(spec)
+    if backend == "openai-compat":
+        return None
+    return table.get(model[:-len("+thinking")] if model.endswith("+thinking") else model)
+
+
+def _line(step: str, spec: str, calls: int, in_chars_total: float, out_each: int,
+          prices: Optional[Dict[str, Tuple[float, float]]]) -> CostLine:
+    tin, tout = _tok(in_chars_total), calls * out_each
+    price = model_price(spec, prices)
+    usd = None if price is None else tin / 1e6 * price[0] + tout / 1e6 * price[1]
+    per_in = tin // calls if calls else 0
+    head = f"{calls} calls x (in ~{per_in} tok, out <= {out_each} tok) = {tin:,} in + {tout:,} out tok"
+    if price is None:
+        how = head + " -> $ unknown (no per-token price: GPU time on Modal)"
+    else:
+        how = (head + f" -> {tin / 1e6:.4f}M x ${price[0]:g} + {tout / 1e6:.4f}M x ${price[1]:g} = ${usd:.2f}")
+    return CostLine(step, spec, calls, tin, tout, usd, how)
+
+
+def _env_chars(e: Dict[str, str]) -> int:
+    return len(e.get("system", "")) + len(e["user"])
+
+
+def estimate_cost(target: str, p_eval_answerers: List[str], a1_judge: str, envs: List[Dict[str, str]],
+                  probes: Optional[Dict[str, List[str]]] = None, labelled_chars: Optional[List[int]] = None,
+                  hand_chars: Optional[List[int]] = None, gap_envs: Optional[List[Dict[str, str]]] = None,
+                  gap_seeds: int = 2, gap_judge: Optional[str] = None,
+                  prices: Optional[Dict[str, Tuple[float, float]]] = None) -> List[CostLine]:
+    """Upper-bound calls, tokens and dollars for one target's gate run (plus
+    V3 if gap_envs is given), one CostLine per kind of call.
+
+    target: the spec that answers the environments. p_eval_answerers: every
+    A2 answerer in the measurer's mode, target first (dev: the target alone;
+    final: the target and each held-out judge). a1_judge: scores A1 for the
+    kappa check. envs: the DISTINCT environments the cue-pair and placebo
+    checks answer (EnvAnswers caches). labelled_chars / hand_chars: lengths of
+    the labelled transcripts (already cut) and of each hand-labelled
+    transcript as the A1 judge sees it (render + reasoning, capped at 6000).
+
+    Assumptions (also in each line's `how`): CHARS_PER_TOKEN; a gate reply is
+    at most REPLY_MAX_TOKENS of visible text when it is pasted into the probe
+    questions; output is billed at the max_tokens cap (plus thinking headroom
+    for +thinking targets), so the dollar figure is a ceiling."""
+    from .measure import DEFAULT_PROBE_QUESTIONS, probe_set_for
+    sets = probes or {"default": DEFAULT_PROBE_QUESTIONS}
+    lines = []
+    reply_chars = REPLY_MAX_TOKENS * CHARS_PER_TOKEN
+    env_total = sum(_env_chars(e) for e in envs)
+    if envs:
+        lines.append(_line("target reply (cue pairs + placebo)", target, len(envs), env_total,
+                           REPLY_MAX_TOKENS + thinking_headroom(target), prices))
+        transcripts_total = env_total + len(envs) * (TRANSCRIPT_OVERHEAD_CHARS + reply_chars)
+        for spec in p_eval_answerers:
+            qs = probe_set_for(sets, spec)
+            templ = sum(len(q) - len("{transcript}") for q in qs)
+            lines.append(_line(f"A2 probes x{len(qs)} on gate transcripts", spec, len(envs) * len(qs),
+                               len(envs) * templ + len(qs) * transcripts_total, PROBE_MAX_TOKENS, prices))
+    if labelled_chars:
+        for spec in p_eval_answerers:
+            qs = probe_set_for(sets, spec)
+            templ = sum(len(q) - len("{transcript}") for q in qs)
+            lines.append(_line(f"A2 probes x{len(qs)} on labelled set (a)", spec, len(labelled_chars) * len(qs),
+                               len(labelled_chars) * templ + len(qs) * sum(labelled_chars), PROBE_MAX_TOKENS, prices))
+    if hand_chars:
+        lines.append(_line("A1 audit on hand-labelled transcripts (d)", a1_judge, len(hand_chars),
+                           len(hand_chars) * AUDIT_PROMPT_CHARS + sum(hand_chars), AUDIT_MAX_TOKENS, prices))
+    if gap_envs:
+        n = 2 * len(gap_envs) * gap_seeds
+        g_total = sum(_env_chars(e) for e in gap_envs) * 2 * gap_seeds
+        lines.append(_line("V3 target replies (as-is + notice)", target, n, g_total, GAP_REPLY_MAX_TOKENS, prices))
+        lines.append(_line("V3 behaviour labels", gap_judge or a1_judge, n,
+                           g_total + n * (GAP_JUDGE_PROMPT_CHARS + GAP_REPLY_MAX_TOKENS * CHARS_PER_TOKEN),
+                           GAP_JUDGE_MAX_TOKENS, prices))
+    return lines
+
+
+def cost_assumptions() -> List[str]:
+    """The assumptions behind estimate_cost, for printouts and the prereg."""
+    return [f"{CHARS_PER_TOKEN} characters per token (assumption)",
+            f"output billed at its cap: target reply {REPLY_MAX_TOKENS} tok (+ thinking headroom on +thinking "
+            f"anthropic/openai targets; openai-compat counts reasoning inside max_tokens), probe answers "
+            f"{PROBE_MAX_TOKENS}, A1 audit {AUDIT_MAX_TOKENS}, V3 reply {GAP_REPLY_MAX_TOKENS}, V3 label {GAP_JUDGE_MAX_TOKENS}",
+            f"a gate reply pasted into the probe questions is at most {REPLY_MAX_TOKENS} tok of visible text "
+            "(assumption: the API cap on text is max_tokens + headroom, so a longer reply would exceed this bound)",
+            "input measured from the item files on disk; labelled transcripts at their measured length, or at the "
+            f"{DEFAULT_MAX_TRANSCRIPT_CHARS:,}-character cut when the file is absent; hand-labelled transcripts "
+            "measured, or assumed when absent (stated in the plan)",
+            "prices from llm.PRICES_PER_MTOK (OpenAI figures from third-party aggregators, unverified); "
+            "openai-compat (Qwen on Modal) is GPU time: no per-token price, $ unknown"]
 
 
 def verdict_lines(report: dict) -> List[str]:
