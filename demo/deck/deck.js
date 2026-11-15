@@ -1,4 +1,4 @@
-/* AutoResearch deck engine. No build step, no dependencies.
+/* Remy Research deck engine. No build step, no dependencies.
 
    A slide (registered in slides.js with Deck.add) is:
      { id, label, cls, step, beats, notes, html,
@@ -111,7 +111,7 @@
     overviewEl.addEventListener("click", () => toggleOverview(false));
     window.addEventListener("hashchange", fromHash);
 
-    try { if (localStorage.getItem("ar-deck-notes") === "1") notesEl.classList.add("show"); } catch (e) { /* storage blocked */ }
+    try { if (localStorage.getItem("remy-deck-notes") === "1") notesEl.classList.add("show"); } catch (e) { /* storage blocked */ }
     setTimeout(() => { if (hintEl) hintEl.style.opacity = "0"; }, 5000);
 
     fromHash(true);
@@ -186,7 +186,7 @@
     const s = slides[cur];
     const note = Array.isArray(s.notes) ? (s.notes[beat] || s.notes[s.notes.length - 1] || "") : s.notes;
     notesEl.innerHTML = `<b>SLIDE ${cur + 1} · BEAT ${beat + 1}/${s.beats}</b>${note || "(no notes)"}`;
-    document.title = `AutoResearch · ${s.label || s.id}`;
+    document.title = `Remy Research · ${s.label || s.id}`;
   }
 
   function fromHash(first) {
@@ -204,7 +204,7 @@
     else if (k === "End") go(slides.length - 1, slides[slides.length - 1].beats - 1, 1);
     else if (k === "n" || k === "N") {
       const on = notesEl.classList.toggle("show");
-      try { localStorage.setItem("ar-deck-notes", on ? "1" : "0"); } catch (err) { /* storage blocked */ }
+      try { localStorage.setItem("remy-deck-notes", on ? "1" : "0"); } catch (err) { /* storage blocked */ }
     } else if (k === "g" || k === "G") toggleOverview();
     else if (k === "Escape") toggleOverview(false);
     else if (k === "f" || k === "F") {
