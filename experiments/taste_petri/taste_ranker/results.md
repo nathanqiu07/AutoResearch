@@ -41,3 +41,21 @@ Noise ceiling: the split-half reliability of measured realism (k=0 against the m
 
 ## Calls
 100 devin-cli sonnet calls, 0 haiku.
+
+## Replication on claude-hillclimb's rewrites (pre-registered, independent set)
+10 seeds × 6 versions (R0, H1-H5), 72 devin-cli sonnet calls, 0 unparseable (`replication_results.json`).
+
+| ρ with measured… | M0 (no profile) | BOW (Bowman card) | CAR (Carlini placebo) | BOW − M0 [90% CI] |
+|---|---|---|---|---|
+| validity | −0.30 [−0.46, −0.13] | −0.30 | −0.25 | **+0.00 [−0.15, +0.21]** (without H1: −0.03) |
+| realism | +0.38 [+0.10, +0.61] | +0.47 | +0.49 | +0.09 [−0.01, +0.20] (CAR − M0: +0.11 [+0.01, +0.22]) |
+
+- **The Bowman lead did not replicate.** The card no longer makes the ranker less drawn to bait-losing rewrites
+  (+0.00). Neither did the top-pick advantage: BOW's top pick gains less realism (+0.37) than M0's (+0.45).
+- What did replicate is not taste:
+  - The no-profile ranker tracks realism (ρ +0.38 here, +0.26 before).
+  - Every ranker prefers bait-losing rewrites (validity ρ −0.25 to −0.30 here, −0.30 to −0.39 before).
+  - Adding *any* researcher card nudges realism prediction up slightly, Carlini as much as Bowman. That points to
+    extra rubric text, not taste.
+- Self-preference: BOW ranks H1, the rewrite built from Bowman's card, a bit higher (1.9 against M0's 2.35). Dropping
+  H1 doesn't change the verdict.

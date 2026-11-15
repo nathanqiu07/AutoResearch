@@ -92,7 +92,11 @@ def rank(llm, r, seed, texts, shuffle):
     p, labels = prompt_for(r, seed, texts, shuffle)
     raw = llm.complete(p, max_tokens=800)
     m = re.search(r"\{.*\}", raw, re.DOTALL)
-    order = json.loads(m.group(0)).get("ranking", []) if m else []
+    try:
+        order = json.loads(m.group(0)).get("ranking", []) if m else []
+    except json.JSONDecodeError:        # a truncated reply: take the labels in the order they appear in "ranking"
+        tail = raw.split('"ranking"', 1)[-1].split("]", 1)[0]
+        order = list(dict.fromkeys(re.findall(r'"(V\d+)"', tail)))
     order = [v for v in order if v in labels]
     if sorted(order) != sorted(labels):
         return None
