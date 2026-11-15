@@ -1,0 +1,339 @@
+---
+url: https://arxiv.org/abs/2212.06470
+title: Position: Considerations for Differentially Private Learning with Large-Scale Public Pretraining
+publishedDate: 2022-12-13
+date_source: listing
+authors: ["Florian Tram\u00e8r", "Gautam Kamath", "Nicholas Carlini"]
+author_position: last
+kind: paper
+exa_request_id: https://arxiv.org/abs/2212.06470
+---
+# Position: Considerations for Differentially Private Learning with Large-Scale Public Pretraining
+
+arXiv:2212.06470. cs.LG, cs.CR, stat.ML. Submitted 2022-12-13. Latest version v3, 2024-07-17.
+
+## Authors
+
+Florian Tram\`er, Gautam Kamath, Nicholas Carlini
+
+## Details
+
+- License: http://creativecommons.org/licenses/by/4.0/
+
+## Versions
+
+- v1: 2022-12-13
+- v2: 2024-06-03
+- v3: 2024-07-17
+
+---
+
+Full text of v1.
+
+## Abstract
+
+The performance of differentially private machine learning can be boosted significantly by leveraging the transfer learning capabilities of non-private models pretrained on large public datasets. We critically review this approach.
+
+We primarily question whether the use of large Web-scraped datasets should be viewed as differential-privacy-preserving. We caution that publicizing these models pretrained on Web data as “private” could lead to harm and erode the public’s trust in differential privacy as a meaningful definition of privacy.
+
+Beyond the privacy considerations of using public data, we further question the utility of this paradigm. We scrutinize whether existing machine learning benchmarks are appropriate for measuring the ability of pretrained models to generalize to sensitive domains, which may be poorly represented in public Web data. Finally, we notice that pretraining has been especially impactful for the largest available models—models sufficiently large to prohibit end users running them on their own devices. Thus, deploying such models today could be a net loss for privacy, as it would require (private) data to be outsourced to a more compute-powerful third party.
+
+We conclude by discussing potential paths forward for the field of private learning, as public pretraining becomes more popular and powerful.
+
+## 1 Introduction
+
+While machine learning models have made tremendous progress at learning generalizable concepts from data at scale, these models also frequently memorize parts of their training data [Fel20, FZ20, SSSS17]. This poses a threat when the model’s training data contains privacy-sensitive information, as deployed models may regurgitate memorized private data [CLE+19, CTW+21].
+
+Differential privacy (DP) [DMNS06] offers a formal solution to this problem. Informally, training a model with (user-level) differential privacy offers a guarantee that the model will not depend too heavily on the sensitive data contributed by any one individual. Among other threats, this protects against the model memorizing training data. But current approaches to differentially private learning scale poorly, and greatly sacrifice the model’s useful generalization capabilities in order to provably prevent memorization.
+
+To address this issue, a growing line of work suggests to augment differentially private learning algorithms with access to public data [ACG+16, PCS+19, TB21, YZC+21, LTLH22, YNB+22, AR22, DBH+22, MTKC22a, KCS+22, MTKC22b]. The goal then is to first leverage large troves of non-privacy-sensitive data to learn generic features—independent from any data owner’s private data—which can then be efficiently finetuned with DP on sensitive data.
+
+For example, suppose a company wishes to train a model on a corpus of chat messages from its end users. While the content of these messages is sensitive, the general structure of a chat message (i.e., syntax, grammar, etc.) is not sensitive. Thus, the company may wish to leverage a model that was pretrained on a large public corpus of text (preferably including some chat conversations) and then finetune this model on the specific sensitive content of the end users’ messages.
+
+Even in the the absence of any privacy concerns this pretraining and transfer learning approach has become the de-facto strategy for achieving state-of-the-art results across a variety of challenging tasks in computer vision and natural language processing. Here, a generic “foundation model” [BHA+21] is first pretrained on massive and weakly curated data—typically scraped from the public Internet. Thereafter, the model can be efficiently finetuned on various downstream tasks [RWC+19]. Generative models such as large language models even exhibit powerful in-context learning abilities, where the model “learns” new tasks at inference time solely on the basis of a small number (e.g., $5$) of examples [BMR+20].
+
+The impressive performance of foundation models naturally places these models as ideal candidates for private learning. Indeed, as the pretraining data comes from publicly available sources, the pretrained model is fully independent of individuals’ privacy-sensitive target data. And since these models learn new tasks extremely (sample)-efficiently, they should be able to also learn these tasks privately with only a minor impact on performance. Thus, it is unsurprising that a growing body of work investigates the benefits of using Web-scale pretraining for private learning [LTLH22, YNB+22, AR22, DBH+22, MTKC22a], and showcases significant improvements in performance on canonical private learning benchmarks.
+
+For example, on the challenging ImageNet dataset [DDS+09], in the absence of any pretraining the state-of-the-art approach of De et al. [DBH+22] achieves a top-1 accuracy of 32.4%, under a fairly weak provable DP guarantee of $\varepsilon=8$. This represents more than a $7\times$ increase in error rate compared to the best non-private model trained solely on ImageNet ($89.5\%$ accuracy) [TTZ+22]. In contrast, when leveraging a dataset of 4 billion Web images for public pretraining, De et al. achieve an accuracy of $84.4\%$ at a much more reasonable privacy budget of $\varepsilon=1$ (with comparable results obtained in [MTKC22a, MTKC22b]).
+
+In a similar vein, Li et al. [LTLH22] and Yu et al. [YNB+22] finetune large pretrained language models such as RoBERTa [LOG+19] and GPT-2 [RWC+19] to achieve strong performance on downstream tasks with differential privacy. Arora and Ré [AR22] further argue that LLMs can be personalized to each individual’s personal and sensitive data while incurring no privacy cost (i.e., $\varepsilon=0$) by leveraging the pretrained model’s “zero-shot” abilities. This line of work suggests we are getting close to “solving” private learning. Indeed, as Web-scraped datasets grow larger and larger, the ability of pretrained models to privately adapt (“for free”) to new tasks will only get better.
+
+We challenge this view, and critique the public-pretraining and private-finetuning paradigm. We raise two (orthogonal) concerns that models trained in this manner may fail to be a) private, or b) useful. We thus question the validity of current findings in this area for informing real-world deployments of differential privacy.
+
+Our primary criticism challenges the notion that pretraining on Web data should be viewed as neutral from the perspective of user privacy:
+
+> Pretraining data scraped from the Web may be sensitive itself, and allowing a “privacy-preserving” model to memorize such data causes harm and dilutes the meaning of “private learning.”
+
+Beyond this core concern with the appropriateness of using publicly available data for privacy-preserving learning, we further posit that this paradigm might not be as useful as existing research suggests, and that it could even lead to a net loss of privacy at training or deployment time:
+
+- Current private learning benchmarks likely overestimate the value of public pretraining by fixating on settings with highly overlapping public and private data distributions.
+- Public pretraining performs best with massively large models that cannot be run on end-user devices, thereby trading off one form of privacy (DP for the sensitive finetuning data) for another (the model’s users have to outsource private data to a third party).
+
+The different issues we raise are largely orthogonal to one another, and solving any one of them need not affect the others. For example, if we developed benchmarks that accurately reflect private workloads, the core issue of the potential sensitivity of pretraining data would remain.
+
+In the reminder of this introduction, we provide a broad overview of all three issues above, and outline some open questions and paths forward for the field. For the interested reader, sections 2, 3 and 4 then delve into more details to support our main arguments. Finally, Section 5 provides some concluding remarks and future outlooks.
+
+1. The Web contains privacy-sensitive data. Training data scraped from the Web is indeed publicly accessible, but this does not imply that using this data in machine learning applications poses no privacy risks.
+
+Individuals may put some data on the Internet with a specific context-of-use in mind. For example, someone may post their contact information along with a research publication with the intent that it is used to contact that person about details of the publication. Sensitive data about individuals could also be uploaded to the Internet unintentionally (or by third parties privy to this information). As a result, people often underestimate how much information about them is accessible on the Web [ET22], and might not consent to their “publicly accessible” personal data being used for training machine learning models.
+
+The question then is whether finetuning (with DP) on top of such publicly pretrained models should really be publicized as privacy-preserving. It is entirely possible that models might memorize a large fraction of their (public, yet sensitive) pretraining dataset. Then if the model ever leaks this pretraining data, this still harms the privacy of the data subjects. Such situations could run the risk of eroding affected individuals’ trust in differential privacy to appropriately protect their data in other settings (e.g., for collecting census data [AACM+22]).
+
+The semantic guarantees of differential privacy are complicated enough to understand when no public data is involved [CKR21], even for researchers [McS16b, McS16a]. Asking data owners to properly distinguish between their “public” and “private” data further muddies the waters—especially because this distinction may not always be evident to data owners.
+
+Going forward, we argue that researchers should make the privacy ramifications of using certain public data sources clearer. Indeed, not all public data is created equal. Some public sources (e.g., Wikipedia) are highly curated and may pose low risks of containing sensitive information. Alternatively, some data sources might consist of public data that carries explicit consent to be used. It is an important open research question to understand if pretraining models solely on such stringently curated data can provide similar benefits for downstream tasks, while mitigating privacy risks.
+
+2. Benchmarks conflate private and public distributions. Even if we were to solve the core privacy issue above—either by agreeing that all publicly accessible data is fair to use for a “privacy-preserving” model, or by pretraining very powerful models solely on non-sensitive data—it remains unclear if these models will actually be useful for privacy-sensitive downstream tasks.
+
+We argue that the usefulness of the public-pretraining paradigm on private tasks is currently hard to assess, because existing benchmarks study “private” datasets that are not actually any more “sensitive” than the “public” dataset that is used for pretraining. In fact, the two are often drawn from the same (or from a similar) underlying distribution.
+
+For example, when we transfer from ImageNet to CIFAR-10 (e.g., as in [TB21, DBH+22]), every single class contained in the CIFAR-10 dataset has an identical class label in the ImageNet dataset! So can we say that any “private learning” actually happened? After all, training on ImageNet alone has already taught the model how to recognize a cat, or an airplane, or a dog—thus, (privately) finetuning on CIFAR-10 is merely performing a loose form of domain adaptation to classify low-resolution images more accurately.
+
+Of course, the aforementioned papers do not actually care about privately classifying CIFAR-10, per se. Rather, they aim to provide and evaluate a general framework for combining public and private datasets. But as a result, we argue it is not clear that measuring progress of “private” learning on any of these benchmarks is at all meaningful. Specifically, are these benchmarks actually measuring progress in private learning? Or are they just a direct proxy for progress on non-private representation learning?
+
+The answer to this question likely depends on whether there exists a large overlap between “public” and “private” data in real privacy-sensitive applications. We posit that in many applications, this will not be the case—i.e., the privacy sensitive data to be finetuned on will come from a data distribution that is only poorly represented in the public pretraining data. For example, machine learning on medical data is a canonical motivation for private ML, but the data distributions may not resemble those which are publicly accessible.
+
+Unfortunately, it has already been shown that if the overlap between the pretraining and target distributions is small, then current methods for large scale pretraining may be less effective. As an example, in the challenging (but perfectly privacy-preserving) zero-shot setting, foundation models tend to perform poorly on medical tasks. To illustrate, the authors of BASIC-L (a recent representation learning method) write [PDG+21]:
+
+> PCam [a skin lesion dataset] is perhaps the most sensitive dataset where BASIC-L performs poorly. For such an important task, the top-1 accuracy of BASIC-L (59.6%) [is] far below the bars for practical deployments, […] [and] just slightly above random guessing. […] As our training data are weakly crawled and automatically curated from the internet, without any emphasis on medical images, our BASIC-L model cannot learn enough to perform well on PCam. […] despite the benefits of open-vocabulary image classification models, they are not ready to be deployed to tasks that require in-domain expertise, e.g. medical knowledge.
+
+There is evidence that some deficiencies of zero-shot learning in these settings may be overcome by (non-private) finetuning [RKH+21]. But this need not always be the case. For example, while large language models pretrained on Internet text achieve impressive performance on a variety of downstream tasks [BMR+20], they still achieve poor performance when finetuned on (potentially sensitive) tasks that are only weakly represented online—such as legal contract analysis [HBCB21].
+
+Understanding the effectiveness and limitations of transfer learning has been a major research direction in the non-private machine learning community, particularly through the lens of distribution shifts [KSM+21]. Yet, it is not always clear whether conclusions from the non-private setting are valid when we introduce explicit privacy constraints, as data that is very privacy sensitive may be particularly poorly represented in the distribution of publicly available pretraining data.
+
+We thus call for privacy researchers to consider (or create) new benchmarks that more closely match envisioned deployments of private learning. Such benchmarks could for instance leverage sensitive datasets that were publicly released for research purposes, such as e.g., MIMIC [JPS+16] or the dataset from the infamous Netflix Prize [BL07].
+
+3. Large private models require trusting cloud services. When we train a model with DP, this guarantees that anyone who can access the trained model cannot learn much about any individual training sample. However this is orthogonal to any confidentiality considerations about who sees the data during training and inference.
+
+Ideally, when dealing with personal data (e.g., private chat messages), the sensitive data would not leave the individual’s device. In standard settings this is technically possible: the differentially private training could be decentralized (e.g., as in Federated Learning [MMR+17]), and the trained model could be shipped to people’s devices for inference.
+
+Unfortunately, unlocking the full power of large-scale public pretraining currently requires drastically scaling model sizes. With current techniques, most foundation models are impossible to train or serve on end-user devices. For example, MobileBERT [SYS+20]—a language model optimized for on-device inference—has about 25M parameters; this is between two and four orders of magnitude smaller than state-of-the-art language models considered in recent works on private finetuning of language models [LTLH22, AR22, YNB+22].
+
+We thus encourage researchers in private machine learning to also take into consideration the scale of these models, and their privacy implications. An important direction for future work is to develop techniques for distilling [HVD15] large foundation models into smaller, more efficient models that are tuned for a specific (private) task.
+
+Are these issues not also present in non-private learning?
+
+While our paper focuses on the potential shortcomings of large-scale public pretraining for private workloads, our criticisms may seem to apply more broadly to any use-case of pretrained models. Yet, we argue that these issues are of a particular concern for privacy-sensitive use cases.
+
+First, the act of labeling the whole Web as “public” for machine learning purposes is particularly egregious when these models are explicitly touted as “privacy preserving”, as this dilutes the meaning of “privacy” and may downplay the benefits of other uses of privacy enhancing technologies.
+
+Second, a large overlap between pretraining data and common benchmarks need not be a concern if the goal of the benchmark is to measure absolute progress on the considered task, rather than progress of generic learning techniques. Many standard benchmarks are useful in the former sense (e.g., ImageNet measures the ability to classify 1000 types of every-day objects). But since these tasks are not privacy relevant, their use as benchmarks in the privacy literature solely serves the latter goal above: to evaluate the progress of generic (private) learning techniques. In this case, a large overlap between pretraining and finetuning tasks is problematic.
+
+Finally, the privacy risks we identify with remote deployments of very large pretrained models only apply when users’ data is indeed privacy sensitive. For many non-sensitive applications, such a deployment may be perfectly adequate.
+
+## 2 Is publicly accessible data public?
+
+When a model is reported to be “trained with differential privacy”, it should mean something. And if a model is trained with DP from scratch, it does mean something very precise: no data specific to any individual training record will be memorized by the final model.[^1] Yet, the common pretrain-publicly-then-finetune-privately scheme only guarantees privacy with respect to the finetuning dataset, and not the original dataset that is used for pretraining. In fact, there is no guarantee at all for the privacy of the pretraining data.
+
+This is problematic because it is now entirely possible that this “privately-trained” model will still leak details of individuals whose data were contained in the pretraining dataset. And if a data subject notices this and asks “if this model is private, why was my data leaked?” the only possible answer to give is that this data was not part of the dataset that was considered worth protecting. Such an explanation would likely not be very satisfactory, as individuals may still view some publicly accessible data as sensitive—especially if, as we make the case here, it was not intentionally made public.
+
+This issue could be mitigated by pretraining models solely on data that is entirely non-sensitive. Alternatively, we could ask data owners to provide explicit consent for their data to be used for machine learning. But then we have to ensure that the resulting privacy risks are very clearly communicated first. For example, if some user application were to ask “please share your data to help improve this product,” users may expect that their data will be shared with the application developer, but not potentially with all other application users.
+
+Unfortunately, the value in pretraining currently seems to arise mostly from the fact that we are able to train on massive uncurated datasets. As a consequence of the size of these datasets, much of the collected content will inevitably come from uncertain origins with no explicit user consent, and requesting consent becomes challenging.
+
+Such issues arise even for extremely well-studied and strongly supervised datasets such as ImageNet. Despite its ubiquitous use, the dataset contains sensitive content of individuals (e.g., images of children, nudity, etc.) [Qua19]. Furthermore, some datasets have even been completely retracted on privacy grounds: TinyImages [TFF08] is a dataset of 80M images scraped from the Web which was later subsampled to create the CIFAR-10 dataset [Kri09]. This dataset has since been deprecated due to the discovery of offensive and derogatory images [PB20]. Larger-scale datasets used for natural language processing are possibly even more challenging to curate. These datasets are often hundreds of gigabytes [GBB+20] to terabytes [HBM+22] in size, gathered mostly by scraping the Internet for any available text data, with minimal content filtering or curation.
+
+While such datasets contain, by definition, only data that is public (in the sense of “publicly accessible” on the Internet), their use in machine learning still presents significant privacy risks, as illustrated by the following two (real) examples.
+
+### 2.1 Two Motivating Examples
+
+#### Intentionally shared data, for use in a particular context
+
+Consider again the case of a company that trains a language model on the text messages of its end users. The company initializes their model with the publicly available GPT-2 model, and then finetunes it with DP on its own corpus of private chat messages. The company then deploys the model and promises users that this model is privacy preserving!
+
+Peter W. uses the model and types: “The phone number of Peter W. is:” and the model auto-completes his correct phone number (and also helpfully supplies his fax number, physical address, and email address). Peter W. claims this model violates his privacy. The company assures Peter that it does not, since their implementation satisfies a state-of-the-art $(\varepsilon=0.1,\delta=10^{-12})$ level of differential privacy. His privacy was actually compromised when he posted his phone number along side some technical documents in a report to the government several years ago. Peter does not fully understand. No one even reads these technical documents.
+
+We argue that many people might react like Peter if personal information about them were ever output by a “privacy preserving” machine learning model.
+
+In fact, the above example is not hypothetical: Peter W. is a real person, and the GPT-2 language model does know his phone number for exactly the reason described above [CTW+21]. While there are likely not many people whose personal information has been memorized by current models, the fact that there exist some individuals whose data has been leaked significantly weakens privacy arguments.
+
+Similar issues could arise for data other data modalities than text, for example for photos that individuals post online. These may be posted for a particular purpose, e.g., on an individual’s homepage for professional purposes, or on a social media site for sharing memories with friends. This does not imply that the subjects consent to all possible downstream uses of their likeness – as one extreme example, consider deepfake pornography, a clear privacy violation [PD19].
+
+Privacy violations could also arise if machine learning models create new ways of searching and linking data that was posted online anonymously or pseudonymously. For example, a model similar to CLIP [RKH+21] that was trained on the entire Internet might enable problematic forms of image search (e.g., “find all online images that match this photo”).
+
+#### Not intentionally (or knowingly) shared data
+
+Not all content available on the Internet is posted intentionally. In some cases, the original owner might not even know their information has been posted without their consent.
+
+We begin with another example from GPT-2 where data was posted without the knowledge of the original author, and was then used to train a large language model. The GPT-2 language model was trained on many webpages that were linked to by the social media website Reddit. One of these articles was a transcript of an IRC conversation (of over a thousand messages) between several individuals discussing sensitive political and societal topics. These individuals were likely not aware their private conversations were recorded—let alone published for anyone to see. However GPT-2 trained on this data as if it was intentionally published.
+
+Another example involves surveillance camera footage. While surveillance cameras are ubiquitous, the public generally expects recordings to be available exclusively to security personnel. Nonetheless, many surveillance camera configurations employ minimal security, leading to livestreams of their feeds being publicly available [XXC18].
+
+Data can also be published unintentionally. Reportedly,[^2] in at least one example, a GitHub user unintentionally uploaded information about their cryptocurrency wallet to a public Git repository they owned. When Copilot (a language model designed to assist developers in writing code) [CTJ+21] was trained on this repository, it memorized this wallet’s private key and allowed another user to withdraw money from the account. In all likelihood, this user did not post the key to their cryptocurrency wallet on their GitHub intentionally.
+
+For each of the examples above, one could argue that it is not the act of training the machine learning model that caused a privacy leak—but rather the original act of publishing this data on the Internet.
+
+We disagree! Machine learning models (and foundation models in particular) have the capacity to amplify this leakage by disseminating this information in a much broader context, e.g., in new applications built on top of these pretrained models. As an analogy, a malicious person who doxes another by “releasing someone’s personal details onto the Internet in an easily accessible form” is still causing harm even though “these details may already be publicly available, but in difficult to access forms or distributed across various sources that obscure them from casual discovery” [Dou16].
+
+The recent work of Brown et al. [BLM+22] raises some related concerns, for the specific case of language models. Their core argument is that the privacy categorization of text data is inherently contextual. Thus, collecting text data from various contexts on the Web and aggregating it into a single public-facing language model may violate users’ privacy expectations for this data. We expand on this argument here by: (1) considering other publicly available data modalities than just text; and (2) by discussing the potential erosion of trust in privacy technologies that could arise when conflating “public” and “private” data sources (see below).
+
+### 2.2 Privacy Expectations
+
+Given that not all content available online has the expectation of being used to pretrain large models (either because it was posted online for one particular purpose, or because it was not even posted intentionally), this raises entirely reasonable privacy considerations for training on this “public” data.
+
+By publicizing such models as being “privacy preserving,” the leakage of people’s so-called “public” data could erode their trust in technologies such as differential privacy (which is not technically at fault here). This trust erosion could then also (mistakenly) carry over to settings where differential privacy is applied properly to all collected data (i.e., without any public pretraining)—e.g., the collection of census data in the US.
+
+A counterargument might be that the issue here is merely one of properly educating the public about differential privacy and its guarantees (in the face of public pretraining). But it is already challenging for users to understand how the semantic guarantees of DP align with their own notions of “privacy”, even when no pretraining is involved. By training non-privately we now compound this issue by introducing two “tiers” of data that are presumed to have very different privacy expectations attached to them. But if peoples’ own privacy expectations do not match with this assumption, we run the risk that “privacy-preserving” models will cause real privacy harms.
+
+## 3 Are we still measuring progress on private learning?
+
+The purpose of a benchmark is to measure progress on a particular task of interest. The ImageNet benchmark, for example, measures the ability of classifiers to perform image classification across a range of everyday objects.
+
+It is important to use the right benchmark—one where progress serves as an appropriate proxy for progress on the true task of interest. For example, while researchers had historically used the MNIST dataset of hand-written digits to evaluate the performance of neural networks, today this dataset is not seen as a reliable measure of progress. This is both because it has become “too easy”, and also because lessons learned from squeezing the last $0.1\%$ test accuracy out of the dataset often do not generalize to more interesting datasets, e.g., [GSS14].
+
+We now make the case that current benchmarks used to evaluate privacy-preserving machine learning are similarly insufficient, and that we should instead study tasks that are more directly indicative of performance on real-world privacy-sensitive tasks.
+
+### 3.1 Intra-domain versus Cross-domain Finetuning
+
+Existing research that follows the public-pretraining-and-private-finetuning paradigm discussed earlier has so far focused on the following tasks:
+
+- Pretrain on CIFAR-100 or ImageNet and finetune on CIFAR-10 [ACG+16, PCS+19, TB21, DBH+22]
+- Pretrain on Places365 and finetune on ImageNet [KCS+22]
+- Pretrain on JFT and finetune on ImageNet [DBH+22, MTKC22a]
+- Pretrain on text data scraped from the Web, and finetune on other text data scraped from the Web [YZC+21, LTLH22, YNB+22, AR22]
+
+The issue is that many of the above settings have the property that the “private” finetuning data distribution is essentially a subset of the “public” data distribution. For example, the data distribution from which CIFAR-10 is drawn is a strict subset of the data distribution from which ImageNet is drawn. CIFAR-10 is drawn from (heavily downsampled) images from the Internet representing one of 10 objects: cats, horses, airplanes, etc. ImageNet is similarly drawn from images from the Internet representing one of 1000 objects, including each of the CIFAR-10 classes. So when we pretrain on ImageNet and privately finetune on CIFAR-10, is any “private learning” actually happening or are we merely performing a loose form of intra-domain transfer from high-resolution to low-resolution images? We emphasize that the issue here is an overlap property of the data distributions, which occurs even when the datasets themselves are entirely disjoint.
+
+The reliance on public pretraining with significant overlaps between “public” and “private” data distributions has become more prevalent in recent research. Abadi et al. [ACG+16] were, to our knowledge, the first to present private learning results with public pretraining. While their “private” dataset (CIFAR-10) and “public” dataset (CIFAR-100) share close similarities, the authors argued that “the examples and the image classes [of CIFAR-100] are different from those of CIFAR-10” [ACG+16]. Follow-up papers then moved on to using larger pretraining sets (e.g, ImageNet [TB21, DBH+22]) but omitted the concern about class overlap between the private and public datasets.
+
+The situation is analogous when benchmarking large language models. For example, the GPT-2 [RWC+19] and GPT-3 [BMR+20] papers present detailed analyses of how common evaluation benchmarks in NLP might overlap with the model’s training data, and the CLIP paper [RKH+21] analyzes how many ImageNet test images might be contained in their CLIP training dataset.
+
+To highlight an extreme example of the questionable use of “public pretraining,” two recent works in this area [DBH+22, MTKC22a] have pretrained on Google’s JFT dataset [ZKHB22, SSSG17] to achieve high accuracy (privately) on ImageNet. However while ImageNet [DDS+09] is a public dataset that any researcher is allowed to download, JFT [ZKHB22, SSSG17] is a proprietary dataset of 4 billion Web images collected and labeled by Google that has not been made public. Thus, in this setup the “private” dataset is actually more accessible than the “public” dataset![^3] On top of this, the datasets are similar enough that parts of ImageNet are directly contained in JFT. The papers above do account for this by removing images from JFT that are near-duplicates of images from ImageNet. But the fact remains that here the private and public datasets are essentially identically distributed—and thus likely not representative of many real private learning scenarios.
+
+Of course, the above papers merely adopted these benchmarks as illustrative examples of a public-to-private transfer setup. Yet, we caution against such benchmarks becoming the standard for assessing progress in private learning techniques. This is because these benchmarks make it hard to disentangle generic progress in unsupervised representation learning, from algorithmic improvements for private learning. This issue is compounded by the fact that there is no consensus on what public pretraining data to use, and so different papers use a wide variety of incomparable public sources. For instance, prior work has presented results for private learning on CIFAR-10 while leveraging the following public data sources: CIFAR-100 [ACG+16, AWJ22]; unlabeled CIFAR-100 [AWJ22]; ImageNet [DBH+22]; unlabeled ImageNet [TB21]; 2000 random ImageNet samples [YZCL21]; a single $600\times 225$ image engineered for pretraining [AWJ22], etc.
+
+A potential explanation for some of these “esoteric” choices of pretraining datasets is that without any restriction on what can be considered as “public” data, some benchmarks (such as CIFAR-10) become uninteresting as the private task can essentially already be solved with perfect privacy [AR22]. For example, OpenAI’s pretrained CLIP model gets $96.2\%$ zero-shop accuracy on the CIFAR-10 dataset (without any finetuning), just a few percentage points shy of the 98% state-of-the-art using this dataset alone—despite the fact that CLIP never saw any CIFAR-10 training data! Thus, by definition, CLIP achieves $96.2\%$ accuracy at $(\varepsilon,\delta)=(0,0)$-DP.
+
+Why do we believe this is a problem? After all, if it is possible to reach $96\%$ accuracy without even inspecting the training dataset, is this not actually private? Again, our concern comes down to the fact that the underlying data distribution for both CIFAR-10 and CLIP’s training dataset are the same: images scraped from the Internet.[^4]
+
+As a result, unlike traditional forms of cross-domain transfer where we must take a classifier trained in one setting (e.g., pictures taken from the Internet) and transfer them to a completely new setting (e.g., classifying tumors), we have no such need here. Instead, it is sufficient to adapt from one sampling from a distribution (images from the Internet) to another sampling of the same distribution—albeit a sample with slightly different preprocessing. Thus, we argue that benchmarks such as private learning on CIFAR-10 (with pretraining) are a bit like MNIST for general computer vision: there is little performance left to be squeezed out ($\approx 2\%$), and this marginal progress might not carry over to real privacy-sensitive settings where a close overlap between public and private data sources may not exist.
+
+### 3.2 Towards Better Benchmarks
+
+Ultimately, the question we want to answer is whether we (as a community) are making progress towards effective private learning. It is possible that we live in a world—which we will call Transfermania—where all sensitive tasks we care about (e.g., medical classification tasks) are well represented by data that is publicly available, e.g., on the Internet. Alternatively, we might live in a different world—Privacyland—where these sensitive tasks are not well represented and mostly disjoint from any public data.
+
+Knowing which of these two worlds we are in is important! If we are in Transfermania, then everything is great: for a sensitive task of interest, simply use a publicly pretrained foundation model and solve the task with either zero-shot learning [AR22] or minimal finetuning (barring the issues raised above about the pretraining data actually also being sensitive). In contrast, if we are in Privacyland, then foundation models pre-trained on Internet data might be of little help in many privacy-sensitive settings, as exemplified by the poor results reported by [RZKB19, PDG+21] on some medical tasks.
+
+Crucially, we cannot know in which world we are in without collecting data that resembles privacy-sensitive tasks that we actually care about (i.e., not CIFAR-10 or ImageNet). We thus believe it is necessary for the private learning community to begin considering and curating new benchmarks—to properly disentangle advances in non-private representation learning from advances in privacy-preserving learning. Such benchmarks could include existing sensitive datasets that have been released for research purposes, e.g., medical datasets [JPS+16, IRK+19, WPL+17, BVVD+17], email corpora [KY04], user reviews [BL07], etc.
+
+Of course, it is possible we do live in Transfermania, and current or future foundation models will perform well when tuned privately on sensitive tasks. This would be a very promising signal that private learning can be achieved in many real-world deployments. Nevertheless, concerns with the sensitive nature of pretraining sets (Section 2), and the necessity to outsource large models (Section 4) could remain.
+
+As a result, regardless of which world we are in, we encourage researchers to also continue to study ways to make differentially private learning (without pretraining) better, as progress on this problem can hopefully also inform real-world deployments (even if these use some form of pretraining).
+
+## 4 Large models require uploading private data
+
+In order to achieve high accuracy, transfer learning with differential privacy currently requires using enormous pretrained models. For example, state-of-the-art differentially private ImageNet models have over $250$ million parameters and require over $100$ billion FLOPs to evaluate [DBH+22, MTKC22a]. And while models of this size can still be run on high-end customer GPUs (250 million parameters require “only” 1 GB of memory), the size of state-of-the-art models is currently scaling at a much faster rate than (consumer) hardware.[^5] (The largest language models, for example, are already larger than 500 billion parameters.)
+
+As a result, using these enormous private models will likely require that data owners upload their private data to some remote cloud service. This causes a direct tradeoff between the privacy of the individuals who provide the private training data and the privacy of the end users of the trained model.
+
+To illustrate, suppose that the final model must meet a minimum accuracy level to be viable (potentially at the cost of privacy). This accuracy could be reached in one of two ways: (1) use a very large pretrained model and finetune it with DP on sensitive data; (2) use a smaller model (possibly also pretrained) and finetune it without DP (or with very low privacy guarantees) on sensitive data.[^6]
+
+The latter approach—using a smaller (non-privately-finetuned) model—has the advantage that the model can be evaluated locally on each user’s own device and thus poses no privacy risks to the model’s ultimate end users. However, the sensitive training data is not guaranteed any protection from being memorized. In contrast, the former approach of privately tuning a larger pretrained model has the advantage that we can achieve more stringent DP guarantees for the finetuning data without sacrificing model utility, but requires the model’s end users to upload their private data to a remote service.
+
+The situation is actually slightly more complicated than this, because these models are also too large to be finetuned locally (e.g., using federated learning). As a result, owners of the sensitive training data face a tradeoff between either having their data be centrally collected for differentially private training, or keeping their data locally but not having any differential privacy guarantees.
+
+In principle, the confidentiality of outsourced sensitive data (both for training and inference) could be guaranteed using cryptographic techniques such as fully homomorphic encryption [Gen09, GBDL+16] or secure multiparty computation [GMW19, MZ17]. Unfortunately, for the time being we are several orders of magnitude away from being able to efficiently apply these techniques in practice to large models. Outsourcing ML workloads to trusted execution environments [OSF+16, TB18] is another possible alternative, but the security (and scalability) of existing platforms are also currently limited and are unlikely to handle billion-parameter models.
+
+## 5 Where do we go from here?
+
+Public pretraining for private learning might not be the panacea that prior work has made it out to be, and we hope future work will carefully consider the use of public data when performing private training. We conclude by outlining open questions and possible directions for future work:
+
+- Articulate granular privacy considerations for Internet data. The private learning literature often falls back on a simplified dichotomy where all data is either “public” or “private.” Yet, individual expectations about privacy are rarely so binary [Nis04].
+ We therefore encourage privacy researchers to advocate for a more responsible and granular approach to privacy when it comes to collecting training datasets—and especially datasets collected from the Internet. This could include developing techniques and procedures for establishing consent for using Internet data as training data, for auditing existing datasets (including proprietarily collected ones) for sensitive content, and encouraging appropriate disclosure of any privacy concerns (for example, in an accompanying datasheet [GMV+21]).
+- Construct privacy-friendly pretrained models. It is an open problem whether one could train a (useful) foundation model that does not carry the burden of increased privacy risks. One avenue could be to curate and pretrain models on large Internet datasets that do not contain any privacy-sensitive data. This would require careful consideration pertaining to which data should and should not be considered sensitive. Another approach would be to obtain explicit consent-of-use from data owners. Finally, it may be possible to pretrain a foundation model itself with differential privacy [AGG+21, PBV22]. A core open problem here is how to set the right granularity for DP when training on data aggregated from various sources [BLM+22]. For example, while current works aim to pretrain language models with privacy at the level of individual sentences [AGG+21, PBV22], such privacy guarantees are insufficient unless all references to a piece of sensitive information have first been rigorously eliminated or deduplicated [LIN+21].
+- Design better benchmarks to measure progress in private learning. Unfortunately, no good benchmark for private learning currently exists. By this, we mean a benchmark that correlates well with the true task we care about, namely, efficient private learning in sensitive domains. Privacy-sensitive data is likely to have many characteristics that standard ML datasets lack. Thus, by re-purposing existing ML benchmarks for private learning we run the risk of promoting progress metrics that are only weakly correlated (or not at all correlated) with progress on real privacy-sensitive tasks. This issue is exacerbated with the avenue of public pretraining, since many canonical ML benchmarks can now be solved privately “for free.” We thus encourage the community to explore alternative benchmarks that more closely align with privacy-sensitive tasks of interest.[^7]
+- Promote a holistic view on ML privacy. The issues discussed in this paper fall under the broader concern that the current ML privacy literature is predominantly too “model centric.” That is, most research focuses on the narrow (but important) problem of training a model (once) with DP. This line of research largely ignores broader privacy considerations around data collection (what data is collected, from what sources, and why?), data lifetimes (for how long is data kept, and how many models are trained on it?), model lifetimes, etc. We encourage further research on these important topics.
+
+Finally, while the overall tone of our article is critical, we recognize and highlight that many recent works employing public data have played an important role in showing that differential privacy can be preserved for certain complex machine learning problems, without suffering devastating impacts on utility. This is an important step forward for the field. We focused our attention on what we believe to be some of the most important considerations in this area, in an effort to steer the community towards making the next important steps advancing private machine learning.
+
+## Acknowledgments
+
+We would like to thank Davis Blalock, Tatsunori Hashimoto, Janardhan Kulkarni, Alexey Kurakin, Xuechen Li, Percy Liang, Thomas Steinke, Ivy Vecna, and Sergey Yekhanin for their valuable comments on previous versions of this work.
+
+## References
+
+- [AACM+22] John Abowd, Robert Ashmead, Ryan Cumings-Menon, Simson Garfinkel, Micah Heineck, Christine Heiss, Robert Johns, Daniel Kifer, Philip Leclerc, Ashwin Machanavajjhala, Brett Moran, William Sexton, Matthew Spence, and Pavel Zhuravlev. The 2020 census disclosure avoidance system topdown algorithm. Harvard Data Science Review, (Special Issue 2), 2022.
+- [ACG+16] Martin Abadi, Andy Chu, Ian Goodfellow, H Brendan McMahan, Ilya Mironov, Kunal Talwar, and Li Zhang. Deep learning with differential privacy. In Proceedings of the 2016 ACM Conference on Computer and Communications Security, CCS ’16, pages 308–318, New York, NY, USA, 2016. ACM.
+- [AGG+21] Rohan Anil, Badih Ghazi, Vineet Gupta, Ravi Kumar, and Pasin Manurangsi. Large-scale differentially private BERT. arXiv preprint arXiv:2108.01624, 2021.
+- [AR22] Simran Arora and Christopher Ré. Can foundation models help us achieve perfect secrecy? arXiv preprint arXiv:2205.13722, 2022.
+- [AWJ22] Arash Asadian, Evan Weidner, and Lei Jiang. Self-supervised pretraining for differentially private learning. arXiv preprint arXiv:2206.07125, 2022.
+- [BHA+21] Rishi Bommasani, Drew A. Hudson, Ehsan Adeli, Russ Altman, Simran Arora, Sydney von Arx, Michael S. Bernstein, Jeannette Bohg, Antoine Bosselut, Emma Brunskill, Erik Brynjolfsson, Shyamal Buch, Dallas Card, Rodrigo Castellon, Niladri Chatterji, Annie Chen, Kathleen Creel, Jared Quincy Davis, Dora Demszky, Chris Donahue, Moussa Doumbouya, Esin Durmus, Stefano Ermon, John Etchemendy, Kawin Ethayarajh, Li Fei-Fei, Chelsea Finn, Trevor Gale, Lauren Gillespie, Karan Goel, Noah Goodman, Shelby Grossman, Neel Guha, Tatsunori Hashimoto, Peter Henderson, John Hewitt, Daniel E. Ho, Jenny Hong, Kyle Hsu, Jing Huang, Thomas Icard, Saahil Jain, Dan Jurafsky, Pratyusha Kalluri, Siddharth Karamcheti, Geoff Keeling, Fereshte Khani, Omar Khattab, Pang Wei Koh, Mark Krass, Ranjay Krishna, Rohith Kuditipudi, Ananya Kumar, Faisal Ladhak, Mina Lee, Tony Lee, Jure Leskovec, Isabelle Levent, Xiang Lisa Li, Xuechen Li, Tengyu Ma, Ali Malik, Christopher D. Manning, Suvir Mirchandani, Eric Mitchell, Zanele Munyikwa, Suraj Nair, Avanika Narayan, Deepak Narayanan, Ben Newman, Allen Nie, Juan Carlos Niebles, Hamed Nilforoshan, Julian Nyarko, Giray Ogut, Laurel Orr, Isabel Papadimitriou, Joon Sung Park, Chris Piech, Eva Portelance, Christopher Potts, Aditi Raghunathan, Rob Reich, Hongyu Ren, Frieda Rong, Yusuf Roohani, Camilo Ruiz, Jack Ryan, Christopher Ré, Dorsa Sadigh, Shiori Sagawa, Keshav Santhanam, Andy Shih, Krishnan Srinivasan, Alex Tamkin, Rohan Taori, Armin W. Thomas, Florian Tramèr, Rose E. Wang, William Wang, Bohan Wu, Jiajun Wu, Yuhuai Wu, Sang Michael Xie, Michihiro Yasunaga, Jiaxuan You, Matei Zaharia, Michael Zhang, Tianyi Zhang, Xikun Zhang, Yuhui Zhang, Lucia Zheng, Kaitlyn Zhou, and Percy Liang. On the opportunities and risks of foundation models. arXiv preprint arXiv:2108.07258, 2021.
+- [BL07] James Bennett and Sta Lanning. The Netflix prize. In Proceedings of KDD Cup and Workshop, volume 2007, 2007.
+- [BLM+22] Hannah Brown, Katherine Lee, Fatemehsadat Mireshghallah, Reza Shokri, and Florian Tramèr. What does it mean for a language model to preserve privacy? arXiv preprint arXiv:2202.05520, 2022.
+- [BMR+20] Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu, Clemens Winter, Christopher Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Ilya Sutskever, and Dario Amodei. Language models are few-shot learners. In Advances in Neural Information Processing Systems 33, NeurIPS ’20. Curran Associates, Inc., 2020.
+- [BVVD+17] Babak Ehteshami Bejnordi, Mitko Veta, Paul Johannes Van Diest, Bram Van Ginneken, Nico Karssemeijer, Geert Litjens, Jeroen AWM Van Der Laak, Meyke Hermsen, Quirine F Manson, Maschenka Balkenhol, et al. Diagnostic assessment of deep learning algorithms for detection of lymph node metastases in women with breast cancer. Jama, 318(22):2199–2210, 2017.
+- [CKR21] Rachel Cummings, Gabriel Kaptchuk, and Elissa M Redmiles. ”i need a better description”: An investigation into user expectations for differential privacy. In Proceedings of the 2021 ACM SIGSAC Conference on Computer and Communications Security, pages 3037–3052, 2021.
+- [CLE+19] Nicholas Carlini, Chang Liu, Úlfar Erlingsson, Jernej Kos, and Dawn Song. The secret sharer: Evaluating and testing unintended memorization in neural networks. In 28th USENIX Security Symposium, USENIX Security ’19, pages 267–284. USENIX Association, 2019.
+- [CTJ+21] Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, et al. Evaluating large language models trained on code. arXiv preprint arXiv:2107.03374, 2021.
+- [CTW+21] Nicholas Carlini, Florian Tramèr, Eric Wallace, Matthew Jagielski, Ariel Herbert-Voss, Katherine Lee, Adam Roberts, Tom Brown, Dawn Song, Ulfar Erlingsson, Alina Oprea, and Colin Raffel. Extracting training data from large language models. In 30th USENIX Security Symposium, USENIX Security ’21, pages 2633–2650. USENIX Association, 2021.
+- [DBH+22] Soham De, Leonard Berrada, Jamie Hayes, Samuel L Smith, and Borja Balle. Unlocking high-accuracy differentially private image classification through scale. arXiv preprint arXiv:2204.13650, 2022.
+- [DDS+09] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li, and Li Fei-Fei. Imagenet: A large-scale hierarchical image database. In Proceedings of the 2009 IEEE Computer Society Conference on Computer Vision and Pattern Recognition, CVPR ’09, pages 248–255, Washington, DC, USA, 2009. IEEE Computer Society.
+- [DMNS06] Cynthia Dwork, Frank McSherry, Kobbi Nissim, and Adam Smith. Calibrating noise to sensitivity in private data analysis. In Proceedings of the 3rd Conference on Theory of Cryptography, TCC ’06, pages 265–284, Berlin, Heidelberg, 2006. Springer.
+- [Dou16] David M Douglas. Doxing: a conceptual analysis. Ethics and information technology, 18(3):199–210, 2016.
+- [ET22] Maddie Ellis and Zoe Thomas. Finding your personal data online is easy. taking it down is harder. https://www.wsj.com/podcasts/google-news-update/finding-your-personal-data-online-is-easy-taking-it-down-is-harder/e073e152-f5fd-43df-92be-6d5a6c6199ba, 2022.
+- [Fel20] Vitaly Feldman. Does learning require memorization? a short tale about a long tail. In Proceedings of the 52nd Annual ACM Symposium on the Theory of Computing, STOC ’20, pages 954–959, New York, NY, USA, 2020. ACM.
+- [FZ20] Vitaly Feldman and Chiyuan Zhang. What neural networks memorize and why: Discovering the long tail via influence estimation. In Advances in Neural Information Processing Systems 33, NeurIPS ’20, pages 2881–2891. Curran Associates, Inc., 2020.
+- [GBB+20] Leo Gao, Stella Biderman, Sid Black, Laurence Golding, Travis Hoppe, Charles Foster, Jason Phang, Horace He, Anish Thite, Noa Nabeshima, et al. The pile: An 800GB dataset of diverse text for language modeling. arXiv preprint arXiv:2101.00027, 2020.
+- [GBDL+16] Ran Gilad-Bachrach, Nathan Dowlin, Kim Laine, Kristin Lauter, Michael Naehrig, and John Wernsing. Cryptonets: Applying neural networks to encrypted data with high throughput and accuracy. In International conference on machine learning, pages 201–210. PMLR, 2016.
+- [Gen09] Craig Gentry. A fully homomorphic encryption scheme. Stanford university, 2009.
+- [GMV+21] Timnit Gebru, Jamie Morgenstern, Briana Vecchione, Jennifer Wortman Vaughan, Hanna Wallach, Hal Daumé Iii, and Kate Crawford. Datasheets for datasets. Communications of the ACM, 64(12):86–92, 2021.
+- [GMW19] Oded Goldreich, Silvio Micali, and Avi Wigderson. How to play any mental game, or a completeness theorem for protocols with honest majority. In Providing Sound Foundations for Cryptography: On the Work of Shafi Goldwasser and Silvio Micali, pages 307–328. 2019.
+- [GSS14] Ian J Goodfellow, Jonathon Shlens, and Christian Szegedy. Explaining and harnessing adversarial examples. arXiv preprint arXiv:1412.6572, 2014.
+- [HBCB21] Dan Hendrycks, Collin Burns, Anya Chen, and Spencer Ball. CUAD: An expert-annotated nlp dataset for legal contract review. arXiv preprint arXiv:2103.06268, 2021.
+- [HBM+22] Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, et al. Training compute-optimal large language models. arXiv preprint arXiv:2203.15556, 2022.
+- [HVD15] Geoffrey Hinton, Oriol Vinyals, and Jeff Dean. Distilling the knowledge in a neural network. arXiv preprint arXiv:1503.02531, 2015.
+- [IRK+19] Jeremy Irvin, Pranav Rajpurkar, Michael Ko, Yifan Yu, Silviana Ciurea-Ilcus, Chris Chute, Henrik Marklund, Behzad Haghgoo, Robyn Ball, Katie Shpanskaya, et al. Chexpert: A large chest radiograph dataset with uncertainty labels and expert comparison. In Proceedings of the AAAI conference on artificial intelligence, volume 33, pages 590–597, 2019.
+- [JPS+16] Alistair EW Johnson, Tom J Pollard, Lu Shen, Li-wei H Lehman, Mengling Feng, Mohammad Ghassemi, Benjamin Moody, Peter Szolovits, Leo Anthony Celi, and Roger G Mark. MIMIC-III, a freely accessible critical care database. Scientific data, 3(1):1–9, 2016.
+- [KCS+22] Alexey Kurakin, Steve Chien, Shuang Song, Roxana Geambasu, Andreas Terzis, and Abhradeep Thakurta. Toward training at imagenet scale with differential privacy. arXiv preprint arXiv:2201.12328, 2022.
+- [Kri09] Alex Krizhevsky. Learning multiple layers of features from tiny images, 2009.
+- [KSM+21] Pang Wei Koh, Shiori Sagawa, Henrik Marklund, Sang Michael Xie, Marvin Zhang, Akshay Balsubramani, Weihua Hu, Michihiro Yasunaga, Richard Lanas Phillips, Irena Gao, Tony Lee, Etienne David, Ian Stavness, Wei Guo, Berton Earnshaw, Imran Haque, Sara M Beery, Jure Leskovec, Anshul Kundaje, Emma Pierson, Sergey Levine, Chelsea Finn, and Percy Liang. WILDS: A benchmark of in-the-wild distribution shifts. In Proceedings of the 38th International Conference on Machine Learning, ICML ’21, pages 5637–5664. JMLR, Inc., 2021.
+- [KY04] Bryan Klimt and Yiming Yang. The enron corpus: A new dataset for email classification research. In European conference on machine learning, pages 217–226. Springer, 2004.
+- [LIN+21] Katherine Lee, Daphne Ippolito, Andrew Nystrom, Chiyuan Zhang, Douglas Eck, Chris Callison-Burch, and Nicholas Carlini. Deduplicating training data makes language models better. arXiv preprint arXiv:2107.06499, 2021.
+- [LOG+19] Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Mandar Joshi, Danqi Chen, Omer Levy, Mike Lewis, Luke Zettlemoyer, and Veselin Stoyanov. RoBERTa: A robustly optimized BERT pretraining approach. arXiv preprint arXiv:1907.11692, 2019.
+- [LTLH22] Xuechen Li, Florian Tramèr, Percy Liang, and Tatsunori Hashimoto. Large language models can be strong differentially private learners. In Proceedings of the 10th International Conference on Learning Representations, ICLR ’22, 2022.
+- [McS16a] Frank McSherry. Differential privacy and correlated data, 2016.
+- [McS16b] Frank McSherry. Statistical inference considered harmful, 2016.
+- [Mir17] Ilya Mironov. Rényi differential privacy. In Proceedings of the 30th IEEE Computer Security Foundations Symposium, CSF ’17, pages 263–275, Washington, DC, USA, 2017. IEEE Computer Society.
+- [MMR+17] Brendan McMahan, Eider Moore, Daniel Ramage, Seth Hampson, and Blaise Aguera y Arcas. Communication-efficient learning of deep networks from decentralized data. In Artificial intelligence and statistics, pages 1273–1282. PMLR, 2017.
+- [MTKC22a] Harsh Mehta, Abhradeep Thakurta, Alexey Kurakin, and Ashok Cutkosky. Large scale transfer learning for differentially private image classification. arXiv preprint arXiv:2205.02973, 2022.
+- [MTKC22b] Harsh Mehta, Abhradeep Thakurta, Alexey Kurakin, and Ashok Cutkosky. Large scale transfer learning for differentially private image classification. arXiv preprint arXiv:2205.02973, 2022.
+- [MZ17] Payman Mohassel and Yupeng Zhang. Secureml: A system for scalable privacy-preserving machine learning. In 2017 IEEE symposium on security and privacy (SP), pages 19–38. IEEE, 2017.
+- [Nis04] Helen Nissenbaum. Privacy as contextual integrity. Wash. L. Rev., 79:119, 2004.
+- [OSF+16] Olga Ohrimenko, Felix Schuster, Cédric Fournet, Aastha Mehta, Sebastian Nowozin, Kapil Vaswani, and Manuel Costa. Oblivious multi-party machine learning on trusted processors. In 25th USENIX Security Symposium (USENIX Security 16), pages 619–636, 2016.
+- [PB20] Vinay Uday Prabhu and Abeba Birhane. Large image datasets: A pyrrhic win for computer vision? arXiv preprint arXiv:2006.16923, 2020.
+- [PBV22] Natalia Ponomareva, Jasmijn Bastings, and Sergei Vassilvitskii. Training text-to-text transformers with privacy guarantees. In Findings of the Association for Computational Linguistics: ACL 2022, pages 2182–2193, 2022.
+- [PCS+19] Nicolas Papernot, Steve Chien, Shuang Song, Abhradeep Thakurta, and Ulfar Erlingsson. Making the shoe fit: Architectures, initializations, and tuning for learning with privacy. https://openreview.net/forum?id=rJg851rYwH, 2019.
+- [PD19] Britt Paris and Joan Donovan. Deepfakes and cheap fakes: The manipulation of audio and visual evidence. United States of America: Data & Society, 1, 2019.
+- [PDG+21] Hieu Pham, Zihang Dai, Golnaz Ghiasi, Hanxiao Liu, Adams Wei Yu, Minh-Thang Luong, Mingxing Tan, and Quoc V Le. Combined scaling for zero-shot transfer learning. arXiv preprint arXiv:2111.10050, 2021.
+- [Qua19] Katyanna Quach. Inside the 1TB ImageNet data set used to train the world’s AI: Naked kids, drunken frat parties, porno stars, and more. https://www.theregister.com/2019/10/23/ai_dataset_imagenet_consent, 2019.
+- [RKH+21] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervision. In International Conference on Machine Learning, pages 8748–8763. PMLR, 2021.
+- [RWC+19] Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, and Ilya Sutskever. Language models are unsupervised multitask learners, 2019.
+- [RZKB19] Maithra Raghu, Chiyuan Zhang, Jon Kleinberg, and Samy Bengio. Transfusion: Understanding transfer learning for medical imaging. In Advances in Neural Information Processing Systems 32, NeurIPS ’19, pages 3347–3357. Curran Associates, Inc., 2019.
+- [SBV+22] Christoph Schuhmann, Romain Beaumont, Richard Vencu, Cade Gordon, Ross Wightman, Mehdi Cherti, Theo Coombes, Aarush Katta, Clayton Mullis, Mitchell Wortsman, Patrick Schramowski, Srivatsa Kundurthy, Katherine Crowson, Ludwig Schmidt, Robert Kaczmarczyk, and Jenia Jitsev. LAION-5B: An open large-scale dataset for training next generation image-text models. In Proceedings of the Neural Information Processing Systems Track on Datasets and Benchmarks 2, NeurIPS Datasets and Benchmarks ’22, 2022.
+- [SSSG17] Chen Sun, Abhinav Shrivastava, Saurabh Singh, and Abhinav Gupta. Revisiting unreasonable effectiveness of data in deep learning era. In Proceedings of the IEEE international conference on computer vision, pages 843–852, 2017.
+- [SSSS17] Reza Shokri, Marco Stronati, Congzheng Song, and Vitaly Shmatikov. Membership inference attacks against machine learning models. In Proceedings of the 38th IEEE Symposium on Security and Privacy, SP ’17, pages 3–18, Washington, DC, USA, 2017. IEEE Computer Society.
+- [SYS+20] Zhiqing Sun, Hongkun Yu, Xiaodan Song, Renjie Liu, Yiming Yang, and Denny Zhou. Mobilebert: a compact task-agnostic bert for resource-limited devices. arXiv preprint arXiv:2004.02984, 2020.
+- [TB18] Florian Tramer and Dan Boneh. Slalom: Fast, verifiable and private execution of neural networks in trusted hardware. arXiv preprint arXiv:1806.03287, 2018.
+- [TB21] Florian Tramèr and Dan Boneh. Differentially private learning needs better features (or much more data). In Proceedings of the 9th International Conference on Learning Representations, ICLR ’21, 2021.
+- [TFF08] Antonio Torralba, Rob Fergus, and William T Freeman. 80 million tiny images: A large data set for nonparametric object and scene recognition. IEEE transactions on pattern analysis and machine intelligence, 30(11):1958–1970, 2008.
+- [TTZ+22] Zhengzhong Tu, Hossein Talebi, Han Zhang, Feng Yang, Peyman Milanfar, Alan Bovik, and Yinxiao Li. Maxvit: Multi-axis vision transformer. arXiv preprint arXiv:2204.01697, 2022.
+- [WPL+17] Xiaosong Wang, Yifan Peng, Le Lu, Zhiyong Lu, Mohammadhadi Bagheri, and Ronald M Summers. Chestx-ray8: Hospital-scale chest x-ray database and benchmarks on weakly-supervised classification and localization of common thorax diseases. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 2097–2106, 2017.
+- [XXC18] Haitao Xu, Fengyuan Xu, and Bo Chen. Internet protocol cameras with no password protection: An empirical investigation. In International Conference on Passive and Active Network Measurement, pages 47–59. Springer, 2018.
+- [YNB+22] Da Yu, Saurabh Naik, Arturs Backurs, Sivakanth Gopi, Huseyin A Inan, Gautam Kamath, Janardhan Kulkarni, Yin Tat Lee, Andre Manoel, Lukas Wutschitz, Sergey Yekhanin, and Huishuai Zhang. Differentially private fine-tuning of language models. In Proceedings of the 10th International Conference on Learning Representations, ICLR ’22, 2022.
+- [YZC+21] Da Yu, Huishuai Zhang, Wei Chen, Jian Yin, and Tie-Yan Liu. Large scale privacy learning via low-rank reparametrization. In Proceedings of the 38th International Conference on Machine Learning, ICML ’21, pages 12208–12218. JMLR, Inc., 2021.
+- [YZCL21] Da Yu, Huishuai Zhang, Wei Chen, and Tie-Yan Liu. Do not let privacy overbill utility: Gradient embedding perturbation for private learning. In Proceedings of the 9th International Conference on Learning Representations, ICLR ’21, 2021.
+- [ZKHB22] Xiaohua Zhai, Alexander Kolesnikov, Neil Houlsby, and Lucas Beyer. Scaling vision transformers. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 12104–12113, 2022.
+
+[^1]: More formally, if the training procedure satisfies $(\varepsilon,\delta)$-DP, then with probability at least $1-\delta$ the inclusion of one individual training record changes the probability of observing any outcome by at most a factor $e^{\varepsilon}$. Most DP models are trained with Rényi DP [ACG+16, Mir17], which is translated into $(\varepsilon,\delta)$-DP to give more interpretable guarantees.
+
+[^2]: https://www.theregister.com/2022/05/03/openai_copilot_cryptocurrency/
+
+[^3]: Luckily, publicly accessible and qualitatively similar alternatives to JFT now exist, such as LAION-5B [SBV+22]. Similarly, prior proprietary pretraining datasets for language models now have fully open replacements, e.g., the Pile [GBB+20]. We believe this trend will continue, with most closed datasets quickly seeing open-sourced equivalents released by the research community.
+
+[^4]: Specifically, CIFAR-10 was collected as a subset of TinyImages, which itself is a dataset of 80 million images collected from the public Internet. Similarly, CLIP’s training dataset is also a dataset of 400 million images collected by downloading images from the public Internet.
+
+[^5]: For example, from 2019 to 2022 the size of the largest language models grew by a factor $100-1000\times$, while the transistor count and memory size of consumer GPUs grew by less than $2\times$ (e.g., for Nvidia’s GeForce series).
+
+[^6]: Specifically, this hypothetical precludes finetuning a smaller model with strong DP guarantees, as the resulting accuracy would be too poor for use.
+
+[^7]: We believe that choosing the right benchmarks for private machine learning is a consequential task, deserving of significant exploration and justification. Such investigation is beyond the scope of the present position paper. As a result, we explicitly abstain from prescribing any specific benchmarks, and leave this for future work.

@@ -1,0 +1,234 @@
+---
+url: https://arxiv.org/abs/2411.14834
+title: Evaluating the Robustness of the "Ensemble Everything Everywhere" Defense
+publishedDate: 2024-11-22
+date_source: listing
+authors: ["Jie Zhang", "Christian Schlarmann", "Kristina Nikoli\u0107", "Nicholas Carlini", "Francesco Croce", "Matthias Hein", "Florian Tram\u00e8r"]
+author_position: middle
+kind: paper
+exa_request_id: https://arxiv.org/abs/2411.14834
+---
+# Evaluating the Robustness of the "Ensemble Everything Everywhere" Defense
+
+arXiv:2411.14834. cs.LG, cs.CR. Submitted 2024-11-22. Latest version v2, 2025-02-04.
+
+## Authors
+
+Jie Zhang, Christian Schlarmann, Kristina Nikoli\'c, Nicholas Carlini, Francesco Croce, Matthias Hein, Florian Tram\`er
+
+## Details
+
+- License: http://creativecommons.org/licenses/by/4.0/
+
+## Versions
+
+- v1: 2024-11-22
+- v2: 2025-02-04
+
+---
+
+Full text of v2.
+
+## Abstract
+
+Ensemble everything everywhere is a defense to adversarial examples that was recently proposed to make image classifiers robust. This defense works by ensembling a model’s intermediate representations at multiple noisy image resolutions, producing a single robust classification. This defense was shown to be effective against multiple state-of-the-art attacks. Perhaps even more convincingly, it was shown that the model’s gradients are perceptually aligned: attacks against the model produce noise that perceptually resembles the targeted class.
+
+In this short note, we show that this defense’ robustness to adversarial attack is overclaimed. We first show that the defense’s randomness and ensembling method cause severe gradient masking. We then use standard adaptive attack techniques to reduce the robust accuracy of the defense from $48\%$ to $14\%$ on CIFAR-100 and from $62\%$ to $11\%$ on CIFAR-10, under the $\ell_{\infty}$ norm threat model with $\varepsilon=8/255$.
+
+An earlier version of this report by Zhang, Nikolić, Carlini and Tramèr contained incorrect attack results due to a bug that created perturbations $10\times$ larger than the bound allowed by the defense [10]. This new version corrects this bug and the resulting claims about the defense’s robustness. We also add results from a concurrent robustness evaluation by Schlarmann, Croce and Hein [26].
+
+## 1 Introduction
+
+Ensemble everything everywhere [11] is a recent defense to adversarial examples [3, 27]. Given any input image, this model applies random transformations to the input at different resolutions and then ensembles the inner activation layers to produce a final robust prediction; by doing this, the authors claim a robust accuracy of $72\%$ on CIFAR-10, and $48\%$ on CIFAR-100 under standard threat models (the authors show that the robustness can be further boosted using adversarial training, to achieve state-of-the-art robustness).
+
+This is certainly not the first proposed defense that claims high (or even state-of-the-art) robustness by combining similar techniques. And such empirical defenses—with the notably exception of those based on adversarial training [18]—all end up broken without exception.
+
+So why should we hope that this defense will be different? Perhaps most convincingly, the defense is shown to produce perceptually aligned perturbations. That is, when starting from a blank image and running an unbounded attack that optimizes for a target class (say “cat”), the attack produces an image that has cat-like features. This suggests two things: (1) the attack can successfully optimize over the defense (at least in the large perturbation regime), suggesting that gradient masking might not be a concern [2]; (2) the defense seems to rely on perceptually aligned features, a property that had previously been observed in robust models [30]. In addition, the defense is evaluated against a state-of-the-art attack (AutoAttack [8]) and achieves high (but not implausible) robustness.
+
+Unfortunately, we show that this defense is not as robust as initially claimed and that the existing evaluation does suffer from gradient masking. We build a stronger adaptive attack that reduces the robust accuracy to $14\%$ for CIFAR-100, or $11\%$ for CIFAR-10.
+
+In summary, while the approach proposed in [11] is an interesting and novel way to yield informative visualizations and image manipulations, it does not yield a defense that achieves high robustness to worst case perturbations.
+
+These results are reminiscent of a previous defense—ME-Net [35]—which also yields interpretable perturbations but was shown to have only low robustness on CIFAR-10 under adaptive attacks [28].
+
+## 2 Background
+
+A defense to adversarial examples [27, 3] is a classifier $f$ designed so that, for any “small” perturbation $\delta$ to an evaluation example $(x,y)$, the model assigns the correct label $f(x+\delta)=y$. For the purpose of this paper, we focus on $\ell_{\infty}$ bounded attacks which require that $\lVert\delta\rVert_{\infty}<\varepsilon$.
+
+There is an exceptionally long line of work studying robustness to exactly these types of attacks. But almost all of these papers are later shown to be broken by stronger attacks (see, e.g., [6, 2, 28]).
+
+(1) adversarial training [27, 18], which trains a model on adversarial examples until the model is (empirically) robust to attacks; (2) robustness certification [24, 31, 13], which computes and optimizes a tractable lower bound on a model’s robustness to obtain a provable guarantee; (3) randomized smoothing [7, 15], which trains a model on noisy images and then ensembles many (e.g., 1000) noisy predictions at test time to provide a probabilistic robustness guarantee.
+
+If effective, ensemble everything everywhere would represent a new and fourth approach to achieving robustness. Although this defense idea is not completely original (many prior defenses have claimed robustness by studying hidden layer activations [19], ensembling many predictors [21, 1, 34], adding randomness to the input image [33], or applying other input transformations [23, 14]) this defense has four compelling properties:
+
+1. High clean accuracy: $>90\%$ test accuracy in CIFAR-10, higher than most other adversarially robust defenses.
+2. High (claimed) robust accuracy: close or exceeding SOTA on CIFAR-10 and CIFAR-100 for $\ell_{\infty}$ attacks bounded by $\epsilon=8/255$.
+3. Efficient inference: The defense uses a single forward pass through a standard convolutional model (it is therefore orders of magnitude cheaper than random smoothing).
+4. Efficient training: The defense requires no adversarial training.
+
+### 2.1 Ensemble Everything Everywhere
+
+This defense combines three ideas:
+
+1. Multi-resolution: Instead of processing a single image $x\in[0,1]^{d\times d}$, the defense first stacks multiple copies of the input at different resolutions.
+ Given a set of resolutions $d_{1},\dots,d_{k}\leq d$ we define
+ $$x_{k}=\textsc{upscale}\Big(\textsc{downscale}(x,d_{i})+\mathcal{N}(0,\sigma_{1}^{2}\cdot I_{d_{i}\times d_{i}})\Big)+\mathcal{N}(0,\sigma_{2}^{2}\cdot I_{d\times d})\;.$$
+ That is, the input is downscaled to size $d_{i}\times d_{i}$, then noised, then upscaled to size $d\times d$, and noised again. The authors’ implementation adds other random transforms (e.g., jitter, contrast, color shifts) to the input, which we omit here for simplicity. The input to the model is $x_{\text{multi}}=[x_{1},x_{2},\dots,x_{k}]$.
+2. Ensembling intermediate layers: The defense also ensembles features at multiple intermediate layers.
+ Denote an $n$-layer model as $f(x)=g_{n}\circ g_{n-1}\circ\dots g_{2}\circ g_{1}(x)$, where $g_{i}$ is the $i$-th layer. Define $f_{i}$ as the partial function that runs the model up to layer $i$. The defense jointly trains multiple classifiers of the form $h_{i}\circ f_{i}(x)$, where $h_{i}$ is a linear layer that maps the features at layer $i$ to a vector of logits. At inference time, the defense aggregates the logits for a set of layers $i\in I$:
+ $$f_{\text{ens}}(x_{\text{multi}})=\textsc{aggregate}\big(\{h_{i}\circ f_{i}(x_{\text{multi}})\}_{i\in I)}\big)$$
+ A simple aggregation function is to just take the mean of all the intermediate logits.
+3. Robust aggregation: Finally, the defense proposes a more robust aggregation function for intermediate logits. Given the set of logits $Z\in\mathbb{R}^{|I|\times C}$ (where $|I|$ is the number of ensembled layers, and $C$ is the number of classes), the CrossMax aggregation function is defined as:
+ $$\displaystyle\textsc{CrossMax}(Z):\quad \displaystyle Z\leftarrow Z-\max(Z,\mathtt{axis}=1)$$
+ $$\displaystyle Z\leftarrow Z-\max(Z,\mathtt{axis}=0)$$
+ $$\displaystyle Z\leftarrow\mathtt{sort}(Z,\mathtt{axis}=0)$$
+ $$\displaystyle\mathbf{output}\ Z[k]$$
+ In words, we first normalize all intermediate predictions so that the most likely class predicted by each layer has score 0 (i.e., the largest value in each row is equal to 0). Then, we normalize class predictions by subtracting the most confident prediction for each class across all layers (i.e., the largest value in each column is equal to 0). Finally, for each class, we return the kth-highest normalized score for that class across all layers ($k=3$ in the released code).
+
+## 3 Existing Tests Reveal Gradient Masking
+
+Gradient Masking [22, 29, 2] is one of the most common reasons why an adversarial example defense appears effective but ends up being broken. A defense is said to mask its gradients if the local gradient direction does not usefully align with the direction of the nearest adversarial examples. For example, by saturating the output softmax of a classifier, a defense could cause numerical instabilities that lead to zero loss and gradients [5]. Since gradient masking is such a prevalent issue, there are now numerous tests designed to identify it. We find that two of these tests would have given strong evidence that this defense’s original evaluation was untrustworthy because of significant gradient masking.
+
+### 3.1 Visualizing the Loss Landscape
+
+We begin with a simple method to understand whether or not the defense’s loss landscape is amenable to gradient-based optimization. Given a point $x$, we pick two directions $d_{1},d_{2}$ in the input space (where one direction points towards an adversarial example, and the other is randomly chosen to be orthogonal to the first one), and measure the model’s loss in a two-dimensional slice of the form $x+\alpha\cdot d_{1}+\beta\cdot d_{2}$.
+
+The loss surface plotted in Figure 1(a) is extremely “spiky” with a large number of local minima that hinder gradient descent. To understand the cause of this effect, we first disable the model’s randomness (by picking the same random pre-processing for each inference). This leads to a much smoother loss surface (Figure 1(b)), but still with a significant local minimum. Finally, we average out the randomness using an Expectation-over-transformation approach [2], by averaging the loss over multiple inferences (Figure 1(c)). This partially smooths out the loss, and reveals a more stable optimization landscape on a macro-scale, but with small spikes remaining on a local scale.
+
+Overall, this simple visualization shows that we have little hope of finding adversarial examples if we apply naive gradient descent directly to the full defense.
+
+(a) Loss of original model
+
+(b) Loss of model with randomness disabled
+
+(c) Loss of model, averaged over many evaluations
+
+Figure 1: If we plot a two-dimensional slice of the loss surface, the original model in (a) has extremely large spikes in the logprobs of the model output. This makes it very difficult for gradient-based search to identify adversarial examples. If we remove randomness, in (b) we see that the loss surface is indeed smooth, confirming that the model itself does not introduce gradient instabilities. Therefore, by ensembling over randomness in (c) we can correct for the noisy loss surface and break the defense.
+
+### 3.2 Unit Tests
+
+Zimmerman et al. propose a simple method to determine if an evaluation of a defense to adversarial examples is performed correctly [36]. Given the trained classifier $f$, begin by re-initializing the final layer of the model so that the output predictions are completely arbitrary and have no inherent meaning. Then, re-train the final layer so that for every input $x$ there is always another nearby “adversarial” example $x^{\prime}$ that has a different classification.[^1] Now, use the attack from the original evaluation to find adversarial examples on this classifier. If the attack fails to find an adversarial example for some point $x$, then we know it must be too weak to be correct, because we have constructed the model to have this property.
+
+Performing this test with the original evaluation code results in a unit test pass rate of just $60\%$. This suggests that the original evaluation was insufficiently strong to correctly evaluate whether or not the defense was effective. Thus, the remainder of this paper will be dedicated to developing a stronger attack that can correctly account for the randomness inherent in this defense.
+
+## 4 Evaluating the Defense’s Robustness
+
+#### Setup.
+
+We use the official codebase released by the authors[^2] to train the defense on CIFAR-10 and CIFAR-100. Our models achieve clean accuracy of $88.9\%$ on CIFAR-10, and $64.1\%$ on CIFAR-100. We then run the AutoAttack evaluation considered by the authors, and obtain robust accuracies of $61.8\%$ on CIFAR-10 and $47.9\%$ on CIFAR-100 (see Table 1). This is consistent with the results reported by the authors in their repository.[^3] Since this defense relies heavily on randomness, we conduct 10 runs for all results and then report the mean and standard deviation. In contrast to [11], we attack all samples, even if they are classified incorrectly already in clean evaluation. Since the forward pass of the target model is subject to randomness, such samples are not necessarily always classified incorrectly. Thus it is important to attack also these samples [16].
+
+#### Our PGD attack.
+
+Our attack is rather simple: the main trick is to attack the defense without the CrossMax operator, which causes gradient masking. We summarize our attack steps below:
+
+- Standard PGD: We start with a standard PGD attack [18] with 500 steps. Surprisingly, this already improves upon the results from AutoAttack. The reason is likely because we use a large number of steps which helps deal with the large randomness in the defense’s pre-processing.
+- Transfer from a model without CrossMax: we found that if we replace the CrossMax aggregation by a simple mean, we can reliably reduce the model’s robust accuracy. This suggests that either (1) all the robustness comes from the CrossMax, or (2) the CrossMax causes gradient masking. We find that the latter is true: if we take the adversarial examples optimized for the model with a mean aggregation, and then simply transfer these to the target model, the robust accuracy is reduced by about $1/3$.[^4]
+- Expectation over Transformation (EoT): Since the defense uses a lot of randomness, we apply the standard EoT trick [2] where we approximate the expected value of the gradient by performing multiple backward passes with different randomness.
+- Bag of Tricks: A standard PGD+EoT attack transferred from a model without CrossMax works reasonably well, and reduces robustness to around 20–30%. We then add further simple tricks—additional PGD steps (up to 400), more EoT steps (up to 100), a change of loss function (the Hinge loss of [6] instead of a standard cross-entropy)—to reduce the robustness further to around $11.3\%$ on CIFAR-10 and $13.8\%$ on CIFAR-100.
+
+Table 1: We report the robust accuracy on 100 test samples under an $\ell_{\infty}=8/255$ attack strength. This table presents the results of attacks on multi-resolution ResNet152 models fine-tuned on CIFAR-10 and CIFAR-100 from an ImageNet-pretrained model, without any adversarial training.
+
+| | Accuracy (%) | |
+| --- | --- | --- |
+| Attack | CIFAR-10 | CIFAR-100 |
+| None | $88.9\pm 2.8$ | $64.1\pm 2.4$ |
+| AutoAttack | $61.8\pm 2.3$ | $47.9\pm 2.7$ |
+| PGD | $54.0\pm 2.0$ | $34.6\pm 4.0$ |
+| + transfer | $32.6\pm 1.9$ | $22.2\pm 2.1$ |
+| + EoT | $27.5\pm 2.3$ | $19.5\pm 1.5$ |
+| + bag of tricks | $11.3\pm 2.5$ | $13.8\pm 2.1$ |
+| APGD w/ transfer, EoT | $16.4\pm 2.2$ | $16.8\pm 1.3$ |
+| + larger initial radius | $15.3\pm 2.7$ | $16.0\pm 1.5$ |
+| + 1000 total steps | $13.8\pm 2.5$ | $15.9\pm 1.7$ |
+| Best-of-both | $\mathbf{10.9\pm 2.4}$ | $\mathbf{13.6\pm 1.4}$ |
+
+We visualize the performance of the different attack steps in Figure 2.
+
+(a)
+
+(b)
+
+Figure 2: (a) For different attack strategies, we plot the attack’s loss averaged over 100 examples: (1) directly optimizing the target model (in green) has trouble converging due to gradient masking; (2) attacking the “source” model with a mean aggregation (blue) works well; (3) transferring the attack from the source model to the target model (red) outperforms the attack that directly optimizes over the target model. (b) We show an ablation on the amount of EoT iterations with the APGD attack on 32 CIFAR-10 samples using 100 steps. We observe that it is crucial to use a sufficiently high amount of iterations, however, there is no consistent improvement beyond 100 EoT iterations.
+
+#### Our APGD attack.
+
+This attack is based on APGD [8], which is known to be a strong attack due to its adaptive step size schedule. We maximize the cross-entropy loss, using 100 steps by default. To adapt this attack to the target model at hand, we use the following approach:
+
+- Transfer from a model without CrossMax: Similar to our PGD attack, we utilize transfer from a model that replaces CrossMax with mean aggregation.
+- Expectation over Transformation (EoT): We use 100 EoT iterations. An ablation on the amount of EoT iterations is shown in Figure 2.
+- Larger initial radius: We use a larger perturbation budget at the beginning of the attack as proposed in [9]. This allows the attack to find promising adversarial directions more easily. The perturbation radius is then gradually decreased during the attack according to the following schedule: $3\epsilon$ for $30\%$ of total iterations, $2\epsilon$ for $30\%$ of total iterations, and $\epsilon$ for $40\%$ of total iterations. This is an existing functionality of APGD that is by default deactivated.
+
+## 5 Discussion
+
+Unfortunately, this defense did not end up giving us a fourth category of approaches for (high) adversarial robustness. We believe there are a few lessons to be learned from this defense and the (cautious) enthusiasm that it originally caused.
+
+- This defense mostly combines and extends past ideas that did not work: aggregating multiple viewpoints [17], random input transformations [14], “biologically-inspired” visual processing [20, 4], aggregation of internal features [25], etc.
+ But this does not mean that revisiting past failed ideas is a bad thing. For example, both standard adversarial training [18] and fast adversarial training [32] carefully revisited ideas that had previously been attempted and incorrectly dismissed.
+ However, given such past failures, new empirical defenses need a high degree of evidence to convince the community.
+- We could analyze and partially break this defense using only existing techniques [36, 28, 2]. As already noted a few years ago in [28], the time seems to have passed where breaking a defense requires new research ideas. Now, it is mainly an exercise in rigorously applying known techniques until the defense breaks (or one fails after exhausting all attempts). The issue with current defense evaluations is thus primarily methodological: defense authors should try as hard as possible to cover all possible attack strategies before claiming empirical robustness.
+- Although our attack did not need any new techniques, it does highlight (again) the importance of performing careful adaptive evaluations. Although it is tempting to run standard off-the-shelf evaluation tools such as AutoAttack [8], this is not sufficient. As we show above, AutoAttack maxes out at only a $52\%$ attack success rate on CIFAR-100, while our adaptive attack achieves $\geq 85\%$ success.
+- Identifying these types of flaws requires the use of specialized tools designed specifically for this purpose. The original paper attempts to argue robustness, in part, by showing that the defended models have interpretable gradients. This is because many robust models indeed have interpretable gradients [30]. But the converse is not necessarily true [12]—as we showed again in the case of this model. Its gradients are highly perceptually aligned, but the model exhibits only very small robustness to adversarial attacks. A similar phenomenon had been observed with a prior defense—ME-Net [35]—which uses matrix estimation techniques to yield interpretable gradients, but only very moderate adversarial robustness [28].
+- Attacks have to be rigorously tested too, and adaptive evaluations can contain their own bugs! The implementation in the original version of this report stacked multiple attack stages, and incorrectly computed the $\ell_{\infty}$ bound for each stage with respect to the output of the previous stage. As a result, after $k$ stages the adversarial perturbations could be as large as $k\cdot 8/255$. (see [10] for details.
+ A good practice to avoid such errors (and which we used in our amended PGD attack) was to implement the attack in a script that saves the final adversarial examples to disk, and then have a second standalone script that solely evaluates the attack against the original defense and data.
+ We also used this script to visualize adversarial examples (see Figure 3). While some of these showcase interpretable perturbations (as claimed in the original defense paper), others do not seem to.
+
+(a) CIFAR-10
+
+(b) CIFAR-100
+
+Figure 3: Examples of clean images (top row) with the adversarial examples found by our attack (middle row), and the corresponding perturbation (bottom row, centered and magnified). In some cases, the perturbations are clearly interpretable, e.g, CIFAR-10 “cat” $\to$ “dog” (2nd from right) or CIFAR-100 “sea” $\to$ “apple” (5th from left).
+
+On the whole, our work re-iterates the need for very careful evaluations of defenses against adversarial examples. While heuristic arguments based on the human visual system or on model interpretability can be useful to build intuition for a defense, they are by no means a trustworthy signal of robustness.
+
+That being said, the ideas behind this defense are by far not without merit. The multi-resolution prior proposed by Fort and Lakshminarayanan [11] appears to have many useful applications beyond worst-case adversarial robustness, such as for model interpretability and visualization, simple and highly controllable image generation and manipulation from a single CLIP model, and even for creating transferable adversarial examples for state-of-the-art multimodal LLMs like GPT-4 [11].
+
+#### Acknowledgments.
+
+We thank Stanislav Fort for discovering the bug in the original implementation of the attack of Zhang et al., and for valuable discussions about the defense and comments about this write-up.
+
+## References
+
+- [1] Mahdieh Abbasi and Christian Gagné. Robustness to adversarial examples through an ensemble of specialists. arXiv preprint arXiv:1702.06856, 2017.
+- [2] Anish Athalye, Nicholas Carlini, and David Wagner. Obfuscated gradients give a false sense of security: Circumventing defenses to adversarial examples. In International conference on machine learning, pages 274–283. PMLR, 2018.
+- [3] Battista Biggio, Igino Corona, Davide Maiorca, Blaine Nelson, Nedim Šrndić, Pavel Laskov, Giorgio Giacinto, and Fabio Roli. Evasion attacks against machine learning at test time. In European Conference on Machine Learning and Knowledge Discovery in Databases, pages 387–402. Springer, 2013.
+- [4] Wieland Brendel and Matthias Bethge. Comment on ”biologically inspired protection of deep networks from adversarial attacks”. arXiv preprint arXiv:1704.01547, 2017.
+- [5] Nicholas Carlini and David Wagner. Defensive distillation is not robust to adversarial examples. arXiv preprint arXiv:1607.04311, 2016.
+- [6] Nicholas Carlini and David Wagner. Towards evaluating the robustness of neural networks. In 2017 ieee symposium on security and privacy (sp), pages 39–57. Ieee, 2017.
+- [7] Jeremy Cohen, Elan Rosenfeld, and Zico Kolter. Certified adversarial robustness via randomized smoothing. In International Conference on Machine Learning, pages 1310–1320, 2019.
+- [8] Francesco Croce and Matthias Hein. Reliable evaluation of adversarial robustness with an ensemble of diverse parameter-free attacks. In International conference on machine learning, pages 2206–2216. PMLR, 2020.
+- [9] Francesco Croce and Matthias Hein. Mind the box: $l\_1$-apgd for sparse adversarial attacks on image classifiers. In ICML, 2021.
+- [10] Stanislav Fort. A note on implementation errors in recent adaptive attacks against multi-resolution self-ensembles, 2025.
+- [11] Stanislav Fort and Balaji Lakshminarayanan. Ensemble everything everywhere: Multi-scale aggregation for adversarial robustness, 2024.
+- [12] Roy Ganz, Bahjat Kawar, and Michael Elad. Do perceptually aligned gradients imply adversarial robustness? arXiv preprint arXiv:2207.11378, 2022.
+- [13] Timon Gehr, Matthew Mirman, Dana Drachsler-Cohen, Petar Tsankov, Swarat Chaudhuri, and Martin Vechev. Ai2: Safety and robustness certification of neural networks with abstract interpretation. In IEEE Symposium on Security and Privacy, 2018.
+- [14] Chuan Guo, Mayank Rana, Moustapha Cisse, and Laurens Van Der Maaten. Countering adversarial images using input transformations. arXiv preprint arXiv:1711.00117, 2017.
+- [15] Mathias Lecuyer, Vaggelis Atlidakis, Roxana Geambasu, Daniel Hsu, and Suman Jana. Certified robustness to adversarial examples with differential privacy. In IEEE Symposium on Security and Privacy, pages 656–672, 2019.
+- [16] Yiming Liu, Kezhao Liu, Yao Xiao, Ziyi Dong, Xiaogang Xu, Pengxu Wei, and Liang Lin. Towards better adversarial purification via adversarial denoising diffusion training. arXiv preprint arXiv:2404.14309, 2024.
+- [17] Yan Luo, Xavier Boix, Gemma Roig, Tomaso Poggio, and Qi Zhao. Foveation-based mechanisms alleviate adversarial examples. arXiv preprint arXiv:1511.06292, 2015.
+- [18] Aleksander Madry, Aleksandar Makelov, Ludwig Schmidt, Dimitris Tsipras, and Adrian Vladu. Towards deep learning models resistant to adversarial attacks. In International Conference on Learning Representations, 2018.
+- [19] Jan Hendrik Metzen, Tim Genewein, Volker Fischer, and Bastian Bischoff. On detecting adversarial perturbations. arXiv preprint arXiv:1702.04267, 2017.
+- [20] Aran Nayebi and Surya Ganguli. Biologically inspired protection of deep networks from adversarial attacks. arXiv preprint arXiv:1703.09202, 2017.
+- [21] Tianyu Pang, Kun Xu, Chao Du, Ning Chen, and Jun Zhu. Improving adversarial robustness via promoting ensemble diversity. In International Conference on Machine Learning, pages 4970–4979. PMLR, 2019.
+- [22] Nicolas Papernot, Patrick McDaniel, Ian Goodfellow, Somesh Jha, Z Berkay Celik, and Ananthram Swami. Practical black-box attacks against machine learning. In ACM Asia Conference on Computer and Communications Security, pages 506–519, 2017.
+- [23] Edward Raff, Jared Sylvester, Steven Forsyth, and Mark McLean. Barrage of random transforms for adversarially robust defense. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 6528–6537, 2019.
+- [24] Aditi Raghunathan, Jacob Steinhardt, and Percy Liang. Certified defenses against adversarial examples. In International Conference on Learning Representations, 2018.
+- [25] Sara Sabour, Yanshuai Cao, Fartash Faghri, and David J Fleet. Adversarial manipulation of deep representations. arXiv preprint arXiv:1511.05122, 2015.
+- [26] Christian Schlarmann, Francesco Croce, and Matthias Hein. Public comment: Robustness evaluation seems invalid. https://openreview.net/forum?id=IHRQif8VQC&noteId=vUzo8RWZeM, 2024.
+- [27] Christian Szegedy, Wojciech Zaremba, Ilya Sutskever, Joan Bruna, Dumitru Erhan, Ian Goodfellow, and Rob Fergus. Intriguing properties of neural networks. In International Conference on Learning Representations, 2014.
+- [28] Florian Tramer, Nicholas Carlini, Wieland Brendel, and Aleksander Madry. On adaptive attacks to adversarial example defenses. Advances in neural information processing systems, 33:1633–1645, 2020.
+- [29] Florian Tramèr, Alexey Kurakin, Nicolas Papernot, Ian Goodfellow, Dan Boneh, and Patrick McDaniel. Ensemble adversarial training: Attacks and defenses. In International Conference on Learning Representations, 2018.
+- [30] Dimitris Tsipras, Shibani Santurkar, Logan Engstrom, Alexander Turner, and Aleksander Madry. Robustness may be at odds with accuracy. arXiv preprint arXiv:1805.12152, 2018.
+- [31] Eric Wong and Zico Kolter. Provable defenses against adversarial examples via the convex outer adversarial polytope. In International conference on machine learning, pages 5286–5295. PMLR, 2018.
+- [32] Eric Wong, Leslie Rice, and J Zico Kolter. Fast is better than free: Revisiting adversarial training. arXiv preprint arXiv:2001.03994, 2020.
+- [33] Cihang Xie, Jianyu Wang, Zhishuai Zhang, Zhou Ren, and Alan Yuille. Mitigating adversarial effects through randomization. arXiv preprint arXiv:1711.01991, 2017.
+- [34] W Xu. Feature squeezing: Detecting adversarial examples in deep neural networks. arXiv preprint arXiv:1704.01155, 2017.
+- [35] Yuzhe Yang, Guo Zhang, Dina Katabi, and Zhi Xu. ME-Net: Towards effective adversarial robustness with matrix estimation. arXiv preprint arXiv:1905.11971, 2019.
+- [36] Roland S Zimmermann, Wieland Brendel, Florian Tramer, and Nicholas Carlini. Increasing confidence in adversarial robustness evaluations. Advances in neural information processing systems, 35:13174–13189, 2022.
+
+[^1]: We omit a number of details. In practice we condense the model to have two output classes, and always attack from class 0 to class 1. The bias should be set so that random search does not trivially find adversarial examples.
+
+[^2]: https://github.com/stanislavfort/ensemble-everything-everywhere
+
+[^3]: The paper [11] reports slightly higher robustness numbers using larger models, longer training runs, and combining with adversarial training. As these models and their training code are not publicly released, we rely on the official training code.
+
+[^4]: This was also described in [26].

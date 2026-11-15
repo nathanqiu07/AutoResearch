@@ -1,0 +1,98 @@
+---
+url: https://arxiv.org/abs/2010.00071
+title: Erratum Concerning the Obfuscated Gradients Attack on Stochastic Activation Pruning
+publishedDate: 2020-09-30
+date_source: listing
+authors: ["Guneet S. Dhillon", "Nicholas Carlini"]
+author_position: last
+kind: paper
+exa_request_id: https://arxiv.org/abs/2010.00071
+---
+# Erratum Concerning the Obfuscated Gradients Attack on Stochastic Activation Pruning
+
+arXiv:2010.00071. cs.LG, stat.ML. Submitted 2020-09-30.
+
+## Authors
+
+Guneet S. Dhillon, Nicholas Carlini
+
+## Details
+
+- License: http://arxiv.org/licenses/nonexclusive-distrib/1.0/
+
+## Versions
+
+- v1: 2020-09-30
+
+---
+
+Full text of v1.
+
+## Abstract
+
+Stochastic Activation Pruning (SAP) (Dhillon et al., 2018) is a defense to adversarial examples that was attacked and found to be broken by the “Obfuscated Gradients” paper (Athalye et al., 2018). We discover a flaw in the re-implementation that artificially weakens SAP. When SAP is applied properly, the proposed attack is not effective. However, we show that a new use of the BPDA attack technique can still reduce the accuracy of SAP to $0.1\%$.
+
+## 1 Introduction
+
+Stochastic Activation Pruning (SAP) (Dhillon et al., 2018) is a proposed defense to adversarial examples. In their work, Athalye et al. (2018) perform an analysis of SAP and determine that it offers no robustness improvement on top of a baseline model. We discover a flaw in the re-implementation made by the authors that artificially weakens SAP. A different attack technique is necessary to break the correctly-implemented version of SAP.
+
+## 2 Background
+
+We assume familiarity with neural networks, methods to generate adversarial examples, Stochastic Activation Pruning, and the Backwards Pass Differentiable Approximation.
+
+Notation. For a trained neural network $f(\cdot)$ evaluated on some input $x$, an adversarial example $x^{\prime}$ is constructed by performing gradient ascent in the input-space to maximize the loss function $\ell(f(x^{\prime}),y)$ (cross-entropy loss in this case). This is done with the constraint that the distance between $x$ and $x^{\prime}$ (the infinity norm is commonly used) is small.
+
+Stochastic Activation Pruning (SAP) (Dhillon et al., 2018) introduces randomness into the evaluation of a pre-trained neural network by stochastically dropping out neurons and setting their values to zero. Neurons are retained with probabilities proportional to their absolute value.
+
+Let $f=f_{d}\circ f_{d-1}\circ\dots\circ f_{1}$ denote a $d$-layer neural network. We define $h^{i}\in\mathbb{R}^{m_{i}}$ to be the activations which result after evaluating layer $f_{i}$ (with the non-linearity). We index each activation as $h^{i}_{j}$.
+
+While performing the forward pass, SAP defines a multinomial probability distribution
+
+$$p^{i}_{j}=|h^{i}_{j}|\cdot\bigg(\sum\limits_{k=1}^{m_{i}}|h^{i}_{k}|\bigg)^{-1},$$
+
+where $p^{i}_{j}$ is the probability of retaining $h^{i}_{j}$. $r_{i}$ neurons are randomly sampled with replacement according to this probability distribution. The probability that $h^{i}_{j}$ is retained is $q^{i}_{j}={1-(1-p^{i}_{j})^{r_{i}}}$. To ensure that the total “mass” propagating forward is preserved, SAP divides each node by the probability of retaining it (similar to dropout), so that
+
+$$\hat{h}^{i}_{j}=\begin{cases}{h^{i}_{j}\over q^{i}_{j}}&\text{if sampled}\\ 0&\text{otherwise}.\\ \end{cases}$$
+
+This process is repeated for every non-linear layer.
+
+The choice of $r_{i}$ should be large enough that not too many neurons are dropped (otherwise SAP would not be accurate on clean data), but not so large that all neurons are retained (otherwise SAP would do nothing). The authors suggest setting $r_{i}$ to be equal to the width of the layer, i.e. $m_{i}$.
+
+Backwards Pass Differentiable Approximation (BPDA) (Athalye et al., 2018) is an attack strategy that alters the computation of the gradient of $f$ with respect to the input $x$, i.e. $\nabla_{x}f(x)$. The forward pass is computed on the function $f$, but the backward pass is computed on a different function $g\approx f$ such that the resulting gradient is neither the gradient of $f$ nor the gradient of $g$.
+
+Specifically, let $f^{i}$ be a non-differentiable layer of a neural network. To approximate $\nabla_{x}f(x)$, construct an approximation $g^{i}\approx f^{i}(x)$ of this layer. Then, approximate $\nabla_{x}f(x)$ by performing the forward pass through $f(\cdot)$ (in particular, $f^{i}(x)$), but on the backward pass, replace $f^{i}(x)$ with $g^{i}(x)$. In general when multiple layers are non-differentiable we select one $g^{i}$ per layer, and replace all of them in the backward pass. As long as the two functions are similar, the slightly inaccurate gradients still prove useful in constructing adversarial examples.
+
+## 3 The Error of “Obfuscated Gradients …”
+
+The SAP paper explicitly states “the output of stochastic models are computed as an average over multiple forward passes” (Dhillon et al., 2018). When re-implementing the SAP defense, the authors of Athalye et al. (2018) did not include this step[^1]. As a result, in order to maintain the clean accuracy of approximately $83\%$ as reported in Dhillon et al. (2018), the value of $r_{i}$ had to be set to $2\times m_{i}$, which is much larger than the prescribed value. Fixing this error in the implementation is simple: setting the value of $r_{i}$ to $m_{i}$, and evaluating each test example by averaging the outputs over $100$ forward passes.
+
+When this error is corrected, the attack described in Athalye et al. (2018) is no longer effective; the accuracy of SAP remains as is claimed in the paper.
+
+Importantly, this error would not have been discovered if not for the fact that both papers (Dhillon et al., 2018; Athalye et al., 2018) released source code. We firmly believe that releasing source code is the only way to promote correct and reproducible research, especially in the domain of adversarial machine learning where – as is the case here – setting a single hyper-parameter to the incorrect value can have dramatic consequences.
+
+There was a second difference that did not change the results. Instead of sampling exactly $r_{i}$ neurons per layer from a multinomial distribution as in Dhillon et al. (2018), Athalye et al. (2018) used a per-neuron binomial distribution. This approximation is more efficient in high-dimensional spaces while remaining close in performance. When we attack a model that uses the latter approach, and evaluate using the former, the attack success rate remains unchanged.
+
+## 4 Repairing the SAP Attack
+
+When we run the attack code on the correctly-implemented version of SAP, it fails to find an adversarial example in most cases; even with over $10,000$ iterations of gradient ascent, the targeted attack success rate remains below $50\%$ on CIFAR-10 at a distortion bound of $\varepsilon=0.031$.
+
+We therefore began to test for other signs of gradient masking as recommended by Athalye et al. (2018). We ran a transfer attack where we generated adversarial examples on the undefended model and then evaluate these adversarial examples with SAP. The targeted attack success rate is $70\%$ on these. Part of the reason why this attack is more successful is due to gradient masking. Intuitively this makes sense as SAP introduces stochasticity on top of a pre-trained model, behaving similar to the pre-trained model while making the attack optimization difficult.
+
+Given that gradients computed on the undefended model effectively fool the defended model, we decided to try and apply the BPDA[^2] strategy on SAP. By doing this, we query the actual defended model, while only taking gradients with respect to the original model. The concrete instantiation of this attack removes the neuron-dropping completely from the backward pass and just computes the gradients on the vanilla neural network $f$, without any SAP components; the forward pass retains the dropped neurons. As mentioned earlier, we apply per-neuron binomial sampling for efficiency, but test on the correct multinomial distribution.
+
+We then evaluate the accuracy of SAP on CIFAR-10 with a distortion bound of $\varepsilon=0.031$. This modified attack is sufficient to reduce the accuracy of SAP to $0.1\%$ ($\pm 0.05\%$) evaluated over the test set.
+
+## 5 Conclusion
+
+We discover a flaw in the evaluation of Athalye et al. (2018) with regard to the implementation of Stochastic Activation Pruning (Dhillon et al., 2018). When corrected, the original attack is no longer effective. However, we slightly adapt the attack to make use of BPDA and reduce the effectiveness of SAP to $0.1\%$ at $\varepsilon=0.031$.
+
+Papers which re-implement defenses must be extremely careful when reproducing prior work to ensure that any replications are exactly as described as in the original paper. In this case, the error should have been discovered when the replicated neural network required a different hyper-parameter than described in the original paper. Fortunately, the reason this discrepancy was discovered at all was that both papers did release code (by publication time).
+
+## References
+
+- Athalye et al. (2018) Athalye, A., Carlini, N., and Wagner, D. Obfuscated gradients give a false sense of security: Circumventing defenses to adversarial examples. International Conference on Machine Learning, 2018.
+- Dhillon et al. (2018) Dhillon, G. S., Azizzadenesheli, K., Bernstein, J. D., Kossaifi, J., Khanna, A., Lipton, Z. C., and Anandkumar, A. Stochastic activation pruning for robust adversarial defense. International Conference on Learning Representations, 2018.
+
+[^1]: The author of this erratum, Nicholas Carlini, wrote the SAP re-implementation and is solely responsible for the error.
+
+[^2]: BPDA in general should not be treated as a magic black-box that resolves all optimization difficulties. Since BPDA applies the incorrect gradient, in many cases unless applied very carefully, attacks perform worse with BPDA than without. In this particular case we found it was helpful.

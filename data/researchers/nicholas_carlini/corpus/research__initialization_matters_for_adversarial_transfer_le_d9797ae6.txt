@@ -1,0 +1,441 @@
+---
+url: https://arxiv.org/abs/2312.05716
+title: Initialization Matters for Adversarial Transfer Learning
+publishedDate: 2023-12-10
+date_source: listing
+authors: ["Andong Hua", "Jindong Gu", "Zhiyu Xue", "Nicholas Carlini", "Eric Wong", "Yao Qin"]
+author_position: middle
+kind: paper
+exa_request_id: https://arxiv.org/abs/2312.05716
+---
+# Initialization Matters for Adversarial Transfer Learning
+
+arXiv:2312.05716. cs.CV. Submitted 2023-12-10. Latest version v2, 2024-03-30.
+
+## Authors
+
+Andong Hua, Jindong Gu, Zhiyu Xue, Nicholas Carlini, Eric Wong, Yao Qin
+
+## Details
+
+- License: http://arxiv.org/licenses/nonexclusive-distrib/1.0/
+
+## Versions
+
+- v1: 2023-12-10
+- v2: 2024-03-30
+
+---
+
+Full text of v1.
+
+## Abstract
+
+With the prevalence of the Pretraining-Finetuning paradigm in transfer learning, the robustness of downstream tasks has become a critical concern. In this work, we delve into adversarial robustness in transfer learning and reveal the critical role of initialization, including both the pretrained model and the linear head. First, we discover the necessity of an adversarially robust pretrained model. Specifically, we reveal that with a standard pretrained model, Parameter-Efficient Finetuning (PEFT) methods either fail to be adversarially robust or continue to exhibit significantly degraded adversarial robustness on downstream tasks, even with adversarial training during finetuning. Leveraging a robust pretrained model, surprisingly, we observe that a simple linear probing can outperform full finetuning and other PEFT methods with random initialization on certain datasets. We further identify that linear probing excels in preserving robustness from the robust pretraining. Based on this, we propose Robust Linear Initialization (RoLI) for adversarial finetuning, which initializes the linear head with the weights obtained by adversarial linear probing to maximally inherit the robustness from pretraining. Across five different image classification datasets, we demonstrate the effectiveness of RoLI and achieve new state-of-the-art results.
+
+## 1 Introduction
+
+Figure 1: Robust Linear Initialization (RoLI), significantly improves adversarial robustness. RoLI, denoted in red, achieves an average 3.88% increase in clean accuracy and a 2.44% increase in robust accuracy compared to Random Linear Initialization (RanLI) of the linear head during adversarial finetuning, averaged across five downstream datasets. Our best-performing RoLI - Full-FT, which represents adversarial full finetuning with robust linear initialization, achieves a new state-of-the-art performance. We include six popular finetuning methods with Swin Transformer [31] and two existing state-of-the-art techniques for adversarial transfer learning: TWINS-AT [32] and AutoLoRA [46].
+
+With the advancement of large-scale deep learning models, the Pretraining-Finetuning paradigm takes a more dominant role compared to training from scratch across various tasks [2], including computer vision [14, 17, 24, 31], natural language processing [44, 22, 39], and speech recognition [38]. Under the paradigm of Pretraining-Finetuing, advanced parameter-efficient finetuning (PEFT) methods [19, 20, 18, 29, 5, 52] have emerged. Compared to full finetuning, PEFT methods either introduce small modules into a fixed pretrained model or optimize only part of the pretrained model, demonstrating exceptional performance while keeping storage usage low.
+
+Figure 2: Illustration of six different finetuning techniques, arranged in descending order according to the number of tunable parameters.
+
+While the success of transfer learning is evident, the robustness of downstream models has become a critical concern in real-world applications. For example, as suggested by previous studies, full finetuning will distort the pretrained features, leading to compromised robustness in terms of image corruptions and out-of-distribution (OOD) performance [47, 28]. In addition, adversarial robustness poses another significant challenge to real-world deployment, as a non-robust model demonstrates nearly zero accuracy under adversarial attacks [43]. Many approaches have been proposed to enhance adversarial robustness in transfer learning, including improving the robustness of pretraining through self-supervised techniques [8, 21] and preserving robustness from pretrained models during finetuning [32, 46]. However, most previous works [46, 32] apply full finetuning for adversarial transfer learning, overlooking the significance of different finetuning methods.
+
+In this work, we comprehensively study six popular finetuning methods in adversarial transfer learning. We discover that initialization, including 1) the backbone initialization, i.e., pretrained model, and 2) the linear head which adapts features to the target domain, plays a critical role in adversarial transfer learning. We start by comparing the performance of adversarial finetuning when initialized with either a robust or a standard pretrained model. Surprisingly, all PEFT methods fail or exhibit significantly inferior performance when initialized with a standard pretrained model compared to being initialized with a robust pretrained model. Furthermore, we observe that a large-scale pretrained model, such as CLIP [37], cannot alleviate this phenomenon, highlighting the critical role of robust pretraining in adversarial transfer learning.
+
+Given a robust pretrained model, surprisingly, we discover that adversarial linear probing outperforms other methods on certain datasets, e.g., Caltech256 and Stanford Dogs. We further demonstrate that this is mainly because linear probing excels in inheriting robustness from pretraining compared to other methods. Moreover, we identify the ability to adapt features to the specific target domain as a key factor influencing linear probing’s success, supported by a strong correlation between transferred accuracy and robustness. Based on these insights, we introduce Robust Linear Initialization (RoLI), which initializes the model’s linear head with the weights obtained from adversarial linear probing. With RoLI followed by adversarial finetuning methods, we maximize the inherited robustness along with a strong feature adaptation ability, resulting in improved performance. In summary, our contributions are as follows:
+
+- We comprehensively study six popular finetuning techniques for adversarial transfer learning. We discover that PEFT methods fail or exhibit significantly inferior performance when initialized with a standard pretrained model, even with adversarial finetuning on downstream data.
+- We demonstrate that adversarial linear probing excels in preserving robustness from a robust pretrained model. Building upon this insight, we propose Robust Linear Initialization (RoLI) for adversarial finetuning to maximally inherit robustness from pretraining and effectively adapt features through adversarial finetuning.
+- We demonstrate the effectiveness of RoLI across five downstream datasets. On average, RoLI improves the clean and robust accuracy by 3.88% and 2.44% compared with random initialization. This establishes a new state-of-the-art benchmark for adversarial transfer learning.
+
+## 2 Related Works
+
+#### Finetuning in Transfer Learning.
+
+Transfer learning aims to finetune a pretrained model on downstream tasks to gain better performance [48, 25, 51]. Linear probing and full finetuning are often applied in the finetuning process. Given the increasing size of pretrained models, various Parameter Efficient Finetuning (PEFT) methods have been proposed. PEFT methods can effectively reduce the finetuning cost and alleviate overfitting since only a small number of parameters are updated [18, 19]. Specifically, Bias [4, 50] only updates the bias term, while Scaling & Shifting [29] performs the linear transformation to adapt the features. Different from both of them, Adapter [18, 36, 35], LoRA [19], and VPT [20] introduce extra learnable modules into the pretrained models in the finetuning stage. Although there are various finetuning methods proposed to improve the accuracy, it is still unclear what matters to the robustness on the downstream tasks. [27] points out that feature distortion in finetuning hurts the out-of-distribution robustness on downstream tasks, while we discover initialization plays a critical role in adversarial robustness on downstream tasks.
+
+#### Adversarial Robustness in Transfer Learning.
+
+The research on adversarial robustness in transfer learning has been studied from two perspectives, namely, robust pretraining and robust finetuning. Concretely, robust pertaining aims to achieve adversarial robustness in the pertaining stage and finetune pretrained models on the downstream tasks without adversarial training [8, 21, 6, 42]. Besides, [41] demonstrates that the adversarially pertaining also benefits standard performance on downstream tasks. In contrast, robust finetuning [32, 46] focuses on preserving the robustness of the pretrained model during the finetuning stage. For example, TWINS [32] incorporates a dual batch normalization in the model to keep the statistics of pretrained and finetuned datasets separately. And AutoLoRA [46] introduces a low-rank (LoRA) branch to disentangle clean and adversarial objectives. Existing works design various strategies to preserve the robustness from the pretrained model, but they simply apply full finetuning on downstream tasks. In this work, we study six different finetuning methods and introduce Robust Linear Initialization (RoLI) to enhance the adversarial robustness for different finetuning methods.
+
+## 3 Background
+
+In this section, we provide an overview of existing finetuning techniques, including full finetuning as well as five different PEFT methods, as illustrated in Fig. 2. Additionally, we introduce adversarial finetuning which integrates adversarial training during the finetuning stage.
+
+### 3.1 Existing Finetuning Methods
+
+In transfer learning, finetuning adapts the features from the pretrained domain to the target domain. In this section, we introduce six finetuning methods in descending order according to the number of tunable parameters.
+
+Full Finetune (Full-FT): We initialize the model from a pretrained model and finetune all its parameters on the downstream tasks.
+
+Adapter [18, 36, 35]: Adapter introduces a module after the MLP block in every layer. The adapter module consists of a down-sampling layer and an up-sampling layer, with a non-linear activation. During finetuning, we will update the adapter modules as well as the linear head.
+
+Low-Rank Adaptation (LoRA) [19]: LoRA proposes to learn a residual from pretrained weight represented by two low-rank metrics. Specifically, we apply the LoRA branch on the query and value projection in the self-attention block. During finetuning, the pretrained model remains frozen while updates are applied to the LoRA branch and head.
+
+Bias [4, 50]: We update the bias term and keep other parameters unchanged. Additionally, We also update the classification head (including weights and bias).
+
+Visual Prompt Tuning (VPT) [20]: VPT appends additional learnable tokens (embeddings), called prompts, into the input space of each attention layer in vision transformers. Specifically, we use the structure of VPT-Deep, where every layer introduces a fixed number of trainable prompts independently. During the finetuning stage, we will tune both the prompts and the linear head on downstream tasks while freezing the entire pretrained backbone. We refer readers to [20] for more details.
+
+Linear Probing (Linear): We only finetune the classification head on the downstream tasks.
+
+### 3.2 Adversarial Finetuning
+
+Adversarial training corresponds to a min-max optimization problem [34]. In the context of adversarial finetuning, we can formulate the optimization problem as follows:
+
+$$\min_{\hat{\theta}}\mathbb{E}_{(x,y)\sim D}\left[\max_{\|\delta\|_{\infty}\leq\varepsilon}\mathcal{L}(x+\delta,y;\theta\cup\hat{\theta})\right] \tag{1}$$
+
+where $\theta$ and $\hat{\theta}$ represent the frozen parameters and tunable parameters in model parameters respectively. For example, in adversarial full finetuning, $\hat{\theta}$ stands for all the model parameters as we update all of them during the finetuning stage. In contrast, in adversarial VPT, $\hat{\theta}$ denotes the extra prompts and linear head while $\theta$ represents the frozen parameters in the backbone architecture. In addition, $\delta$ represents adversarial perturbation, whose $\lVert\cdot\rVert_{\infty}$ is bounded by $\varepsilon$. During adversarial finetuning, we use the pretrained model together with additional modules introduced by PEFT methods to generate adversarial examples, while only updating the tunable parameters $\hat{\theta}$ for each method. If not otherwise specified, we use PGD-7 with ${\varepsilon}=8/255$ and step size ${\alpha}=2/255$ to generate adversarial attacks during adversarial finetuning.
+
+## 4 Robust Pretrained Model Matters
+
+Figure 3: PEFT methods fail or exhibit significantly degraded performance with a standard pretrained model (in blue and gray). Models finetuned from a robust pretrained model (in red) exhibit high accuracy and robustness, as they are consistently positioned in the top-right corner. Among six finetuning techniques, Full-FT outperforms others when starting with a standard pretrained model; however, it falls short of other methods when starting with a robust pretrained model. The specific numerical results are provided in the supplementary.
+
+Figure 4: A robust pretrained model exhibits more semantically structured gradients compared to a standard pretrained model. Visualizations are obtained by computing the loss gradient w.r.t the input image on Caltech256.
+
+Previous research [32, 42] suggests that although standard pretraining results in performance inferior to that of adversarially robust pretraining, it can still yield an adversarially robust model with adversarial finetuning. In this section, our goal is to investigate the significance of pretraining in PEFT methods. Specifically, we seek to address the question: Is an adversarially robust model necessary for PEFT methods?
+
+To answer this question, we initialize model parameters using two different pretrained models. One is a standard pretrained model on ImageNet-1k [12] while the other is adversarially pretrained with PGD [34] attacks. These pretrained models are off-the-shelf and their specifics are outlined in the supplementary material. Following initialization, we perform adversarial finetuning on downstream tasks. As shown in Fig. 3, we evaluate six adversarial finetuning techniques across two model architectures (ViT-B [14] and Swin-B [31]) on the CIFAR10 [26] and Caltech256 [15]. The adversarial robustness is measured with PGD-10 bounded with ${\varepsilon}=8/255$.
+
+First, we find that initializing the model with an adversarially robust pretrained model can significantly improve adversarial robustness on downstream tasks. This consistently holds across all the experimental settings we have evaluated, e.g., 6 adversarial finetuning techniques across 2 model architectures on 2 different datasets. More surprisingly, we discover that a robust pretrained model is especially important for PEFT methods, as they struggle to achieve satisfactory adversarial robustness when initialized with a standard pretrained model. For example, all the PEFT methods fail to achieve adversarial robustness higher than 20% on the Caltech256 dataset. In addition, adversarial linear probing can only achieve $<5\%$ adversarial robustness on both datasets when initiated with a standard pretrained model. This strongly suggests that adversarial PEFT can not sufficiently infuse adversarial robustness in the finetuning stage if the model starts with a non-robust pretrained model. Finally, we observe that Full-FT consistently outperforms other finetuning methods with a non-robust pretraining, indicating the preference for using full finetuning in the absence of robust pretraining.
+
+#### Does Pretraining on a Larger Dataset Help Adversarial Finetuning?
+
+Due to the high computational cost of adversarial pretraining, we aim to investigate whether a model pretrained on a larger dataset could substitute for the necessity of an adversarially robust pretrained model. To this end, we initialize the model with an off-the-shelf large-scale pretrained model, CLIP [37], and perform the same adversarial finetuning techniques on downstream tasks. Fig. 3 demonstrates that a standard pretrained model on a larger dataset, like CLIP, does not yield higher robustness compared to the non-robust ImageNet-1k pretrained model. It notably lags far behind the robustness achieved by a smaller-scale robust pretrained model, such as one trained on ImageNet-1k. This observation implies that opting for a smaller yet robust pretrained model proves to be a more effective strategy for attaining adversarial robustness in downstream tasks compared to using a larger, non-robust pretrained model.
+
+Figure 5: Linear probing with adversarial finetuning surpasses other methods on Caltech256. With standard finetuning, the PEFT methods exhibit inherited robustness (Robustness $>$ 0) from the pretraining. Notably, linear probing surpasses the other methods by a substantial margin in robustness while maintaining similar clean data accuracy on Caltech256. Additionally, adversarial training during finetuning is effective in enhancing all methods’ robustness.
+
+#### Image Gradient Visualization
+
+In this section, we present visualizations of the loss gradient with respect to the input image for different PEFT methods using either an adversarially robust or non-robust pretrained model on the Caltech256 dataset. Fig. 4 illustrates semantically structured gradients obtained from adversarially robust pretraining, whereas non-robust pretraining yields less semantically structured gradients, except fully finetuning. This observation aligns with our results, where fully finetuning outperforms other methods when a non-robust pretraining is applied. In contrast to fully finetuning, the image gradients from PEFT methods contain less semantic information, further validating our results.
+
+## 5 Initialization Matters For Finetuning
+
+In the previous section, we understand the necessity of initializing a model with an adversarially robust pretrained model. We now ask: given a robust pretrained model, what matters for adversarial finetuning?
+
+| Methods | ViT | | Swin | |
+| --- | --- | --- | --- | --- |
+| | Clean | PGD | Clean | PGD |
+| RanLI - Full-FT | 80.17 | 44.15 | 85.19 | 54.13 |
+| RanLI - Adapter | 83.14 | 49.57 | 85.24 | 54.22 |
+| RanLI - LoRa | 82.63 | 50.72 | 83.52 | 53.57 |
+| RanLI - Bias | 82.69 | 50.07 | 84.88 | 54.69 |
+| RanLI - VPT | 82.09 | 50.52 | 84.99 | 55.23 |
+| RanLI - Linear | 81.89 | 42.02 | 82.98 | 45.89 |
+
+Table 1: PEFT methods, excluding Linear, demonstrate strong performance on average across CIFAR10 and Caltech256 datasets. With adversarial finetuning, PEFT methods outperform Full-FT and Linear with random linear initialization.
+
+### 5.1 Random Linear Initialization
+
+To answer this question, we first evaluate the adversarial robustness of six adversarial finetuning techniques. To adapt the robust pretrained model to the downstream tasks, we initialize the linear head with Random Linear Initialization (RanLI) following [42]. We perform adversarial finetuning across two model architectures, e.g., ViT and Swin, on the CIFAR10 and Caltech256 datasets. Additional details regarding the training process can be found in Sec. 5.4 and in the supplementary materials.
+
+As shown in Tab. 1, PEFT methods except Linear consistently demonstrate strong average results with adversarial finetuning. In particular, LoRA achieves the highest average robustness at 50.72% for ViT, while VPT performs exceptionally well with 55.23% on Swin.
+
+Looking more closely at the performance on each individual dataset in Fig. 5, we observe that adversarial linear probing achieves the strongest robustness on Caltech256. This is rather surprising, given that linear probing has the lowest computational cost compared to others and never outperforms other finetuning methods on any single dataset in standard transfer learning [20, 5, 7].
+
+### 5.2 Why does Adversarial Linear Probing Work?
+
+To understand the remarkable robustness achieved by adversarial linear probing, we then ask: what contributes to adversarial robustness on the downstream tasks given a robust pretrained model? We hypothesize that there are two confounding factors: 1) the robustness inherited from pretrained models, and 2) the robustness achieved by adversarial finetuning. To validate our hypothesis, we conduct a comparative analysis of adversarial robustness in downstream tasks while using standard finetuning versus adversarial finetuning, given the same robust pretrained model.
+
+#### Robustness Inherited from Pretrained Models.
+
+In this section, we focus on standard finetuning as it does not bring in additional adversarial robustness to downstream tasks. Therefore, the adversarial robustness achieved during standard finetuning primarily arises from the robust pretrained model, representing the capability of each method to preserve robustness from the pretrained model. As shown in Fig. 5, all standard finetuning methods (colored in blue) achieve non-zero robustness under PGD-10 attacks. This supports our hypothesis that robustness inherited from the pretrained model contributes to the robustness in downstream tasks. In addition, linear probing significantly outperforms all other standard finetuning methods in preserving robustness from the pretrained model. For example, linear probing exhibits significantly stronger robustness (at least 20% higher) compared to other methods while maintaining similar accuracy on Caltech256. We explain this as linear probing avoids distorting the robust features inherited from the pretrained model by only updating the linear head. However, on CIFAR10, linear probing does not exhibit a significant advantage over robustness and displays lower clean accuracy compared to others. This is likely due to its limited capability to adapt features from the pretrained source domain to the downstream target domain.
+
+#### Robustness Achieved by Adversarial Finetuning.
+
+By comparing adversarial robustness achieved by standard finetuning (colored in blue) and adversarial finetuning (colored in red) in Fig. 5, we can see the extra robustness gain achieved by adversarial training during the finetuning stage. Except for Linear, adversarial finetuning contributes a significant portion of their robustness to the final robustness. For example, Full-FT on Swin, achieving a 99% final robustness on Caltech256 through adversarial finetuning. Even VPT, which has the fewest tunable parameters after Linear, demonstrates a 78% final robustness from adversarial finetuning. On the contrary, Linear only achieved a final robustness of 13% from this stage, with the primal robustness originating from the pretraining model.
+
+Taken together, we validate our hypothesis that both robustness inherited from the pretrained model and achieved through adversarial finetuning contribute to adversarial robustness on downstream tasks. In addition, we conclude that the exceptional robustness exhibited by adversarial linear probing is mainly because linear probing excels in preserving robustness from pretrained models compared to others, which primarily obtain their robustness from adversarial training during finetuning stage.
+
+### 5.3 Transferred Robustness Correlates with Transferred Accuracy.
+
+As we have seen in Fig. 5, adversarial linear probing achieves the highest adversarial robustness on Caltech256 but falls far behind other methods on CIFAR10. This performance discrepancy across different datasets raises a question: how can we estimate if adversarial linear probing achieves the best robustness? Based on our analysis in Sec. 5.2, where the robustness of adversarial linear probing primarily arises from preserving the robustness in the pretrained model, we hypothesize that the transferred robustness of adversarial linear probing is highly correlated with the transferred accuracy of standard linear probing. This suggests that if standard linear probing successfully adapts the features from the pretrained source domain to the downstream target domain, adversarial linear probing will similarly preserve the robustness in the pretrained model.
+
+| Methods | CIFAR10 | | CIFAR100 | | Caltech256 | | CUB200 | | Dogs | | Avg | |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| | Clean | PGD | Clean | PGD | Clean | PGD | Clean | PGD | Clean | PGD | Clean | PGD |
+| TWINS-AT [32] | 91.24 | 52.73 | 70.72 | 31.08 | 76.86 | 48.40 | 68.09 | 29.24 | 64.98 | 20.58 | 74.38 | 36.41 |
+| AutoLoRa [46] | 86.93 | 57.16 | 66.20 | 35.25 | 69.85 | 47.82 | 62.78 | 31.07 | 62.33 | 25.32 | 69.62 | 39.32 |
+| RanLI - Full-FT | 93.02 | 59.12 | 74.36 | 35.62 | 77.35 | 49.13 | 70.83 | 31.55 | 65.85 | 24.79 | 76.28 | 40.04 |
+| RanLI - Adapter | 90.23 | 55.70 | 71.57 | 34.74 | 80.24 | 52.73 | 59.67 | 26.73 | 87.98 | 42.24 | 77.94 | 42.43 |
+| RanLI - LoRA | 90.02 | 56.88 | 71.98 | 34.83 | 77.02 | 50.25 | 64.74 | 29.65 | 84.63 | 39.24 | 77.68 | 42.17 |
+| RanLI - Bias | 90.25 | 56.94 | 71.50 | 36.72 | 79.50 | 52.43 | 66.69 | 29.88 | 87.41 | 42.75 | 79.07 | 43.74 |
+| RanLI - VPT | 90.24 | 57.38 | 72.37 | 35.60 | 79.74 | 53.07 | 61.94 | 26.46 | 86.34 | 43.10 | 78.13 | 43.12 |
+| RanLI - Linear | 84.16 | 37.30 | 67.65 | 25.46 | 81.79 | 54.47 | 69.88 | 24.56 | 91.55 | 45.45 | 79.01 | 37.45 |
+| RoLI - Full-FT | 94.18 | 60.85 | 76.25 | 37.38 | 83.78 | 55.42 | 74.28 | 32.03 | 91.55 | 45.57 | 84.01 | 46.25 |
+| RoLI - Adapter | 90.31 | 55.69 | 71.75 | 34.33 | 81.74 | 54.32 | 64.20 | 25.22 | 92.02 | 47.12 | 80.00 | 43.34 |
+| RoLI - LoRA | 92.23 | 58.62 | 72.87 | 35.18 | 81.79 | 54.50 | 68.88 | 26.77 | 91.20 | 46.76 | 81.39 | 44.37 |
+| RoLI - Bias | 91.83 | 58.39 | 72.17 | 35.17 | 81.78 | 54.49 | 68.14 | 25.70 | 91.52 | 47.27 | 81.09 | 44.20 |
+
+Table 2: RoLI significantly improves the performance and achieves SOTA across five image classification tasks. Robust Linear Initialization (RoLI) enhances robustness by 3.88% and clean accuracy by 2.44% on average compared to Random Initialization (RanLI). Notably, RoLI - Full-FT achieves the best overall performance, with an accuracy of 84.01% and 46.25% robustness.
+
+To validate this, we define transferred accuracy of standard linear probing ($\text{acc}^{T}_{std}$) and transferred robustness of adversarial linear probing ($\text{rob}^{T}_{adv}$) as follows, using full finetune as a baseline to normalize the performance across different datasets:
+
+$$\text{acc}^{T}_{std}=\frac{\text{acc}(LP_{std})-\text{acc}(FT_{std})}{\text{acc}(FT_{std})} \tag{2}$$
+
+$$\text{rob}^{T}_{adv}=\frac{\text{rob}(LP_{adv})-\text{rob}(FT_{adv})}{\text{rob}(FT_{adv})} \tag{3}$$
+
+where $\text{acc}(\cdot)$ and $\text{rob}(\cdot)$ denote the accuracy and robustness of each method, respectively. $FT_{std}$ and $LP_{std}$ represent standard full finetune and standard linear probing whereas $FT_{adv}$ and $LP_{adv}$ stand for their respective adversarial counterparts. We trained 51 models with different hyper-parameter settings across five datasets and present transferred accuracy and robustness in Fig. 6.
+
+Figure 6: Transferred robustness of adversarial linear probing strongly correlates with transferred accuracy of standard linear probing.
+
+In Fig. 6, the transferred robustness of adversarial linear probing is strongly correlated with the transferred accuracy of standard linear probing, with a high Pearson correlation coefficient (0.896). When the transferred accuracy approaches or surpasses 0, the transferred robustness becomes positive, indicating the improved performance of adversarial linear probing over adversarial fully finetuning. This strong correlation validates our hypothesis that if standard linear probing successfully adapts features from the pretrained to the target domain, its adversarial counterpart is capable of effectively achieving adversarial robustness on downstream tasks.
+
+### 5.4 Robust Linear Initialization (RoLI)
+
+Based on our observation that linear probing can outperform other methods when it effectively adapts features to the target domain, we propose Robust Linear Initialization (denoted as RoLI) for adversarial finetuning. Specifically, we initialize the linear head of a robust pretrained model with weights obtained through adversarial linear probing instead of random initialization. Then, we perform adversarial finetuning, using either full finetune or PEFT methods. Since adversarial linear probing excels in preserving robustness from a pretrained model, RoLI provides a more robust initialization for subsequent adversarial finetuning, maximizing the robustness inherited from a robust pretrained model. In addition, the following adversarial finetuning can further enhance robustness by introducing additional robustness through adversarial training. In the following sections, we will evaluate the effectiveness of RoLI applied to four different adversarial finetuning methods across five different datasets and demonstrate it achieves new state-of-the-art robustness in adversarial transfer learning.
+
+#### Datasets.
+
+In our experiments, we use five datasets: CIFAR10 [26], CIFAR100 [26], Caltech256 [15], Caltech-UCSD Birds-200-2011 (CUB200) [45], and Stanford Dogs (Dogs) [23]. For low-resolution image datasets like CIFAR10 and CIFAR100, we resize the image to match the model input shape. For high-resolution image datasets, we apply random resizing and cropping in training and center crop in testing. It’s important to note that we integrate the resizing and normalization process directly into the model since the attacker does not have access to pre-processed images. Additional details are provided in the supplementary material.
+
+#### Methods.
+
+We provide the results from TWINS-AT [32] AutoLoRa [46] as baselines. We proceed to assess six finetuning techniques introduced in Sec. 3.1 with random initialization. We use Swin Transformer [31] as a backbone architecture for our experiments, whereas TWINS and AutoLoRa use ResNet50 [16]. We apply RoLI to Full-FT, Bias, Adapter, and LoRa. We initialize the newly introduced modules in Adapter and LoRA with zero to ensure that they start with robust linear probing without distorting the robust features preserved in the pretrained model.
+
+#### Training Details.
+
+We use the same optimizer, AdamW [33], and a cosine scheduler with warm-up for all finetuning methods. To determine the optimal learning rate and weight decay values, we conduct a grid search, and the ranges of hyper-parameters along with the optimal combinations can be found in the supplementary material. We keep method-specific hyper-parameters constant across all datasets. For instance, we set the prompt length to 10 for the VPT method. To avoid adversarial overfitting [40], we apply early stopping with the epoch that has the best performance on the validation set. During adversarial finetuning, we utilize the PGD-7 attack with ${\varepsilon}=8/255$ and a step size of ${\alpha}=2/255$. When reporting test accuracy and robustness, we evaluate the models under a PGD-10 attack with ${\varepsilon}=8/255$. Additionally, we report the performance under AutoAttack (AA), which is an ensemble attack and provides a more reliable approach to evaluate the adversarial robustness. We follow the standard AutoAttack setting, i.e., untargeted APGDCE, targeted APGD-DLR, targeted FAB [9], and Square Attack [1].
+
+| Methods | ${\varepsilon}=8/255$ | ${\varepsilon}=4/255$ |
+| --- | --- | --- |
+| RanLI - Full-FT | 20.10 | 42.50 |
+| RanLI - Adapter | 36.30 | 68.50 |
+| RanLI - LoRa | 32.40 | 63.30 |
+| RanLI - Bias | 35.90 | 67.30 |
+| RanLI - VPT | 34.40 | 67.30 |
+| RanLI - Linear | 30.90 | 73.50 |
+| RoLI - Full-FT | 30.90 | 73.50 |
+| RoLI - Adapter | 37.00 | 75.20 |
+| RoLI - LoRa | 38.40 | 74.30 |
+| RoLI - Bias | 38.20 | 74.80 |
+
+Table 3: RoLI consistently improves adversarial robustness even against $\mathbf{\boldsymbol{\varepsilon=}8/255}$ AutoAttack. RanLI - Linear performs well under ${\varepsilon}=4/255$ AutoAttack, but poorly under ${\varepsilon}=8/255$ AutoAttack on Stanford Dogs. This discrepancy demonstrates that adversarial linear probing obtains its robustness mainly from the pretrained model, whereas other methods obtain robustness mainly from adversarial finetuning.
+
+Figure 7: Trade-off between speed and robustness. We conduct the speed test on Stanford Dogs with random linear initialization (RanLI), logistic regression linear initialization (RegLI), standard linear initialization (StdLI), and robust linear initialization (RoLI). RoLI achieves the best performance at the cost of increased training time. Meanwhile, both RegLI and StdLI can improve their performance without incurring substantial time costs.
+
+#### PGD-10 Results.
+
+Looking at Random Initialization (RanLI) in Tab. 2, the same trend holds as in Sec. 5.1: 1) PEFT methods except linear probing exhibit strong average results across five different datasets, with Bias achieving the best performance (79.25% accuracy and 43.58% robustness). 2) Linear probing achieves the highest robustness on Caltech256 and Stanford Dogs, although it falls behind others on the remaining three datasets.
+
+Compared to RandLI, we can observe from Tab. 2 that RoLI significantly enhances the robustness on Caltech256 and Stanford Dogs for all finetuning methods. In particular, RoLI - Full-FT achieves a robustness improvement of 6.29% on Caltech256 and 20.78% on Stanford Dogs. On other datasets where adversarial linear probing with RanLI does not outperform others, RoLI performs comparable or even better than RanLI. This strongly supports that a robust initialization of the linear head is critical in adversarial transfer learning. Lastly, our RoLI - Full-FT achieves the highest performance across five datasets and sets a new state-of-the-art benchmark.
+
+| Methods | CIFAR10 | CIFAR100 | Caltech256 | CUB200 | Dogs | Avg |
+| --- | --- | --- | --- | --- | --- | --- |
+| RanLI - Full-FT | 54.9 | 31.8 | 62.6 | 49.7 | 42.5 | 48.3 |
+| RanLI - Adapter | 50.8 | 29.2 | 66.7 | 40.3 | 68.5 | 51.1 |
+| RanLI - LoRa | 53.0 | 29.0 | 62.8 | 44.7 | 63.3 | 50.6 |
+| RanLI - Bias | 52.3 | 31.0 | 65.8 | 46.2 | 67.3 | 52.5 |
+| RanLI - VPT | 52.3 | 29.7 | 66.3 | 40.3 | 67.3 | 51.2 |
+| RanLI - Linear | 26.6 | 18.4 | 65.7 | 40.4 | 73.5 | 44.9 |
+| RoLI - Full-FT | 56.3 | 32.7 | 70.4 | 52.1 | 73.5 | 57.0 |
+| RoLI - Adapter | 51.1 | 29.1 | 65.8 | 40.6 | 75.2 | 52.4 |
+| RoLI - LoRa | 53.9 | 30.0 | 65.7 | 44.6 | 74.3 | 53.7 |
+| RoLI - Bias | 53.9 | 29.8 | 65.7 | 43.5 | 74.8 | 53.5 |
+
+Table 4: RoLI consistently outperforms RanLI under AutoAttack. Note, we use ${\varepsilon}=8/255$ attack for CIFAR10, CIFAR100, and ${\varepsilon}=4/255$ for Caltech256, CUB200 and Stanford Dogs. RoLI shows an average 3.53 AA gain compared with RanLI, and notably, RoLI - Full-FT surpasses other methods by achieving a robustness of 57.0 under AutoAttack. The clean accuracy is illustrated in Tab. 2.
+
+Figure 8: RoLI mitigates overfitting. When the linear head is randomly initialized (RanLI), increasing validation loss indicates that adversarial Adapter suffers from overfitting. For RoLI, the loss for the adversarial linear probing stage and Adapter finetuning stage is denoted as red and light red lines, respectively. The decreasing validation loss demonstrates that RoLI can mitigate overfitting.
+
+#### AutoAttack Results.
+
+We extend our evaluation to Stanford Dogs using ${\varepsilon}=8/255$ and ${\varepsilon}=4/255$, as illustrated in Tab. 3. Interestingly, we observe that adversarial linear probing outperforms other methods under ${\varepsilon}=4/255$ attack but underperforms when tested against ${\varepsilon}=8/255$ adversarial attacks. We conjecture that the pretrained model lacks robustness against ${\varepsilon}=8/255$ attacks as it is trained using ${\varepsilon}=4/255$ adversarial attacks. This performance disparity confirms that adversarial linear probing inherently derives robustness from pretraining, whereas other methods predominantly achieve robustness from adversarial finetuning. Notably, RoLI consistently improves adversarial robustness even against ${\varepsilon}=8/255$ attacks, further validating the importance of a robust linear initialization for adversarial transfer learning.
+
+To maintain consistency with the pre-training, we follow the conventional settings [10, 11] to set ${\varepsilon}=8/255$ attack for low-resolution datasets (CIFAR10, CIFAR100) and ${\varepsilon}=4/255$ attack for high-resolution datasets (Caltech256, CUB200, Stanford Dogs). Tab. 4 demonstrates the robustness under AutoAttack and the clean accuracy is illustrated in Tab. 2. RoLI exhibits higher robustness over RanLI, demonstrating an average 3.53 AA gain. Notably, RoLI - Full-FT achieves a robustness of 57.0, surpassing other methods.
+
+## 6 Discussion
+
+#### Robustness vs. Speed.
+
+Since robust linear initialization involves a two-step adversarial training process, it tends to be considerably slower than adversarial fine-tuning with random initialization. In this section, we show a trade-off between robustness and speed by obtaining the initialization from four different approaches: adversarial linear probing (RoLI), standard linear probing (StdLI), logistic regression (RegLI), and randomization (RanLI). From Fig. 7, it’s evident that both RegLI and StdLI enhance robustness compared to random linear initialization within an acceptable time cost. In addition, RoLI achieves the highest performance but at the expense of slower speed.
+
+#### RoLI Mitigates Overfitting.
+
+Overfitting is a general phenomenon for adversarial training, as highlighted in prior research [40, 49]. Although intuitively PEFT methods could mitigate overfitting as they only update a small number of parameters, we observe that they still suffer from overfitting. Taking adversarial Adapter on Stanford Dogs as an example in Fig. 8, RanLI suffers from overfitting, while RoLI effectively mitigates this phenomenon. Specifically, adversarial linear probing (RoLI) avoids overfitting possibly because it does not change the features during finetuning. In addition, when we initialize adversarial Adapter with RoLI, we can use a smaller learning rate during finetuning, resulting in a further decrease in loss without overfitting.
+
+## 7 Conclusion
+
+This paper systematically investigates how to achieve adversarial robustness in downstream tasks. We observe that PEFT methods either fail to be adversarially robust or exhibit significantly degraded adversarial robustness when initialized with a non-robust pretraining, highlighting the necessity of an adversarially robust pretraining. Given a robust pretrained model, we propose to use robust linear initialization (RoLI) followed by adversarial full finetuning or PEFT methods to achieve the best performance. This is motivated by our understanding that adversarial linear probing maximally inherits the robustness from the pretraining and the following adversarial finetuning can adapt the features to the downstream tasks effectively.
+
+We demonstrate that RoLI outperforms random linear initialization across five image classification tasks. We hope the insights from this study greatly advance research aimed at enhancing adversarial robustness in downstream tasks. Furthermore, we believe that these findings offer invaluable guidance for developing robust models in the real world.
+
+## References
+
+- Andriushchenko et al. [2020] Maksym Andriushchenko, Francesco Croce, Nicolas Flammarion, and Matthias Hein. Square attack: a query-efficient black-box adversarial attack via random search. In European conference on computer vision, pages 484–501. Springer, 2020.
+- Bommasani et al. [2021] Rishi Bommasani, Drew A Hudson, Ehsan Adeli, Russ Altman, Simran Arora, Sydney von Arx, Michael S Bernstein, Jeannette Bohg, Antoine Bosselut, Emma Brunskill, et al. On the opportunities and risks of foundation models. arXiv preprint arXiv:2108.07258, 2021.
+- Buitinck et al. [2013] Lars Buitinck, Gilles Louppe, Mathieu Blondel, Fabian Pedregosa, Andreas Mueller, Olivier Grisel, Vlad Niculae, Peter Prettenhofer, Alexandre Gramfort, Jaques Grobler, Robert Layton, Jake VanderPlas, Arnaud Joly, Brian Holt, and Gaël Varoquaux. API design for machine learning software: experiences from the scikit-learn project. In ECML PKDD Workshop: Languages for Data Mining and Machine Learning, pages 108–122, 2013.
+- Cai et al. [2020] Han Cai, Chuang Gan, Ligeng Zhu, and Song Han. Tinytl: Reduce memory, not parameters for efficient on-device learning. In Advances in Neural Information Processing Systems, pages 11285–11297, 2020.
+- Chavan et al. [2023] Arnav Chavan, Zhuang Liu, Deepak Gupta, Eric Xing, and Zhiqiang Shen. One-for-all: Generalized lora for parameter-efficient fine-tuning. arXiv preprint arXiv:2306.07967, 2023.
+- Chen et al. [2021] Dian Chen, Hongxin Hu, Qian Wang, Li Yinli, Cong Wang, Chao Shen, and Qi Li. Cartl: Cooperative adversarially-robust transfer learning. In International Conference on Machine Learning, pages 1640–1650. PMLR, 2021.
+- Chen et al. [2022] Shoufa Chen, Chongjian Ge, Zhan Tong, Jiangliu Wang, Yibing Song, Jue Wang, and Ping Luo. Adaptformer: Adapting vision transformers for scalable visual recognition. Advances in Neural Information Processing Systems, 35:16664–16678, 2022.
+- Chen et al. [2020] Tianlong Chen, Sijia Liu, Shiyu Chang, Yu Cheng, Lisa Amini, and Zhangyang Wang. Adversarial robustness: From self-supervised pre-training to fine-tuning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 699–708, 2020.
+- Croce and Hein [2020a] Francesco Croce and Matthias Hein. Minimally distorted adversarial examples with a fast adaptive boundary attack. In International Conference on Machine Learning, pages 2196–2205. PMLR, 2020a.
+- Croce and Hein [2020b] Francesco Croce and Matthias Hein. Reliable evaluation of adversarial robustness with an ensemble of diverse parameter-free attacks. In International conference on machine learning, pages 2206–2216. PMLR, 2020b.
+- Croce et al. [2021] Francesco Croce, Maksym Andriushchenko, Vikash Sehwag, Edoardo Debenedetti, Nicolas Flammarion, Mung Chiang, Prateek Mittal, and Matthias Hein. Robustbench: a standardized adversarial robustness benchmark. In Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track (Round 2), 2021.
+- Deng et al. [2009] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li, and Li Fei-Fei. Imagenet: A large-scale hierarchical image database. In 2009 IEEE conference on computer vision and pattern recognition, pages 248–255. Ieee, 2009.
+- Dong et al. [2020] Yinpeng Dong, Qi-An Fu, Xiao Yang, Tianyu Pang, Hang Su, Zihao Xiao, and Jun Zhu. Benchmarking adversarial robustness on image classification. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), pages 321–331, 2020.
+- Dosovitskiy et al. [2020] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, et al. An image is worth 16x16 words: Transformers for image recognition at scale. In International Conference on Learning Representations, 2020.
+- Griffin et al. [2007] Gregory Griffin, Alex Holub, and Pietro Perona. Caltech-256 object category dataset. 2007.
+- He et al. [2016] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 770–778, 2016.
+- He et al. [2022] Kaiming He, Xinlei Chen, Saining Xie, Yanghao Li, Piotr Dollár, and Ross Girshick. Masked autoencoders are scalable vision learners. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pages 16000–16009, 2022.
+- Houlsby et al. [2019] Neil Houlsby, Andrei Giurgiu, Stanislaw Jastrzebski, Bruna Morrone, Quentin De Laroussilhe, Andrea Gesmundo, Mona Attariyan, and Sylvain Gelly. Parameter-efficient transfer learning for nlp. In International Conference on Machine Learning, pages 2790–2799. PMLR, 2019.
+- Hu et al. [2021] Edward J Hu, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models. In International Conference on Learning Representations, 2021.
+- Jia et al. [2022] Menglin Jia, Luming Tang, Bor-Chun Chen, Claire Cardie, Serge Belongie, Bharath Hariharan, and Ser-Nam Lim. Visual prompt tuning. In European Conference on Computer Vision, pages 709–727. Springer, 2022.
+- Jiang et al. [2020] Ziyu Jiang, Tianlong Chen, Ting Chen, and Zhangyang Wang. Robust pre-training by adversarial contrastive learning. Advances in neural information processing systems, 33:16199–16210, 2020.
+- Kenton and Toutanova [2019] Jacob Devlin Ming-Wei Chang Kenton and Lee Kristina Toutanova. Bert: Pre-training of deep bidirectional transformers for language understanding. In Proceedings of NAACL-HLT, pages 4171–4186, 2019.
+- Khosla et al. [2011] Aditya Khosla, Nityananda Jayadevaprakash, Bangpeng Yao, and Fei-Fei Li. Novel dataset for fine-grained image categorization: Stanford dogs. In Proc. CVPR workshop on fine-grained visual categorization (FGVC). Citeseer, 2011.
+- Kirillov et al. [2023] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer Whitehead, Alexander C. Berg, Wan-Yen Lo, Piotr Dollar, and Ross Girshick. Segment anything. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV), pages 4015–4026, 2023.
+- Kornblith et al. [2019] Simon Kornblith, Jonathon Shlens, and Quoc V Le. Do better imagenet models transfer better? In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pages 2661–2671, 2019.
+- Krizhevsky et al. [2009] Alex Krizhevsky, Geoffrey Hinton, et al. Learning multiple layers of features from tiny images. 2009.
+- Kumar et al. [2021] Ananya Kumar, Aditi Raghunathan, Robbie Matthew Jones, Tengyu Ma, and Percy Liang. Fine-tuning can distort pretrained features and underperform out-of-distribution. In International Conference on Learning Representations, 2021.
+- Kumar et al. [2022] Ananya Kumar, Aditi Raghunathan, Robbie Jones, Tengyu Ma, and Percy Liang. Fine-tuning can distort pretrained features and underperform out-of-distribution. In International Conference on Learning Representations, 2022.
+- Lian et al. [2022] Dongze Lian, Daquan Zhou, Jiashi Feng, and Xinchao Wang. Scaling & shifting your features: A new baseline for efficient model tuning. Advances in Neural Information Processing Systems, 35:109–123, 2022.
+- Liu et al. [2023a] Chang Liu, Yinpeng Dong, Wenzhao Xiang, Xiao Yang, Hang Su, Jun Zhu, Yuefeng Chen, Yuan He, Hui Xue, and Shibao Zheng. A comprehensive study on robustness of image classification models: Benchmarking and rethinking. arXiv preprint arXiv:2302.14301, 2023a.
+- Liu et al. [2021] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei, Zheng Zhang, Stephen Lin, and Baining Guo. Swin transformer: Hierarchical vision transformer using shifted windows. In Proceedings of the IEEE/CVF international conference on computer vision, pages 10012–10022, 2021.
+- Liu et al. [2023b] Ziquan Liu, Yi Xu, Xiangyang Ji, and Antoni B Chan. Twins: A fine-tuning framework for improved transferability of adversarial robustness and generalization. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 16436–16446, 2023b.
+- Loshchilov and Hutter [2018] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. In International Conference on Learning Representations, 2018.
+- Madry et al. [2018] Aleksander Madry, Aleksandar Makelov, Ludwig Schmidt, Dimitris Tsipras, and Adrian Vladu. Towards deep learning models resistant to adversarial attacks. In International Conference on Learning Representations, 2018.
+- Pfeiffer et al. [2020] Jonas Pfeiffer, Andreas Rücklé, Clifton Poth, Aishwarya Kamath, Ivan Vulić, Sebastian Ruder, Kyunghyun Cho, and Iryna Gurevych. Adapterhub: A framework for adapting transformers. In Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing: System Demonstrations, pages 46–54, 2020.
+- Pfeiffer et al. [2021] Jonas Pfeiffer, Aishwarya Kamath, Andreas Rücklé, Kyunghyun Cho, and Iryna Gurevych. Adapterfusion: Non-destructive task composition for transfer learning. In Proceedings of the 16th Conference of the European Chapter of the Association for Computational Linguistics: Main Volume, pages 487–503, 2021.
+- Radford et al. [2021] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervision. In International conference on machine learning, pages 8748–8763. PMLR, 2021.
+- Radford et al. [2023] Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine McLeavey, and Ilya Sutskever. Robust speech recognition via large-scale weak supervision. In International Conference on Machine Learning, pages 28492–28518. PMLR, 2023.
+- Raffel et al. [2020] Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. The Journal of Machine Learning Research, 21(1):5485–5551, 2020.
+- Rice et al. [2020] Leslie Rice, Eric Wong, and Zico Kolter. Overfitting in adversarially robust deep learning. In International Conference on Machine Learning, pages 8093–8104. PMLR, 2020.
+- Salman et al. [2020] Hadi Salman, Andrew Ilyas, Logan Engstrom, Ashish Kapoor, and Aleksander Madry. Do adversarially robust imagenet models transfer better? Advances in Neural Information Processing Systems, 33:3533–3545, 2020.
+- Shafahi et al. [2019] Ali Shafahi, Parsa Saadatpanah, Chen Zhu, Amin Ghiasi, Christoph Studer, David Jacobs, and Tom Goldstein. Adversarially robust transfer learning. In International Conference on Learning Representations, 2019.
+- Shao et al. [2022] Rulin Shao, Zhouxing Shi, Jinfeng Yi, Pin-Yu Chen, and Cho-jui Hsieh. On the adversarial robustness of vision transformers. In Annual Conference on Neural Information Processing Systems, 2022.
+- Vaswani et al. [2017] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural information processing systems, 30, 2017.
+- Wah et al. [2011] Catherine Wah, Steve Branson, Peter Welinder, Pietro Perona, and Serge Belongie. The caltech-ucsd birds-200-2011 dataset. 2011.
+- Xu et al. [2023] Xilie Xu, Jingfeng Zhang, and Mohan Kankanhalli. Autolora: A parameter-free automated robust fine-tuning framework. arXiv preprint arXiv:2310.01818, 2023.
+- Yamada and Otani [2022] Yutaro Yamada and Mayu Otani. Does robustness on imagenet transfer to downstream tasks? In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 9215–9224, 2022.
+- Yosinski et al. [2014] Jason Yosinski, Jeff Clune, Yoshua Bengio, and Hod Lipson. How transferable are features in deep neural networks? Advances in neural information processing systems, 27, 2014.
+- Yu et al. [2022] Chaojian Yu, Bo Han, Li Shen, Jun Yu, Chen Gong, Mingming Gong, and Tongliang Liu. Understanding robust overfitting of adversarial training and beyond. In International Conference on Machine Learning, pages 25595–25610. PMLR, 2022.
+- Zaken et al. [2022] Elad Ben Zaken, Yoav Goldberg, and Shauli Ravfogel. Bitfit: Simple parameter-efficient fine-tuning for transformer-based masked language-models. In Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers), pages 1–9, 2022.
+- Zamir et al. [2018] Amir R Zamir, Alexander Sax, William Shen, Leonidas J Guibas, Jitendra Malik, and Silvio Savarese. Taskonomy: Disentangling task transfer learning. In Proceedings of the IEEE conference on computer vision and pattern recognition, pages 3712–3722, 2018.
+- Zhang et al. [2022] Yuanhan Zhang, Kaiyang Zhou, and Ziwei Liu. Neural prompt search. arXiv preprint arXiv:2206.04673, 2022.
+
+Supplementary Material
+
+## A. Experimental Details
+
+#### Pretrained Models.
+
+In this paper, we use ViT-B/16 [14] and Swin-B [31] for all experiments. For standard pretrained models, we use the model in Torchvision for ImageNet-1k ViT, while obtaining the weights for CLIP ViT from hugging face [^1]. Additionally, we download the weights for the ImageNet-1k Swin transformer from the official implementation[^2].
+
+The adversarially robust models are pretrained on ImageNet-1k using PGD-3 with ${\varepsilon}=4/255$ and a step size of ${2\varepsilon}/3$ following [30, 13]. All weights for the adversarially robust pretrained models can be found at ARES 2.0 benchmark[^3].
+
+#### Datasets Split.
+
+For CIFAR10 and CIFAR100 [26], we follow the official train-validation-test splits. For Caltech256 [15], we randomly select 14,649 images (57 images per class) for training and 771 images (3 images per class) for validation, leaving the remaining images for the test set. For CUB200 [45], we adopt the official train-test split and randomly select 600 images from the train set (3 images per class) as the validation set. For Stanford Dogs [23], we also follow the official train-test split and randomly pick 1200 images from the train set (10 images per class) as the validation set.
+
+#### PEFT Hyperparameters.
+
+In this paper, we use six finetuning methods including Full Finetune, Adapter, LoRA, Bias, VPT, and Linear. For Full Finetune, Bias, and Linear, no extra hyperparameters are required as they fine-tune either part or the entirety of the model parameters.
+
+For Adapter, we adopt the architecture proposed in [36], which involves appending the adapter module after the MLP block at each layer. Additionally, we apply a residue connection for the adapter module. Throughout the paper, we maintain a reduction factor of 8. When implementing RoLI, we initialize the downsample and upsample layers within the adapter module to zero.
+
+We only apply the LoRA branch on the query and value projection in the self-attention block. Following [19], with pretrained weights $W_{0}$ and input $x$, the LoRA branch can be formulated as Eq. 4
+
+$$h=W_{0}x+\frac{\alpha}{r}BAx \tag{4}$$
+
+where $A$ and $B$ represent low-rank decomposition matrices with a rank of $r$. $\alpha$ demotes a scaling constant. We set both the rank $r$ and scaling factor $\alpha$ to 16 across all datasets. For random linear initialization (RanLI), we adopt the initialization proposed in [19], applying random Gaussian initialization for $A$ and zero initialization for $B$. For robust linear initialization (RoLI), we zero matrices $A$ and $B$.
+
+For VPT, we adopt VPT-Deep in [20]. We set the number of tokens as 10 across all datasets. We apply uniform initialization for prompts in RanLI. We do not apply RoLI to VPT because even when prompts are zeroed, the resulting output remains distinct from the output obtained without prompts. This difference can be attributed to the influence of the softmax operation within the attention module.
+
+#### Optimizatation Hyperparameters.
+
+We finetune the model for 20 epochs on CIFAR10 and CIFAR100, 40 epochs on Caltech256 and Standford Dogs, 60 epochs on CUB200. Furthermore, we conduct a grid search to determine the optimal learning rate and weight decay based on validation performance. The weight decay search range is consistent at {0.01, 0.001, 0.0001, 0} across all fine-tuning methods and datasets.
+
+The learning rate is set as $base\_lr\times b/256$. Regarding the base learning rates, for RanLI, we explore {0.005, 0.001, 0.0001, 0.0005} for Full Finetune and Bias, {1.0, 0.5, 0.1, 0.05} for Linear, {0.5, 0.1, 0.05, 0.01} for VPT, and {0.05, 0.01, 0.005, 0.001} for Adapter and LoRA. For RoLI, we expand the search range to include values an order of magnitude lower, such as {0.005, 0.001, 0.0001, 0.0005, 0.00001, 0.00005} for Full Finetune.
+
+We summarize the optimal hyperparameters combination in Tab. 6.
+
+#### Transferred Accuracy and Transferred Robustness
+
+Fig. 6 demonstrates that transferred robustness is correlated with transferred accuracy. We train the model using various hyperparameters and pair the accuracy in standard linear probing with the robustness in adversarial linear probing using the same hyperparameters. For example, following the notation introduced in Sec. 5.3, a pair obtained through finetuning is $[acc(FT_{std})_{i},rob(FT_{adv})_{i}]$, while a pair resulting from linear probing is $[acc(LP_{std})_{j},rob(LP_{adv})_{j}]$.
+
+Following this, we calculated the transferred accuracy and robustness between any two pairs—comparing one from full finetuning and another from linear probing:
+
+$$(\text{acc}^{T}_{std})_{ij}=\frac{\text{acc}(LP_{std})_{j}-\text{acc}(FT_{std})_{i}}{\text{acc}(FT_{std})_{i}} \tag{5}$$
+
+$$(\text{rob}^{T}_{adv})_{ij}=\frac{\text{rob}(LP_{adv})_{j}-\text{rob}(FT_{adv})_{i}}{\text{rob}(FT_{adv})_{i}} \tag{6}$$
+
+Where $(\text{acc}^{T}_{std})_{ij}$ and $(\text{rob}^{T}_{adv})_{ij}$ are transferred accuracy and transferred robustness for pairs $i$ and $j$. For example, on CIFAR10, where we used 5 pairs for full fine-tuning and 6 pairs for linear probing, our plot on Fig. 6 will display 30 data points representing these comparisons.
+
+#### Speed Analysis
+
+In Fig. 7, we analyze the trade-off between robustness and speed. We use a single NVIDIA RTX A6000 to conduct the experiments. For RanLI, we use the same hyperparameter search strategy and training epochs. The only difference is that RoLI applies adversarial training while RanLI does not. For RegLI, we implement logistic regression using the sklearn [3] library. Additionally, we also summarize the performance for these initialization methods without further adversarial finetuning in Tab. 5.
+
+| Initialization | RegLI | StdLI | RoLI |
+| --- | --- | --- | --- |
+| Accuracy | 92.08 | 92.75 | 91.55 |
+
+Table 5: Accuracy of different initialization methods.
+
+| Datasets | CIFAR10 | | CIFAR100 | | Caltech256 | | CUB200 | | Dogs | |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Hyperparameters | Base Lr | Wd | Base Lr | Wd | Base Lr | Wd | Base Lr | Wd | Base Lr | Wd |
+| RanLI - Full-FT | 0.0005 | 0.01 | 0.0005 | 0.001 | 0.0005 | 0.0001 | 0.0005 | 0.001 | 0.0005 | 0.01 |
+| RanLI - Adapter | 0.05 | 0.01 | 0.005 | 0.0001 | 0.005 | 0.0001 | 0.05 | 0.0001 | 0.005 | 0.0001 |
+| RanLI - LoRa | 0.01 | 0.0001 | 0.05 | 0 | 0.001 | 0.0001 | 0.005 | 0.0001 | 0.005 | 0.0001 |
+| RanLI - Bias | 0.005 | 0.001 | 0.005 | 0.001 | 0.001 | 0.01 | 0.005 | 0.001 | 0.001 | 0.0001 |
+| RanLI - VPT | 0.5 | 0.001 | 0.5 | 0.01 | 0.05 | 0.001 | 0.05 | 0.001 | 0.05 | 0.0001 |
+| RanLI - Linear | 0.05 | 0.01 | 0.1 | 0.001 | 0.5 | 0.01 | 1 | 0.001 | 1 | 0.01 |
+| RoLI - Full-FT | 0.0001 | 0.01 | 0.0001 | 0.001 | 0.0001 | 0.0001 | 0.0001 | 0.01 | 0.00005 | 0.001 |
+| RoLI - Adapter | 0.05 | 0.01 | 0.05 | 0.0001 | 0.0005 | 0 | 0.05 | 0.001 | 0.0001 | 0.0001 |
+| RoLI - LoRa | 0.001 | 0.0001 | 0.001 | 0.0001 | 0.0001 | 0 | 0.005 | 0.0001 | 0.001 | 0.01 |
+| RoLI - Bias | 0.005 | 0.001 | 0.005 | 0.01 | 0.00001 | 0 | 0.0005 | 0.0001 | 0.00005 | 0.0001 |
+
+Table 6: Summary of the optimal hyperparameter combination across five datasets.
+
+| Model | Methods | CIFAR10 | | | | | | Caltech256 | | | | | |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| | | IN | | CLIP | | Robust IN | | IN | | CLIP | | Robust IN | |
+| | | Clean | PGD | Clean | PGD | Clean | PGD | Clean | PGD | Clean | PGD | Clean | PGD |
+| ViT | Full-FT | 87.91 | 50.45 | 78.53 | 45.26 | 89.32 | 51.62 | 52.82 | 25.91 | 37.16 | 5.29 | 71.01 | 36.68 |
+| | Adapter | 64.19 | 29.13 | 58.70 | 28.51 | 88.17 | 52.63 | 46.24 | 10.94 | 7.95 | 6.60 | 78.11 | 46.51 |
+| | LoRa | 82.42 | 47.68 | 69.43 | 41.01 | 90.03 | 56.28 | 1.01 | 1.07 | 4.86 | 4.86 | 75.22 | 45.16 |
+| | Bias | 56.30 | 31.19 | 55.85 | 32.06 | 88.29 | 52.94 | 41.07 | 16.07 | 8.59 | 4.95 | 77.09 | 47.19 |
+| | VPT | 68.61 | 31.4 | 40.43 | 24.87 | 88.64 | 54.25 | 36.94 | 9.89 | 7.70 | 4.86 | 75.54 | 46.79 |
+| | Linear | 52.99 | 0.21 | 74.88 | 0.00 | 84.42 | 35.81 | 53.80 | 0.50 | 26.06 | 0.54 | 79.35 | 48.22 |
+| Swin | Full-FT | 87.54 | 51.79 | - | - | 93.02 | 59.12 | 62.71 | 34.77 | - | - | 77.35 | 49.13 |
+| | Adapter | 70.32 | 32.83 | - | - | 90.23 | 55.70 | 41.48 | 10.27 | - | - | 80.24 | 52.73 |
+| | LoRa | 80.55 | 47.67 | - | - | 90.02 | 56.88 | 0.29 | 0.28 | - | - | 77.02 | 50.25 |
+| | Bias | 62.25 | 35.02 | - | - | 90.25 | 56.94 | 1.44 | 1.44 | - | - | 79.50 | 52.43 |
+| | VPT | 66.90 | 35.12 | - | - | 90.24 | 57.38 | 45.22 | 18.36 | - | - | 79.74 | 53.07 |
+| | Linear | 42.13 | 1.62 | - | - | 84.16 | 37.30 | 25.92 | 0.60 | - | - | 81.79 | 54.47 |
+
+Table 7: Numerical results for Fig. 3. We omit the results obtained from CLIP with Swin Transformer because the pretrained model is unavailable.
+
+| Model | Methods | CIFAR10 | | | | | Caltech256 | | | | |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| | | Standard FT | | Adversarial FT | | $\Delta$ PGD | Standard FT | | Adversarial FT | | $\Delta$ PGD |
+| | | Clean | PGD | Clean | PGD | | Clean | PGD | Clean | PGD | |
+| ViT | Full-FT | 97.58 | 9.57 | 89.32 | 51.62 | 42.05 | 80.02 | 6.41 | 71.01 | 36.68 | 30.27 |
+| | Adapter | 97.65 | 8.15 | 88.17 | 52.63 | 44.48 | 85.59 | 9.65 | 78.11 | 46.51 | 36.86 |
+| | LoRa | 97.80 | 21.58 | 90.03 | 56.28 | 34.70 | 84.85 | 6.49 | 75.22 | 45.16 | 38.67 |
+| | Bias | 97.95 | 9.35 | 88.29 | 52.94 | 43.59 | 86.66 | 4.09 | 77.09 | 47.19 | 43.10 |
+| | VPT | 97.51 | 10.22 | 88.64 | 54.25 | 44.03 | 85.27 | 8.96 | 75.54 | 46.79 | 37.83 |
+| | Linear | 89.57 | 19.87 | 84.42 | 35.81 | 15.94 | 82.85 | 32.72 | 79.35 | 48.22 | 15.50 |
+| Swin | Full-FT | 98.66 | 0.92 | 93.02 | 59.12 | 58.20 | 87.89 | 0.16 | 77.35 | 49.13 | 48.97 |
+| | Adapter | 98.68 | 4.26 | 90.23 | 55.70 | 51.44 | 87.35 | 3.90 | 80.24 | 52.73 | 48.83 |
+| | LoRa | 98.49 | 13.51 | 90.02 | 56.88 | 43.37 | 87.24 | 1.49 | 77.02 | 50.25 | 48.76 |
+| | Bias | 98.80 | 7.06 | 90.25 | 56.94 | 49.88 | 88.49 | 0.79 | 79.50 | 52.43 | 51.64 |
+| | VPT | 98.39 | 14.62 | 90.24 | 57.38 | 42.76 | 86.61 | 11.50 | 79.74 | 53.07 | 41.57 |
+| | Linear | 90.33 | 21.91 | 84.16 | 37.30 | 15.39 | 85.01 | 47.10 | 81.79 | 54.47 | 7.37 |
+
+Table 8: Numerical results for Fig. 5.
+
+## B. Numerical Results
+
+For Fig. 1, the numerical results are in Tab. 2 average column. The results for TWINS-AT [32] and AutoLoRa [46] are from their original papers.
+
+We show the numerical results for Fig. 3 in Tab. 7. We do not include the CLIP results for Swin Transformer because the CLIP pretrained weights are only available for ResNet-50 [16] and ViT [14]. Tab. 8 displays the numerical results corresponding to Fig. 5.
+
+[^1]: LAION-2B CLIP weights checkpoint
+
+[^2]: Swin Transformer checkpoint
+
+[^3]: Adversarially robust pretrained models

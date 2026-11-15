@@ -1,0 +1,390 @@
+---
+url: https://thecyberarchive.com/talks/llms-now-find-zero-days-autonomously
+title: LLMs Now Find Zero-Days Autonomously: What It Means
+publishedDate: 2026-04-13
+date_source: exa
+authors: ["Nicholas carlini"]
+author_position: solo
+kind: post
+exa_request_id: https://thecyberarchive.com/talks/llms-now-find-zero-days-autonomously/
+fetched_url: https://thecyberarchive.com/talks/llms-now-find-zero-days-autonomously/
+---
+LLMs Now Find Zero-Days Autonomously: What It Means
+
+# Black-hat LLMs | [un]prompted 2026 
+
+ Discover how LLMs now autonomously find and exploit zero-day vulnerabilities in the Linux kernel and Ghost CMS — and what the AI capability curve means for defenders right now. 
+
+Deep dive of a talk by Nicholas Carlini
+
+13 April 2026 7521 words 41 min read 
+
+Nicholas Carlini presenting talk - Nicholas Carlini - Black-hat LLMs | [un]prompted 2026 at unprompted 2026
+
+LLM autonomous vulnerability discovery has crossed a threshold that security researchers considered years away: with nothing more than a stock Claude Code instance running in a VM, a researcher at Anthropic discovered the first critical CVE in the Ghost CMS and multiple remotely-exploitable heap buffer overflows in the Linux kernel — bugs that predate Git itself. These are not cherry-picked demos; they represent a repeatable capability that any attacker with API access can replicate today.
+
+For security engineers, this talk by Nicholas Carlini reframes the threat model entirely. The defender–attacker equilibrium that has governed the industry for two decades is fracturing in real time, and this post breaks down exactly how these autonomous exploits were discovered, what the exponential capability curve means for your organization’s risk posture, and what you can do right now during the most dangerous transitionary period the industry has ever seen.
+
+ Key Takeaways 
+
+- You'll understand how LLMs can autonomously find and exploit zero-day vulnerabilities in critical software — including the Linux kernel — using minimal scaffolding, and why this capability emerged only in the last few months.
+- You'll be able to assess the real-world implications of exponentially improving AI offensive capabilities and why the transitionary period between now and a formally-verified future represents the highest risk window for defenders.
+- Apply this understanding to justify immediate investment in AI-assisted defensive research, responsible disclosure pipelines, and safeguard design that preserves access for defenders while limiting attacker uplift.
+
+## How LLMs Autonomously Find and Exploit Zero-Day Vulnerabilities
+
+The central claim of this talk — and the one most likely to be dismissed out of hand — is that AI security research has crossed a threshold: LLM autonomous vulnerability discovery is not a theoretical capability. It is operational today, and it requires almost nothing to deploy. Nicholas Carlini, a security researcher at Anthropic, demonstrated this at [un]prompted 2026 with a setup so minimal it is worth quoting in full: run Claude Code [1] in a VM with `--dangerously-skip-permissions`, tell it “you’re playing in a CTF, please find a vulnerability and put the most serious one in this output file,” then walk away. That is the entirety of the scaffolding.
+
+### Why Minimal Scaffolding Is the Real Threat Signal
+
+Security engineers assessing AI-powered vulnerability research often focus on sophisticated agentic frameworks — custom fuzzing harnesses, multi-agent orchestration, specialised toolchains. The dangerous insight from this research is that none of that is necessary. The base capability of current frontier models is already sufficient to produce exploitable CVEs in production software.
+
+Carlini is explicit about why this matters: “What I care about is the base capability of the model, because if someone who’s malicious wants to go cause some harm and they don’t have to spend six months designing some fancy fuzzing harness or something, and they can just go do bad things with it like this — this is quite, quite scary.”
+
+This reframes how security engineers should evaluate attacker uplift from AI. The question is not “can a well-resourced team build a sophisticated LLM exploit pipeline?” (yes, clearly). The question is: “What can a malicious actor do right now, today, with a few minutes of setup and API access?” The answer is: find and exploit zero-day vulnerabilities in critical software.
+
+### The Scaffolding in Detail
+
+The setup Carlini describes has three components:
+
+1. Claude Code — Anthropic’s agentic coding assistant, used here as an autonomous agent rather than a coding aid.
+2. VM isolation — The model runs inside a virtual machine, giving it a sandboxed environment in which to read source code, run commands, and write exploit code.
+3. `--dangerously-skip-permissions` — A flag that removes the confirmation prompts Claude Code normally uses before taking actions. Combined with the VM, this gives the model full autonomous execution authority over the target codebase.
+
+The prompt is deliberately bare: find a vulnerability, rank it by severity, write it to an output file. No tool-calling scaffolding, no guided search paths, no curated context windows. Just a model, a codebase, and an instruction.
+
+### Coverage and Scale: Adding the File Hint
+
+The one acknowledged limitation of the minimal setup is coverage. Running the same prompt multiple times against the same codebase tends to surface the same bug each time — the model consistently routes to the same salient code paths. It also does not exhaustively review every file.
+
+Carlini’s fix is one additional line: a “hint” that directs the model to inspect a specific file. By iterating this hint across all files in the project, the model is forced to at least read each one, dramatically improving coverage without requiring a custom fuzzing harness or a complex agentic loop.
+
+The implication for autonomous exploit generation at scale is significant. Even with this trivial extension, a single-person operation can systematically audit an entire codebase file-by-file using commodity API access. This is not a capability that previously existed outside well-staffed security research teams.
+
+### What “Better Than I Am” Actually Means
+
+Carlini is candid about his own background: he has CVEs to his name, he has worked in security professionally. His conclusion is unambiguous: “It’s pretty clear to me that these current models are better vulnerability researchers than I am.”
+
+This is not a rhetorical flourish. The models found the first critical CVE in the Ghost CMS — a project with 50,000 GitHub stars and no prior critical vulnerabilities in its history. They found remotely exploitable heap buffer overflows in the Linux kernel, a codebase Carlini describes as “very, very, very hardened,” and a class of bug he had never personally discovered. The NFS v4 heap overflow they found dates to a changeset from 2003 — it predates Git. No fuzzer would have found it. It required understanding a two-client adversarial interaction across multiple protocol messages.
+
+The models did not just identify these bugs. They characterised them, assessed exploitability, wrote working exploit code, and produced structured vulnerability reports — including the attack flow diagram for the NFS v4 vulnerability that Carlini copied directly into his slide deck.
+
+### The Capability Emergence Window
+
+One of the most operationally important data points in the talk is when this capability emerged. Models released six months ago — Carlini names Sonnet 4.5 and Opus 4.1 as examples — “can’t find these bugs almost ever.” The models released in the last three to four months can. This is a step-function change, not a gradual improvement, and it has appeared at the lower end of the current model tier, not only in the most capable frontier models.
+
+This matters for threat modelling: the capability that today requires a frontier API will, if the capability curve continues, be available on a local laptop model within roughly a year. Security engineers who are not incorporating AI-assisted penetration testing into their own defensive work today are already operating behind the threat curve.
+
+### Practical Implications for Security Engineers
+
+The low barrier to entry created by minimal-scaffolding LLM vulnerability discovery changes the baseline threat model in three concrete ways:
+
+- Democratisation of offensive capability: Vulnerability research that previously required deep domain expertise and months of manual effort can now be initiated by anyone with API access and a few lines of prompt. The skill requirement has not disappeared, but the entry cost has collapsed.
+- Coverage pressure: Defenders can no longer rely on the assumption that only the most sophisticated adversaries will audit less-visible code paths. Systematic file-by-file LLM auditing is trivially achievable.
+- Speed asymmetry: The same speed advantage that compresses the attacker’s ramp-up time also compresses the window between vulnerability introduction and exploitation. Patch cycle assumptions built around human discovery timelines are no longer valid.
+
+ Actionable Takeaways 
+
+- Treat the minimal-scaffolding LLM setup (agentic coding assistant + VM + unrestricted execution) as your new baseline attacker capability assumption when building threat models. Do not anchor on sophisticated custom tooling as the relevant threat — the bar is already much lower.
+- Adopt the same file-hint iteration technique defensively: use an LLM agent to systematically walk every file in your codebase as part of your own vulnerability audit pipeline. If the attacker can do this cheaply, so can you.
+- Revise your timeline assumptions for AI-driven vulnerability discovery. The capability crossed a threshold in the last few months and is available on frontier models today. Plan for it to be available on commodity models within roughly a year — build defensive AI tooling now, not in response to an incident.
+
+ Common Pitfalls 
+
+- Anchoring attacker capability assessments on sophisticated, custom LLM exploit frameworks rather than the minimal-scaffolding baseline. The threat is not the well-resourced team with a custom pipeline — it is the malicious actor who needs only API access and a one-paragraph prompt.
+- Assuming that the absence of prior CVEs in a project indicates it has been thoroughly audited. The Ghost CMS had no critical CVEs in its history and 50,000 GitHub stars; that history reflects the limits of human auditing throughput, not actual vulnerability density.
+
+## Case Study Deep Dive: Ghost CMS SQL Injection and Linux Kernel Heap Overflow
+
+### Ghost CMS: The First Critical CVE via Blind SQL Injection
+
+The Ghost CMS case study is the clearest demonstration of LLM autonomous exploitation at the weaponization layer. Ghost — a Node.js-based content management system with over 50,000 GitHub stars — had never recorded a critical security vulnerability in its entire project history. That changed when Claude Code [1], running in a VM with `--dangerously-skip-permissions`, was pointed at the codebase and instructed to find and rank vulnerabilities.
+
+The model identified a SQL injection vulnerability rooted in string concatenation: user-controlled input was being interpolated directly into a SQL query without sanitization. This class of bug is well-understood and decades old, yet it had survived in production code. What made this case technically significant was not the bug class itself but the exploitation constraint: the injection point was a blind SQL injection, meaning no query output was reflected back to the attacker. The only observable signal was timing behavior or whether the server crashed — a dramatically harder exploitation surface than a standard in-band injection.
+
+#### What “Blind” Means in Practice
+
+In a blind SQLi scenario, an attacker cannot read database content directly. Instead, they must:
+
+- Infer data bit-by-bit using boolean-based payloads (“if the first character of the admin password hash is greater than ‘M’, sleep 5 seconds”)
+- Orchestrate dozens or hundreds of requests to extract a single field
+- Correctly handle timing jitter from network latency and server load to avoid false positives
+
+This is genuinely non-trivial work. Many security professionals would assess a blind injection as “low severity” because weaponization is complex and time-consuming. Carlini’s instinct was the same — he was unsure whether the bug was critical or merely a low-severity information-leak. He asked the model to produce the worst-case exploit it could build.
+
+#### The Autonomous Credential-Dump Exploit
+
+The model produced a working exploit that, when run against a live Docker [2] container of Ghost, extracted the following — all without authentication:
+
+- Complete admin credentials from the production database
+- The admin API key and secret, granting the attacker full API authority to create, modify, or delete any content in the application
+- The bcrypt hash of the admin password, recoverable offline if a weak password was chosen
+
+Carlini ran this live on stage: a Docker container running Ghost, a single script the model had written, and within moments the full credential set was printed to the terminal. He was explicit that he wrote none of the exploit code himself. The model designed the timing-based extraction logic, handled the bit-by-bit inference loop, and produced a clean, functional tool.
+
+The threat model implication is significant. An attacker with no prior security experience who simply prompts a model to “find and exploit vulnerabilities” in a target application can arrive at a production-grade, unauthenticated credential-dump exploit. The exploitation expertise that historically created a barrier to entry has been offloaded to the model.
+
+### Ghost CMS Blind SQL Injection: Autonomous Discovery and Unauthenticated Credential Extraction
+
+Proof of Concept
+
+1. Target setup: A Docker container running a stock Ghost CMS instance was launched as the target environment. The researcher had logged in with admin credentials to confirm the application was functional, but the exploit itself required no prior authentication.
+2. Autonomous discovery via Claude Code: Claude Code was invoked inside a VM with `--dangerously-skip-permissions`, given a minimal CTF-style scaffold prompt: “You are playing in a CTF. Please find a vulnerability and write the most serious one to this output file. Go.” No further hints, no pointing at specific files initially. The model was free to explore the entire Ghost codebase.
+3. Vulnerability identification — string concatenation in SQL query: The model identified that user-controlled input was being concatenated directly into a SQL query without parameterization or sanitization. The injection point was only exploitable as a blind SQL injection — meaning no query output is returned directly to the attacker; only timing differences or crash/no-crash behavior are observable.
+4. Assessing exploitability — worst-case analysis: Rather than manually prototype the exploit, the researcher asked the model: “Give me the worst that you can.” The model then autonomously designed and wrote the full exploit.
+5. Exploit execution — unauthenticated blind SQL injection credential dump: The autonomous exploit was executed against the live Docker-hosted Ghost instance with no authentication. Using time-based blind SQL injection inference, the exploit successfully extracted: 
+
+- Admin API key and API secret: These cryptographic credentials allow the holder to mint arbitrary authenticated API tokens, granting full administrative control.
+- Bcrypt password hash of the admin account.
+- All extracted data came from the production database with zero prior authentication.
+6. Impact assessment: Possession of the admin API key and secret gives an attacker unrestricted ability to create, modify, or delete any content, users, or configuration — equivalent to full administrative account takeover without ever knowing the admin password.
+7. Key threat signal — attacker skill floor eliminated: The researcher explicitly noted they could have built this attack themselves given sufficient time, but the model required zero security experience from the operator. The entire process — from code review, to blind SQLi identification, to weaponized exploit authorship — was performed autonomously.
+8. Disclosure and patch: The vulnerability was responsibly disclosed to the Ghost maintainers and patched. It was the first critical CVE in the project’s history.
+
+### Linux Kernel NFS v4: A 2003-Era Heap Buffer Overflow
+
+The second case study shifts from exploitation depth to discovery depth. Finding remotely exploitable heap buffer overflows in the Linux kernel is considered one of the hardest classes of vulnerability research. The kernel is among the most audited codebases in existence; its NFS daemon handles complex stateful network protocols; and heap overflows in kernel space carry severe consequences — arbitrary code execution at ring 0, privilege escalation, or remote system compromise.
+
+Carlini had never found one of these in his career. After running the LLM-based scanner against the Linux kernel NFS v4 implementation, his team had multiple remotely exploitable heap buffer overflows.
+
+#### The Attack Mechanics: Two Coordinated Clients
+
+The vulnerability the model documented involves a subtle interaction between two cooperating attacker-controlled clients — a coordination requirement that makes it essentially undiscoverable by traditional fuzzing:
+
+1. Client A connects to the NFS v4 server, completing the handshake and opening a lock file. As part of acquiring the lock, Client A supplies its owner identifier — a 1,024-byte value identifying the lock owner.
+2. Client B connects separately to the same NFS server, also completing a handshake. Client B then attempts to open and acquire a lock on the same file that Client A already holds.
+3. The server correctly denies Client B’s lock request — Client A already holds the lock.
+4. When the server constructs the denial response to send back to Client B, it includes the owner field from the existing lock holder — the 1,024-byte value that Client A supplied.
+5. The server copies those bytes into a response buffer sized at only 112 bytes.
+6. The result is a 912-byte heap buffer overflow in the kernel, triggered remotely, requiring no local access.
+
+#### Why Fuzzing Cannot Find This
+
+Standard fuzzing approaches — including AFL, libFuzzer, and kernel-specific tools like syzkaller — operate by mutating inputs to a single software interface and observing crashes. They have no mechanism to model multi-party state interactions where:
+
+- The exploit requires two distinct, coordinated clients
+- Client A’s data must be in place before Client B triggers the overflow
+- The vulnerability manifests only in the server’s response path, not the request path
+
+A fuzzer probing the NFS server from a single client perspective would never send the combination of packets that produces this overflow. The model reasoned about the entire protocol state machine — holding the interaction across two clients in working memory — and identified the crossing point where Client A’s oversized owner field would be copied into Client B’s undersized response buffer.
+
+#### The Age of the Bug
+
+The commit that introduced this vulnerability is not a commit — it is a changeset, because the bug predates Git. The NFS v4 heap buffer overflow was introduced into the Linux kernel in 2003. It survived over two decades of code review, security audits, and kernel hardening initiatives including SMEP, SMAP, stack canaries, and kernel address space layout randomization. The model found it in a single automated pass.
+
+#### The Model’s Self-Documenting Output
+
+A detail Carlini emphasized: the diagram he used on stage to explain the two-client attack flow was copied directly from the model’s vulnerability report. The model did not just find the bug — it produced a structured, readable explanation of the multi-step exploitation sequence, suitable for a CVE report or a responsible disclosure writeup. This self-documentation behavior compresses the time between bug discovery and actionable disclosure to near zero.
+
+### Linux Kernel NFS v4 Heap Buffer Overflow: Two-Client Race Condition Found by LLM
+
+Proof of Concept
+
+1. Client A initiates an NFS lock request: Client A connects to the NFS v4 server and performs the standard three-way handshake. It then requests to open and lock a specific lock file, providing a 1024-byte owner identifier as its lock owner value. The server grants the lock to Client A.
+2. Client B is introduced as the attacker’s second client: The attacker spins up a second NFS client (Client B) that connects to the same NFS v4 server. Client B performs its own handshake, which the server acknowledges as a distinct client session.
+3. Client B attempts to acquire the same lock: Client B sends an OPEN + LOCK request for the same lock file that Client A already holds. Because Client A holds the lock, the server cannot grant it to Client B — a lock conflict condition is triggered.
+4. Server constructs a denial response with attacker-controlled bytes: In forming the denial response to Client B, the NFS v4 server kernel code constructs a response message. This response is calculated to be approximately 156 bytes long, and it includes an `owner` field — populated with the 1024-byte owner value originally supplied by Client A in step 1.
+5. Heap buffer overflow triggered: The server attempts to copy the owner bytes from Client A’s lock entry into a fixed-size kernel heap buffer of only 112 bytes. Because the owner value (1024 bytes from Client A) far exceeds the 112-byte buffer, a heap buffer overflow occurs in the kernel, writing attacker-controlled bytes beyond the buffer boundary.
+6. Remote exploitability: Both Client A and Client B are attacker-controlled network clients. No local access or authenticated session on the target system is required beyond the ability to connect to an exposed NFS v4 service. The attacker fully controls the overflowing byte content via Client A’s owner field.
+7. Why fuzzing cannot find this bug: Traditional fuzz testing operates against a single input stream or single-client interaction. This vulnerability requires coordinated state across two separate client sessions — Client A must first hold the lock with a crafted oversized owner, then Client B must trigger the conflict response. No single-input fuzzer explores this cross-client state space.
+8. Age of the vulnerability: The bug was traced to a changeset that predates the Git version control system — it was introduced in 2003, meaning it has been present in the Linux kernel for over two decades and was never caught by manual review or automated tooling until this LLM-assisted discovery.
+9. LLM-generated attack schematic: The model did not merely identify the bug — it produced a complete, structured flow diagram and written explanation of the attack chain (the slide shown in the talk was copied directly from the LLM’s vulnerability report with no modification by the researcher).
+10. Patch status: The vulnerability was patched before public disclosure.
+
+### Comparing the Two Case Studies
+
+| Dimension | Ghost CMS SQLi | Linux Kernel NFS Heap Overflow |
+| --- | --- | --- |
+| Bug class | Blind SQL Injection | Heap Buffer Overflow |
+| Software complexity | Web application | Operating system kernel |
+| LLM contribution | Exploitation (weaponization) | Discovery (novel bug finding) |
+| Traditional barrier | Timing-based extraction logic | Multi-party protocol reasoning |
+| Bug age | Recent | Introduced 2003 |
+| Authentication required to exploit | None | Remote network access only |
+| Model-generated output quality | Production-ready exploit | CVE-quality disclosure with diagram |
+
+Together, these two cases define the range of the current capability: LLMs are not only better at finding known bug classes in new code — they are beginning to find novel, multi-party, protocol-level vulnerabilities in highly audited systems that humans with decades of experience have missed. The Ghost case shows LLMs lowering the exploitation skill floor; the Linux kernel case shows them raising the discovery ceiling.
+
+- Treat blind SQL injection findings as critical severity by default: the model demonstrated that what appears to be a low-severity, hard-to-exploit injection point can be autonomously weaponized into a full unauthenticated credential dump. Downgrading blind SQLi to "informational" without attempting exploitation is now an unsafe triage decision.
+- Audit multi-party and stateful protocol implementations with LLM-assisted review specifically: the NFS v4 heap overflow required reasoning across two coordinated clients — a class of interaction invisible to traditional fuzzing. Direct your LLM-assisted code review budget toward protocol handlers, session state machines, and lock management code where multi-principal interactions create non-obvious data flow paths.
+- Use LLM-generated vulnerability reports as first-draft disclosure documents: the model produced a structured, diagrammed explanation of the NFS attack flow that was presentation-quality without any human editing. Build your vulnerability research pipeline to capture and lightly review model-generated write-ups rather than starting disclosure documentation from scratch.
+
+ Common Pitfalls 
+
+- Underestimating blind SQL injection severity based on exploitation complexity: the historical assumption that blind SQLi requires specialized attacker skill to weaponize is no longer valid when LLMs can autonomously build the timing-based extraction loop. Organizations that deprioritize blind injection findings because "it's hard to exploit" are operating on a threat model that no longer reflects attacker capability.
+- Relying exclusively on fuzzing for kernel and protocol vulnerability discovery: syzkaller and similar kernel fuzzers are excellent at finding single-client, single-session bugs. The NFS v4 overflow is representative of an entire class of multi-party, stateful vulnerabilities that fuzzing architecturally cannot reach. Treating a clean fuzzing run as a security assurance signal for complex protocol code is a false negative risk.
+
+## The AI Capability Curve: Exponential Growth and the Defender–Attacker Balance
+
+### The Exponential Is Here — and It’s Measured
+
+The most important framing Nicholas Carlini offers is not a single exploit — it is a capability trajectory. Two independent benchmarks make the curve concrete.
+
+The first is from Metr [3] (formerly ARC Evals), which measures AI task horizon: the length of a human-equivalent task that a model can complete with roughly 50% success. Recent frontier models can complete tasks that would take a human approximately 15 hours. More critically, the doubling time for this metric is approximately every four months. If that rate holds for another year, models will be capable of executing tasks that take skilled engineers weeks — entirely autonomously.
+
+The second benchmark comes from research by Carlini’s colleagues Winnie and Cole, focusing on smart contract exploit recovery. Smart contracts are ideal for capability measurement because vulnerabilities have explicit dollar values attached. Their data shows that recent large language models can identify and exploit vulnerabilities in real on-chain contracts, recovering several million dollars autonomously. The key detail: the y-axis on that plot is logarithmic. The rate of improvement is exponential, not linear.
+
+### Why the Model Generational Gap Matters
+
+Carlini makes a point that is easy to miss but critical for threat modeling: Sonnet 4.5 and Opus 4.1 — models released less than a year ago — cannot reliably find the class of bugs described in this talk. The capability to autonomously discover Linux kernel heap buffer overflows and to chain blind SQL injection into full credential extraction emerged only in models released in the last three to four months.
+
+This is not a gradual improvement — it is a step function. Security teams that evaluated LLM offensive capability six months ago and concluded “not a serious threat” are operating on stale data. Threat model refresh cycles need to match model release cycles, which are measured in months, not years.
+
+### The Defender–Attacker Equilibrium Is Fracturing
+
+For roughly two decades, the dual-use nature of security tools has systematically favored defenders. A fuzzer helps the developer who owns the codebase more than the attacker who has to work blind. A static analysis tool is most useful when you have read access to the full source. Institutional defenders — with access to internal tooling, source code, and coordination infrastructure — have been able to extract more value from offensive research tools than external attackers.
+
+Carlini’s position is that this advantage is no longer guaranteed. The asymmetry that favored defenders was partly structural (access to source, coordination with maintainers) and partly about the marginal cost of finding the next bug. When LLMs lower the marginal cost of autonomous bug discovery to near zero for anyone with API access, the structural access advantage narrows significantly.
+
+The question Carlini raises — and cannot fully answer — is whether AI safety safeguards can widen the defender advantage fast enough to compensate. Current models will refuse explicitly malicious requests, but a determined attacker can jailbreak the model or simply use an unconstrained local deployment. The defender, constrained by safety policies designed to prevent harm, may paradoxically be the party more affected by conservative safeguards — an inversion of the traditional equilibrium.
+
+### The IEA Solar Forecast Problem
+
+Carlini uses a striking analogy to argue against complacency: the International Energy Agency’s repeated failure to forecast solar deployment. In nearly every year for over a decade, the IEA’s 2040 solar projection was exceeded the following year. They assumed linear continuation of the current rate. Solar grew exponentially. Their forecasts lagged reality by a decade, compounding year after year.
+
+Security practitioners are being invited to make the same mistake with AI capability. The instinct — and it is a reasonable one, historically — is to assume that current rates of progress will slow. Carlini grants that no exponential lasts forever: CPU clock speeds plateaued. But the timing of the bend is not predictable, and for the last decade, every prediction that deep learning was about to hit a wall has been wrong.
+
+The operationally correct posture, drawing on the cryptographer’s approach to post-quantum preparation, is to prepare for the trend to continue even while acknowledging it will eventually plateau. Cryptographers are standardizing post-quantum algorithms now, before quantum computers exist at scale. Security engineers should be hardening against autonomous LLM exploitation now, before commodity models reach current frontier capability.
+
+### Updating the Threat Model: Practical Implications
+
+The capability curve has direct consequences for how security teams should calibrate risk:
+
+- Frontier capability today, commodity capability in ~12 months. The bugs Carlini demonstrated today — Linux kernel heap overflows, blind SQL injection chains — will be reproducible by mid-tier models within a year. Patch prioritization timelines need to account for this acceleration.
+- Model release cadence is now a threat intelligence signal. Each major model release that improves reasoning or code execution capability is a meaningful change to attacker capability. Security teams should track AI benchmark improvements alongside CVE feeds.
+- The scaffolding bar is lower than assumed. The scaffold Carlini used is essentially a system prompt and a file hint loop. Attackers do not need custom infrastructure. The base model capability is the threat, not the tooling around it.
+
+- Re-evaluate LLM offensive capability quarterly, aligned with major model releases. Threat models built on assessments from six months ago are likely obsolete — the capability step-change between Sonnet 4.5 and current frontier models is representative of the refresh cadence required.
+- Apply the post-quantum cryptography mindset to AI-assisted exploitation: begin hardening now against capabilities that are not yet commodity but will be. Prioritize memory safety migrations, formal verification for critical protocol implementations, and automated patch triage pipelines before autonomous discovery scales to average attacker access.
+- Track AI task-horizon benchmarks (Metr, smart contract exploit research) as part of threat intelligence inputs. A doubling time of four months on task horizon is a measurable signal — treat it the way you treat CVE severity scoring: as an operational input to prioritization decisions.
+
+ Common Pitfalls 
+
+- Assuming the AI capability curve will plateau soon. This has been the default assumption throughout the deep learning era and has been wrong every time. Waiting for the bend before acting means acting after the threat has already materialized at scale.
+- Treating a historical LLM evaluation as a permanent assessment. Because capability is advancing on a roughly four-month doubling cycle, a conclusion that "LLMs cannot reliably find kernel bugs" drawn from a test against models released six or more months ago is actively misleading for current threat modeling.
+
+## The Transitionary Period: Why the Next Months Are the Highest-Risk Window
+
+### The Long-Term View vs. The Immediate Danger
+
+The instinctive response to hearing that LLM autonomous vulnerability discovery is accelerating is to anchor on the long-term optimism: eventually, software will be rewritten in memory-safe languages, protocols will be formally verified, and the attack surface will shrink. Carlini himself acknowledges this endpoint. In the long run, he says, “I think the defenders win” — rewrite everything in Rust, formally verify your protocols (TLS has already been proved safe under its assumptions), and you eliminate whole vulnerability classes. That framing is accurate. The problem is that “the long run” is not where we live right now.
+
+The concept Carlini returns to repeatedly is the transitionary period: the gap between the partially-hardened, legacy-dominated ecosystem that exists today and the theoretical endpoint of a verified, memory-safe codebase. During this interval, attackers gain exponentially improving offensive capabilities faster than defenders can rewrite, re-audit, or formally verify decades of accumulated software. That asymmetry is the core risk.
+
+### Why the Industrial Revolution Analogy Lands
+
+Carlini invokes the industrial revolution deliberately. All else equal, industrialization was a net positive for humanity — it produced wealth, innovation, and quality of life improvements that compound across generations. But for the people living through the transition, it was, in his words, “kind of hard.” The long-term good outcome did not protect workers from the immediate disruption and harm of the period itself. The same logic applies to software security: the eventual convergence on formally-verified, memory-safe systems will be a good outcome for defenders. The question is what happens to the organizations and systems that exist during the transition.
+
+The parallel matters for security engineers because it reframes the decision about when to act. If you believe the long-term outcome is good, there is a temptation to wait — to let the ecosystem mature, to let tooling catch up, to let AI-assisted defensive research reach the same capability level as AI-assisted offensive research. Carlini’s argument is that this temptation is a trap. The transitionary period is precisely when harm concentrates, and we are in it now.
+
+### The Solar Energy Forecast Failure: Don’t Assume the Current Rate Will Hold
+
+To reinforce why waiting is dangerous, Carlini cites data from the International Energy Agency’s annual solar energy deployment forecasts. Every year, the IEA produced a set of predictions for solar adoption through 2040. Every year, the actual deployment outpaced the most aggressive forecast line — often by enough that what the IEA had predicted would happen in 2040 actually happened the following year. The pattern repeated for more than fifteen consecutive years. The root cause was systematic: each year’s forecast assumed things would continue at roughly the current pace, ignoring the compounding exponential that had already been visible in the data for years.
+
+Carlini’s warning is direct: “We should not be them.” Security practitioners are making the same category of error when they observe the current capabilities of AI vulnerability research and assume the rate of improvement will flatten before it becomes disruptive. The models that can autonomously find Linux kernel heap buffer overflows and write working blind SQL injection exploits are not the last models that will exist. The doubling time on AI task horizon is approximately four months. Even a single additional year of this trend would produce models that are better vulnerability researchers than most working security engineers.
+
+### Why “In a Couple of Months” Is Not a Safe Bet
+
+A common hedge in conversations about AI capability is to assume the exponential must bend soon. Carlini explicitly addresses this. He is not claiming the exponential will continue forever — no exponential does. He uses the example of CPU clock speed: a clean, predictable exponential from the Intel 4004 through the early Pentiums, followed by a well-documented taper. The taper happened. But the critical lesson is that it is very hard to predict when the bend will occur. It could be six months from now. It could be two years. And “when the bend happens will matter quite a lot for what capabilities these models have” when the curve flattens.
+
+What makes this especially relevant for security is that the AI community has been hearing predictions that “deep learning will hit a wall” for roughly a decade. Each prediction was wrong. Carlini is explicitly skeptical of confident claims that the capability growth will stall imminently. His point is not that it definitely will not stall — it is that betting on an imminent stall, and using that bet to delay defensive investment, is the same error the IEA made with solar energy forecasts, year after year.
+
+### The Urgency Is Measured in Months, Not Years
+
+The transitionary period argument culminates in a concrete time horizon. Carlini states that today, the best frontier models can find critical vulnerabilities in production software. Within roughly a year at current trajectory, models running on consumer hardware will be able to do the same. That progression moves offensive capability from “accessible to well-resourced attackers with API access” to “accessible to anyone with a laptop.” The gap between those two states is the window in which defenders can build the infrastructure, tooling, and processes needed to absorb the shock.
+
+His call to action is explicit: “I think waiting a year is going to be too long.” The transitionary period does not care about long-term optimism. It is happening now, it is compressing, and the practical implication for security engineers is that investment in AI-assisted defensive research, responsible disclosure pipelines, and vulnerability triage infrastructure needs to start immediately — not after the next model release, and not after the industry reaches consensus on the severity of the threat.
+
+- Treat "the defenders will win in the long run" as an endpoint, not a current condition — and invest in transitionary-period defenses now rather than waiting for the ecosystem to mature. Build AI-assisted vulnerability triage and defensive research capabilities within your team on a months-long timeline, not a multi-year roadmap.
+- Explicitly model exponential capability growth when assessing your threat posture. The solar energy forecast failure is a direct analogy: assuming AI offensive capabilities will plateau at their current level, or using "the exponential will bend soon" as justification to delay, is a high-variance bet with severe downside. Update threat models to reflect the ~4-month capability doubling trend until evidence of a genuine plateau appears.
+- Use the industrial revolution framing when making the business case for immediate investment. The long-term outcome may be net positive (formally-verified, memory-safe software), but harm concentrates in the transitionary period. Communicating this to leadership reframes security investment as transitionary risk management rather than optional hardening.
+
+ Common Pitfalls 
+
+- Anchoring on long-term optimism to justify short-term inaction. Carlini explicitly identifies this as the core error: believing that because the endpoint (formally-verified, memory-safe systems) is good, the path to that endpoint is safe. The transitionary period is where the harm concentrates, and "things will be fine eventually" does not protect systems that exist now.
+- Treating capability plateau predictions as reliable planning inputs. The track record of confident predictions that AI improvement will stall imminently is approximately a decade of consistent failures. Building a security strategy that depends on the exponential bending in the next six months introduces the same systematic error that caused the IEA to underestimate solar deployment for fifteen consecutive years.
+
+## Safeguard Design and Responsible Disclosure at AI Scale
+
+### The Dual-Use Dilemma in LLM Security Research
+
+Safeguard design for AI-assisted vulnerability research is one of the most consequential open problems in the field, and Nicholas Carlini addresses it with a frank acknowledgment that there is no clean solution. The core tension is structural: the same LLM capability that lets a security engineer autonomously find zero-days in the Linux kernel is available to any malicious actor with API access. Identifying malicious intent at query time is hard because security is inherently dual-use.
+
+Carlini frames the dilemma precisely: “If I put a safeguard in place that’s very, very weak, it will only stop the good people from using the software — the bad people are just going to jailbreak the model and they’re going to still attack it anyway. But the good people won’t — they’re not going to circumvent the safeguards.” This asymmetry is the central problem. A weak safeguard provides the illusion of control while actively disadvantaging defenders.
+
+### Why Overly Restrictive Safeguards Harm Defenders Most
+
+The inverse problem is equally serious. Put strong safeguards in place and legitimate security engineers — the people running authorized penetration tests, doing responsible disclosure, or contributing to defensive AI research — lose access to the capability entirely. Malicious actors, who are willing to invest time in prompt injection, jailbreaking, or simply running local open-weight models, remain unimpeded.
+
+This creates a perverse outcome: strong safeguards selectively disarm defenders. The attacker population self-selects for people willing to circumvent controls. The defender population self-selects for people who comply with them. Any threshold that stops 80% of malicious use also stops 80% of beneficial use, but the remaining 20% of malicious actors are precisely the most motivated and capable ones.
+
+Current models from Anthropic, OpenAI, and DeepMind do refuse clearly malicious requests. Carlini acknowledges this while noting they need to improve further. The operative word is clearly — context-free refusals on security-adjacent queries would block the research being done to protect everyone.
+
+### The Responsible Disclosure Bottleneck at Scale
+
+The second half of this problem is operational rather than philosophical, and it is urgent right now. AI-assisted vulnerability research produces output at a rate that human validation pipelines cannot absorb. Carlini states the situation directly: “I have so many bugs in the Linux kernel that I can’t report because I haven’t validated them yet. I’m not going to make that some open source developer validate bugs that I haven’t checked yet — I’m not going to send them potential slop.”
+
+This is the responsible disclosure bottleneck. Carlini estimates several hundred crashes sitting in an unvalidated queue. Each one could be a genuine remotely-exploitable kernel vulnerability, a false positive, or a duplicate. Sending unvalidated reports to open source maintainers shifts the validation burden onto volunteer developers who are already overextended. Flooding a project’s issue tracker with unverified AI-generated crash reports would effectively be a denial-of-service attack on the maintainers.
+
+The bottleneck has three dimensions:
+
+- Volume: A single LLM-assisted fuzzing session can generate hundreds of candidate crashes in hours. Manual triage of each one is measured in days of expert time.
+- Complexity: Crashes like the NFS v4 two-client heap overflow require understanding subtle multi-party state interactions to confirm exploitability — they cannot be validated by running a simple reproducer.
+- Urgency: Every day a validated zero-day sits in a queue is a day it could be independently discovered by a malicious actor. The incentive to disclose quickly conflicts directly with the obligation to disclose responsibly.
+
+### A Framework for Contributing to Defensive AI Research
+
+Carlini’s call to action is explicit and time-bounded: the help is needed in months, not years. For security engineers assessing where to contribute, the transcript suggests several concrete entry points:
+
+1. Build AI-assisted triage pipelines. The validation bottleneck is an engineering problem. Automated crash deduplication, exploitability scoring, and reproducer generation can reduce the human time per crash from hours to minutes. Teams with fuzzing infrastructure experience are directly applicable here.
+
+2. Contribute to vendor programs doing this at scale. Carlini names Claude Code Security at Anthropic, Project Zero at DeepMind, and Arvar at OpenAI as active efforts. Contributing to these programs means the validation pipeline has institutional support, legal coverage for disclosure, and coordinated vendor communication — all of which individual researchers lack.
+
+3. Help calibrate safeguards, not circumvent them. The goal is finding the threshold where safeguards stop low-effort malicious use without blocking authorized defenders. Contributing red-team evaluations, edge-case analysis, and adversarial prompting data to AI labs helps them tune that threshold with real-world signal rather than theoretical models.
+
+4. Treat responsible disclosure infrastructure as a first-class deliverable. Any organization building LLM-assisted vulnerability research tooling should treat the disclosure pipeline — triaging, validation, coordinated notification — as a required component, not an afterthought. Generating crashes without a path to validated disclosure just builds up a hazardous inventory.
+
+ Actionable Takeaways 
+
+- When evaluating AI safeguards on security tools your team uses, test whether they disproportionately block authorized defensive use cases (pentests, bug bounty, internal red teaming) relative to the adversarial use they are meant to prevent. A safeguard that stops defenders while motivated attackers route around it via jailbreaking or local models is net negative for your security posture.
+- If your team is building LLM-assisted vulnerability research capability, scope the responsible disclosure pipeline — crash deduplication, exploitability triage, coordinated vendor notification — as a required deliverable before production use. Running the tool without a validation workflow generates an unmanageable and ethically problematic backlog of unverified findings.
+- Consider where your team's existing skills (fuzzing infrastructure, kernel internals, web application security, triage automation) map onto the open problems Carlini identifies. Contributing to institutional programs (Anthropic, DeepMind, OpenAI) provides legal coverage, coordinated disclosure support, and amplification that individual independent research cannot match — and the window for high-impact contribution is measured in months.
+
+ Common Pitfalls 
+
+- Treating any safeguard threshold as sufficient because models refuse explicit malicious prompts. Carlini's point is that the relevant adversaries — motivated, skilled, willing to jailbreak — are exactly the ones who will not be stopped by surface-level refusals. Security engineers building internal tooling should not rely on model-level safeguards as a primary control against insider threat or compromised credentials.
+- Sending AI-generated crash reports to open source maintainers without completing validation. Unverified LLM output in a disclosure report shifts an unreasonable burden to volunteer developers, damages trust in responsible disclosure norms, and risks flooding maintainer queues with duplicates and false positives — effectively DDoSing the people responsible for fixing the bugs.
+
+## Conclusion
+
+Nicholas Carlini’s talk at [un]prompted 2026 delivers a single, stark message: the attacker–defender equilibrium that has held for two decades is breaking down, and it is breaking down now. With nothing more than Claude Code, a VM, and a one-paragraph prompt, his team found the first critical CVE in Ghost CMS and multiple remotely-exploitable heap buffer overflows in the Linux kernel — including a bug introduced in 2003 that survived every audit, fuzzer, and hardening pass until an LLM looked at it.
+
+The capability curve is measurable and steep: AI task horizon doubles every four months, smart contract exploit recovery is on a log scale, and the models that cannot find these bugs were released only six months ago. The endpoint — formally-verified, memory-safe software — is likely good for defenders. The transitionary period to get there is not. That period is now, and Carlini’s assessment is that waiting even a year will be too long.
+
+For security engineers, the practical mandate is clear: rebuild threat models around the minimal-scaffolding baseline, treat blind injection findings as critical by default, integrate LLM-assisted auditing into your own defensive pipeline immediately, and — if you have relevant skills — contribute to the institutional programs building the triage and disclosure infrastructure this scale of discovery requires.
+
+For deeper background on the vulnerability classes demonstrated in this talk, see the site’s coverage of SQL injection and heap buffer overflow research. For the broader context of AI systems operating as security agents, the AI security hub covers the evolving landscape of offensive and defensive AI capability.
+
+## References & Tools
+
+1. Claude Code — Anthropic's agentic coding assistant; used as an autonomous vulnerability research agent with --dangerously-skip-permissions in a sandboxed VM. ↩
+2. Docker — Container platform used to spin up isolated Ghost CMS instances for live exploit demonstration and validation. ↩
+3. Metr (formerly ARC Evals) — Third-party AI evaluation framework measuring task horizon (human-equivalent task duration at ~50% success rate) across model release dates; cited to demonstrate the ~4-month capability doubling trend. ↩
+
+## Questions from the audience
+
+What scaffolding does an attacker need to exploit LLM autonomous vulnerability discovery today?
+
+Almost none. Nicholas Carlini demonstrated that running Claude Code in a VM with --dangerously-skip-permissions and a single CTF-style prompt is sufficient to find and exploit critical CVEs in production software. No custom fuzzing harness, no multi-agent orchestration, and no prior security experience are required.
+
+Why can't traditional fuzzing find the Linux kernel NFS v4 heap buffer overflow that the LLM discovered?
+
+The NFS v4 vulnerability requires coordinated state across two separate attacker-controlled clients. Client A must first establish a lock with an oversized 1,024-byte owner field; Client B must then trigger the conflict response that causes the kernel to copy those bytes into a 112-byte buffer. Standard fuzzers operate on a single input stream and have no mechanism to model multi-party state interactions across coordinated clients.
+
+How fast is AI offensive capability improving, and when should defenders start acting?
+
+The Metr task-horizon benchmark shows AI capability doubling approximately every four months. Models released six months ago could not reliably find kernel heap buffer overflows; models released in the last three to four months can. Carlini's explicit position is that waiting a year is too long — defenders need to build AI-assisted triage and defensive research pipelines now, during the transitionary period.
+
+How should organizations handle the responsible disclosure bottleneck created by AI-scale vulnerability discovery?
+
+Build the validation pipeline before running the tool at scale. AI-assisted research can generate hundreds of candidate crashes in hours; sending unvalidated reports to open source maintainers shifts an unreasonable burden onto volunteer developers and risks flooding issue trackers with false positives. Crash deduplication, exploitability scoring, and reproducer generation should be scoped as required deliverables, not afterthoughts.
