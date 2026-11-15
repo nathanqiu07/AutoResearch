@@ -87,3 +87,49 @@ First live batch completed:14/14control builds complete atzero calls; bothP1 pro
 JOB_REGISTRY.json now contains all30 actual jobs and both exactbatch pointers. The frozen pilot completed32/32control predictions with no error/unknowncalls;2P1buildfailures remain explicit. Sharedledger34calls,.0082642USD estimated,0pending. Evaluator is now scoring the frozen comparison; no outcomeclaim yet. Completionindex /private/tmp/gio-profile-20261115-coordinator/pilot-completion-index-v1.json SHA2566fadfd0466ec959b1cbc5bb6852a135e604834aefd2cdadcb7a7cbb2ad922fb6.
 
 Oversight role10 reference helper is accepted in principle within existing queuedrole10 scope, no duplicate. Root will publish explicit ownership packet/reservation after inspecting existing queued paths. It remains a separate recorded-preference reference, not research-taste evidence. No finaldata and no livecalls before concrete matched dryplan/lease.
+
+## 01:45 Pacific — diagnosed citation issue and coordinated new protocol
+
+06diagnosis: all7P1 quotations are exact unique matches insideapproved spans,0nonexistentquotes/sourceIDerrors. Neel1/4offsets wrong,Chris3/3wrong. Originalartifactsstayinvalid. A new extractionprotocol is assigned: modelreturnsdocument_id+exactquote only; deterministichelperderivesUnicodeoffsetsonlyforuniqueexactapprovedmatch. No fuzzy matching, absent/ambiguousquote remainsinvalid. Rawresponsehash/resolutionrecords/newversion/lineage retained.
+
+01owns common contracts.py helper resolve_quote_sources(content,documents)->(new_content,resolution_records), QUOTE_RESOLVER_VERSION, stableValueErrorcodes.06/07owner updates theirprompts/callers. Parent08: please resume08toapplysamehelper/newquote-onlyprompt/strictvalidation/rawresponsehash toP7/P8 initsownscope, after01APIconfirmedabove. No duplicatehelper; helpercontracts hashisalreadyincludedinrendereridentity, newpromptversionmandatory. Preserveoldfixtures andfailedjobs. Newcorefreeze andnewextractionsrequired; no silentretrofit.
+
+09scaling translation mayproceedagainstdriver0dcd4b43 withruntimepinsparameters; expectquotefixnewrendereridentity.
+
+## 01:48 Pacific — reference ownership, scoring schema, and semantic lease
+
+Role10 PATH_RESERVED verified onremote maincb887ded1dbf86c1f492eb3286a7b8a9ded361c9: threepaths in dispatch-role-10.json,51active locks/zerooverlaps. Oversightmayproceedwithfreshworktreecodex/gio-overnight-10 atbase0dcd4b43. No livePRISMjobsleasedyet.
+
+04scorehandoffdb067614d58a81cb1965ed98de531d6b8d5ab634 provides handoffs/04/PILOT_REPORT_SCHEMA.md and pilot-group-map-v1.json SHA2566d4bc7b02542671e8577854c0849d342c2f994f9afec26ec247229e4e5ca779f, labels/outcomesremoved. Parent09 pleaseconsumethesepins. PilotaggregatereportSHA259229944069c079da3a8e9bc8b845ffe2a76b3228032e6af0ac28e5f0898d56; sourcegroupcounts andsmallnlimitationsmandatory.
+
+Semantic2-callproductionleaseexecutingafterpredictionlanescleared: /private/tmp/gio-profile-20261115-coordinator/embedding-v1/dispatch.json SHAb8e9f6278529ca93b94d961438ccb7df7cac6c2b0798a09e7175ed315d4ebaac. Pinnedproducerd167305,scriptSHA c33e6ef7b0a3fc520b50b68abbf3cf4eca5ec70134d49ddac51744802a4267ea, sharedprofileledger, max0.01USD; conservativecombinedreservation0.00046860. Exact05requestsunchanged.05mayassemble28bundlesonlyafter summary.json sayscomplete andrawresponse/receipt hashesverify. No additionalAPIcalls.
+
+Frozenv2controlcontinuationselectedALLremaining10ordereditems/researcher, unaffectedbyindividualbaselineerrors.20newlexicalprofiles builtzero-calls; next80predictionsplannedseparate1USDlease, samefrozenruntime/settings. Combinesoriginalpilotrowswithnewitems; no repeatedcalls/relabeling. This estimatesfullv2ceiling/orderbehaviorwhilequoteprotocolfixisprepared.
+
+## 01:50 Pacific — semantic production complete
+
+05: exact2-callproduction complete, estimated0.00007848USD,no pending/uncertain reservations. Summary /private/tmp/gio-profile-20261115-coordinator/embedding-v1/summary.json SHAfa80d92d41da8874ece7fb45264da97039a9bcc81f36b06ae94d2b58c1ebc1e6. It bindsbothrequest/response/receipt hashes. Pleaseassembleandvalidate28decisionbundles nowfromtheseexactreceipts/rawresponses withcurrentfixedretrievalhelper; no newcalls. Publishbundleindex/hashes andone-timeproducercostreceipt forrootsemanticcontrolpackets.
+
+Neelreceipt9114e5edf4b8d2e23a2838924fec023bb469a3f640285faa21031a9a33c8fa52; Chrisreceipt0a8ea68a6fd60589429dffeb51ff99da9a80b5668a8d2d6b5c260f42bcf57be6, pathsunderembedding-v1. Producerresponsescover18/22indexedvectors,1536dimensions,1646/2278inputtokens.
+
+
+## 01:57 Pacific — active continuation, downstream, and next evidence
+
+Downstream lease is issued and already claimed once: /private/tmp/gio-profile-20261115-coordinator/downstream-leases/gio-petri-matched-03-tranche-01.json SHA256448ac4b84670965e4ad27d86d041f5a29e8da7e62c2ce08576c292903caa165e.15 OpenAI/5 OpenRouter, previous inclusive20 each reserved within200/450 envelope. Owner reports three-arm run active at frozen09d3ba15774dd7dcf8bdf060d6121196494d2996 and packet18c92c49243e68ff423a72f9fc5d1cf09d15f2ff741c6f85b8985ca952347fdf. No duplicate launch needed.
+
+80 remaining v2 matched control predictions are executing on frozen0dcd4b43. Prepared receipt /private/tmp/gio-profile-20261115-coordinator/receipts/c56d86db3b2192f1fad130e33fc6702a0e16d9174d46664386272ac519adf69d/preparation/prepared.json SHA256a33656f7c630fd07e4d6815427de2c78a5f59be89190088ad8329861bafee3de. Explicit1USD continuation allocation,2 concurrent, same settings, no repeat of pilot inputs. Audit proof control-continuation-price-span-check-v1.json SHA256941472f074a8728f0281187dac4e6684857ca17db7ffd617c5f03a922a30a936 verifies each job has budget for1.25x cache-write input price; actual releases have0 non-whitespace content outside approved spans. Historical cost labels will be reconciled conservatively before new pricing-policy phase2 ledger.
+
+05 live semantic bundles adad3ca120aabe80ca20351029c3f816b3a5fe35 received; root driver worker prepares full28-item semantic packets next with no duplicate embedding calls. Audit found chunk_documents does not enforce permitted_spans in synthetic restricted fixtures. Actual pilot/continuation sources contain no substantive outside-span exposure; preserve results. Role05 please prepare minimal future-runtime enforcement fix in your owned baselines/retrieval scope after bundle publication. Do not mutate frozen runtime or relabel existing bundles; explain if new chunk hashes require new embeddings.
+
+Oversight: evaluator completed all10 captures. Chris0 new independent groups admitted (duplicates or overlapping methodological text); Neel4 groups split1 research-strategy+3 general advice. Candidate v3 not active: receipt SHA7c2fef1df479a4c3eee9956aa5ffb0746285158246c16a8070a853dc73d2c82e. Research and advice domains must never pool. Please resume ONE Chris collector against evaluator's exact gap request /private/tmp/gio-profile-20261115-evaluator/collector-gap-request-chris-v3.json SHA6661ff21efbfa1a62fb5544d0c63fc3c60719a87064806657a1d0ac4248ab937. Updated dedup-only collection-index-v3.json SHA3064c3dc5ba4b5880077562c57f8b511c00e87d3405503583e003371b1ed6803. Up to6 free primary captures, explicit alternatives and independent project/recording groups, no performance-based selection. No duplicate reviewer is needed now;04 available for admission/checkpoint.
+
+Role10: reservation/dispatch-role-10.json is verified. Initial5USD/1500-attempt/3600s lease remains ready for exact runtime+dry-plan packet. Require single durable shared attempt journal across4 methods, immediate hold after unknown outcome, no auto-resume or backend-reset budget multiplication. Existing legacy backend alone does not globally halt after unknown. Final users remain unauthorized. Send exact packet and guards so root can issue a concrete lease promptly.
+
+Parent08/09: integrating shared quote helper5c19ceee, pricing20f58f4 and P1–P6 quote-only4fe3682e/4e938560 into development runtime only. Need both08 owncode bd381eb+82e5cb0, no dependency merge; new root freeze follows full tests.04 scoring/schema/map db067614 and DATA_READY-v3 0210394197 are ready.
+
+
+## 02:02 Pacific — full v2 controls complete, next search frozen
+
+Continuation80/80 calls complete, no failures/unknowns. Combined112 predictions acrossfour controls on28ordereditems; evaluator is scoring exact original item schedule with preserved per-job provenance. Combined completion index SHA256513f75d2cebed5dadd59032b01bbcad7101989d99e2411e2708f650ed087c9b4 at coordinator/control-v2-completion-index-v1.json. Phase1ledger116calls complete, reported0.01655068USD, pending0 (includes2embeddingcalls). Pricing upper-bound reconciliation follows finalsemantic28calls; oldcostlabels remainhistorical.
+
+Next broadsearch selection /private/tmp/gio-profile-20261115-coordinator/broad-profile-search-selection-v1.json SHA2561440d3a9a43316ae9baa77ba1e77ebaba386b3986cbd4f6a647a13d692179830 freezes all48plannedconfigurations, bothresearchers, replicate0:96buildcalls andup to1344predictions.15USD tranchewithinprofile200,2concurrent, Luna medium, extractiontimeout180 andconsumer60, same16384/8192output allowances. Selection precedes fullv2scores. P7 needs explicitapprovedpeer-fit derivative; evaluator prepares it, no fabrication. Source-group limitationprecludesstrongfidelitywinner. Newruntimeintegrationpassed852tests(850pass,2skip), quote-onlyall8families+conservativecachewritepricing. Waitingfor05restrictedspanfix and09translatorbeforefinalfreeze, nevereditingphase1runtime.
