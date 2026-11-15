@@ -21,6 +21,7 @@ The selected method succeeds if its gain over both m1 arms has a 90% interval ab
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import random
@@ -36,6 +37,7 @@ from .usermodel import Choice, UserModel
 
 GATE = "gate_timesplit.jsonl"
 GATE_THRESHOLD = 0.75
+WORKERS = 8  # judge and user-model calls on separate pairs run in parallel
 CACHE = os.path.join("runs", "track_s", "cache", "usermodel")
 
 
@@ -50,11 +52,17 @@ def paired_correct(model, c: Choice) -> bool:
     return first and second
 
 
+def _each(fn, choices: List[Choice]) -> list:
+    """fn(choice) for every choice, in order, with up to WORKERS running at once."""
+    with concurrent.futures.ThreadPoolExecutor(WORKERS) as pool:
+        return list(pool.map(fn, choices))
+
+
 def score(model, choices: List[Choice]) -> Dict[str, Dict[str, bool]]:
     """{group_id: {example_id: correct}}."""
     out: Dict[str, Dict[str, bool]] = {}
-    for c in choices:
-        out.setdefault(c.group_id or c.example_id, {})[c.example_id] = paired_correct(model, c)
+    for c, ok in zip(choices, _each(lambda c: paired_correct(model, c), choices)):
+        out.setdefault(c.group_id or c.example_id, {})[c.example_id] = ok
     return out
 
 
@@ -134,7 +142,7 @@ class BlindJudge(NoHistory):
 def blind_judge(choices: List[Choice], llm: LLM, cache_dir: Optional[str] = None) -> Dict[str, bool]:
     """example_id -> a model with no history picks his option as better research in both orders."""
     judge = BlindJudge(llm, cache_dir=cache_dir)
-    return {c.example_id: paired_correct(judge, c) for c in choices}
+    return {c.example_id: ok for c, ok in zip(choices, _each(lambda c: paired_correct(judge, c), choices))}
 
 
 class StyleJudge(NoHistory):
@@ -148,9 +156,10 @@ def style_scores(choices: List[Choice], llm: LLM, cache_dir: Optional[str] = Non
     one. A judge that can't tell, or always picks one position, scores 0.5."""
     judge = StyleJudge(llm, cache_dir=cache_dir)
     flip = {"a": "b", "b": "a"}
-    return {c.example_id: ((judge.predict(c.context, [c.a_text, c.b_text]).choice == c.chosen)
-                           + (judge.predict(c.context, [c.b_text, c.a_text]).choice == flip[c.chosen])) / 2
-            for c in choices}
+    def both_orders(c):
+        return ((judge.predict(c.context, [c.a_text, c.b_text]).choice == c.chosen)
+                + (judge.predict(c.context, [c.b_text, c.a_text]).choice == flip[c.chosen])) / 2
+    return {c.example_id: v for c, v in zip(choices, _each(both_orders, choices))}
 
 
 def style_leak(choices: List[Choice], scores: Dict[str, float]) -> dict:
@@ -229,7 +238,7 @@ def select_method(history: List[Choice], llm: LLM, candidates=("m2", "m3", "m4",
     scores = {}
     for m in candidates:
         model = _fit(m, llm, train, cache_dir)
-        scores[m] = sum(paired_correct(model, c) for c in val) / max(1, len(val))
+        scores[m] = sum(_each(lambda c, model=model: paired_correct(model, c), val)) / max(1, len(val))
     best = max(candidates, key=lambda m: scores[m])
     return best, scores
 
