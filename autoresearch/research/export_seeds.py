@@ -18,6 +18,7 @@ on dev only; the hidden seeds are rewritten once, at the end, for scoring.
 from __future__ import annotations
 
 import random
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Tuple
 
 DEV_SPLITS = ("dev",)
@@ -58,8 +59,10 @@ def export_design(report: dict, measurer, seeds: List[dict], condition: str, see
         guidance = measurer.auditor_guidance(design)
         if not guidance:
             return [], [{"seed_id": s["seed_id"], "error": "generator returned no auditor guidance"} for s in seeds]
-    rows, failures = [], []
-    for k, base in enumerate(seeds):
+    def one(k_base):
+        """(row, None) or (None, failure) for one seed. Each seed has its own rng, so the rewrites
+        and faithfulness checks run concurrently (two reasoning-model calls per seed were the wait)."""
+        k, base = k_base
         row = {key: v for key, v in base.items() if key not in ("seed_id", "text", "variant", "auditor_prompt")}
         row.update(seed_id=f"{base['seed_id']}@{condition}", base_seed_id=base["seed_id"], condition=condition,
                    source=source, design=design)
@@ -68,11 +71,9 @@ def export_design(report: dict, measurer, seeds: List[dict], condition: str, see
             try:
                 text = measurer.rewrite_seed(base, design, random.Random(seed * 100003 + k))
             except Exception as e:  # noqa: BLE001  reported per seed, never silently replaced by the stock text
-                failures.append({"seed_id": base["seed_id"], "error": f"seed rewrite failed: {str(e)[:200]}"})
-                continue
+                return None, {"seed_id": base["seed_id"], "error": f"seed rewrite failed: {str(e)[:200]}"}
             if not text:
-                failures.append({"seed_id": base["seed_id"], "error": "generator returned no rewritten seed"})
-                continue
+                return None, {"seed_id": base["seed_id"], "error": "generator returned no rewritten seed"}
         prompt = base.get("auditor_prompt") or measurer.base_auditor_prompt
         if guidance:
             prompt = with_guidance(prompt or stock_auditor_prompt(), guidance)
@@ -83,7 +84,11 @@ def export_design(report: dict, measurer, seeds: List[dict], condition: str, see
         row["variant"] = "ours" if design else base.get("variant", "v2")
         if design and check_faithful:
             row["faithful"] = measurer.seed_faithful(base["text"], text + (f"\n\n{guidance}" if guidance else ""))
-        rows.append(row)
+        return row, None
+    with ThreadPoolExecutor(max_workers=max(1, min(16, len(seeds)))) as ex:
+        done = list(ex.map(one, enumerate(seeds)))   # map keeps seed order
+    rows = [r for r, _ in done if r is not None]
+    failures = [f for _, f in done if f is not None]
     return rows, failures
 
 
