@@ -45,7 +45,7 @@ def score_fixture(items, rows):
         docs.setdefault(group, doc(group, "Measure carefully rather than Use a proxy. " + group))
         source = docs[group]
         item.update(document_id=group, option_order_id="order0", speaker="researcher", attribution_verified=True,
-                    alternative_provenance=["source", "source"], evidence_review="accepted", constraints="synthetic",
+                    alternative_provenance=["source", "source"], evidence_review="accepted", constraints="synthetic", alternatives_available=True,
                     evidence_span={"start":0,"end":len(source["content"]),"text":source["content"]})
         checked.append(item)
     manifest = ev.freeze_split(list(docs.values()), {key:"dev" for key in docs})
@@ -132,6 +132,15 @@ class SourceBoundaryTests(unittest.TestCase):
         payload = ev.prediction_input(item)
         self.assertEqual(set(payload), {"item_id", "researcher_id", "context", "options", "option_order_id"})
         self.assertNotIn("SECRET", json.dumps(payload))
+
+    def test_observed_choice_requires_available_alternatives(self):
+        source=doc("source", "I used cases because no scalable evaluation could be devised.")
+        item=target(tier="B")
+        item.update(document_id="source",speaker="researcher",attribution_verified=True,
+                    alternative_provenance=["source","source"],evidence_review="accepted",
+                    constraints="time-limited",alternatives_available=False,
+                    evidence_span={"start":0,"end":len(source["content"]),"text":source["content"]})
+        self.assertFalse(ev.target_eligibility(item,source)["eligible"])
 
     def test_target_requires_real_source_alternatives_and_exact_span(self):
         source = doc("source", "I choose Measure carefully rather than Use a proxy.")

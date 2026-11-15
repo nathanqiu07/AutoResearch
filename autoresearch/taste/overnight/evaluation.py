@@ -196,8 +196,11 @@ def target_eligibility(target, document):
     options = target.get("options", [])
     if len(options) < 2 or target.get("alternative_provenance") != ["source"] * len(options):
         reasons.append("alternatives_not_documented")
-    if target.get("tier") == "B" and not target.get("constraints"):
-        reasons.append("observed_choice_constraints_missing")
+    if target.get("tier") == "B":
+        if not target.get("constraints"):
+            reasons.append("observed_choice_constraints_missing")
+        if target.get("alternatives_available") is not True:
+            reasons.append("observed_alternatives_unavailable_or_unverified")
     index = target.get("chosen_index")
     if type(index) is not int or not 0 <= index < len(options):
         reasons.append("invalid_label")
