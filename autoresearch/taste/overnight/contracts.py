@@ -32,8 +32,13 @@ def digest(value):
 
 
 def backend_identity(backend):
-    return {"label": backend.label, "class": type(backend).__name__,
-            "model": getattr(backend, "model", ""), "endpoint": getattr(backend, "base_url", "")}
+    if hasattr(backend, "_overnight_identity"):
+        return json.loads(canonical_json(backend._overnight_identity))
+    identity = {"label": backend.label, "class": type(backend).__name__,
+                "model": getattr(backend, "model", ""), "endpoint": getattr(backend, "base_url", "")}
+    if hasattr(backend, "enforced_settings"):
+        identity["enforced_settings"] = json.loads(canonical_json(backend.enforced_settings))
+    return identity
 
 
 def source_manifest(documents):
@@ -54,7 +59,7 @@ def validate_documents(documents, config):
         seen.add(doc["document_id"])
         if sha256_text(doc["content"]) != doc["content_sha256"]:
             raise ValueError("document content hash mismatch")
-        if doc["researcher_id"] != config["researcher_id"] and not config.get("approved_peer_sources", False):
+        if doc["researcher_id"] != config["researcher_id"] and config.get("approved_peer_sources") is not True:
             raise ValueError("researcher mismatch without approved peer bundle")
     actual = source_manifest(documents)
     if actual != config.get("allowed_sources"):
@@ -86,6 +91,24 @@ class ProfileArtifact:
         profile_id = expected.pop("profile_id", None)
         if profile_id != digest(expected):
             raise ValueError("profile hash mismatch")
+        rendered_count = len(render_content(body.get("content")).encode("utf-8"))
+        cap = body.get("personalization_cap")
+        if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0:
+            raise ValueError("invalid profile cap")
+        if body.get("token_count_method") != TOKEN_COUNT_METHOD or body.get("token_count") != rendered_count:
+            raise ValueError("profile rendered count mismatch")
+        if body["status"] == "complete" and rendered_count > cap:
+            raise ValueError("complete profile exceeds personalization cap")
+        if body.get("config_id") != digest(body.get("config")):
+            raise ValueError("profile config hash mismatch")
+        config = body.get("config", {})
+        for key in ("method_id", "researcher_id", "replicate_id", "personalization_cap", "code_sha",
+                    "extractor_settings", "allowed_source_manifest_hash"):
+            if body.get(key) != config.get(key):
+                raise ValueError("profile/config provenance mismatch: " + key)
+        allowed = config.get("allowed_sources")
+        if not isinstance(allowed, list) or digest(allowed) != body.get("allowed_source_manifest_hash"):
+            raise ValueError("profile source manifest mismatch")
         return cls(canonical_json(body))
 
     def to_dict(self):
@@ -116,7 +139,7 @@ def build_profile(documents, config, extractor):
         raise ValueError("personalization cap must be a nonnegative integer")
     validate_documents(documents, config)
     builder = get_builder(config["method_id"])
-    result = builder.function(json.loads(canonical_json(documents)), config, extractor)
+    result = builder.function(json.loads(canonical_json(documents)), json.loads(canonical_json(config)), extractor)
     if not isinstance(result, dict) or "content" not in result:
         result = {"content": None, "status": "invalid", "error_code": "malformed_builder_output"}
     try:

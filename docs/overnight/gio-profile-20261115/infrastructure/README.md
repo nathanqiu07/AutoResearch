@@ -64,4 +64,49 @@ python3 -m unittest tests.test_overnight_contracts
 
 The fixture contains invented text, no researcher data or held-out labels.
 It records the full payload/profile. Fixed probabilities test plumbing only.
-Output paths are exclusive. Runner/confirmation integration follows this milestone.
+Output paths are exclusive. The first fixture remains pinned to its original
+code commit; later implementation hashes intentionally cannot consume it silently.
+
+## Assigned job runner
+
+`runner.run_job(manifest, lease, *, output_root, lease_root, config, profile=None,
+items=None, documents=None, consumer=None, extractor=None, cache_root=None,
+private_root=None, confirmation_receipt=None)` executes one assigned job.
+Use the canonical lease_root supplied by the coordinator across all clones.
+An exclusive, fsynced job claim is never deleted after a crash or failure.
+Changing an output path does not permit reuse. Coordination remains cooperative:
+a hostile caller sharing the OS account can bypass Python or select a different
+root. This is not an authentication boundary or distributed lock service.
+
+The manifest fields are illustrated by `python3 -m autoresearch.taste.overnight
+job-fixture --output-root /tmp/unique-job-fixture`. Required semantic fields include
+the schema/campaign/stage/kind, all source/profile/config/item hashes, exact backend
+identities, option schedule, replicate/cap/code, allocation, retry policy, parent
+jobs and expected outputs. `runner.job_id(manifest)` hashes every field except
+job_id, lease, created_at and updated_at. A lease has job_id, lease_id, owner and
+timezone-aware expires_at. Only the coordinator supplies real leases.
+
+Allocation requires finite max_calls, max_seconds, max_usd, cost_mode and an
+authorization_source. Modes are offline, unpriced_cli or priced_api. The runner
+admits only the existing bounded OpenAI adapter for priced API use; other API
+providers remain unsupported pending conservative cost reservation support.
+CLI costs remain unavailable rather than zero. A live backend's enforced timeout
+must fit the remaining wall time. Every attempted call gets a durable started
+trace before invocation and a complete/failed trace after it. No retries occur.
+Uncertain failures retain their attempt and lease. Existing backend budgets and
+rate limits still apply. Instantiate a fresh backend for each job.
+
+Decision items use exactly item_id, researcher_id, context, options and
+option_order_id. Extra fields, including answers, are rejected. Invalid, empty,
+abstained and unavailable predictions remain explicit rows. Cache keys include the
+complete semantic manifest plus actual prompt/settings; cache entries are
+content-hashed, immutable and not shared across changed interventions.
+
+Confirmation requires the evaluator's authoritative receipt and store ID. The
+runner calls evaluation.validate_confirmation_receipt before output or exposure;
+output, lease, trace and cache paths must resolve within the private root, with
+symlink escapes rejected. Confirmation results returned by the function are also
+private. `public_handoff(result)` returns only hashes, counts, status and usage.
+The evaluator owns final identity reservation and concrete final-use authority.
+Capabilities/utility are explicitly unavailable in this runner; their owners keep
+their own harnesses. Offline plumbing tests establish no researcher fidelity.
