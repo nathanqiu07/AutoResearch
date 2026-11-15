@@ -183,17 +183,25 @@ budget=..., timeout=...)` additionally enforces the explicit per-job allocation.
 It supports the verified gpt-6-luna, gpt-6-sol and gpt-6-astra price table. Reasoning
 must be explicit: low/medium/high/xhigh/max; luna and sol also allow none. API ultra
 is unavailable. The request has store=false, no tools and default service tier.
+It also pins prompt_cache_options to `{mode: "implicit", ttl: "30m"}`.
 Temperature is not sent, and identity records that fact. Identity also records
 reasoning and the adapter implementation hash; manifests compare the complete
 identity before execution. Existing shared backends.py remains untouched.
 
 Requests stay below the conservative 272,000-token short-context boundary using
-UTF-8 bytes plus overhead and maximum output. Rates (USD per million tokens,
-input/output) are luna 0.10/0.50, sol 2/10, astra 10/50, verified by the coordinator
-on November 15 against [pricing](https://developers.openai.com/api/docs/pricing)
-and the linked model pages in backends.py. All input is charged at uncached rates;
-all reported output, including reasoning, is charged. These are conservative list
-price estimates, not invoices. One urllib request is made with no automatic retry.
+UTF-8 bytes plus overhead and maximum output. Input/output bounds (USD per million
+tokens) are luna 0.125/0.50, sol 2.5/10, astra 12.5/50. These use 1.25 times the
+base input prices to cover 30-minute cache writes, verified on November 15 against
+[pricing](https://developers.openai.com/api/docs/pricing), linked model pages and
+[prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching).
+All input receives this upper-bound rate, including cheaper cached tokens;
+all output, including reasoning, is charged. These are conservative estimates,
+not invoices. Cost reports state `conservative_30m_cache_write_upper_bound_not_invoice`.
+One urllib request is made with no automatic retry.
+The corrected pricing version cannot reopen a ledger created under the earlier
+base-input-only version. The coordinator must preserve that ledger and its evidence,
+account for prior input-cost bounds, and explicitly assign a new phase ledger
+against the remaining total allocation. No code resets or migrates old balances.
 Invalid/incomplete output is visible and holds the lane. Keys are read only from
 the process environment and never included in logs, manifests, or errors.
 Partially reported token usage preserves each valid component and records which
