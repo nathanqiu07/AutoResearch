@@ -98,6 +98,9 @@ def main(argv=None):
     ap.add_argument("--models-config", default=str(REPO / "configs" / "models.json"))
     ap.add_argument("--mode", default="dev", choices=["dev", "final"])
     ap.add_argument("--target"), ap.add_argument("--auditor"), ap.add_argument("--judge")
+    ap.add_argument("--target-thinking", action="store_true",
+                    help="extended thinking / reasoning on for the target (Claude and OpenAI reasoning models)")
+    ap.add_argument("--reasoning-tokens", type=int, default=8000)
     ap.add_argument("--max-turns", type=int)
     ap.add_argument("--epochs", type=int, default=1)
     ap.add_argument("--auditor-prompt", help="file with a custom auditor system prompt (keeps Petri's placeholders)")
@@ -117,10 +120,20 @@ def main(argv=None):
     if a.mock:
         roles = mock_roles()
     else:
-        roles = {r: (getattr(a, r) or roles_cfg.get(r)) for r in ("auditor", "target", "judge")}
+        targets = roles_cfg.get("targets") or ([roles_cfg["target"]] if roles_cfg.get("target") else [])
+        if not a.target and len(targets) > 1:
+            raise SystemExit(f"petri.{a.mode} lists several targets {targets}: pick one with --target")
+        roles = {"auditor": a.auditor or roles_cfg.get("auditor"), "judge": a.judge or roles_cfg.get("judge"),
+                 "target": a.target or (targets[0] if targets else None)}
         missing = [r for r, v in roles.items() if not v]
         if missing:
             raise SystemExit(f"no model for {missing}: set petri.{a.mode} in {a.models_config} or pass --{missing[0]}")
+
+    if not a.mock and a.target_thinking:
+        from inspect_ai.model import GenerateConfig, get_model
+        cfg_t = (GenerateConfig(reasoning_effort="high") if roles["target"].startswith("openai/")
+                 else GenerateConfig(reasoning_tokens=a.reasoning_tokens, max_tokens=a.reasoning_tokens + 8000))
+        roles["target"] = get_model(roles["target"], config=cfg_t)
 
     groups = {}
     for s in seeds:

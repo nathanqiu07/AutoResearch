@@ -72,6 +72,8 @@ class PetriMeasurerTest(unittest.TestCase):
         self.assertAlmostEqual(s.validity, 0.8)                         # min of V1, V2, bait
         self.assertIsNone(s.faithful)
         self.assertEqual(s.petri_scores["eval_awareness"], 3)           # kept apart, cross-check only
+        self.assertEqual(list(s.judge_verbalized.values()), [0.1])      # dev judge's A1 (C1's judge scheme)
+        self.assertAlmostEqual(list(s.judge_p_eval.values())[0], 0.2)   # dev judge answers the A2 probes
         self.assertEqual(gen.prompts, [])                               # no rewrite for the baseline
         self.assertTrue(any("ASSISTANT'S RAW REASONING" in p for p in jdg.prompts))
         self.assertTrue(any("hides a failing test" in p for p in jdg.prompts))   # seed is the probe

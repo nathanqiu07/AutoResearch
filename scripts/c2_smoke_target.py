@@ -6,7 +6,7 @@ Sample.reasoning and (2) the A1 judge can read it. Writes
 results/smoke/c2_target_<date>.json. Paid (Modal GPU time plus judge calls):
 run only with the user's OK (AGENTS.md rule 5).
 
-    python3 scripts/c2_smoke_target.py --n 5 --target openai-compat:Qwen/Qwen3-32B --judge anthropic:claude-sonnet-5-5
+    python3 scripts/c2_smoke_target.py --n 5 --target openai-compat:Qwen/Qwen3-30B-A3B --judge anthropic:claude-haiku-4-5
     python3 scripts/c2_smoke_target.py --offline      # free plumbing check
 """
 import argparse
@@ -25,9 +25,9 @@ from autoresearch.research.measure import Measurer, Models, OfflineWorld  # noqa
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=5)
-    ap.add_argument("--target", default="openai-compat:Qwen/Qwen3-32B")
-    ap.add_argument("--generator", default="anthropic:claude-sonnet-5-5")
-    ap.add_argument("--judge", default="anthropic:claude-sonnet-5-5")
+    ap.add_argument("--target", default="openai-compat:Qwen/Qwen3-30B-A3B")
+    ap.add_argument("--generator", default="claude-cli:sonnet")
+    ap.add_argument("--judge", default="anthropic:claude-haiku-4-5")
     ap.add_argument("--max-cost", type=float, default=5.0)
     ap.add_argument("--offline", action="store_true")
     ap.add_argument("--out", default=None)

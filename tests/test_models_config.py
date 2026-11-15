@@ -1,52 +1,48 @@
-"""configs/models.json and model-family checks (WS C2)."""
+"""configs/models.json: Nathan's lineup and its checks (WS C2)."""
 import unittest
 
-from autoresearch.llm import LLM, OfflineLLM
-from autoresearch.research.measure import Models
-from autoresearch.research.models_config import config_warnings, family_warnings, load_models_config, model_family
+from autoresearch.llm import split_spec
+from autoresearch.research.models_config import config_warnings, load_models_config, research_args
+from autoresearch.research.petri_measure import spec_to_inspect
 
 
-class Fake(LLM):
-    def __init__(self, name, model):
-        self.name, self.model = name, model
+class ModelsConfigTest(unittest.TestCase):
+    def setUp(self):
+        self.cfg = load_models_config()
 
-    def complete(self, *a, **k):
-        return ""
+    def test_committed_config_has_the_agreed_lineup_and_is_clean(self):
+        r = self.cfg["roles"]
+        self.assertEqual(r["dev_target"], "openai-compat:Qwen/Qwen3-30B-A3B")
+        self.assertEqual(r["heldout_targets"], ["anthropic:claude-sonnet-4-5+thinking", "openai:gpt-5+thinking"])
+        self.assertEqual(r["dev_judge"], "anthropic:claude-haiku-4-5")
+        self.assertEqual(r["heldout_judges"], ["openai:gpt-5.1"])
+        self.assertEqual(config_warnings(self.cfg), [])
+        for spec in [r["generator"], r["dev_target"], r["dev_judge"]] + r["heldout_targets"] + r["heldout_judges"]:
+            self.assertIsNotNone(split_spec(spec)[0], f"{spec} must name a backend")
 
+    def test_petri_targets_are_the_same_models(self):
+        r, p = self.cfg["roles"], self.cfg["petri"]
+        self.assertEqual(spec_to_inspect(r["dev_target"])[0], p["dev"]["target"])
+        self.assertEqual([spec_to_inspect(t)[0] for t in r["heldout_targets"]], p["final"]["targets"])
+        self.assertEqual(spec_to_inspect("anthropic:claude-sonnet-4-5+thinking"), ("anthropic/claude-sonnet-4-5", True))
 
-class FamilyTest(unittest.TestCase):
-    def test_families_from_specs_and_inspect_ids(self):
-        cases = {"anthropic:claude-sonnet-5-5": "anthropic", "claude-cli:sonnet": "anthropic", "haiku": "anthropic",
-                 "openai:gpt-5": "openai", "openai/gpt-5": "openai", "openai-compat:Qwen/Qwen3-32B": "qwen",
-                 "openai-api/modal/Qwen/Qwen3-235B-A22B-Instruct-2507-FP8": "qwen",
-                 "openai-api/tinker/moonshotai/Kimi-K2.5": "moonshot", "anthropic/claude-sonnet-5-5": "anthropic",
-                 "openai-compat:meta-llama/Llama-3.3-70B": "meta", "something-else": "unknown"}
-        for spec, fam in cases.items():
-            self.assertEqual(model_family(spec), fam, spec)
+    def test_research_args(self):
+        dev = research_args(self.cfg)
+        self.assertEqual(dev[dev.index("--target") + 1], "openai-compat:Qwen/Qwen3-30B-A3B")
+        fin = research_args(self.cfg, "final", "openai:gpt-5+thinking")
+        self.assertIn("--heldout-judges", fin)
+        self.assertEqual(fin[fin.index("--heldout-target") + 1], "openai:gpt-5+thinking")
+        with self.assertRaises(ValueError):
+            research_args(self.cfg, "final", "openai:gpt-4")
 
-    def test_catches_same_family_across_backends(self):
-        m = Models(generator=Fake("anthropic", "claude-sonnet-5-5"), target=Fake("openai-compat", "Qwen/Qwen3-32B"),
-                   judge=Fake("anthropic", "claude-sonnet-5-5"),
-                   heldout_judges=[Fake("claude-cli", "opus"), Fake("openai", "gpt-5")])
-        w = family_warnings(m)
-        self.assertTrue(any("claude-cli:opus" in x for x in w))
-        self.assertFalse(any("gpt-5" in x for x in w))
-
-    def test_offline_is_silent(self):
-        off = OfflineLLM()
-        self.assertEqual(family_warnings(Models(off, off, off, heldout_judges=[off, off])), [])
-
-    def test_committed_config_is_clean(self):
-        cfg = load_models_config()
-        self.assertEqual(config_warnings(cfg), [])
-        self.assertEqual(len(cfg["roles"]["heldout_judges"]), 2)
-
-    def test_config_warnings(self):
-        cfg = {"roles": {"generator": "anthropic:claude-x", "heldout_judges": ["anthropic:claude-y"]},
-               "petri": {"dev": {"target": "openai/gpt-5", "auditor": "a", "judge": "openai/gpt-5-mini"}}}
+    def test_warnings(self):
+        cfg = {"roles": {"generator": "anthropic:claude-x", "dev_target": "claude-cli:haiku",
+                         "heldout_targets": ["anthropic:claude-y"], "dev_judge": "anthropic:claude-z",
+                         "heldout_judges": ["claude-cli:opus"]},
+               "petri": {"dev": {"target": "a", "auditor": "b", "judge": "c"}}}
         w = " | ".join(config_warnings(cfg))
-        for s in ("two held-out judges", "generator's family", "petri.final.target missing",
-                  "Petri judge is from the target's family", "role 'dev_target' missing"):
+        for s in ("shares the generator's family", "runs through claude-cli", "no headline judge",
+                  "petri.final.targets missing"):
             self.assertIn(s, w)
 
 

@@ -1,112 +1,73 @@
-"""configs/models.json and model-family checks (WS C2, PLAN 4.4 / 12.3 item 4).
+"""configs/models.json: the agreed model lineup, and checks on it (WS C2, PLAN 4.4 / 12.3 item 4).
 
-The config names every model role once, so all workstreams use the same ones:
+The config names every model role once, so all workstreams use the same ids:
 
-  roles:  dev_target, heldout_target, dev_judge (J1), heldout_judges (J2, two,
-          from families other than the generator), generator, screening_target.
-          Each is an autoresearch "backend:model" spec (see llm.get_llm).
-  petri:  per mode ("dev" | "final"), Inspect model ids for the Petri harness:
-          target, auditor, judge.
+  roles:  generator, dev_target, heldout_targets (list), dev_judge (J1),
+          heldout_judges (J2, list). Each entry is an autoresearch
+          "backend:model" spec (llm.get_llm), "+thinking" where reasoning is on.
+  petri:  per mode ("dev" | "final"), Inspect model ids for the Petri harness
+          (target, auditor, judge); final mode may list several targets.
 
-Who wrote a transcript explains ~11% of judge variance (EvalDetectBench), so a
-held-out judge from the generator's family biases the held-out score. The
-existing Measurer check compares backends only; `family_warnings` compares
-model families, so e.g. an Anthropic generator and a claude-cli judge are caught.
+Families come from C1's `measure.model_family`, so the config check and the
+Measurer's own warnings agree. `research_args(cfg, mode, target)` gives the
+`--generator/--target/--judge/--heldout-*` flags for the research CLI, which is
+how runs use the API backends instead of claude-cli for targets (api-target).
 """
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from .measure import model_family
+
 CONFIG = Path(__file__).resolve().parents[2] / "configs" / "models.json"
-
-# Ordered: the first pattern that matches the model id names the family.
-FAMILIES = [
-    ("anthropic", r"claude|anthropic|\bhaiku\b|\bsonnet\b|\bopus\b|\bfable\b"),
-    ("openai", r"\bgpt|openai|\bo[1-9](-|$)|codex"),
-    ("google", r"gemini|gemma|google"),
-    ("qwen", r"qwen"),
-    ("moonshot", r"kimi|moonshot"),
-    ("deepseek", r"deepseek"),
-    ("meta", r"llama|meta-"),
-    ("mistral", r"mistral|mixtral|magistral"),
-    ("xai", r"grok|x-ai|xai"),
-]
-ROLES = ("generator", "dev_target", "heldout_target", "dev_judge", "heldout_judges", "screening_target")
+ROLES = ("generator", "dev_target", "heldout_targets", "dev_judge", "heldout_judges")
 
 
-def model_family(spec: str) -> str:
-    """Family of a model spec ("anthropic:claude-x", "openai-compat:Qwen/Qwen3-8B",
-    an Inspect id "openai-api/modal/Qwen/...", or a bare name); "unknown" if no
-    pattern matches. Backends that only serve one vendor count as that vendor."""
-    s = (spec or "").lower()
-    if s.startswith(("anthropic:", "anthropic-batch:", "claude-cli:")):
-        return "anthropic"
-    model = s.split(":", 1)[1] if ":" in s.split("/", 1)[0] else s
-    if model.startswith("openai-api/") and model.count("/") >= 2:   # Inspect id: openai-api/<server>/<model>
-        model = model.split("/", 2)[2]
-    elif model.startswith(("openai/", "anthropic/", "google/", "together/", "vllm/")):
-        model = model.split("/", 1)[1] if not model.startswith(("openai/", "anthropic/")) else model
-    for fam, pat in FAMILIES:
-        if re.search(pat, model):
-            return fam
-    if s.startswith("openai:"):
-        return "openai"
-    return "unknown"
-
-
-def _label_family(llm) -> str:
-    if getattr(llm, "name", "") == "offline":
-        return "offline"
-    return model_family(getattr(llm, "label", "") or "")
-
-
-def family_warnings(models) -> List[str]:
-    """Warnings for a `Models` bundle: held-out judges or the held-out target from
-    the generator's family, or two held-out judges from one family."""
-    gen = _label_family(models.generator)
-    out: List[str] = []
-    if gen in ("offline", "unknown"):
-        return out
-    judges = list(getattr(models, "heldout_judges", []) or [])
-    fams = [_label_family(j) for j in judges]
-    for j, f in zip(judges, fams):
-        if f == gen:
-            out.append(f"held-out judge {j.label} is from the generator's family ({gen}); pick another family "
-                       "(generator identity biases judges, EvalDetectBench)")
-    known = [f for f in fams if f not in ("offline", "unknown")]
-    if len(known) != len(set(known)):
-        out.append(f"held-out judges share a family ({', '.join(known)}); PLAN 4.4 asks for two different families")
-    ht = getattr(models, "heldout_target", None)
-    if ht is not None and _label_family(ht) == gen:
-        out.append(f"held-out target {ht.label} is from the generator's family ({gen})")
-    return out
+def _list(x) -> List[str]:
+    return list(x) if isinstance(x, list) else ([x] if x else [])
 
 
 def config_warnings(cfg: Dict) -> List[str]:
-    """The same checks on a configs/models.json dict, plus missing roles."""
+    """Missing roles; held-out judges from the generator's family; held-out
+    targets without a cross-family judge; targets running through claude-cli
+    (the CLI passes harness context to the model, a confound for eval awareness).
+    Petri's own judge is a cross-check only, so its family is not checked."""
     roles = cfg.get("roles", {})
     out = [f"configs/models.json: role {r!r} missing" for r in ROLES if not roles.get(r)]
-    gen = model_family(roles.get("generator", ""))
-    judges = roles.get("heldout_judges") or []
-    fams = [model_family(j) for j in judges]
-    if len(judges) < 2:
-        out.append("configs/models.json: PLAN 4.4 asks for two held-out judges")
-    for j, f in zip(judges, fams):
-        if f == gen and gen != "unknown":
-            out.append(f"held-out judge {j} is from the generator's family ({gen})")
-    if len(set(fams)) != len(fams):
-        out.append(f"held-out judges share a family ({', '.join(fams)})")
+    gen = roles.get("generator", "")
+    gen_fam = model_family(gen) if gen else "other"
+    judges = _list(roles.get("heldout_judges"))
+    for j in judges:
+        if gen_fam != "other" and model_family(j) == gen_fam:
+            out.append(f"held-out judge {j} shares the generator's family ({gen_fam})")
+    for t in [roles.get("dev_target", "")] + _list(roles.get("heldout_targets")):
+        if t.startswith("claude-cli:"):
+            out.append(f"target {t} runs through claude-cli: use an API backend (harness-context confound)")
+    scorers = judges + _list(roles.get("dev_judge"))   # the headline judge is the first cross-family one
+    for t in _list(roles.get("heldout_targets")):
+        if scorers and all(model_family(j) == model_family(t) for j in scorers):
+            out.append(f"held-out target {t} has no judge from another family (no headline judge)")
     for mode in ("dev", "final"):
         p = cfg.get("petri", {}).get(mode, {})
-        for r in ("target", "auditor", "judge"):
+        for r in ("targets" if mode == "final" else "target", "auditor", "judge"):
             if not p.get(r):
                 out.append(f"configs/models.json: petri.{mode}.{r} missing")
-        if p.get("judge") and p.get("target") and model_family(p["judge"]) == model_family(p["target"]):
-            out.append(f"petri.{mode}: the Petri judge is from the target's family ({model_family(p['target'])})")
     return out
+
+
+def research_args(cfg: Dict, mode: str = "dev", heldout_target: Optional[str] = None) -> List[str]:
+    """CLI flags for `python3 -m autoresearch research|evaluate-design` from the config.
+    Final mode needs one held-out target (each is run and reported separately)."""
+    r = cfg["roles"]
+    args = ["--generator", r["generator"], "--target", r["dev_target"], "--judge", r["dev_judge"]]
+    if mode == "final":
+        ht = heldout_target or _list(r["heldout_targets"])[0]
+        if ht not in _list(r["heldout_targets"]):
+            raise ValueError(f"{ht} is not a held-out target in the config")
+        args += ["--mode", "final", "--heldout-target", ht, "--heldout-judges", *_list(r["heldout_judges"])]
+    return args
 
 
 def load_models_config(path: Optional[str] = None) -> Dict:
@@ -117,9 +78,11 @@ def load_models_config(path: Optional[str] = None) -> Dict:
 if __name__ == "__main__":  # python3 -m autoresearch.research.models_config [path]
     import sys
     cfg = load_models_config(sys.argv[1] if len(sys.argv) > 1 else None)
+    for role, spec in cfg.get("roles", {}).items():
+        print(f"{role:16s} " + ", ".join(f"{s} [{model_family(s)}]" for s in _list(spec)))
     problems = config_warnings(cfg)
-    for r, spec in cfg.get("roles", {}).items():
-        specs = spec if isinstance(spec, list) else [spec]
-        print(f"{r:17s} " + ", ".join(f"{s} [{model_family(s)}]" for s in specs))
     print("\n".join("warning: " + p for p in problems) or "no problems")
+    print("dev flags:   " + " ".join(research_args(cfg)))
+    for t in _list(cfg["roles"].get("heldout_targets")):
+        print("final flags: " + " ".join(research_args(cfg, "final", t)))
     sys.exit(1 if problems else 0)

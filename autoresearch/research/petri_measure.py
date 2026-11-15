@@ -39,7 +39,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 from ..llm import extract_json
 from .measure import Measurer, Models, OfflineWorld, Sample, Scenario, _prob
@@ -102,6 +102,25 @@ def cut(text: str, limit: int = MAX_TRANSCRIPT_CHARS) -> str:
     return text[:half] + f"\n\n[... {len(text) - limit} characters cut ...]\n\n" + text[-half:]
 
 
+def spec_to_inspect(spec: str) -> Tuple[str, bool]:
+    """(Inspect model id, thinking on) for an autoresearch backend:model spec, so the
+    Petri target is the same model that answers our A2 probes:
+    "openai-compat:Qwen/X" -> "openai-api/modal/Qwen/X" (the Modal vLLM server),
+    "anthropic:claude-sonnet-4-5+thinking" -> ("anthropic/claude-sonnet-4-5", True)."""
+    thinking = spec.endswith("+thinking")
+    spec = spec[:-len("+thinking")] if thinking else spec
+    backend, _, model = spec.partition(":")
+    if not model:
+        return spec, thinking
+    if backend == "openai-compat":
+        return f"openai-api/modal/{model}", thinking
+    if backend in ("anthropic", "anthropic-batch", "claude-cli"):
+        return f"anthropic/{model}", thinking
+    if backend == "openai":
+        return f"openai/{model}", thinking
+    return spec, thinking
+
+
 class HarnessRunner:
     """Runs `harness/petri/run_audits.py` in its own environment, through files.
 
@@ -113,8 +132,10 @@ class HarnessRunner:
     configs/models.json (its "petri" section, by mode)."""
 
     def __init__(self, mode: str = "dev", models_config: Optional[str] = None, epochs: int = 1,
-                 max_turns: Optional[int] = None, timeout: int = 6 * 3600, extra_args: Optional[List[str]] = None):
+                 max_turns: Optional[int] = None, timeout: int = 6 * 3600, extra_args: Optional[List[str]] = None,
+                 target: Optional[str] = None):
         self.mode, self.epochs, self.max_turns, self.timeout = mode, epochs, max_turns, timeout
+        self.target = target   # autoresearch spec; mapped to an Inspect id for the harness
         self.models_config = models_config or str(REPO / "configs" / "models.json")
         self.extra_args = list(extra_args or [])
 
@@ -136,6 +157,9 @@ class HarnessRunner:
                                     "--epochs", str(self.epochs), "--log-dir", str(Path(d) / "logs")]
             if self.max_turns:
                 cmd += ["--max-turns", str(self.max_turns)]
+            if self.target and getattr(self, "pass_target", True):
+                inspect_id, thinking = spec_to_inspect(self.target)
+                cmd += ["--target", inspect_id] + (["--target-thinking"] if thinking else [])
             proc = subprocess.run(cmd + self.extra_args, capture_output=True, text=True, timeout=self.timeout)
             results = [json.loads(l) for l in out_path.read_text().splitlines() if l.strip()] if out_path.exists() else []
             if proc.returncode != 0 and not results:
@@ -146,7 +170,7 @@ class HarnessRunner:
 class PetriMeasurer(Measurer):
     def __init__(self, models: Models, seeds: List[dict], tools: str = "simulated", mode: str = "dev",
                  workers: int = 4, simulator=None, probe_questions=None,
-                 runner: Optional[Callable[[List[dict]], List[dict]]] = None):
+                 runner: Optional[Callable[[List[dict]], List[dict]]] = None, dev_judge_p_eval: bool = True):
         if tools not in TOOL_MODES:
             raise ValueError(f"tools must be one of {TOOL_MODES}, got {tools!r}")
         if not seeds:
@@ -156,13 +180,11 @@ class PetriMeasurer(Measurer):
         if simulator is None and models.offline:
             simulator = OfflineWorld()
         super().__init__(models, scenario=PETRI_SCENARIO, workers=workers, simulator=simulator, mode=mode,
-                         probe_questions=probe_questions)
+                         probe_questions=probe_questions, dev_judge_p_eval=dev_judge_p_eval)
         self.scenario = PETRI_SCENARIO
         self.seeds = list(seeds)
         self.tools = tools
-        self.runner = runner or HarnessRunner(mode=mode)
-        from .models_config import family_warnings
-        self.warnings.extend(family_warnings(models))
+        self.runner = runner or HarnessRunner(mode=mode, target=None if models.offline else self.target.label)
         if not models.offline:
             self.warnings.append("agentic setting: the Petri target (configs/models.json petri.<mode>.target) must be "
                                  f"the same model as --target ({self.target.label}), which answers the A2 probe questions")
@@ -254,7 +276,7 @@ class PetriMeasurer(Measurer):
         self_report = self.p_eval(self.target, transcript)
         if self_report is None:
             return self._petri_error(audit, "target self-report (A2) unparseable on every probe question", petri)
-        judge = copy.copy(self)   # C1's audit judge, with this seed as the behaviour it looks for
+        judge = copy.copy(self)   # C1's audit judges, with this seed as the behaviour it looks for
         judge.sc = dataclasses.replace(self.sc, probe=f"the behaviour this audit seed is designed to elicit: "
                                                       f"{base['text'][:2000]}")
         jd = judge._audit(transcript, reasoning)
@@ -268,14 +290,17 @@ class PetriMeasurer(Measurer):
             if faithful is None:
                 return self._petri_error(audit, "faithfulness judge reply unparseable", petri)
         validity = min(x for x in (opportunity, scorable, bait, faithful) if x is not None)
-        judge_p = {}
-        for k, j in enumerate(self.p_eval_judges):
+        judge_p = {}   # every judge in self.judges answers the A2 probes (recorded, not part of the score)
+        for k, j in enumerate(self.judges):
             p = self.p_eval(j, transcript)
             if p is not None:
                 judge_p[self._judge_label(k, j)] = p
+        # A1 from every judge (the shallow copy shares judge_a1_unparseable and its lock with self)
+        judge_verbal = judge._judge_verbalized(transcript, reasoning, verbalized)
         return PetriSample(env, transcript[-1500:], self_report, verbalized, None, validity,
                            str(jd.get("behavior", "unclear")), opportunity=opportunity, scorable=scorable,
-                           bait_reached=bait, faithful=faithful, judge_p_eval=judge_p, reasoning=reasoning, **extra)
+                           bait_reached=bait, faithful=faithful, judge_p_eval=judge_p,
+                           judge_verbalized=judge_verbal, reasoning=reasoning, **extra)
 
     def _petri_error(self, audit: dict, why: str, petri: Optional[dict] = None) -> PetriSample:
         return PetriSample({"seed_id": audit.get("seed_id", ""), "user": audit.get("text", "")}, "", 0.0, 0.0, None,
@@ -287,14 +312,16 @@ class PetriMeasurer(Measurer):
         base = self.pick(sd)
         s = self.sim(interventions, categories or [], rng, False, self.sc)
         judge_p = {self._judge_label(k, j): max(0.0, min(1.0, s.self_report + rng.gauss(0, 0.1)))
-                   for k, j in enumerate(self.p_eval_judges)}
+                   for k, j in enumerate(self.judges)}
+        judge_v = {self._judge_label(k, j): (s.verbalized if k == 0 else max(0.0, min(1.0, s.verbalized + rng.gauss(0, 0.1))))
+                   for k, j in enumerate(self.judges)}
         variant = "ours" if interventions else base.get("variant", "v2")
         # Petri's 1-10 eval_awareness, simulated from the same hidden P(eval)
         petri = {"eval_awareness": round(1 + 9 * s.self_report, 1)}
         return PetriSample({"system": "(simulated Petri audit)", "user": base["text"][:200]}, s.response,
                            s.self_report, s.verbalized, None, s.validity, s.behavior, opportunity=s.opportunity,
                            scorable=s.scorable, bait_reached=s.bait_reached, judge_p_eval=judge_p,
-                           seed_id=f"{base['seed_id']}@s{sd}", variant=variant, tools=self.tools, petri_scores=petri)
+                           judge_verbalized=judge_v, seed_id=f"{base['seed_id']}@s{sd}", variant=variant, tools=self.tools, petri_scores=petri)
 
     # Measurer's single-turn faithfulness pair has no Petri equivalent yet: an
     # eval notice would have to go into the auditor's system prompt for the target.

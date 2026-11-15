@@ -60,7 +60,7 @@ $AUTORESEARCH_PETRI_PYTHON harness/petri/run_audits.py --seeds data/petri/seeds_
 # paid (needs the user's OK): models from configs/models.json petri.<mode>
 $AUTORESEARCH_PETRI_PYTHON harness/petri/run_audits.py --seeds data/petri/seeds_v2.jsonl --out runs/petri/v2_dev.jsonl --mode dev --tools simulated
 python3 -m autoresearch research --setting agentic --petri-seeds data/petri/seeds_v2.jsonl --tools sandbox \
-  --target openai-compat:Qwen/Qwen3-32B --judge anthropic:claude-sonnet-5-5
+  --target openai-compat:Qwen/Qwen3-30B-A3B --judge anthropic:claude-haiku-4-5
 ```
 
 `data/petri/seeds_v2.jsonl`: the 24 agentic Petri 2.0 seeds chosen in `eval/petri-setup/`

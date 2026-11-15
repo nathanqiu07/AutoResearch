@@ -15,7 +15,7 @@ the Petri target. Scales to zero after 15 idle minutes.
     export MODAL_BASE_URL=$OPENAI_COMPAT_BASE_URL MODAL_API_KEY=$OPENAI_COMPAT_API_KEY   # Inspect ids openai-api/modal/...
     python3 scripts/c2_smoke_target.py --n 5          # paid: needs the user's OK (AGENTS.md rule 5)
 
-Default: Qwen/Qwen3-32B (dense, open reasoning model, raw thinking) on one H100.
+Default: Qwen/Qwen3-30B-A3B (Nathan's dev target: MoE, 3B active, thinking on by default) on one H100.
 Other models: MODEL=... GPU=H100:4 PARSER=deepseek_r1 modal deploy harness/modal_vllm.py
 (PARSER picks vLLM's --reasoning-parser: qwen3 for Qwen3, deepseek_r1 for R1 distills,
 kimi_k2 for Kimi K2 thinking models where your vLLM version has it).
@@ -26,7 +26,7 @@ import subprocess
 
 import modal
 
-MODEL = os.environ.get("MODEL", "Qwen/Qwen3-32B")
+MODEL = os.environ.get("MODEL", "Qwen/Qwen3-30B-A3B")
 GPU = os.environ.get("GPU", "H100:1")
 PARSER = os.environ.get("PARSER", "qwen3")
 TOOL_PARSER = os.environ.get("TOOL_PARSER", "hermes")

@@ -933,18 +933,19 @@ All C1 code is built and tested offline (324 tests). **Still no real-model resul
 
 ### 16.2 C2 status update (2026-11-15, Abhi)
 
-Built and tested offline. **No live C2 result exists yet: no paid model or Modal GPU has run.**
+Built and tested offline against Nathan's lineup (agentctl posts 00:32 and 00:40). **No live C2 result exists yet: no paid model or Modal GPU has run.** Each paid step waits for Nathan's approval.
 
-| Piece | State | Where |
+| Assignment | State | Where |
 |---|---|---|
-| Models config (item 4) | Done. All roles named once, with Petri's Inspect ids per mode; family-level check (catches e.g. an Anthropic generator with a claude-cli judge, two held-out judges from one family, a Petri judge from the target's family). `python3 -m autoresearch.research.models_config` | `configs/models.json`, `research/models_config.py` |
-| Reasoning target (item 5) | Code done: vLLM with `--reasoning-parser` (default Qwen3-32B, qwen3 parser) and tool calling. Smoke script ready. **Not deployed** (needs Abhi's Modal account and OK) | `harness/modal_vllm.py`, `scripts/c2_smoke_target.py` |
-| Petri harness (item 7) | Done. AuditSeed JSONL → AuditResult JSONL, per-seed tool mode, Petri judge parse failures become null instead of 1 | `harness/petri/run_audits.py`, `transcript.py` |
-| Sandbox tools (7c) | Done (code). In sandbox mode the target's shell-type calls (bash, python, read/write/list files) run in a per-sample Modal Sandbox and the target receives the real output; the auditor gets `sandbox_exec` to prepare files. Verified through real Petri with scripted mock models and a fake sandbox; **not yet run against Modal** | `harness/petri/sandbox_tools.py` |
-| PetriMeasurer (7b) | Done. Same `measure()` signature; generator rewrites the seed when there are interventions; C1's A2 probes and A1/validity judge score the transcript, plus a seed-faithfulness check; Petri's scores kept in `petri_scores`. `research --setting agentic` runs end to end offline | `research/petri_measure.py` |
+| 1. models-config | Done. Dev target `openai-compat:Qwen/Qwen3-30B-A3B` (Modal vLLM, raw reasoning); held-out targets `anthropic:claude-sonnet-4-5+thinking`, `openai:gpt-5+thinking`; J1 `anthropic:claude-haiku-4-5`; J2 `openai:gpt-5.1`; generator `claude-cli:sonnet`; Petri auditor/judge ids per mode. Checks use C1's `measure.model_family`: held-out judge vs generator family, a headline (cross-family) judge for every held-out target, no target on claude-cli. `python3 -m autoresearch.research.models_config` prints the CLI flags per mode | `configs/models.json`, `research/models_config.py` |
+| 2. modal-vllm-target | Code done: vLLM 0.10.1.1, `--reasoning-parser qwen3`, tool calling, one H100, scale to zero. Served id `Qwen/Qwen3-30B-A3B`; base URL `https://<workspace>--autoresearch-vllm-serve.modal.run/v1` in `OPENAI_COMPAT_BASE_URL`. **Not deployed; the 5-sample smoke waits for Nathan's approval** | `harness/modal_vllm.py`, `scripts/c2_smoke_target.py` |
+| 3. petri-harness | Done. AuditSeed JSONL → AuditResult JSONL, per-seed tool mode, target thinking flag, Petri judge parse failures become null instead of 1 | `harness/petri/run_audits.py`, `transcript.py` |
+| 3. petri-measurer | Done. Same `measure()` signature; generator rewrites seeds for interventions; C1's A2 probes, A1/validity audit judge and per-judge A1/A2 (C1's scheme) score the transcript, plus seed faithfulness; the Petri target is mapped from `--target` so it is the model that answers the probes; Petri scores kept in `petri_scores` | `research/petri_measure.py` |
+| 4. modal-sandbox-tools | Done (code). Target shell-type calls run in a per-sample Modal Sandbox and the target gets real output; auditor gets `sandbox_exec`. Verified through real Petri with scripted mock models and a fake sandbox; **not yet run against Modal** | `harness/petri/sandbox_tools.py` |
+| 5. api-target | Done (code). Every target in the config is an API backend (`anthropic`, `openai`, `openai-compat`); the config check refuses a claude-cli target; `research_args` gives the flags. The held-out runs themselves are paid and wait for approval | `configs/models.json`, `research/models_config.py` |
+| E3b scorer | `scripts/c2_e3b.py` compares AuditSeed conditions (stock v2, v1, rewrites) with PetriMeasurer, paired by seed, with CIs and the Petri cross-check. `eval/pipeline` was folded into this path and removed (see `eval/README.md`) so there is one agentic scorer | `scripts/c2_e3b.py` |
 | Seeds | 24 agentic Petri 2.0 seeds (12 dev / 12 hidden) as AuditSeed JSONL | `data/petri/seeds_v2.jsonl` |
-| Tests | 17 stdlib tests in `tests/`; 5 harness tests run in the Petri environment (`harness/petri/test_harness.py`) | |
 
-**Open (needs Abhi's OK, keys and Modal):** deploy the Modal target and run the 5-sample smoke; Petri v2 dev baseline in both tool modes (E3b); Petri v1 seeds (not in the repo yet: the original Petri seed list has to be fetched and matched to our 24); the Petri faithfulness pair (eval notice in the target's system prompt) is not implemented.
+**Open:** the paid runs (Modal smoke, Petri v2 dev baseline in both tool modes, held-out Sonnet 4.5 before 2026-11-30 and GPT-5); Petri v1 seeds (the original seed list must be fetched and matched to our 24); the Petri faithfulness pair (eval notice in the target's system prompt); per-GPU-second cost in the vLLM backend (`llm.py`, coordinate with C1), so the spend cap can't stop Modal yet.
 
-**Notes for others:** `cli._agentic_measurer` splits seeds by a hash of `seed_id`, not by the `split` field the seed file carries (WS D). Measurer's own held-out check compares backends only; `models_config.family_warnings(models)` does families, and PetriMeasurer already adds it (WS C1 may want it in `Measurer`).
+**Notes for others:** `cli._agentic_measurer` splits seeds by a hash of `seed_id`, not by the `split` field in `data/petri/seeds_v2.jsonl` (WS D); `scripts/c2_e3b.py` uses the field.
