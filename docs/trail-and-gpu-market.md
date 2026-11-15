@@ -164,6 +164,32 @@ With a GPU budget the loop (`research/loop.py`):
   `report["market"]["gpu"]["unsettled_gpu_s"]`, so a later re-test starts from zero. The report also gives
   `gpu_initial`, `budget_gpu_s` (all GPU time this run, including the baseline) and `gpu_s_per_sample`.
 
+## 3. The user model bids on which experiments run
+
+Pipeline step 4. In a taste arm (`--taste-mode model`) with `--allocation market`, the user model is a
+bidder (agent `user_model`) next to the sub-agents (proposer, scout, contrarian, ablation, critic). So the
+order in which candidate experiments are measured comes from the researcher's taste and the sub-agents'
+bids together.
+
+* **Its bid.** For each gated design, P(validated) = `user_model_p(prior, taste, weight)`: the D1 taste
+  score, ln(k x P(the user picks this design of k)), shifts the log-odds of the memory's prior for the
+  design. The shift is scaled by the loop's learned taste weight (`Calibration.weight`). An indifferent user
+  model (score 0) does not bid.
+* **Advisory, not funding.** The bid enters the stake-weighted consensus P like any other. It adds no
+  supporting stake (`Market.priority`), so a design is still funded by the agent that brought it. The user
+  model moves the order in proportion to how far its belief departs from the others' and to its stake.
+  It never asks for GPU time.
+* **Earned influence.** It is settled by log score like every bid, so its wallet, its stake and its say
+  over what gets measured grow only while its taste keeps predicting which experiments validate. Its BID
+  and SETTLE facts go to shared memory and pass `market audit`.
+* **Ablation.** `--no-user-model-bids` (`ResearchConfig.user_model_bids=False`) keeps taste in the D1
+  ranking but takes it out of the market. R0 has no user model, so E5 (taste mode `none`) is unchanged.
+
+```bash
+python3 -m autoresearch research --taste-mode model --allocation market ...          # user model bids
+python3 -m autoresearch research --taste-mode model --allocation market --no-user-model-bids ...
+```
+
 ## Tests
 
 ```bash
@@ -178,4 +204,6 @@ back to the older joins and list them as missing, the HTML and the demo's fifth 
 `tests/test_market_loop.py` runs the v2 loop with a GPU budget and a fake GPU-metered target (a
 fake-clock `GpuMeter`), checks that BID/SETTLE facts carry the requested and measured GPU-seconds and that
 `python3 -m autoresearch.research.market audit` passes on the ledger, and that a run without a budget is
-unchanged. The GPU and audit tests measure no real GPU time.
+unchanged. The GPU and audit tests measure no real GPU time. `TestUserModelBidsInTheLoop` checks that
+a taste arm's user model bids and settles, that R0, prompt-only taste and `--no-user-model-bids` place no
+user-model bids, and that its bids change which experiments are funded.
