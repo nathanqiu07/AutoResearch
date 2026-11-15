@@ -74,8 +74,9 @@ def cap_of(n: int) -> int:
     return max(int(1.3 * n), 600)        # as arms/make_arms.py: 1.3x stock, floor 600 chars
 
 
-def common(n: int) -> str:
-    return (TP / "arms" / "prompts" / "common.txt").read_text().replace("{{CAP}}", str(int(0.85 * cap_of(n)))) \
+def common(n: int, factor: float = 0.85) -> str:
+    """The shared rules; the stated limit is factor x the cap (R0 was written with 0.95, later arms with 0.85)."""
+    return (TP / "arms" / "prompts" / "common.txt").read_text().replace("{{CAP}}", str(int(factor * cap_of(n)))) \
         .replace("{{N}}", str(n))
 
 
@@ -133,7 +134,7 @@ def build_one(llm, arm: str, s: dict) -> dict:
                     if x != "none")
     block = (f"Guidance distilled from {who}'s published writing about realistic evaluations (apply what fits this "
              f"seed):\n<guidance>\n{taste}\n</guidance>\n") if taste else ""
-    kw = {"COMMON": common(n), "SEED": src["text"], "ORIGINAL": s["text"], "TASTE_BLOCK": block}
+    kw = {"COMMON": common(n, spec.get("cap_factor", 0.85)), "SEED": src["text"], "ORIGINAL": s["text"], "TASTE_BLOCK": block}
     if spec.get("guard"):
         kw["GUARD"] = (PROMPTS / spec["guard"]).read_text().strip()
     text, raw = rewrite(llm, fill(spec["prompt"], **kw), n)
@@ -150,6 +151,8 @@ def build(arm: str, split: str):
     if arm == "R0" and split == "dev":           # the frozen control from ../arms (same prompt, already written)
         out.write_text((TP / "arms" / "seeds" / "R0.jsonl").read_text())
         return
+    # R0 on another split: arms.json "R0" = prompts/R0.txt (a copy of ../arms/prompts/R0.txt) with cap_factor 0.95,
+    # which reproduces ../arms' R0 prompts exactly (checked: `build R0X --split dev` hits ../arms/cache for every seed)
     llm = RP.Cache(ARMS[arm].get("model", "sonnet"))
     seeds = base_seeds(split)
     with ThreadPoolExecutor(4) as ex:
