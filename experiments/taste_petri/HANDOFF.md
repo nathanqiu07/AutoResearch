@@ -25,6 +25,13 @@ redoing work.
 
 ## Ledger (newest first)
 
+### 2026-11-15 devin-tastepetri: surgery/ (IN PROGRESS, 19:10 UTC)
+- decoys DONE: null; the first-batch A2 effect did not replicate, and an A/A split shows that k=3 seed-bootstrap CIs
+  are overconfident on validity/bait/A1 (`decoys/results.md`).
+- `surgery/` (PREREG.md): common random numbers. R0's exact audit openings are reused, one edit is applied (ID
+  re-run, SOFT = same bait facts but ordinary presentation, NB = bait removed), then everything downstream is
+  re-scored. Tests whether the bait tell is presence or presentation. About 360 haiku + 60 devin-cli calls.
+
 ### 2026-11-15 devin-tastepetri: taste_ranker/ + decoys/ (IN PROGRESS, 18:30 UTC)
 - `taste_ranker/` DONE (results.md): no profile beats a no-profile ranker at ordering rewrites by measured realism
   (null); the no-profile ranker itself tracks realism (rho 0.26, ceiling ~0.57); every ranker prefers bait-losing
