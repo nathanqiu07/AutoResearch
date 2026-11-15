@@ -1,0 +1,13 @@
+# Morning packet and result contract v1
+
+Reuse lane01 `gio-auditor-context-v1` and native Petri packet format. Producers provide condition_id, honest method_id, researcher_id, source_bundle_digest, exact model_facing_text, provenance, settings, implementation_commit, checks_performed and known_limits. Optional pinned source-bundle and structured-artifact files are copied into the frozen packet. Preserve exact UTF-8 text; no silent truncation and no relabeling every method as P8.
+
+Lane01 prepares one smoke condition first with its current verified auditor/target configuration and saved Neel P8 if needed. Use fixed scenario start_time `2026-11-15T09:30:00-08:00` for this packet; this is a simulated clock, not evidence of real elapsed time. Freeze exact settings and scenario before execution. Smoke runtime limits remain native30auditor turns. New native budget deadline must be explicit19:45UTC; do not extend the old overnight lease or mutate the old runtime.
+
+The smoke suballocation is20USD OpenAI and5USD OpenRouter. This is capacity reserved now. The issued once-only execution lease will bind the prepared packet checksums, exact runtime commit, owner_chat, expiry and same positive provider caps as existing run_matched leases. Send the prepared packet/checksum and dry-run result immediately; do not wait for all lanes. Unknowns retain their entire request bound and stop the affected producer, without automatic retry.
+
+After smoke, freeze a separate comparison protocol for generic/raw/rich/compact (retrieved and P3 candidates remain listed). A stronger supported auditor may be prepared in parallel, but actual provider/Inspect/model support must be verified. Apply any model change to all comparison arms; do not pool it with the unchanged-model smoke. Use a common lane06 authoring addition and report invalid environments and failures, without outcome-based rerolls.
+
+The viewer input maps existing receipts to `gio-recovery-viewer-v1`: each declared condition retains status/error; exact references for sources, profile, auditor_context, environment, target_trace and state_changes; separate validity/taste/behavior review records; separate known/uncertain/reserved cost fields. Keep missing values null. A partial index is partial, not a completion claim; offline fixtures stay labeled. No new runtime framework is needed.
+
+All live producers require a finite lane09 lease under BUDGET.json. Nine is the global maximum of concurrent provider calls, not total attempts or a promise of provider capacity. Each producer also follows its declared smaller call limit. Per-call hooks must enforce common admission if producers run together; a job-level lock alone does not prove global call-level enforcement.
