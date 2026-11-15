@@ -1,0 +1,374 @@
+---
+url: https://www.lesswrong.com/posts/RKDQCB6smLWgs2Mhr
+title: Multi-Component Learning and S-Curves
+publishedDate: 2022-11-30
+date_source: listing
+authors: ["Adam Jermyn", "Buck Shlegeris"]
+author_position: last
+kind: post
+exa_request_id: https://www.lesswrong.com/posts/RKDQCB6smLWgs2Mhr/multi-component-learning-and-s-curves
+fetched_url: https://www.lesswrong.com/posts/RKDQCB6smLWgs2Mhr/multi-component-learning-and-s-curves
+---
+# Multi-Component Learning and S-Curves
+
+* By [Adam Jermyn](/users/adam-jermyn), [Buck](/users/buck)
+* 2022-11-30 01:37:05Z
+* 64 points
+* Tag: [Interpretability (ML & AI)](/w/interpretability-ml-and-ai)
+* Tag: [Machine Learning (ML)](/w/machine-learning-ml)
+* Tag: [AI](/w/ai)
+* Frontpage
+* Comments: 24
+* Post URL (HTML): [/posts/RKDQCB6smLWgs2Mhr/multi-component-learning-and-s-curves](/posts/RKDQCB6smLWgs2Mhr/multi-component-learning-and-s-curves)
+* Post URL (Markdown): [/api/post/multi-component-learning-and-s-curves](/api/post/multi-component-learning-and-s-curves)
+* Comments URL (Markdown): [/api/post/multi-component-learning-and-s-curves/comments](/api/post/multi-component-learning-and-s-curves/comments)
+* Post URL (Markdown, compact): [/api/post/multi-component-learning-and-s-curves?compact=1](/api/post/multi-component-learning-and-s-curves?compact=1)
+
+*(Thanks to Oliver Balfour, Ben Toner, and various MLAB participants for early investigations into S-curves. Thanks to Nate Thomas and Evan Hubinger for helpful comments.)*
+
+Introduction
+============
+
+Some machine learning tasks depend on just one component in a model. By this we mean that there is a single parameter or vector inside a model which determines the model’s performance on a task. An example of this is learning a scalar using gradient descent, which we might model with the loss function
+
+$$
+\mathcal{L}=\frac{1}{2}(a-\tilde{a})^2
+$$
+
+Here $a$ is the target scalar and $\tilde{a}$\(\) is our model of that scalar. Because the loss gradients are linear gradient descent converges exponentially quickly, as we see below:
+
+![](https://39669.cdn.cke-cs.com/rQvD3VnunXZu34m86e5f/images/031b7bfab4be35780d257b7f7a639f472bdf2754c362b2a2.png)
+
+The same holds for learning a vector using gradient descent with the loss
+
+$$
+\mathcal{L} = \frac{1}{2} \sum_{i} (a_i - \tilde{a}_i)^2
+$$
+
+because the loss is a sum of several terms, each of which only depends on a single component.
+
+By contrast, some tasks depend on multiple components simultaneously. That is, the model will only perform well if multiple different parameters are near their optimal values simultaneously. Attention heads area a good example here: they only perform well if the key, query, value, and output matrices are all close to some target. If any of these are far off the whole structure fails to perform.
+
+We think that such **multi-component** tasks are behind at least some occurrences of the commonly-seen S-curve motif, where the loss plateaus for an extended period before suddenly dropping. Below we provide toy examples of multi-component tasks, reason through why their losses exhibit S-curves, and explore how the structures of these S-curves vary with the ranks of the components involved. We additionally provide evidence for our explanations from numerical experiments.
+
+Examples
+========
+
+Rank-1 learning
+---------------
+
+Suppose we’re using gradient descent on the regression task:
+
+$$
+A_{ij}=a_i b_j
+$$
+
+$$
+\tilde{A}_{ij} = \tilde{a}_i \tilde{b}_j
+$$
+
+$$
+\mathcal{L} = \frac{1}{2}\sum_{ij}(A_{ij}-\tilde{A}_{ij})^2
+$$
+
+Here there is a target matrix $A$ which has rank 1, and which we model by an outer product of two vectors $\tilde{a}$ and $\tilde{b}$.
+
+The loss gradients are:
+
+$$
+-\frac{\partial \mathcal{L}}{\partial a_i} = a (b\cdot \tilde{b}) - \tilde{a} \tilde{b}^2
+$$
+
+$$
+-\frac{\partial \mathcal{L}}{\partial b_j} =b(a\cdot\tilde{a})-\tilde{b}\tilde{a}^2
+$$
+
+If we write
+
+$$
+\frac{\partial\tilde{a}_i}{\partial t} = -\frac{\partial \mathcal{L}}{\partial \tilde{a}_i}
+$$
+
+and likewise for $\tilde{b}$ we get a non-linear ordinary differential equation (ODE) of the form
+
+$$
+\frac{d\tilde{a}}{dt}=a(b\cdot\tilde{b})-\tilde{a}\tilde{b}^2
+$$
+
+$$
+\frac{d\tilde{b}}{dt}=b(a\cdot\tilde{a})-\tilde{b}\tilde{a}^2
+$$
+
+If the vectors are high-dimensional and we choose a random initialization then we approximately have $a\perp\tilde{a}$ and $b\perp\tilde{b}$ at early times. This means the above equations are, to first order,
+
+$$
+\frac{d\tilde{a}}{dt} = -\tilde{b}^2 \tilde{a}
+$$
+
+$$
+\frac{d\tilde{b}}{dt}=-\tilde{a}^2\tilde{b}
+$$
+
+The equation for $\tilde{a}$ is linear in $\tilde{a}$, and likewise for $\tilde{b}$, so the initial solution decays (approximately) exponentially, which decreases the loss. At the same time, the next-order correction contains a term
+
+$$
+\frac{d\tilde{a}}{dt} = a(b\cdot\tilde{b})
+$$
+
+$$
+\frac{d\tilde{b}}{dt} = b(a\cdot\tilde{a})
+$$
+
+This causes the model to learn the ground truth. The true component grows linearly at first (during the exponential decay of the initialization). Then this component is actually the dominant term, so that $\tilde{a}\parallel a$ and $\tilde{b}\parallel b$, and we get exponential growth of the true solution. Eventually $\tilde{a}$ and $\tilde{b}$ approach $a$ and $b$ in magnitude and the growth levels off (becomes logistic).
+
+To summarize:
+
+1. At early times the loss decays exponentially because the initial guess decays away.
+2. For a while the loss plateaus because the growing (correct) component is still small.
+3. Once the correct solution is significant the loss rapidly falls.
+4. As the correct solution comes to be dominant learning slows and we see a leveling off.
+
+Thus, we get an exponential decay followed by a sigmoid.
+
+We again confirm this experimentally:
+
+![](https://39669.cdn.cke-cs.com/rQvD3VnunXZu34m86e5f/images/cdd9b53f51357b1ec01a1f7613f6e41db32ef87b20a0a4ae.png)
+
+Initially the vectors just decay, giving exponential loss improvement, then the growing part takes over, bringing them into alignment with ground truth and raising their norms, resulting in a second exponential and hence an S-curve.
+
+Low-rank learning
+-----------------
+
+Similar reasoning applies to the case of learning a low-rank matrix with a low-rank representation of that matrix. Concretely, our task is now:
+
+$$
+A_{ij}=\sum_k a_i^kb_j^k
+$$
+
+$$
+\tilde{A}_{ij} = \sum_k \tilde{a}_i^k \tilde{b}_j^k
+$$
+
+$$
+\mathcal{L} = \frac{1}{2}\sum_{ij}(A_{ij}-\tilde{A}_{ij})^2
+$$
+
+The loss gradients are:
+
+$$
+-\frac{\partial \mathcal{L}}{\partial a_i^k} = (A-\tilde{A})\cdot\tilde{b}^k
+$$
+
+$$
+-\frac{\partial \mathcal{L}}{\partial b_j^k} ={\tilde{a}}^k\cdot(A-\tilde{A})
+$$
+
+Notice that the resulting ODE is segmented k-by-k.
+
+If we write
+
+$$
+\frac{\partial\tilde{a}_i}{\partial t} = -\frac{\partial \mathcal{L}}{\partial \tilde{a}_i}
+$$
+
+and likewise for $\tilde{b}$ we get a non-linear ODE of the form
+
+$$
+\frac{d\tilde{a}^k}{dt}=(A-\tilde{A})\cdot\tilde{b}^k\\\frac{d\tilde{b}^k}{dt}=(A-\tilde{A})^T\cdot\tilde{a}^k
+$$
+
+Once more if the vectors are high-dimensional and we choose a random initialization then we approximately have $a\perp\tilde{a}$ and $b\perp\tilde{b}$ at early times. We also have $\tilde{a}^j\perp\tilde{a}^k\forall j\neq k$ and likewise for $\tilde{b}^k$. This means the above equations are, to first order,
+
+$$
+\frac{d\tilde{a}^k}{dt} = -\tilde{b}^{k2} \tilde{a}^k\\\frac{d\tilde{b}^k}{dt}=-\tilde{a}^{k2}\tilde{b}^k
+$$
+
+so the initial solution decays (approximately) exponentially, which decreases the loss. At the same time, the next-order correction contains a term
+
+$$
+\frac{d\tilde{a}^k}{dt} = a^k(b^k\cdot\tilde{b}^k)\\\frac{d\tilde{b}^k}{dt} = b^k(a^k\cdot\tilde{a}^k)
+$$
+
+This causes the model to learn the truth. The true component grows linearly at first (during the exponential decay of the initialization). Then this component is actually the dominant term, $\tilde{a}\parallel 'a,\tilde{b}\parallel b$ and we get exponential growth with rate $|a||b|$.
+
+Eventually $\tilde{a}$ and $\tilde{b}$ approach $a$ and $b$ in magnitude and the growth levels off (becomes logistic).
+
+This results in the same phenomenology as in the rank-1 case, and that’s indeed what we see:
+
+![](https://39669.cdn.cke-cs.com/rQvD3VnunXZu34m86e5f/images/cb937e068e0447ad89e0e5eeb8b722631e7ccb99b975c744.png)
+
+High-rank learning
+------------------
+
+*(Edit: Due to a plotting bug the inner product panels in this section were not correctly normalized. I've corrected the plots below, though nothing qualitative changes.)*
+
+The phenomenology changes as we increase the rank. Working with 100-dimensional vectors, we see that rank-10 matrices have a similar phenomenology but with a more extended plateau:
+
+![](https://39669.cdn.cke-cs.com/rQvD3VnunXZu34m86e5f/images/6ee922692b1eb1c14d0030795575c5b3683adc2853a50c56.png)
+
+Rank-100 (full-rank) shows no second phase of exponential decay! It just transitions from exponential at the start (as norms decay) into a power-law:
+
+![](https://39669.cdn.cke-cs.com/rQvD3VnunXZu34m86e5f/images/99ad47d4b66757af7f862aa0f6f266453c1b3cb2a7513c7f.png)
+
+(Just showing a few vectors.)
+
+Note that the final vectors are not parallel to the ground truth: this is possible because there are many vectors, so they just need to find directions that allow them to span the same vector space as the ground truth.
+
+To make sense of this change we start with the same ODE as before, but write it with $\tilde{a},\tilde{b}$ as matrices whose second index runs through the different vectors:
+
+$$
+\frac{d\tilde{a}}{dt}=(A-\tilde{A})\cdot\tilde{b}=(a\cdot b^T - \tilde{a}\cdot\tilde{b}^T)\cdot\tilde{b}=a\cdot(b^T\cdot \tilde{b})-\tilde{a}\cdot (\tilde{b}^T \cdot \tilde{b})
+$$
+
+$$
+\frac{d\tilde{b}}{dt}=(A-\tilde{A})^T\cdot\tilde{a}=(b\cdot a^T - \tilde{b}\cdot\tilde{a}^T)\cdot\tilde{a} = b\cdot(a^T\cdot \tilde{a}) - \tilde{b}\cdot(\tilde{a}^T\cdot \tilde{a})
+$$
+
+Now comes the fun part: $Q^T\cdot Q$ is a positive semi-definite matrix so long as $Q$ is real (which we’ll assume applies to our matrices). That means that the second term in each equation causes decay (which is exponential if the other of $\tilde{a},\tilde{b}$ is held constant). For example, if we ignore the first term in the first equation we have
+
+$$
+\frac{d\tilde{a}}{dt} = -\tilde{a}\cdot(\tilde{b}^T\cdot \tilde{b})
+$$
+
+So long as the dual vectors of $\tilde{a}$ lie in the span of the dual vectors of $\tilde{b}$ we can decompose $\tilde{a}$ into a sum of the right-eigenvectors of $\tilde{b}$ (the eigenvectors that live in the dual space). The projection onto each eigenvector decays independently, and so we find exponential decay (ignoring the evolution of $\tilde{b}$).
+
+If the dual vectors of $\tilde{a}$ don’t lie in the span of the dual vectors of $\tilde{b}$ then there will be components of $\tilde{a}$ which do not decay. As the rank of the target matrix increases the fraction of $\tilde{a}$ outside of the span of $\tilde{b}$ falls, making the decay more purely exponential. This explains why we see more exponential decay in the rank-100 case than the rank-10 case.
+
+At the same time, we also have a term $a\cdot(b^T\cdot\tilde{b})$, which causes a growing component in $\tilde{a}$ proportional to the truth. This component grows in size until it comes to dominate, at which point we see both the vector norms rebound and simultaneously they come into better alignment with the target vectors. Due to the non-uniqueness of matrix decompositions they do not come into as obvious an alignment as before, but we do generally see inner products increase during this phase.
+
+As the rank increases the initial plateau for each target vector shortens because random initial vectors are closer to aligning with the ground truth. Moreover, because different vectors are learned at different rates, increasing the rank smears the transition out. The net result is that as the rank increases towards full the S-curve loses its plateau and the exponential tail turns into a power-law.
+
+Attention Head
+--------------
+
+As one last example, consider learning an attention head of the form: 
+
+$$
+H=(A\cdot B)\otimes (C\cdot D)
+$$
+
+where the inner dimensions of $A,B$ and $C,D$ are low-rank. To keep the setup simple, we’ll try learn this using the loss
+
+$$
+\mathcal{L}=||H-\tilde{H}||_2=||H||_2 + ||\tilde{H}||_2-2\mathrm{Tr}[H\cdot \tilde{H}]
+$$
+
+Note that this drops the softmax and is a totally artificial loss function. Nonetheless, it has the property that the loss is only low if all four components of the attention head are close to their target matrices.
+
+The first term is irrelevant for the learning dynamics, so we drop that. The other terms we expand, finding
+
+$$
+\mathcal{L} = \mathrm{Tr}[(\tilde{A}\cdot\tilde{B})^2]\mathrm{Tr}[(\tilde{C}\cdot\tilde{D})^2]-2\mathrm{Tr}[(A\cdot B)\cdot (\tilde{B}^T\cdot \tilde{A}^T)]\mathrm{Tr}[(C\cdot D)\cdot (\tilde{D}^T\cdot \tilde{C}^T)]
+$$
+
+The indexing on this gets tricky, so let’s make that explicit:
+
+$$
+\mathcal{L} = \tilde{A}{ij}\tilde{B}{jk} \tilde{B}^T_{kl}\tilde{A}^T_{li}\tilde{C}_{mn}\tilde{D}_{no} \tilde{D}^T_{op}\tilde{C}^T_{pm}-2A_{ij}B_{jk} \tilde{B}^T_{kl}\tilde{A}^T_{li}C_{mn}D_{no} \tilde{D}^T_{op}\tilde{C}^T_{pm}
+$$
+
+Taking the gradients with respect to our parameters we find:
+
+$$
+\frac{\partial \mathcal{L}}{\partial \tilde{A}{\alpha \beta}} = 2\tilde{B}{\beta k} \tilde{B}^T_{kl}\tilde{A}^T_{l\alpha}\tilde{C}_{mn}\tilde{D}_{no} \tilde{D}^T_{op}\tilde{C}^T_{pm}-2A_{\alpha j} B_{j k} \tilde{B}^T_{k\beta}C_{mn}D_{no} \tilde{D}^T_{op}\tilde{C}^T_{pm}
+$$
+
+The other expressions are structurally the same so we focus on just this one. Cleaning it up a bit we find
+
+$$
+\frac{\partial \mathcal{L}}{\partial \tilde{A}} = 2(\tilde{A}\cdot \tilde{B}\cdot \tilde{B}^T)\mathrm{Tr}[(\tilde{C}\cdot\tilde{D})^2]-2(A\cdot B\cdot \tilde{B}^T)\mathrm{Tr}[(C\cdot D)\cdot (\tilde{D}^T\cdot \tilde{C}^T)]
+$$
+
+Early in training, the final trace is nearly zero because the vectors are mostly orthogonal. So we just have the first term, giving
+
+$$
+\frac{d\tilde{A}}{dt} = -2(\tilde{A}\cdot\tilde{B}\cdot\tilde{B}^T)\mathrm{Tr}[(\tilde{C}\cdot\tilde{D})^2]
+$$
+
+What does this evolution do to the norm of $\tilde{A}$? Well,
+
+$$
+\frac{d|\tilde{A}|^2}{dt} = -4 \mathrm{Tr}[(\tilde{A}\cdot\tilde{B})^2]\mathrm{Tr}[(\tilde{C}\cdot\tilde{D})^2]
+$$
+
+So the norm decays exponentially at early times. What happens at later times? The second term comes to dominate so
+
+$$
+\frac{d\tilde{A}}{dt} = -2(A\cdot B\cdot \tilde{B})\mathrm{Tr}[(C\cdot D)\cdot (\tilde{D}^T\cdot \tilde{C}^T)]
+$$
+
+This looks a bit like terms we’ve seen before. In particular, $B\cdot B^T$ is positive-definite, so the first factor grows a component correlated with the truth $A$. The trouble is that the trace factor that follows need not be positive.
+
+So we hit a problem: the system needs to get all of the vectors close enough that the gradients have a sign pointing towards a basin, at which point we should see rapid learning.
+
+Fortunately there are many valid basins, because we can flip the signs of any pair of vectors and leave the system unchanged, and similarly matrices can be rotated by unitary operators in the dual space and leave everything unchanged. So we probably get a basin somewhere nearby.
+
+All of which is to say, we should expect a plateau followed by a sudden drop once the basin is found, which is exactly what we see (with rank-2):
+
+![](https://39669.cdn.cke-cs.com/rQvD3VnunXZu34m86e5f/images/0359d9fbb99e0c116a9d925c13da5a9e0c679714351cad5e.png)
+
+Conclusions
+===========
+
+S-curves are a natural outcome of trying to learn tasks where performance depends simultaneously on multiple components. The more components involved the longer the initial plateau because there are more pieces that have to be in place to achieve low loss and hence to get a strong gradient signal.
+
+As components align, the gradient signal on the other components strengthens, and the whole process snowballs. This is why we see a sudden drop in the loss following the plateau.
+
+When the components being learned are low-rank it takes longer to learn them. This is because random initializations are further (on average) from values that minimize the loss. Put another way, with a rank-k ground truth and a rank-k model, there are ~k chances for each learned component to randomly be near one of the targets. So as the rank falls on average each component starts further from the nearest target, and the time spent on the plateau rises.
+
+As components approach full rank, the plateau disappears. This is because the span of the random initialization vectors approaches the span of the target vectors, so there is a significant gradient signal on each component from the beginning.
+
+We think that this picture is consistent with the findings of [Barak+2022](https://arxiv.org/pdf/2207.08799.pdf), who show that for parity learning SGD gradually (and increasingly-rapidly) amplifies a piece of the gradient signal known as the Fourier gap. Once this component is large enough learning proceeds rapidly and the loss drops to zero.
+
+Questions
+=========
+
+Finally, a few questions we haven’t answered and would be keen to hear more about:
+
+1. Are there examples of S-curves that can’t be thought of as learning a multi-component task?
+2. Are there examples of low-rank multi-component tasks which do not produce S-curves?
+
+Top Comments Index
+------------------
+
+### Comment by [Neel Nanda](/users/neel-nanda-1)
+
+* 2022-12-01 12:28:27Z
+* Karma: 10
+* Voting system: namesAttachedReactions
+* Approval votes: 7
+* Total votes: 7
+* HTML permalink: [/posts/RKDQCB6smLWgs2Mhr/multi-component-learning-and-s-curves/comment/HcZWY3P7pSXT4Cwgp](/posts/RKDQCB6smLWgs2Mhr/multi-component-learning-and-s-curves/comment/HcZWY3P7pSXT4Cwgp)
+* Markdown permalink: [/api/post/multi-component-learning-and-s-curves/comments/HcZWY3P7pSXT4Cwgp](/api/post/multi-component-learning-and-s-curves/comments/HcZWY3P7pSXT4Cwgp)
+
+### Comment by [LawrenceC](/users/lawrencec)
+
+* 2022-12-01 03:10:38Z
+* Karma: 4
+* Voting system: namesAttachedReactions
+* Total votes: 3
+* HTML permalink: [/posts/RKDQCB6smLWgs2Mhr/multi-component-learning-and-s-curves/comment/tEzfTrgMFnwDaNyn2](/posts/RKDQCB6smLWgs2Mhr/multi-component-learning-and-s-curves/comment/tEzfTrgMFnwDaNyn2)
+* Markdown permalink: [/api/post/multi-component-learning-and-s-curves/comments/tEzfTrgMFnwDaNyn2](/api/post/multi-component-learning-and-s-curves/comments/tEzfTrgMFnwDaNyn2)
+
+### Comment by [Jalex S](/users/jalex-s)
+
+* 2022-11-30 14:03:42Z
+* Karma: 2
+* Voting system: namesAttachedReactions
+* Total votes: 2
+* HTML permalink: [/posts/RKDQCB6smLWgs2Mhr/multi-component-learning-and-s-curves/comment/tBEtu9oWc5Fi66LPK](/posts/RKDQCB6smLWgs2Mhr/multi-component-learning-and-s-curves/comment/tBEtu9oWc5Fi66LPK)
+* Markdown permalink: [/api/post/multi-component-learning-and-s-curves/comments/tBEtu9oWc5Fi66LPK](/api/post/multi-component-learning-and-s-curves/comments/tBEtu9oWc5Fi66LPK)
+
+### Comment by [joseph_c](/users/cooljoseph1)
+
+* 2022-11-30 04:27:57Z
+* Karma: 1
+* Voting system: namesAttachedReactions
+* Total votes: 1
+* HTML permalink: [/posts/RKDQCB6smLWgs2Mhr/multi-component-learning-and-s-curves/comment/JpBzjE3a2MxhTj8DL](/posts/RKDQCB6smLWgs2Mhr/multi-component-learning-and-s-curves/comment/JpBzjE3a2MxhTj8DL)
+* Markdown permalink: [/api/post/multi-component-learning-and-s-curves/comments/JpBzjE3a2MxhTj8DL](/api/post/multi-component-learning-and-s-curves/comments/JpBzjE3a2MxhTj8DL)
+
+### Navigation
+
+* [Front page](https://www.lesswrong.com/api/home)
+* [Markdown API documentation](https://www.lesswrong.com/api/SKILL.md)

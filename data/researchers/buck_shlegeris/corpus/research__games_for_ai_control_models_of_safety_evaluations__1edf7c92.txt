@@ -1,0 +1,1099 @@
+---
+url: https://arxiv.org/abs/2409.07985
+title: Games for AI Control: Models of Safety Evaluations of AI Deployment Protocols
+publishedDate: 2024-09-12
+date_source: listing
+authors: ["Charlie Griffin", "Louis Thomson", "Buck Shlegeris", "Alessandro Abate"]
+author_position: middle
+kind: paper
+exa_request_id: https://arxiv.org/abs/2409.07985
+---
+Games for AI Control: Models of Safety Evaluations of AI Deployment Protocols
+
+# Games for AI Control: Models of Safety Evaluations of AI Deployment Protocols
+
+ Charlie Griffin Affiliation: University of Oxford Louis Thomson Affiliation: University of Oxford Buck Shlegeris Affiliation: Redwood Research Alessandro Abate Affiliation: University of Oxford 
+
+###### Abstract
+
+To evaluate the safety and usefulness of deployment protocols for untrusted AIs, AI Control uses a red-teaming exercise played between a protocol designer and an adversary. This paper introduces AI-Control Games, a formal decision-making model of the red-teaming exercise as a multi-objective, partially observable, stochastic game. We also introduce reductions from AI-Control Games to a special case of zero-sum partially observable stochastic games that allow us to leverage existing algorithms to find Pareto-optimal protocols. We apply our formalism to model, evaluate and synthesise protocols for deploying untrusted language models as programming assistants, focusing on Trusted Monitoring protocols, which use weaker language models and limited human assistance. To demonstrate the utility of our formalism, we show improvements over empirical studies in existing settings, evaluate protocols in new settings, and analyse how modelling assumptions affect the safety and usefulness of protocols. Finally, we leverage our formalism to precisely describe some of the implicit assumptions in prior control work.
+
+## 1 Introduction
+
+An increasing range of products aim to automate tasks using AI systems based on large foundation models. For example, some chatbots are given access to tools, such as code interpreters [34, 2].Ensuring that AI systems behave safely across various deployment settings will become increasingly challenging if the variety of use cases, scale of systems, and complexity of tasks increase. While previous research has focused on increasing our confidence in model behaviour, for example by training robustly harmless models [11] or by detecting harmful behaviour with interpretability tools [27], in this paper we consider a complementary approach: evaluating plans for safely deploying ‘untrusted’ AI systems about which we have an unacceptable degree of uncertainty.
+
+The design and evaluation of post-deployment safety measures to mitigate the risks posed by misaligned AI systems, called ‘AI Control, is becoming an increasing priority for governments [39, 40] and frontier AI developers [33, 14, 3]. Following Greenblatt et al. [18], we study AI-Control protocols: practical plans for safely deploying an untrusted AI system (U) utilising various resources, including non-AI software, human labour, or a weaker, trusted AI system. For example, one protocol for controlling a chatbot might involve a pre-deployment evaluation where humans utilise other language models to generate prompts that induce harmful completions [36]. This paper focuses on another case, Trusted Monitoring (TM): constantly monitoring U’s behaviour using a trusted model (T), with human auditing of suspicious behaviour.
+
+Greenblatt et al. [18] operationalise safety as the probability that an adversarially chosen untrusted AI system would be incapable of causing some concrete unacceptable outcome. One example of an unacceptable outcome would be revealing some sensitive information, such as model weights [13]. In this paper, we’ll consider a more general class of safety objectives that includes minimising the expected number of bad outcomes [41, e.g.]. We evaluate the safety of protocols under the worst-case assumption that U is ‘scheming’, meaning it behaves as though it knows the protocol and is trying to subvert it to cause an unacceptable outcome.
+
+A major challenge of evaluating the safety of a protocol with respect to a scheming AI is realistically replicating the potential capabilities of such a system: as a proxy for a schemer, AI Control uses a human red-teaming process to evaluate safety. The red team can intervene in U in some predefined set of ways to induce it to subvert the AI-Control protocol and violate the safety property. For example, they might intervene in an untrusted language model by finetuning weights or modifying prompts.
+
+Since one safe protocol is ‘never use U’, we must also evaluate a protocol’s usefulness, which is its ability to utilise U to complete a task under the assumption that U is ‘honest’ (not scheming). Our proxy evaluations model an ‘honest’ untrusted model by not allowing the red team to intervene.
+
+AI Control evaluations are a growing area of study [28, 7, 41] with potential applications for justifying the safe deployment of frontier AI systems [13, 10, 6, 23]. Although Greenblatt et al. [18]’s evaluation implicitly involved a game played between a blue and a red team, it lacked any formal modelling of that game or game-theoretic analysis.
+
+This work introduces AI-Control Games, the first formal model of AI Control. In section 2 we introduce a running example: ‘Trusted Monitoring’ protocols. We then state our contributions:
+
+- •
+
+Section 3 formalizes AI Control (a core area in AI safety) for the first time through AI-Control Games: partially observable, multi-objective, leader-follower stochastic games.
+- •
+
+Section 4 demonstrates how our formalism can model Trusted Monitoring, and leverage it to give expressions for the safety and usefulness of a wide range of protocols.
+- •
+
+Section 5 presents a reduction to a zero-sum stochastic game that allow us to adapt and leverage existing algorithms to find Pareto-optimal protocols.
+- •
+
+Section 6 uses our model and algorithms to demonstrate Pareto-improvements on existing protocols and analyses the safety-usefulness trade-off in novel settings.
+- •
+
+Section 7 precisely describes concepts and assumptions previously only implicit in AI Control literature using our framework.
+- •
+
+Section 8 is the first game-theoretic literature review for AI Control. It highlights similarities to security games and contrasts them with similar games.
+
+## 2 Trusted Monitoring Example
+
+Throughout this paper, we will introduce AI-Control Games using the example deployment setting from Greenblatt et al. [18], and a generalisation of some of their protocols.
+
+In the APPS backdooring setting, a language model is used as a programming assistant [18]. The protocol is asked to solve 1000 challenging programming tasks, presented sequentially from the Automated Programming Progress Standard (APPS) dataset [20]. The protocol cannot itself write code, but may utilise three resources to do so: the untrusted AI (U) is a powerful language model capable of solving programming problems; the trusted AI (T) is a less powerful language model incapable of solving them 1 1 1 In fact, T may be able to solve some problems, but Greenblatt et al. treat T’s ability as a baseline and normalise between $0$ and $1$.; and the human (H) is trusted and capable but can only be used on 2% of problems. In this setting, a protocol’s usefulness is its ability to submit correct programming solutions. Since only U can solve the problems, usefulness is the proportion of solutions submitted that were generated by U. † † footnotemark: A protocol’s safety is the probability that none of the 1000 solutions submitted are backdoored, meaning they contain an exploitable vulnerability. 2 2 2 An exploitable code vulnerability is one that the untrusted model can detect and exploit later. It is important to note that Greenblatt et al. [18] use a proxy for ‘backdoors’: inputs outside of the test cases where a function fails to meet its specification.
+
+Figure 1: Overview of protocol and modelling assumptions. Left: A representation of the Trusted Monitoring protocol, where U is the untrusted AI, T is the trusted AI, and H is the human. Right: T’s suspicion score distributions for safe solutions and those backdoored by U across the ‘original’ [18] and ‘weaker’ settings.
+
+##### Trusted Monitoring Protocol.
+
+As an example, we focus on a set of Trusted Monitoring protocols and red team interventions, drawn in fig. 1 (left). After receiving a problem, the protocol queries U for a solution (which may or may not be backdoored). The protocol then queries T to monitor the solution and observes a ‘suspicion score’, rating the likelihood that the solution is backdoored. Based on this score and previous observations, the protocol decides on an action: $\langle\mathtt{Audit}\rangle$ asks H to audit the solution (if there’s a backdoor, the human will spot it, and the protocol shuts down) 3 3 3 Unless otherwise stated, we assume that the human auditor is perfectly accurate. We relax this assumption in appendix B and explore its impact in section 6.1.; $\langle\mathtt{Defer}\rangle$ asks T to write its own solution; and $\langle\mathtt{Run}\rangle$ submits U’s solution. T’s suspicion scores are modelled as a distribution, conditioned on whether the code is safe or backdoored. Note that the Trusted Monitoring protocols that we consider generalise many of the protocols studied by Greenblatt et al. [18] (see fig. 2): our model is not prescriptive about how the protocol should decide to $\langle\mathtt{Audit}\rangle$, $\langle\mathtt{Defer}\rangle$, or $\langle\mathtt{Run}\rangle$ allowing us to improve existing protocols (see section 6).
+
+##### Red team interventions.
+
+To test the safety of the protocol against intentional attempts to insert backdoors, in some cases we allow the red team to modify the query to the untrusted model. In particular, the red team gets a binary choice to either leave the query unchanged or ‘attempt a backdoor’ by modifying the protocol’s query to U, requesting that it inserts a subtle backdoor.
+
+##### Suspicion score distributions.
+
+The key empirical question for evaluating Trusted Monitoring protocols is ‘How does T rate the suspiciousness of U’s programming solutions when they are/aren’t backdoored?’. Figure 4 from Greenblatt et al. [18] shows the distribution of trusted monitoring suspicion scores for U’s programming solutions (both backdoored and safe). In this work, we mostly consider two games, corresponding to two distribution pairs (shown in fig. 1, right). The first ‘Original Trusted Monitor’ is a pair of beta distributions approximately fit to the (scaled) empirical suspicion scores found by Greenblatt et al. [18] with $\text{Beta}(7.39,6.86)$ for safe problems and $\text{Beta}(8.91,2.82)$ for backdoored problems. By plugging their data into our model, we are able to extend their results about the APPS dataset to a range of new protocols without running any additional experiments on language models. See appendix D 4 4 4 Full proofs and experimental details appear in the appendices of the arXiv version: https://arxiv.org/abs/2409.07985. for justification of our approximation, and further details. The second ‘weak’ case is a hypothetical where T is less discerning: it has the same safe distribution, but for backdoored problems, we use a hypothetical distribution $\text{Beta}(7.51,4.22)$ chosen to have a worse ROC curve. Note that we can easily utilise new empirical or hypothetical distributions in our framework, thus potentially greatly reducing the cost of exploring the protocol in new domains.
+
+## 3 Formalising AI-Control Games
+
+To analyse general properties of AI-Control evaluations, we newly formalise them mathematically. An AI-Control Game is a form of two-player game that is played between Blue (the protocol designer) and Red (the red team acting as a proxy for a scheming model). Episodes (play-throughs) of an AI-Control Game have two modes: ‘attack’ or ‘honest’. The ‘attack’ mode represents the case in an AI-Control evaluation where the red team is able to interfere with U (which itself is a worst-case proxy for if the untrusted model were trying to subvert the protocol). In an attack game, both players are active: Red is trying to minimise safety and Blue is trying to maximise safety. The honest game represents the benign case, where we assume the untrusted AI system is not trying to cause unacceptable outcomes. In an honest game, Blue effectively plays alone and is only assessed on its usefulness score. Because Blue tries to maximise safety and usefulness, the game is multi-objective. A key to the game is that Blue does not know which mode it is in (honest or attack) and for at least this reason the game is partially observable. Blue may try to deduce whether the game is in attack mode, while Red might choose actions to conceal this fact.
+
+Red represents the red team that acts as a proxy for an untrusted AI system that runs on servers controlled by the protocol. Crucially, the protocol will have access to the state of the untrusted AI system and, therefore, we model Red as memoryless (its actions depend only on the last observation). 5 5 5 Note that we could still model U as having external memory, modelled in the state and observed by Blue. We model the game as leader-follower: the protocol is suggested, and then the red team chooses the best response. Combining all of these requirements, we define AI-Control Games:
+
+###### Definition 3.1 (AI-Control Game).
+
+An AI-Control Game $\mathcal{G}$ is a two-player, two-objective, partially-observable, finite-horizon game defined by a tuple $\left(\mathcal{S},{\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}},{\color[rgb]{0,0,1}\Omega}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\Omega}^{{\color[rgb]{0.8,0,0}R}},\mathcal{I},\mathcal{P},\mathcal{R}_{\scriptscriptstyle\text{Safe}},\mathcal{R}_{\scriptscriptstyle\text{Use}},H\right)$.
+
+Here $\mathcal{S}$ is a state space. As is standard in decision processes, ${\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}}$ and ${\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}}$ are finite sets of actions for Blue and Red, respectively. The tokens $\oplus$ and $\otimes$ represent the honest and attack conditions. 6 6 6 Since, the tokens $\oplus$ and $\otimes$ are atomic and fixed, they aren’t defined in each new AI-Control Game tuple. In honest ($\oplus$) games, Red’s action is decided by some honest strategy $\pi_{\oplus}$, which represents Red not interfering in the game. We assume for now that $\pi_{\oplus}$ always takes a safe action, which we denote $a_{\text{null}}$; we explore the implications of relaxing this assumption in Section 7. Whether a game is in honest or attack mode can be chosen non-deterministically and is stored in the variable $\circledast$. The safety reward $\mathcal{R}_{\scriptscriptstyle\text{Safe}}:\mathcal{S}\times{\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}}\times{\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}}\times\mathcal{S}\rightarrow\mathbb{R}$ rewards safety on a turn of an attack game, when both Blue and Red act. Similarly, the usefulness reward $\mathcal{R}_{\scriptscriptstyle\text{Use}}:\mathcal{S}\times{\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}}\times\mathcal{S}\rightarrow\mathbb{R}$ rewards usefulness on turn of an honest game, when Red has no action. ${\color[rgb]{0,0,1}\Omega}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\Omega}^{{\color[rgb]{0.8,0,0}R}}$ are finite sets of observations for Blue and Red: the signals that the agents receive from the environment that give evidence about the state of the game. The initial state/observation distribution is $\mathcal{I}\in\Delta(\mathcal{S}\times{\color[rgb]{0,0,1}\Omega}^{{\color[rgb]{0,0,1}B}}\times{\color[rgb]{0.8,0,0}\Omega}^{{\color[rgb]{0.8,0,0}R}})$ and the transition function $\mathcal{P}:\mathcal{S}\times{\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}}\times{\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}}\rightarrow\Delta\left(\mathcal{S}\times{\color[rgb]{0,0,1}\Omega}^{{\color[rgb]{0,0,1}B}}\times{\color[rgb]{0.8,0,0}\Omega}^{{\color[rgb]{0.8,0,0}R}}\right)$ gives a distribution over next states and observations. 7 7 7 To model terminal states in a fixed horizon game, assume each one loops and gives no reward. 8 8 8 While we assume simultaneous turns, sequential-turn games can be modelled with appropriate $\mathcal{P}$. Lastly, all episodes are $H$ time-steps long.
+
+In an AI-Control Game, Blue (the protocol) should be able to remember past observations and actions. We model Blue’s policies as behaviourally stochastic: functions from observation-action histories to distributions over actions: 9 9 9 We sometimes discuss Blue policies as though they are mixed-stochastic. This is equivalent (see appendix A). ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}:{\color[rgb]{0,0,1}\Omega}^{{\color[rgb]{0,0,1}B}}\times\bigcup_{i=0}^{H-1}\left({\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}}\times{\color[rgb]{0,0,1}\Omega}^{{\color[rgb]{0,0,1}B}}\right)^{i}\rightarrow\Delta\left({\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}}\right)$. As described above, Red represents a red team that acts as a proxy for a scheming untrusted model that is memoryless (its actions depend only on the last observation): ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}:{\color[rgb]{0.8,0,0}\Omega}^{{\color[rgb]{0.8,0,0}R}}\rightarrow\Delta\left({\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}}\right)$. Denote the sets of all policies ${\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}$ and ${\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}$.
+
+Given a tuple, we can describe the process of an AI-Control Game as a sequence of interdependent random variables denoted with uppercase letters. Let $\circledast$ take values in $\{\oplus,\otimes\}$ and $S_{0},{\color[rgb]{0,0,1}O}^{{\color[rgb]{0,0,1}B}}_{0},{\color[rgb]{0.8,0,0}O}^{{\color[rgb]{0.8,0,0}R}}_{0}\sim\mathcal{I}$. At time $t$, we define the random variables for the state ($S_{t}$), Blue and Red’s observations (${\color[rgb]{0,0,1}O}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}O}^{{\color[rgb]{0.8,0,0}R}}_{t}$), and their actions (${\color[rgb]{0,0,1}A}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}A}^{{\color[rgb]{0.8,0,0}R}}_{t}$). The random variables can be defined inductively for all $t$: $(S_{t+1},{\color[rgb]{0,0,1}O}^{{\color[rgb]{0,0,1}B}}_{t+1},{\color[rgb]{0.8,0,0}O}^{{\color[rgb]{0.8,0,0}R}}_{t+1})\sim\mathcal{P}(S_{t},{\color[rgb]{0,0,1}A}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}A}^{{\color[rgb]{0.8,0,0}R}}_{t})$, where ${\color[rgb]{0,0,1}A}^{{\color[rgb]{0,0,1}B}}_{t}\sim{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}({\color[rgb]{0,0,1}O}^{{\color[rgb]{0,0,1}B}}_{0},{\color[rgb]{0,0,1}A}^{{\color[rgb]{0,0,1}B}}_{0},{\color[rgb]{0,0,1}O}^{{\color[rgb]{0,0,1}B}}_{1},{\color[rgb]{0,0,1}A}^{{\color[rgb]{0,0,1}B}}_{1}\ldots,{\color[rgb]{0,0,1}O}^{{\color[rgb]{0,0,1}B}}_{t})$ and, ${\color[rgb]{0.8,0,0}A}^{{\color[rgb]{0.8,0,0}R}}_{t}\sim{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\left({\color[rgb]{0.8,0,0}O}^{{\color[rgb]{0.8,0,0}R}}_{t}\right)$ if $\circledast$ is $\otimes$, else ${\color[rgb]{0.8,0,0}A}^{{\color[rgb]{0.8,0,0}R}}_{t}\sim\pi_{\oplus}\left({\color[rgb]{0.8,0,0}O}^{{\color[rgb]{0.8,0,0}R}}_{t}\right)$.
+
+Within our model, the safety of a policy pair $({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$ is the expected sum of safety scores in attack games: $\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})\coloneq\mathbb{E}\left[\sum_{t=0}^{H-1}\mathcal{R}_{\scriptscriptstyle\text{Safe}}\left(S_{t},{\color[rgb]{0,0,1}A}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}A}^{{\color[rgb]{0.8,0,0}R}}_{t},S_{t+1}\right)\mid\otimes\right]$. Modelling safety as the expected sum of a reward allows us to model Greenblatt et al. [18]’s minimising the probability of some unacceptable outcome, but also Wen et al. [41]’s minimising the expected number of harmful outcomes, without changing the core dynamics.
+
+Usefulness is only rewarded in honest modes, where Red has no effect. Therefore, we define the usefulness score of ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ as the expected sum of usefulness rewards: $\operatorname{Use}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}})\coloneq\mathbb{E}\left[\sum_{t=0}^{H-1}\mathcal{R}_{\scriptscriptstyle\text{Use}}\left(S_{t},{\color[rgb]{0,0,1}A}^{{\color[rgb]{0,0,1}B}}_{t},S_{t+1}\right)\mid\oplus\right]$.
+
+Because the protocol designer has to choose their protocol before the red team, we consider a leader-follower model: Blue chooses a policy, and then Red chooses a response that minimises safety.
+
+###### Proposition 3.2.
+
+For any AI-Control Game $\mathcal{G}$, there exist distance functions in ${\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}$ and ${\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}$ such that: $\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},\cdot)$, $\operatorname{Safety}(\cdot,{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$, and $\operatorname{Use}(\cdot)$ are continuous in their domains. 10 10 10 Example distance functions, based on a mapping from policies to vectors, are defined in appendix A.
+
+Proofs of all claims in this section can be found in appendix A, which details and utilises additional results about two mappings from Blue/Red policies to simplexes.
+
+###### Proposition 3.3.
+
+For all ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$, $\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},\cdot)$ attains its minimum at some ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$, and $\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}}\operatorname{Safety}(\cdot,{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$ is continuous.
+
+Our goal is to find protocols that maximise worst-case safety and usefulness. This can be modelled as a multi-objective variant of a Stackelberg equilibrium:
+
+###### Definition 3.4.
+
+$({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$ is an AI-Control Equilibrium iff $[\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}}\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}),\operatorname{Use}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}})]^{T}$ is weakly Pareto-optimal and ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$ minimises safety for ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$.
+
+The set of equilibrium points describes a necessary tradeoff between safety and usefulness, and is always non-empty.
+
+###### Proposition 3.5.
+
+Every $\mathcal{G}$ has an AI-Control Equilibrium.
+
+## 4 Modelling Trusted Monitoring Example
+
+With our general framework from section 3, we can define a formal model of the Trusted Monitoring protocol for the APPS backdoor setting, as outlined in Greenblatt et al. [18]. For the full definition please see appendix B; next we present the key points.
+
+We define an AI-Control Game for Trusted Monitoring as the tuple $\mathcal{G}_{TM}=\left(\mathcal{S},\ldots,H\right)$ step-by-step. As always, whether the game is in attack ($\otimes$) or honest ($\oplus$) mode is determined exogenously and non-deterministically. If the game is $\otimes$, for any given problem, Red can choose either for the untrusted model to attempt a backdoor or to let it submit a safe solution (${\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}}\coloneq\{\langle\mathtt{Backdoor}\rangle,\langle\mathtt{Safe}\rangle\}$). If the game is $\oplus$, Red’s action is chosen by $\pi_{\oplus}$, which always selects the null action, to not insert a backdoor ($\pi_{\oplus}({\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}})=a_{\text{null}}=\langle\mathtt{Safe}\rangle$). Given a solution by the untrusted AI, Blue has three available actions: to ask human (H) to audit the solution, to defer to the trusted AI (T) to rewrite the solution, or to run the solution immediately. Therefore, define ${\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}}\coloneq\{\langle\mathtt{Audit}\rangle,\langle\mathtt{Defer}\rangle,\langle\mathtt{Run}\rangle\}$. Apart from initial and terminal states, the state space, $\mathcal{S}$, consists of triples $s=(m,c,b)$, where $m$ represents the number of problems left to solve. The value of $m$ is $M$ (the total number of problems) at the start of the game, and decreases by $1$ at each timestep. The variable $c$ represents the number of ‘audit coins’ left: the number of times the protocol can ask the human to audit a solution. At the start, $c=C=0.02*M$ (for a $2\%$ audit proportion) and then $c$ decreases by $1$ each time the protocol chooses to audit. If the protocol attempts to audit when no audit coins are left, the code is run instead. The last variable, $b$, is a boolean that is $\mathtt{True}$ when the current problem is backdoored (when Red has chosen $\langle\mathtt{Backdoor}\rangle$ in the previous timestep).
+
+In honest games ($\oplus$), where only usefulness matters to Blue, Red’s action is always $a_{\text{null}}=\langle\mathtt{Safe}\rangle$, as selected by $\pi_{\oplus}$. Therefore, $b$ is always $\mathtt{False}$. In honest games, Blue scores $1/M$ usefulness points for each solution by the untrusted model it submits (for a maximum score of $1$ across an episode). In attack games ($\otimes$), where only safety matters to Blue, Red may have chosen $\langle\mathtt{Backdoor}\rangle$ last turn, and so $b$ might be $\mathtt{True}$. If so, and Blue chooses to run the code, the game enters an ‘unacceptable outcome’ sink state, and receives a safety reward of $-1$. 11 11 11 We can model a sink-state in our finite-horizon game with a certainly-self-looping state. If Blue chooses instead to audit, we assume the human will always spot the backdoor, and the game enters a ‘safe outcome’ sink state, with no penalty. 12 12 12 Note, we relax this assumption in our definition in the appendix and explore the effect in fig. 3. If Blue chooses to defer, then the game continues. By adding a constant $\frac{1}{H}$, we ensure the safety score for a policy pair is $1$ minus the probability that an attack game ends without an unacceptable outcome.
+
+Throughout the game, Red receives only the null observation ($o_{\text{null}}$), 13 13 13 In Greenblatt et al. [18], the untrusted model receives only the programming problem with no additional information: we give Red only the null observation implying I.I.D backdoor chance at each timestep. whereas at each turn Blue receives observations of $m,c$, and a trusted monitor score $x$, which can be seen as a noisy observation of $b$, drawn from a pair of distributions (‘safe’ and ‘backdoored’). Each distribution is a discretisation of the Beta distribution outlined in fig. 1. See appendix D for more details.
+
+### 4.1 Evaluating Memoryless Protocols
+
+We generally model protocols (Blue policies) as functions from the observation-action history to a distribution over actions. However, all of the Trusted Monitoring policies in Greenblatt et al. [18] are memoryless. We can restrict to a simple and interpretable subset of policies that generalises those by Greenblatt et al. [18]. Remember that, in our model, Blue’s observation is $(m,c,x)$, where $x$ is a noisy observation of $b$, sampled from the Trusted Monitor. Define a set of memoryless threshold protocols, characterised by the false positive rates (FPRs) for $\langle\mathtt{Audit}\rangle$ and $\langle\mathtt{Defer}\rangle$ ($q^{a}_{m,c}$ and $q^{d}_{m,c}$), for each $m,c$. Let $g(q)$ be the threshold that gives an FPR of $q$: $\mathbb{P}\left[x_{t}>g(x)\mid b_{t}=\mathtt{False}\right]=q$. 14 14 14 Since $\langle\mathtt{Audit}\rangle$ and $\langle\mathtt{Run}\rangle$ are equivalent when $c=0$, assume that Blue never attempts an audit. Then, define the policy ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}(m,c,x)$ to take the $\langle\mathtt{Audit}\rangle$ action if $x\geq g(q^{a}_{m,c})$, $\langle\mathtt{Defer}\rangle$ if $g(q^{a}_{m,c})>x\geq g(q^{d}_{m,c})$, and $\langle\mathtt{Run}\rangle$ otherwise.
+
+This class of policies generalises the policies in Greenblatt et al. [18], and is a dominant subset of memoryless policies. These policies’ safety and usefulness values can be computed in $O(MC)$ multiplications by calculating the values of the following relation using dynamic programming.
+
+###### Proposition 4.1.
+
+For any ${\color[rgb]{0.8,0,0}\beta}\coloneq{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}(\langle\mathtt{Backdoor}\rangle\mid o_{\text{null}})$, the safety of the memoryless threshold protocol ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ is given by the value of $z_{M}^{C}$, where $\lambda^{i}_{m,c}$ depend only on $q^{\cdot}_{m,c}$ and $\mathcal{G}$: 15 15 15 See appendix C for the exact statements of $\lambda$ coefficients. $z_{m}^{c}\coloneq\left(\lambda^{1}_{m,c}{\color[rgb]{0.8,0,0}\beta}+\lambda^{2}_{m,c}\right)w^{c}_{m-1}+\lambda^{5}_{m,c}(1-{\color[rgb]{0.8,0,0}\beta})w^{c-1}_{m-1}+\lambda^{3}_{m,c}{\color[rgb]{0.8,0,0}\beta}+\lambda^{4}_{m,c}(1-{\color[rgb]{0.8,0,0}\beta})$, where $z_{m}^{0}=\left(1-{\color[rgb]{0.8,0,0}\beta}+\lambda^{6}_{m,c}{\color[rgb]{0.8,0,0}\beta}\right)z_{m-1}^{0}$ and $z_{0}^{c}=1.$
+
+###### Corollary 4.2.
+
+Expanding $z_{M}^{C}$ gives a polynomial, $p({\color[rgb]{0.8,0,0}\beta})$, in ${\color[rgb]{0.8,0,0}\beta}$ of degree $M$. For any fixed memoryless threshold policy, the optimal backdoor rate is ${\color[rgb]{0.8,0,0}\beta}^{*}\coloneq\min_{{\color[rgb]{0.8,0,0}\beta}\in[0,1]}p({\color[rgb]{0.8,0,0}\beta})$.
+
+A similar expression for usefulness, which does not depend on ${\color[rgb]{0.8,0,0}\beta}$, can be found in appendix C. Both expressions can be derived inductively, in a manner similar to value iteration. The safety of a finite mixture of memoryless threshold policies can be found by taking a weighted average. Although we implemented a root-finding algorithm based on corollary 4.2, we found that it was faster and more stable in practice to compute the values in fig. 2 using a combination of grid and ternary search.
+
+## 5 Finding Pareto-optimal Protocols
+
+In many cases, AI-Control Games are useful for evaluating hand-picked protocols, for example the protocols explored by Greenblatt et al. [18] were found via trial and error. However, it may also be useful to utilise the AI-Control Games to find the Pareto-frontier of existing and new protocols. This is a multi-objective maximin optimisation problem over a large space. This section presents tools for finding Pareto-optimal protocols by reducing them to special cases of existing decision problems, beginning with a reduction from a multi-objective to a single-objective problem.
+
+###### Lemma 5.1.
+
+A Blue policy ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ is in an AI-Control Equilibrium if, and only if, for some $w\in[0,1]$, it maximises $\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{*}}\left(w\operatorname{Safety}(\cdot,{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{*})+(1-w)\operatorname{Use}(\cdot)\right)$.
+
+The proof uses the mappings from ${\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}$ and ${\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}$ to two simplexes, as introduced in appendix A. Lemma 5.1 implies that each safety/usefulness point corresponding to an AI-Control Equilibrium can be found by equivalently solving an easier single-objective optimisation problem. Next, we leverage this result to further reduce the game to a zero-sum partially observable stochastic game (ZSPOSG) (see Definition Definition).
+
+###### Lemma 5.2.
+
+For every AI-Control Game $\mathcal{G}$, and weight $w\in[0,1]$, there is a single-objective, zero-sum, partially observable stochastic game $G_{w}$ with expected return (for Blue) $V_{G_{w}}$ such that $\forall{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}:V_{G_{w}}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})=V^{\mathcal{G}}_{w}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}).$
+
+This proof is constructive and a full version can be found in appendix A. Intuitively, we create ZSPOSGs by adding a $\circledast$ variable to each state. Each $G_{w}$ has reward $R_{w}$, where $R_{0}$ rewards usefulness in $\oplus$ games and $R_{1}$ rewards safety in $\otimes$ games. Since ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$ has no effect on honest games, and therefore on usefulness, we can set Red to minimise the usefulness, making the game zero-sum without changing optima. Combined with lemma 5.1, this allows us to find any AI-Control Equilibrium by solving the right ZSPOSG.
+
+###### Theorem 5.3.
+
+A policy ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ is in an AI-Control Equilibrium if, and only if, for some ZSPOSG $G_{w}$ with value function $V_{G_{w}}$, ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ maximises $\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\in{\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}}V_{G_{w}}(\cdot,{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$ over ${\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}$.
+
+Algorithm 1 Finding a Pareto-frontier for AI-C Game
+
+ 0: $\mathcal{G}$ 
+
+ 1: for $t\in\{0,1,\ldots,k-1\}$ do 
+
+ 2: $w_{t}\leftarrow\texttt{FindNextWeight}(\{({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{t})\}^{k-1}_{t=0})$ 
+
+ 3: ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{t}\leftarrow\argmax_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}\in{\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}}\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\in{\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}}V_{w_{t}}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$ 
+
+ 4: end for 
+
+ 5: return $\{({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{t})\}^{k-1}_{t=0}$ 
+
+Algorithm 1 uses theorem 5.3 to iteratively fill out the frontier by solving a series of single-objective maximin problems. Here FindNextWeight first returns $w_{0}=0$ and $w_{1}=1$, and then chooses weights that maximise the difference between known points on the Pareto-frontier. 16 16 16 Let $s_{t}\coloneq\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{t})$ and $u_{t}\coloneq\operatorname{Use}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{t})$. Order points by safety, then choose $i=\max_{i}(s_{i}-s_{i+1})^{2}+(u_{i}-u_{i+1})^{2}$ and then $w$ such that $ws_{i}+(1-w)u_{i}=ws_{i+1}+(1-w)u_{i+1}$.
+
+Line 3 of algorithm 1 requires finding the value of $\max_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}}\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}}V^{\mathcal{G}}_{w}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$. Although ZSPOSGs are previously studied, existing solvers are incompatible with a memoryless Red team (see section 8). The memorylessness of Red makes their decision rules at each timestep interdependent, and problem decomposition difficult. Further, imperfect recall prohibits the equivalence of behavioural and mixed stochasticities:
+
+###### Proposition 5.4.
+
+There exists a $G_{w}$ such that Red’s behavioural and mixed policies would not be equivalent and $\max_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}\in{\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}}\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\in{\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}}V^{\mathcal{G}}_{w}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})<\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\in{\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}}\max_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}\in{\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}}V^{\mathcal{G}}_{w}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}).$
+
+See section A.3.4 for a constructive proof. Despite this general inequivalence between Red’s mixed and behaviourally stochastic policies, finding a Nash equilibrium of mixed-stochastic strategies can be a means to finding an AI-Control equilibrium. Algorithm 2 adapts McMahan et al. [30]’s Double Oracle algorithm, used for finding mixed Nash-equilibria, to find AI-Control Equilibria. In this algorithm, (1) the function Mix simply creates a policy mixture from a vector and a finite set of policies and (2) finding ${\bm{p}}$ and ${\bm{q}}$ is equivalent to finding a Nash equilibrium in a zero-sum finite normal-form game. The values $\underline{v}_{t}$ and $\overline{v}_{t}$ lower and upper bound the maximin value of the game.
+
+Algorithm 2 Adapted Double Oracle Algorithm
+
+ 0: $G_{w}$, ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{1}$, ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{1}$, $\epsilon$ 
+
+ 1: Initialize $t\leftarrow 0$ 
+
+ 2: while $t=0\lor\overline{v}_{t}-\underline{v}_{t}>\epsilon$ do 
+
+ 3: $t\leftarrow t+1$ 
+
+ 4: ${\bm{p}},{\bm{q}}\leftarrow\texttt{SolveNFG}(\{V^{\mathcal{G}}_{w}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{i},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{j})\}_{1\leq i,j\leq t})$ 
+
+ 5: ${\color[rgb]{0,0,1}\sigma}^{{\color[rgb]{0,0,1}B}}_{t}\leftarrow\texttt{Mix}({\bm{p}},\{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{i}\}_{i=1}^{t})$, ${\color[rgb]{0.8,0,0}\sigma}^{{\color[rgb]{0.8,0,0}R}}_{t}\leftarrow\texttt{Mix}({\bm{q}},\{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{j}\}_{j=1}^{t})$ 
+
+ 6: ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{t+1},\overline{v}_{t}\leftarrow(\arg)\max_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}}V^{\mathcal{G}}_{w}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\sigma}^{{\color[rgb]{0.8,0,0}R}}_{t})$ 
+
+ 7: ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{t+1},\underline{v}_{t}\leftarrow(\arg)\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}}V^{\mathcal{G}}_{w}({\color[rgb]{0,0,1}\sigma}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$ 
+
+ 8: end while 
+
+ 9: return ${\color[rgb]{0,0,1}\sigma}^{{\color[rgb]{0,0,1}B}}_{t}$, ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{t+1}$ 
+
+###### Proposition 5.5.
+
+For $\epsilon>0$, Algorithm 2 returns an $\epsilon$-equilibrium in $G_{w}$ in finite time. Further, for all $t$: $\underline{v}_{t}\leq v^{*}\coloneq\max_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{*}\in{\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}}\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{*}\in{\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}}V^{\mathcal{G}}_{w}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{*},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{*})\leq\overline{v}_{t}.$
+
+If $\epsilon=0$ then $({\color[rgb]{0,0,1}\sigma}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{t})$ is an AI-Control Equilibrium. The proof is shown in appendix A and utilises Adam et al. [1, Theorem 1.1] by reducing $G_{w}$ to a ‘continuous game’. The primary change to the algorithm is the choice to return ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{t+1}$ which is behaviourally but not mixed stochastic, and gives the worst-case safety for ${\color[rgb]{0,0,1}\sigma}^{{\color[rgb]{0,0,1}B}}_{t}$ which is a lower-bound for $v^{*}$.
+
+##### Best Response Oracles.
+
+Lines 6 and 7 of the algorithm require finding best-responses. Finding the best-response ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ to a (finite) policy mixture ${\color[rgb]{0.8,0,0}\sigma}^{{\color[rgb]{0.8,0,0}R}}$ is equivalent to solving a Partially-observable Markov Decision Process, which is a well-studied problem [24, 37]. However, finding a best-response ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$ to ${\color[rgb]{0,0,1}\sigma}^{{\color[rgb]{0,0,1}B}}$ is, in general, more challenging: because Red is memoryless, the problem is difficult to decompose. Fortunately, in the Trusted Monitoring example described in section 2, Red’s policy space is 1-dimensional, and can be searched easily.
+
+## 6 Results from Trusted Monitoring Example
+
+Figure 2: The safety and usefulness frontiers for a range of Trusted Monitor protocol types across the ‘original’ and ‘weak’ games. Each point on the grid corresponds to the exact safety and usefulness of a proposed blue team protocol against an approximately optimal red team response (minimal safety). The square points correspond to the seven special cases of Trusted Monitoring studied by Greenblatt et al. [18], whereas the remaining points are new to this paper. Each ‘Audit FPR’ line plots a single, fixed audit FPR, across fixed defer FPRs in $\{0.00,0.01,\ldots,1.00\}$. ‘Pareto-Frontier for Fixed FPRs’ shows the optimal protocol frontier found by algorithm 1 with a fixed-FPR oracle, and all points represent deterministic policies unless marked by a cross. 
+
+In this section, we present example evaluations of protocols utilising our formal model. We also present the first Pareto-frontiers for a subset of the protocol space. All results below concern only memoryless protocols. These can be evaluated efficiently using proposition 4.1. We use the formal model from Section 4, which leverages existing empirical data from Greenblatt et al. [18] to explore a broader range of protocols and assumptions. We leave the analysis of memoryful protocols, in which actions can depend on the full history of past observations, to future work. See appendix D for more experimental details.
+
+##### Modelling Existing Protocols.
+
+Protocols studied in Greenblatt et al. [18] can be expressed as memoryless protocols in our model. Never Audit always submits U’s solution without audit. Trusted Model Only always submits T’s solution. Upfront Auditing audits the first 2% of solutions from U and, when there is no audit budget left, submits the rest without checking. Trusted Monitoring (Audit FPR = 0.02) audits every solution from U whose suspicion score is above a threshold chosen to give a 2% FPR and also defer all solutions above (0%, 5%, 10%, 20%, 50%). We leave evaluation of more complex protocols to future work. Each protocol above is a special case of Trusted Monitoring with a fixed audit FPR of 0%, 2% or 100%, combined with fixed defer FPRs. By representing these protocols in our formalisation, we can easily evaluate their safety and usefulness scores, even in the novel ’weak’ case (where T is worse at telling safe and backdoored solutions apart); we illustrate these results by large coloured points in fig. 2.
+
+##### Evaluating New Protocols.
+
+Through a process of proposing and efficiently evaluating new protocols, which is newly enabled by our formalisation, we extend Greenblatt et al.’s findings to new protocols and settings. As an example, we show that raising the audit FPR above 2% Pareto-improves upon the protocols from Greenblatt et al. [18]. Choosing an audit FPR of 2% means that, in expectation, the 2% allowance of human labour will be used up at the end of the episode if no backdoor is submitted. However, we find that choosing a higher audit rate can be beneficial, despite increasing the probability that the audit budget is exhausted early. Choosing an audit FPR of $3\%$ gives a small Pareto-improvement in the ‘original’ Trusted Monitoring case and an audit FPR of $5\%$, gives a large Pareto-improvement in the ‘weak’ Trusted Monitoring case.
+
+##### Demonstrating a Frontier.
+
+Using Algorithms 1 and 2, we present the first approximate Pareto-frontier for a policy subset: mixtures of protocols with fixed audit and defer rates. We apply algorithm 2 using a Blue best-response algorithm based on recursive grid search (over values of audit and defer FPR) and a Red best-response algorithm using grid search followed by ternary search (over ${\color[rgb]{0.8,0,0}\beta}$). We find that, in the ‘original’ case the closest of Greenblatt et al.’s policies is $0.0042$ from the Pareto-frontier, and for most weights a deterministic policy is optimal. However, in the ‘weak’ case, they are at least $\geq 0.0200$ from the Pareto-frontier and mixed protocols make up most of the frontier.
+
+### 6.1 Analysing Assumptions and Trends
+
+Figure 3: Impact on safety and usefulness (y-axis) by four different modelling assumptions (x-axis): Auditing Budget, Number of Programming Problems, and Human Auditor False Negative / Positive Rate. All plots show a fixed defer FPR of 0.1. 
+
+Formalising an AI-Control Game requires making a number of modelling assumptions: we explore how varying each assumption impacts the safety and usefulness scores for a given blue-team policy.
+
+##### Audit Budget.
+
+The auditing budget corresponds to the amount of human labour invested in overseeing the protocol. Protocols that utilise increases to the audit budget get significantly safer and more useful as the budget increases, especially when the budget is small.
+
+##### Number of Problems.
+
+For fixed FPRs, safety and usefulness are not significantly affected by the number of problems per episode. As the number of opportunities for Red to backdoor increases, so too does the number of audit coins.
+
+##### Human Auditor FPR/FNR.
+
+In the default Trusted Monitoring game, Greenblatt et al. assume that no mistakes are made by the human auditor. We can extend the model to relax this assumption. Increasing the human FNR decreases safety almost linearly in the worst case, without impacting usefulness. False positives increase safety up to a point determined by the audit threshold, but decrease usefulness more rapidly the more the blue team audits.
+
+## 7 Formalising Concepts Underlying Trusted Monitoring
+
+Greenblatt et al. [18] study intentional backdoors, whereby backdoored solutions are only ever submitted by scheming models. As a consequence, catching a single attempted backdoor is sufficient to infer that the model is scheming. However, what if the backdoor is the result of a benign bug written by an honest if imperfect model? Our formalism allows us to investigate.
+
+Let ${\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}}_{D}\subset{\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}}$ be a set of dangerous actions: a minimal subset of actions without which an unacceptable outcome could never occur; e.g. in the Trusted Monitoring game, ${\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}}_{D}=\{\langle\mathtt{Backdoor}\rangle\}$. Greenblatt et al. [18] assume that an honest model never takes a dangerous action, which we can state explicitly within our model as a constraint on $\pi_{\oplus}$: namely $\forall{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{D},\forall{\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}}$, $\pi_{\oplus}({\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{D}|{\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}})=0$.
+
+Why does the honest/scheming distinction matter if an honest model can take dangerous actions? In the Trusted Monitoring game, an unacceptable outcome can be achieved via a single dangerous action. However, in realistic settings, multiple dangerous actions may be required to cause harm. Adversaries, such as schemers, may be more likely to take sequences of dangerous actions than honest models: their dangerous actions may be correlated. For example, suppose that three layers of security prevent the harm of exfiltrating model weights. An honest model, asked to improve and maintain security measures, might accidentally introduce a vulnerability into one layer. But causing an unacceptable outcome requires at least four dangerous actions: introducing vulnerabilities into three layers and then exploiting them. Four dangerous actions in series are far less probable than one if a model is making honest mistakes, but not if the model is scheming. This example shows how the scheming versus honest assumption can still be useful when we relax the assumption that honest models never take dangerous actions.
+
+## 8 Related Work
+
+Though the application of formal game-theoretic tools to Greenblatt et al. [18]’s AI Control framework is novel, and the resulting type of game is unique, there are analogues to existing work.
+
+The AI-Control Games studied are most similar to the work of Chang et al. [12], who model a security problem for food manufacturing. Like AI-Control Games, they consider a leader-follower equilibrium, where the leader tries to maximise productivity and minimise risk, and the follower tries to hide an attack. To select the leader strategy against multiple objectives, they use a genetic algorithm (as do Lins et al. [26]). Their model differs in its factored state space, infinite time horizon, and the lack of ‘attack/honest’ game modes and most importantly their consideration of a memoryful-follower. Their solution method is not directly applicable to AI-Control Games, and may be unsuitable for adaptation. For a detailed comparison, see appendix E.
+
+Given our reduction in section 5, methods for finding equilibria in ZSPOSGs are particularly relevant. However, we find that our requirement for a memoryful-leader, memoryless-follower equilibrium precludes the use of many existing solvers. For example, Delage et al. [15], which finds Nash equilibria in ZSPOSGs using a dynamic programming approach that solves subgames for each timestep from $H$ down to $1$. Other works attempt to solve subclasses of ZSPOSGs, with ‘public observations’ [22] or ‘one-sided partial-observability’ [42, 21]. AI-Control Games do not in-general fit into these subclasses, and each of these papers considers two memoryful players.
+
+Since in some cases it is possible to find an AI-Control Equilibrium by first finding a mixed Nash equilibrium (proposition 5.5), it may be possible to augment the algorithm by Hansen and Feng [19], which searches for two mixed strategies over a finite set of memoryful policies.
+
+AI-Control Games, and especially the Trusted Monitoring case study we present, are closely related to Stackelberg Security Games: two-player games where the leader must choose a random strategy to cover a set of targets using a limited set of resources, and the follower tries to attack an uncovered target (see [38] for an overview). Unlike Trusted Monitoring, these are one-round games and much literature focuses on scalably solving large-scale problems against scheduling constraints. Although some security games model imperfect information [8, 32] or multiple objectives [9], most are single-objective and perfect-information.
+
+Trusted Monitoring without defer is similar to the Inspection Games studied by Avenhaus et al. [5, p. 1957]: games where the defender receives a noisy observation, and has to decide whether to inspect. However, these games are one-round only. Recursive Inspection Games [16] are multi-round, but have a memoryful follower.
+
+## 9 Future Work and Conclusions
+
+In this work, we introduced a novel model for analysing the safety and usefulness of AI-Control protocols. We used our formal model and solution techniques to evaluate a much broader range of protocols and settings than prior empirical results from literature, and there is significant room to apply them further. In the showcased application of Trusted Monitoring setting, future work can utilise algorithm 2 with POMDP-based best-response oracles to explore the space of memory-dependent protocols. Our model of the Trusted Monitoring protocol is also generalisable to any deployment setting, using a question-answer format and any unacceptable outcome. Future work will explore such generalised settings by studying the interaction of the untrusted AI and the trusted monitor to generate distributions like those in fig. 1 and analyse the resulting frontiers.
+
+## References
+
+- [1] L. Adam, R. Horčík, T. Kasl, and T. Kroupa (2021) Double Oracle Algorithm for Computing Equilibria in Continuous Games. Proceedings of the AAAI Conference on Artificial Intelligence 35 (6), pp. 5070–5077. Note: Section: AAAI Technical Track on Game Theory and Economic Paradigms External Links: Link, Document Cited by: §A.3.5, §A.3.5, §A.3.5, §5. 
+- [2] Adept AI (2024) Adept: Useful General Intelligence. (en). External Links: Link Cited by: §1. 
+- [3] Anthropic (2025) Controlling powerful AI. External Links: Link Cited by: §1. 
+- [4] R. J. Aumann, S. Hart, and M. Perry (1997) The absent-minded driver. Games and Economic Behavior 20 (1), pp. 102–116. Note: Publisher: Elsevier Cited by: §A.3.4, Appendix E. 
+- [5] R. Avenhaus, B. Von Stengel, and S. Zamir (2002) Chapter 51 Inspection games. In Handbook of Game Theory with Economic Applications, Vol. 3, pp. 1947–1987. External Links: Link, Document Cited by: §8. 
+- [6] M. Balesni, M. Hobbhahn, D. Lindner, A. Meinke, T. Korbak, J. Clymer, B. Shlegeris, J. Scheurer, C. Stix, R. Shah, N. Goldowsky-Dill, D. Braun, B. Chughtai, O. Evans, D. Kokotajlo, and L. Bushnaq (2024) Towards evaluations-based safety cases for AI scheming. arXiv. Note: arXiv:2411.03336 [cs] External Links: Link, Document Cited by: §1. 
+- [7] A. Bhatt, C. Rushing, A. Kaufman, T. Tracy, V. Georgiev, A. Khan, D. Matolcsi, and B. Shlegeris (2025) Ctrl-Z: Controlling AI Agents via Resampling (forthcoming). pp. Forthcoming as of. Cited by: §1. 
+- [8] V. M. Bier (2007) Choosing What to Protect. Risk Analysis 27 (3), pp. 607–620 (en). External Links: ISSN 1539-6924, Document Cited by: §8. 
+- [9] M. Brown, B. An, C. Kiekintveld, F. Ordóñez, and M. Tambe (2012) Multi-objective optimization for security games. In Proceedings of the 11th International Conference on Autonomous Agents and Multiagent Systems, AAMAS ’12, pp. 863–870. External Links: ISBN 978-0-9817381-2-3 Cited by: §8. 
+- [10] M. D. Buhl, G. Sett, L. Koessler, J. Schuett, and M. Anderljung (2024) Safety cases for frontier AI. arXiv. Note: arXiv:2410.21572 [cs] External Links: Link, Document Cited by: §1. 
+- [11] S. Casper, L. Schulze, O. Patel, and D. Hadfield-Menell (2024) Defending Against Unforeseen Failure Modes with Latent Adversarial Training. arXiv. Note: arXiv:2403.05030 [cs] External Links: Link, Document Cited by: §1. 
+- [12] Y. Chang, A. L. Erera, and C. C. White (2015) A leader–follower partially observed, multiobjective Markov game. Annals of Operations Research 235 (1), pp. 103–128 (en). External Links: ISSN 1572-9338, Link, Document Cited by: Appendix E, Appendix E, Appendix E, §8. 
+- [13] J. Clymer, N. Gabrieli, D. Krueger, and T. Larsen (2024) Safety Cases: How to Justify the Safety of Advanced AI Systems. arXiv (en). Note: arXiv:2403.10462 [cs] External Links: Link Cited by: §1, §1. 
+- [14] DeepMind (2025) Frontier safety framework. Technical report Note: tex.version: 3.0 External Links: Link Cited by: §1. 
+- [15] A. Delage, O. Buffet, J. S. Dibangoye, and A. Saffidine (2023) HSVI Can Solve Zero-Sum Partially Observable Stochastic Games. Dynamic Games and Applications (en). External Links: ISSN 2153-0785, 2153-0793, Link, Document Cited by: §8. 
+- [16] M. Dresher (1962) A Sampling Inspection Problem in Arms Control Agreements: A Game-Theoretic Analysis. Technical report RAND Corporation (en). External Links: Link Cited by: §8. 
+- [17] R. Emery-Montemerlo, G. Gordon, J. Schneider, and S. Thrun (2004) Approximate solutions for partially observable stochastic games with common payoffs. In Proceedings of the Third International Joint Conference on Autonomous Agents and Multiagent Systems, 2004., pp. 136–143. External Links: Link Cited by: §A.3.2, Appendix E. 
+- [18] R. Greenblatt, B. Shlegeris, K. Sachan, and F. Roger (2024) AI Control: Improving Safety Despite Intentional Subversion. In Proceedings of the 41st International Conference on Machine Learning, pp. 16295–16336 (en). Note: ISSN: 2640-3498 External Links: Link Cited by: Appendix B, Appendix B, Appendix D, Appendix D, Appendix D, §1, §1, §1, Figure 1, §2, §2, §2, §2, §3, §4.1, §4.1, §4, §5, Figure 2, §6, §6, §6, §6.1, §6, §7, §7, §8, footnote 1, footnote 13, footnote 2. 
+- [19] E. A. Hansen and Z. Feng (2000) Dynamic programming for POMDPs using a factored state representation. In Proceedings of the Fifth International Conference on Artificial Intelligence Planning Systems, AIPS’00, Breckenridge, CO, USA, pp. 130–139. External Links: ISBN 978-1-57735-111-5 Cited by: §8. 
+- [20] D. Hendrycks, S. Basart, S. Kadavath, M. Mazeika, A. Arora, E. Guo, C. Burns, S. Puranik, H. He, D. Song, and J. Steinhardt (2021) Measuring Coding Challenge Competence With APPS. (en). External Links: Link Cited by: §2. 
+- [21] K. Horák, B. Bošanský, V. Kovařík, and C. Kiekintveld (2023) Solving zero-sum one-sided partially observable stochastic games. Artificial Intelligence 316, pp. 103838. External Links: ISSN 0004-3702, Link, Document Cited by: §8. 
+- [22] K. Horák and B. Bošanský (2019) Solving Partially Observable Stochastic Games with Public Observations. Proceedings of the AAAI Conference on Artificial Intelligence 33 (01), pp. 2029–2036 (en). Note: Number: 01 External Links: ISSN 2374-3468, Link, Document Cited by: §8. 
+- [23] G. Irving (2024) Safety cases at AISI. (en). External Links: Link Cited by: §1. 
+- [24] L. P. Kaelbling, M. L. Littman, and A. R. Cassandra (1998) Planning and acting in partially observable stochastic domains. Artificial Intelligence 101 (1-2), pp. 99–134. External Links: ISSN 0004-3702, Document Cited by: §5. 
+- [25] H. W. Kuhn (1953) Extensive games and the problem of information. Contributions to the Theory of Games 2 (28), pp. 193–216. Cited by: §A.1, Appendix E, Theorem. 
+- [26] I. D. Lins, L. C. Rêgo, M. d. C. Moura, and E. L. Droguett (2013) Selection of security system design via games of imperfect information and multi-objective genetic algorithm. Reliability Engineering & System Safety 112, pp. 59–66. External Links: ISSN 0951-8320, Link, Document Cited by: §8. 
+- [27] M. MacDiarmid, T. Maxwell, N. Schiefer, J. Mu, J. Kaplan, D. Duvenaud, S. Bowman, A. Tamkin, E. Perez, M. Sharma, C. Denison, and E. Hubinger (2024) Simple probes can catch sleeper agents. External Links: Link Cited by: §1. 
+- [28] A. Mallen, C. Griffin, A. Abate, and B. Shlegeris (2024) Subversion Strategy Eval: Evaluating AI’s stateless strategic capabilities against control protocols. External Links: Link Cited by: §1. 
+- [29] M. Maschler, E. Solan, and S. Zamir (2013) Behavior strategies and kuhn’s theorem. In Game theory, pp. 219–250. Cited by: §A.1, §A.1, Appendix E. 
+- [30] H. B. McMahan, G. J. Gordon, and A. Blum (2003) Planning in the presence of cost functions controlled by an adversary. In Proceedings of the 20th International Conference on Machine Learning (ICML-03), pp. 536–543. External Links: Link Cited by: §5. 
+- [31] K. Miettinen (1998) Nonlinear Multiobjective Optimization. Springer, New York, NY, UNITED STATES. External Links: ISBN 978-1-4615-5563-6, Link Cited by: §A.1, Appendix E. 
+- [32] T. H. Nguyen, A. Yadav, B. An, M. Tambe, and C. Boutilier (2014) Regret-based optimization and preference elicitation for stackelberg security games with uncertainty: 28th AAAI Conference on Artificial Intelligence, AAAI 2014, 26th Innovative Applications of Artificial Intelligence Conference, IAAI 2014 and the 5th Symposium on Educational Advances in Artificial Intelligence, EAAI 2014. Proceedings of the 28th AAAI Conference on Artificial Intelligence and the 26th Innovative Applications of Artificial Intelligence Conference and the 5th Symposium on Educational Advances in Artificial Intelligence, pp. 756–762. Note: Publisher: AI Access Foundation External Links: Link Cited by: §8. 
+- [33] OpenAI and Apollo Research (2025) Detecting and reducing scheming in AI models. External Links: Link Cited by: §1. 
+- [34] OpenAI (2023) ChatGPT plugins. (en-US). External Links: Link Cited by: §1. 
+- [35] M. J. Osborne and A. Rubinstein (2006) A course in game theory. 12. print edition, MIT Press, Cambridge, Mass. (eng). External Links: ISBN 978-0-262-65040-3 Cited by: §A.1, Appendix E. 
+- [36] R. Shah, Q. F. Montixi, S. Pour, A. Tagade, and J. Rando (2023) Scalable and Transferable Black-Box Jailbreaks for Language Models via Persona Modulation. (en). External Links: Link Cited by: §1. 
+- [37] G. Shani, J. Pineau, and R. Kaplow (2013) A survey of point-based POMDP solvers. Autonomous Agents and Multi-Agent Systems 27 (1), pp. 1–51 (en). External Links: ISSN 1573-7454, Link, Document Cited by: §5. 
+- [38] A. Sinha, F. Fang, B. An, C. Kiekintveld, and M. Tambe (2018) Stackelberg Security Games: Looking Beyond a Decade of Success. In Proceedings of the Twenty-Seventh International Joint Conference on Artificial Intelligence, Stockholm, Sweden, pp. 5494–5501 (en). External Links: ISBN 978-0-9992411-2-7, Link, Document Cited by: §8. 
+- [39] The White House (2025) America’s AI action plan. Technical report External Links: Link Cited by: §1. 
+- [40] UK AI Safety Institute (2025) Research agenda. External Links: Link Cited by: §1. 
+- [41] J. Wen, V. Hebbar, C. Larson, A. Bhatt, A. Radhakrishnan, M. Sharma, H. Sleight, S. Feng, H. He, E. Perez, B. Shlegeris, and A. Khan (2024) Adaptive Deployment of Untrusted LLMs Reduces Distributed Threats. arXiv. Note: arXiv:2411.17693 External Links: Link, Document Cited by: §1, §1, §3. 
+- [42] W. Zheng, T. Jung, and H. Lin (2022) The Stackelberg equilibrium for one-sided zero-sum partially observable stochastic games. Automatica 140, pp. 110231. External Links: ISSN 0005-1098, Link, Document Cited by: §8. 
+
+## Appendix A General results and proofs
+
+This appendix presents proofs of the results from section 3 and section 5 that apply to all AI-Control Games. To do so, we first introduce a useful lemma which maps the optimisation problem into a vector space.
+
+### A.1 Mapping to vector space
+
+We will define a mapping from ${\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}$ to a simplex $X$, and another from ${\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}$ to a simplex $Y$. Then, we will show that these mappings can be used to calculate safety and usefulness.
+
+We begin by defining the simplex $Y$ and a mapping ${\color[rgb]{0.8,0,0}\mu}^{{\color[rgb]{0.8,0,0}R}}:{\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}\to Y$. Recall that: ${\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}\coloneq\{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\mid{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}:{\color[rgb]{0.8,0,0}\Omega}^{{\color[rgb]{0.8,0,0}R}}\to{\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}}\}$. Define $n\coloneq{|{\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}}|\cdot{|{\color[rgb]{0.8,0,0}\Omega}^{{\color[rgb]{0.8,0,0}R}}|}}$ and enumerate the $n$ observation-action pairs such that each dimension in $\mathds{R}^{n}$ corresponds to one pair. Consider the simplex $Y\subset\mathds{R}^{n}$ such that all values are $\geq 0$ and, for each observation, the sum across all actions is $1$. Then, define the mapping such that ${\color[rgb]{0.8,0,0}\mu}^{{\color[rgb]{0.8,0,0}R}}({\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})={\bm{y}}$ if, and only if, for all $j$, ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}({\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}\mid{\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}})=y_{j}$ for j’th observation-action pair $({\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}})$. Note that ${\color[rgb]{0.8,0,0}\mu}^{{\color[rgb]{0.8,0,0}R}}$ is bijective.
+
+Blue’s mapping is more complex. Define the finite set of Blue observation-action histories as ${\color[rgb]{0,0,1}\mathcal{H}}^{{\color[rgb]{0,0,1}B}}\coloneq{\color[rgb]{0,0,1}\Omega}^{{\color[rgb]{0,0,1}B}}\times\bigcup_{i=0}^{H-1}\left({\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}}\times{\color[rgb]{0,0,1}\Omega}^{{\color[rgb]{0,0,1}B}}\right)^{i}$. Since the sets ${\color[rgb]{0,0,1}\mathcal{H}}^{{\color[rgb]{0,0,1}B}}$ and ${\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}}{}$ are finite, we could use a similar strategy to the one we used for $Y$ to define finite-dimensional vector space $X$ that represents ${\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}\coloneq\{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}\mid{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}:{\color[rgb]{0,0,1}\mathcal{H}}^{{\color[rgb]{0,0,1}B}}\to{\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}}{}\}$. However, an alternative approach gives a useful linearity.
+
+Because Blue has perfect recall, any behaviourally stochastic policy has an equivalent representation as a mixed strategy over the finite set of deterministic policies. This is the reverse direction of Kuhn’s Theorem [25], sometimes stated informally with ‘and vice versa’. This exact result is mentioned in Maschler et al. [29, Theorem 6.26 on p. 242] as part of a more general proof about infinite-horizon games, and an informal proof is given by Osborne and Rubinstein [35, p. 214]. The other direction (which will also be useful), is given explicitly in Maschler et al. [29, Theorem 6.15 on p. 232]:
+
+###### Theorem (Kuhn [25]).
+
+In every game in extensive form, if player $i$ has perfect recall, then for every mixed strategy of player $i$ there exists an equivalent behavior strategy.
+
+Note that the equivalence stated here is in terms of the probability of reaching any vertex in an extensive-form tree which is more than sufficient for our purposes [29, see Definition 6.5 on p. 223,].
+
+We will use the fact that an AI-Control game is a finite extensive form game, and the ‘vice versa’ of Kuhn’s Theorem to give a mapping from behavioural to mixed policies.
+
+Let ${\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}_{\text{det}}$ be the set of deterministic policies for Blue. Then, for each behaviourally stochastic ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$, there is an equivalent mixture over deterministic policies: ${\color[rgb]{0,0,1}\sigma}^{{\color[rgb]{0,0,1}B}}\in\Delta({\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}_{\text{det}})$.
+
+Let $m\coloneq|{\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}_{\text{det}}|=|{\color[rgb]{0,0,1}A}^{{\color[rgb]{0,0,1}B}}|^{|{\color[rgb]{0,0,1}\mathcal{H}}^{{\color[rgb]{0,0,1}B}}|}$ and consider the simplex $X\subset\mathds{R}^{m}$:
+
+$X\coloneq\left\{{\bm{x}}\mid{\bm{x}}\in X,{\bm{x}}\geq 0,\sum_{i=1}^{m}v_{i}=1\right\}$
+
+Enumerate the $m$ deterministic policies for Blue and assign each policy to a dimension in $\mathds{R}^{m}$. Let ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{i}$ be the $i$ th deterministic policy for Blue.
+
+Define the mapping ${\color[rgb]{0,0,1}\mu}^{{\color[rgb]{0,0,1}B}}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}})\coloneq{\bm{x}}$ where $x_{i}\coloneq{\color[rgb]{0,0,1}\sigma}^{{\color[rgb]{0,0,1}B}}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{i})$, ie. the probability that ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{i}$ is chosen from the mixture ${\color[rgb]{0,0,1}\sigma}^{{\color[rgb]{0,0,1}B}}$ that is equivalent to ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$. Further, note that by the main direction of Kuhn’s theorem, for any mixed stochastic policy (${\color[rgb]{0,0,1}\sigma}^{{\color[rgb]{0,0,1}B}}$), there is also a behaviourally stochastic policy (${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$) that is equivalent but it’s not immediate that ${\color[rgb]{0,0,1}\mu}^{{\color[rgb]{0,0,1}B}}$ is bijective, since there may be two mixed stochastic policies that correspond to the same behaviourally stochastic policy.
+
+From here on, we drop the explicit use of ${\color[rgb]{0,0,1}\mu}^{{\color[rgb]{0,0,1}B}}$ and ${\color[rgb]{0.8,0,0}\mu}^{{\color[rgb]{0.8,0,0}R}}$, and instead use ${\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}}\coloneq{\color[rgb]{0,0,1}\mu}^{{\color[rgb]{0,0,1}B}}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}})$ and ${\bm{x}}_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}}\coloneq{\color[rgb]{0.8,0,0}\mu}^{{\color[rgb]{0.8,0,0}R}}({\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$.
+
+###### Lemma A.1.
+
+For any $\mathcal{G}$, and any full-length trajectory $h$, there is a function $p_{h}:X\times Y\to[0,1]$ that is linear in it’s first argument, continuous in its second, and satisfies the following for all ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$:
+
+$\displaystyle p_{h}({\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}},{\bm{y}}_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}})$
+
+$\displaystyle=\mathbb{P}\left[h\mid\otimes,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\right]$
+
+$\displaystyle p_{h}({\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}},{\bm{y}}_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{\text{null}}})$
+
+$\displaystyle=\mathbb{P}\left[h\mid\oplus,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\right]$
+
+where ${{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{\text{null}}}$ is the policy that always chooses $a_{\text{null}}$.
+
+###### Proof.
+
+Let $\mathcal{H}$ be the set of all possible full-length trajectories (or joint-state-observation-action histories):
+
+$h\coloneq(\circledast,s_{0},{\color[rgb]{0,0,1}o}^{{\color[rgb]{0,0,1}B}}_{0},{\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}}_{0},{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{0},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{0},s_{1},\ldots,{\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}}_{H-1},{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{H-1},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{H-1},s_{H})$
+
+We will define $p_{h}$ such that, for all ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$
+
+$\displaystyle\mathbb{P}\left[h\mid\otimes,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\right]$
+
+$\displaystyle=p_{h}({\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}},{\bm{y}}_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}})$
+
+Then, we can write the probability of each history explicitly, in terms of ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ and ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$:
+
+$\displaystyle\mathbb{P}$
+
+$\displaystyle\left[h\mid\otimes,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\right]$
+
+$\displaystyle=\mathcal{I}(s_{0},{\color[rgb]{0,0,1}o}^{{\color[rgb]{0,0,1}B}}_{0},{\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}}_{0})\cdot{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}({\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{0}\mid{\color[rgb]{0,0,1}o}^{{\color[rgb]{0,0,1}B}}_{0})\cdot{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}({\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{0}\mid{\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}}_{0})$
+
+$\displaystyle\cdot\mathcal{P}(s_{1},{\color[rgb]{0,0,1}o}^{{\color[rgb]{0,0,1}B}}_{1},{\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}}_{1}\mid s_{0},{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{0},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{0})$
+
+$\displaystyle\ldots$
+
+$\displaystyle\cdot\mathcal{P}(s_{H},\cdot,\cdot\mid s_{H-1},{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{H-1},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{H-1})$
+
+$\displaystyle=c_{h}\cdot\prod_{t=0}^{H-1}{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}({\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{t}\mid{\color[rgb]{0,0,1}o}^{{\color[rgb]{0,0,1}B}}_{0:t},{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{0:t-1}){\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}({\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{t}\mid{\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}}_{t})$
+
+Here ${\color[rgb]{0,0,1}o}^{{\color[rgb]{0,0,1}B}}_{0:t}$ denotes the tuple $({\color[rgb]{0,0,1}o}^{{\color[rgb]{0,0,1}B}}_{0},\ldots,{\color[rgb]{0,0,1}o}^{{\color[rgb]{0,0,1}B}}_{t})$ , and similar for ${\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{0:t-1}$ etc. The value $c_{h}$ is a constant with respect to ${\bm{x}}$ and ${\bm{y}}$ and depends only on the trajectory and the AI-Control Game $\mathcal{G}$.
+
+Using mixed-behavioural equivalence, let ${\color[rgb]{0,0,1}\sigma}^{{\color[rgb]{0,0,1}B}}$ be the mixture of deterministic strategies equivalent to ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$, then we can split the Blue probabilities:
+
+$\displaystyle\mathbb{P}$
+
+$\displaystyle\left[h\mid\otimes,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\right]$
+
+$\displaystyle=$
+
+$\displaystyle c_{h}\sum_{i=1}^{m}{\color[rgb]{0,0,1}\sigma}^{{\color[rgb]{0,0,1}B}}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{i})\cdot\prod_{t=0}^{H-1}{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{i}({\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{t}\mid{\color[rgb]{0,0,1}o}^{{\color[rgb]{0,0,1}B}}_{0:t},{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{0:t-1}){\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}({\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{t}\mid{\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}}_{t})$
+
+And finally, let ${\bm{x}}\coloneq{\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}}$, note that $x_{i}={\color[rgb]{0,0,1}\sigma}^{{\color[rgb]{0,0,1}B}}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{i})$, write out the expression in terms of $x_{i}$, and $y_{j}$, and call this expression $p_{h}$:
+
+$\displaystyle p_{h}({\bm{x}},{\bm{y}})\coloneq c_{h}\cdot\left(\sum_{i=1}^{m}x_{i}f_{i}(h)\right)\cdot\left(\prod_{t=0}^{H-1}y_{j({\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}}_{t},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{t})}\right)$
+
+(1)
+
+Here $f_{i}(h)$ is either $0$, if ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{i}$ is not consistent with $h$, or $1$ if it is. Clearly, the probability ($\mathbb{P}[h|\ldots]$) of getting some trajectory $h$ in an attack game, given policies ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ and ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$ is simply $p_{h}({\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}},{\bm{y}}_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}}$).
+
+The probability of getting some trajectory $h$ in an honest game is the same as the probability in the attack game with the Red policy ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{\text{null}}$ that always chooses the $a_{\text{null}}$ action. (Although the rewards in an episode will be different in $\oplus$ versus $\otimes$ modes, these aren’t included in $h$.) This can be written as $p_{h}({\bm{x}},{\bm{y}}_{\text{null}})$, where ${\bm{y}}_{\text{null}}$ corresponds to the ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{\text{null}}$.
+
+$\displaystyle\mathbb{P}\left[h\mid\oplus,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}\right]$
+
+$\displaystyle=\mathbb{P}\left[h\mid\otimes,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{\text{null}}\right]$
+
+$\displaystyle=$
+
+$\displaystyle c_{h}\sum_{i=1}^{m}x_{i}\cdot f_{i}(h)\prod_{t=0}^{H-1}({\bm{y}}_{\text{null}})_{j({\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}}_{t},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{t})}$
+
+$\displaystyle=$
+
+$\displaystyle c^{\text{null}}_{h}\sum_{i=1}^{m}x_{i}\cdot f_{i}(h)$
+
+Here, we rewrite the constant $c^{\text{null}}_{h}$ to be $c(h)$, if all the Red actions in $h$ are $a_{\text{null}}$, and $0$ otherwise.
+
+We have shown that the probability of a given trajectory can be written in terms of $p_{h}({\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}},{\bm{y}}_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}})$, for attack games, and $p_{h}({\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}},{\bm{y}}_{\text{null}})$ for honest games. It remains to note that $p_{h}({\bm{x}},{\bm{y}})$ is straightforwardly linear in ${\bm{x}}$ and continuous in ${\bm{y}}$ by eq. 1.
+
+∎
+
+Using lemma A.1, we can rewrite safety and usefulness as explicit expressions with some useful properties:
+
+###### Corollary A.2.
+
+For any AI-Control Game $\mathcal{G}$, with simplex $X$ and simplex $Y$ defined in lemma A.1, there is a function $u:X\rightarrow\mathds{R}$ such that $u({\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}})=\operatorname{Use}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}})$ and a function $s:X\times Y\rightarrow\mathds{R}$ such that $s({\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}},{\bm{y}}_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}})=\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$. Further
+
+1. 1.
+
+The function $u$ is linear, and therefore uniformly continuous, in ${\bm{x}}$.
+2. 2.
+
+The function $s$ is linear in ${\bm{x}}$ for fixed ${\bm{y}}$, and $s$ is continuous in ${\bm{y}}$ for fixed ${\bm{x}}$.
+3. 3.
+
+The minimiser to $\min_{{\bm{y}}}s({\bm{x}},{\bm{y}})$ always exists. Further, the function $g({\bm{x}})\coloneq\min_{{\bm{y}}}s({\bm{x}},{\bm{y}})$ is continuous everywhere and concave.
+4. 4.
+
+For all $w\in[0,1]$, the function $v_{w}({\bm{x}})\coloneq wg({\bm{x}})+(1-w)u({\bm{x}})$ is uniformly continuous, and therefore has maximal values.
+
+###### Proof.
+
+First, we can define the functions $s$ and $u$: since the set of trajectories is finite, we can rewrite the safety and usefulness functions by summing over the trajectories. The safety equation can then be rewritten as:
+
+$\displaystyle\operatorname{Safety}\left({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\right)$
+
+$\displaystyle\coloneq\mathbb{E}\left[\sum_{t=0}^{H-1}\mathcal{R}_{\scriptscriptstyle\text{Use}}\left(S_{t},{\color[rgb]{0,0,1}A}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}A}^{{\color[rgb]{0.8,0,0}R}}_{t},S_{t+1}\right)\mid\oplus,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\right].$
+
+$\displaystyle=\sum_{h\in\mathcal{H}}r_{\text{safe}}(h)\mathbb{P}[h\mid\otimes,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}]$
+
+$\displaystyle=\sum_{h\in\mathcal{H}}r_{\text{safe}}(h)p_{h}({\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}},{\bm{y}}_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}})$
+
+$\displaystyle=\sum_{h\in\mathcal{H}}r_{\text{safe}}(h)c_{h}\sum_{i=1}^{m}x_{i}\cdot f_{i}(h)\prod_{t=0}^{H-1}y_{j({\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}}_{t},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{t})}$
+
+$\displaystyle=:s({\bm{x}},{\bm{y}})$
+
+Here $r_{\text{safe}}(h)$ is the sum of safety rewards for a given trajectory, and is fixed for any given AI-Control Game. The last line gives the definition for our new function $s$. We can similarly derive and define an expression for $u$:
+
+$\displaystyle\operatorname{Use}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}})$
+
+$\displaystyle\coloneq\mathbb{E}\left[\sum_{t=0}^{H}\mathcal{R}_{\scriptscriptstyle\text{Use}}\left(S_{t},{\color[rgb]{0,0,1}A}^{{\color[rgb]{0,0,1}B}}_{t},S_{t+1}\right)\mid\oplus,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}\right]$
+
+$\displaystyle=\sum_{h\in\mathcal{H}}r_{\text{use}}(h)\mathbb{P}[h\mid\oplus,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}]$
+
+$\displaystyle=\sum_{h\in\mathcal{H}}r_{\text{use}}(h)c^{\text{null}}_{h}\sum_{i=1}^{m}x_{i}\cdot f_{i}(h)$
+
+$\displaystyle=:u({\bm{x}})$
+
+We prove each of the remaining statements one-by-one.
+
+1. 1.
+
+That $u(\cdot)$ is linear over ${\bm{x}}$ follows from the definition of $p_{h}$, and of linearity of $s$ in $p_{h}$.
+2. 2.
+
+That, for fixed ${\bm{x}}$, $s({\bm{x}},\cdot)$ is continuous over $Y$ is immediate from the continuity of each $p_{h}$ in each $y_{j}$, and of linearity of $s$ in $p_{h}$. That, for fixed ${\bm{y}}$, $s(\cdot,{\bm{y}})$ is linear over ${\bm{x}}$ follows straightforwardly from the linearity of each $p_{h}$ in ${\bm{x}}$, and of linearity of $s$ in $p_{h}$.
+3. 3.
+
+The minimiser ${\bm{y}}_{*}$ of $\min_{{\bm{y}}}s({\bm{x}},{\bm{y}})$ must exist because $s({\bm{x}},\cdot)$ is continuous in $Y$ for fixed ${\bm{x}}$, and $Y$ is compact, by the extreme value theorem. Showing that $\min_{{\bm{y}}}s(\cdot,{\bm{y}})$ is continuous everywhere ${\bm{x}}$ is a little more involved. Note that $s$ can be rewritten as $s({\bm{x}},{\bm{y}})={\bm{x}}\cdot\mathbf{v}({\bm{y}})$, where $\mathbf{v}({\bm{y}})\coloneq\left[f_{1}({\bm{y}}),\ldots,f_{m}({\bm{y}})\right]^{T}$, and each $f_{i}({\bm{y}})$ is continuous in ${\bm{y}}$. By continuity and compactness, $d\coloneq\max_{{\bm{y}}}\lVert v({\bm{y}})\rVert$ exists. For all $\epsilon>0$, define $\delta\coloneq\frac{\epsilon}{2d}$. Now, for any ${\bm{y}}$, if $\lVert{\bm{x}}-{\bm{x}}_{0}\rVert<\delta$ then
+
+$\lvert s({\bm{x}},{\bm{y}})-s({\bm{x}}_{0},{\bm{y}})\rvert=\lvert({\bm{x}}-{\bm{x}}_{0})\cdot\mathbf{v}({\bm{y}})\rvert\leq$
+
+$\ldots\lVert{\bm{x}}-{\bm{x}}_{0}\rVert\lVert\mathbf{v}({\bm{y}})\rVert\leq\delta\cdot\frac{\epsilon}{2d}<\epsilon$
+
+To show continuity of $\min_{{\bm{y}}}s(\cdot,{\bm{y}})$, consider any $\epsilon$ and again set $\delta\coloneq\frac{\epsilon}{2d}$. Consider any ${\bm{x}}_{0}$ and ${\bm{x}}_{1}$ minimised by ${\bm{y}}_{0}$ and ${\bm{y}}_{1}$ such that $\lVert{\bm{x}}_{0}-{\bm{x}}_{1}\rVert\leq\delta$, and without loss of generality assume $s({\bm{x}}_{1},{\bm{y}}_{1})\geq s({\bm{x}}_{0},{\bm{y}}_{0})$, then, since $\min_{\bm{y}}s({\bm{x}}_{1},{\bm{y}})\leq s({\bm{x}}_{1},{\bm{y}}_{0})$:
+
+$\min_{\bm{y}}s({\bm{x}}_{1},{\bm{y}})-\min_{\bm{y}}s({\bm{x}}_{0},{\bm{y}})\leq s({\bm{x}}_{1},{\bm{y}}_{0})-s({\bm{x}}_{0},{\bm{y}}_{0})<\epsilon$
+
+This demonstrates that $\min_{{\bm{y}}}s(\cdot,{\bm{y}})$ is continuous over $X$. Finally, the concavity claim, that $g\left(\lambda{\bm{x}}_{1}+(1-\lambda){\bm{x}}_{0}\right)\geq\lambda g({\bm{x}}_{1})+(1-\lambda)g({\bm{x}}_{0})$, follows straightforwardly from the definition of $g$, the linearity of $s(\cdot,{\bm{y}})$, and the fact that $\min_{\bm{y}}\left(\lambda s({\bm{x}}_{1},{\bm{y}})+(1-\lambda)s({\bm{x}}_{0},{\bm{y}})\right)\geq\min_{{\bm{y}}_{1}}\lambda s({\bm{x}}_{1},{\bm{y}}_{1})+\min_{{\bm{y}}_{0}}(1-\lambda)s({\bm{x}}_{0},{\bm{y}}_{0})$.
+4. 4.
+
+Straightforwardly from the linearity of $u({\bm{x}})$ and the uniform continuity of $\min_{{\bm{y}}}s(\cdot,{\bm{y}})$, we have that $v_{w}({\bm{x}})\coloneq wg({\bm{x}})+(1-w)u({\bm{x}})$ is continuous over $X$. That maximal values exist follows from this continuity, the compactness of $X$, and the extreme value theorem.
+
+###### Lemma A.3.
+
+Let ${\bm{\phi}}({\bm{x}})\coloneq[g({\bm{x}}),u({\bm{x}})]^{T}$. The vector ${\bm{x}}$ is weakly Pareto-optimal (no ${\bm{x}}^{\prime}$ has strictly better $g$ and $u$) if, and only if, $\exists w\in[0,1]$ such that ${\bm{x}}\in\argmax_{{\bm{x}}^{\prime}}v_{w}({\bm{x}}^{\prime})$.
+
+###### Proof.
+
+The ‘if’ statement is straightforward: suppose some ${\bm{x}}^{\prime}$ is such that $x^{\prime}_{1}>x^{*}_{1}$ and $x^{\prime}_{2}>x^{*}_{2}$. Clearly, for all $w$, $v_{w}({\bm{x}}^{\prime})>v_{w}({\bm{x}}^{*})$ and therefore no $w$ can exist for which ${\bm{x}}^{*}$ is (jointly) optimal.
+
+For the ‘only if’ statement, we build up Miettinen [31, Theorem 3.1.4 on p. 79], which says that every Pareto-optimal solution to a concave multi-objective optimisation problem is optimal for some weighting. 17 17 17 The original statement refers to convex minimisation, rather than concave maximisation. We have already shown $g$ is concave, and since $u$ is linear it is trivially concave. Therefore, the theorem holds and any Pareto-optimal ${\bm{x}}^{*}$ is also optimal for some $v_{w}$. It remains to show that in our case, if not in general, any weak Pareto-optimum that is also optimal for some $w$. The proof relies on the convexity of $X$, the concavity of $g$, and the linearity of $u$. To do this, we show that any weak Pareto-optimum that is not a Pareto-optimum must have either maximal safety or maximal usefulness.
+
+Suppose ${\bm{x}}^{*}$ is a weak Pareto-optimum but not a Pareto-optimum, and for reduction assume that ${\bm{x}}^{*}$ has neither optimal safety nor optimal usefulness.
+
+If there is both (1) a point ${\bm{x}}_{0}$ with equal $g$ and better $u$ and (2) a point ${\bm{x}}_{1}$ with equal $u$ but better $g$, then we can derive a point $\frac{{\bm{x}}_{0}+{\bm{x}}_{1}}{2}$ that dominates ${\bm{x}}^{*}$. 18 18 18 By convexity of $X$, the point $\frac{{\bm{x}}_{0}+{\bm{x}}_{1}}{2}$ is in $X$ and by linearity of $u$ and concavity of $g$, dominates ${\bm{x}}^{*}$: $u(\frac{{\bm{x}}_{0}+{\bm{x}}_{1}}{2})=\frac{u({\bm{x}}^{0})+u({\bm{x}}^{*})}{2}>u({\bm{x}}^{*})$ and $g(\frac{{\bm{x}}_{0}+{\bm{x}}_{1}}{2})\geq\frac{g({\bm{x}}_{0})+g({\bm{x}}^{*})}{2}>g({\bm{x}}^{*})$.
+
+The definition of weak Pareto-optimality only implies that (1) or (2) holds. However, it can be shown that if (1) holds and ${\bm{x}}^{*}$ does not maximise $g$, then (2) also holds or ${\bm{x}}^{*}$ is otherwise dominated. 19 19 19 If ${\bm{x}}^{*}$ does not maximise $u$, let ${\bm{x}}_{0}$ be any point with higher $u$ and by assumption worse-or-equal $g$. If $g({\bm{x}}_{0})=g({\bm{x}}^{*})$, then (2) also holds, otherwise, $g({\bm{x}}_{0})<g({\bm{x}}^{*})$. Choose $\lambda\coloneq\frac{g({\bm{x}}^{*})-g({\bm{x}}_{0})}{g({\bm{x}}_{1})-g({\bm{x}}_{0})}$ such that $g({\bm{x}}^{*})=\lambda g({\bm{x}}_{1})+(1-\lambda)g({\bm{x}}_{0})$. Clearly $0<\lambda<1$. Let ${\bm{x}}_{\lambda}=\lambda{\bm{x}}_{1}+(1-\lambda){\bm{x}}_{0}$. We can see that $u({\bm{x}}_{\lambda})=\lambda u({\bm{x}}_{1})+(1-\lambda)u({\bm{x}}_{0})=\lambda u({\bm{x}}^{*})+(1-\lambda)u({\bm{x}}_{0})>u({\bm{x}}^{*})$. Further, by concavity of $g$, $g({\bm{x}}_{\lambda})\geq\lambda g({\bm{x}}_{1})+(1-\lambda)g({\bm{x}}_{0})=g({\bm{x}}^{*})$. If this inequality is strict, ${\bm{x}}_{\lambda}$ dominates ${\bm{x}}^{*}$, if it is not, (2) holds. Similarly, it can be shown that if (2) holds and ${\bm{x}}^{*}$ does not maximise $u$, then (1) also holds or ${\bm{x}}^{*}$ is otherwise dominated. 20 20 20 If ${\bm{x}}^{*}$ does not maximise $g$, let ${\bm{x}}_{1}$ be any point with higher $g$ and by assumption worse-or-equal $u$. If $u({\bm{x}}_{1})=u({\bm{x}}^{*})$, then (1) also holds, otherwise $u({\bm{x}}_{1})<u({\bm{x}}^{*})$ By the linearity of $u$, and convexity of $X$, there is some $0<\lambda<1$ for which $u({\bm{x}}_{\lambda})=u({\bm{x}}^{*})$. By concavity of $g$, $g({\bm{x}}_{\lambda})\geq\lambda g({\bm{x}}_{1})+(1-\lambda)g({\bm{x}}_{0})=\lambda g({\bm{x}}_{1})+(1-\lambda)g({\bm{x}}^{*})\geq g({\bm{x}}^{*})$. If this inequality is strict, ${\bm{x}}_{\lambda}$ dominates ${\bm{x}}^{*}$. Otherwise, if it is equal, (1) also holds.
+
+Since weak Pareto-optimality implies (1) or (2), which implies (1) and (2), which derives a contradiction unless ${\bm{x}}^{*}$ maximises $g$ or $u$, we can conclude that any weakly Pareto-optimal point that is not also Pareto-optimal must maximise either $g$ or $u$. Therefore, such a point is optimal for a weighting of either $w=1$ or $w=0$ gives us that ${\bm{x}}^{*}\in\argmax_{\bm{x}}v_{w}({\bm{x}})$.
+
+∎
+
+### A.2 Proving results from section 3
+
+Using the lemma above, we can immediately prove some of the results from section 3.
+
+###### Proposition (Proposition 3.2 Restated).
+
+For any AI-Control Game $\mathcal{G}$, and appropriate distance functions in ${\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}$ and ${\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}$: $\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},\cdot)$, $\operatorname{Safety}(\cdot,{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$, and $\operatorname{Use}(\cdot)$ are continuous in their domains.
+
+###### Proof.
+
+These results follow fairly straightforwardly from corollary A.2, using the Blue distance measure $d({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{1},{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{2})=\lVert{\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{1}}-{\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{2}}\rVert$ and Red distance measure $d({\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{1},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{2})=\lVert{\bm{x}}_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{1}}-{\bm{x}}_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{2}}\rVert$. For fixed ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$ and $\epsilon$, $\exists\delta(\epsilon)$ such that if $d({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{1},{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{2})=\lVert{\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{1}}-{\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{2}}\rVert<\delta$, then by corollary A.2, $\lvert s({\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{1}},{\bm{y}})-s({\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{2}},{\bm{y}})\rvert=\lvert\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{1},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})-\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{2},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})\rvert<\epsilon$, and therefore $\operatorname{Safety}$ is continuous. The proofs for $\operatorname{Safety}(\cdot,{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{0})$ and $\operatorname{Use}(\cdot)$ are similar. ∎
+
+###### Proposition (Proposition 3.3 Restated).
+
+For all ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$, $\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},\cdot)$ attains its minimum at some ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$, and $\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}}\operatorname{Safety}(\cdot,{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$ is continuous.
+
+###### Proof.
+
+For any ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$, the minimiser ${\bm{y}}$ to $s({\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}},\cdot)$ always exists by corollary A.2. By the fact that ${\color[rgb]{0.8,0,0}\mu}^{{\color[rgb]{0.8,0,0}R}}$ is a bijection, there is some ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$ such that ${\color[rgb]{0.8,0,0}\mu}^{{\color[rgb]{0.8,0,0}R}}({\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})={\bm{y}}$ and this ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$ must minimise $\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},\cdot)$ since $s({\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{1}},{\bm{y}}_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{1}})=\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{1},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{1})$ for all ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{1}$ and ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{1}$. That $\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}}\operatorname{Safety}(\cdot,{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$ is continuous at all ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}\in{\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}$ follows directly from the claim that $\min_{{\bm{y}}}s(\cdot,{\bm{y}})$ is continuous.
+
+###### Proposition (Proposition 3.5 restated).
+
+Every $\mathcal{G}$ has an AI-Control Equilibrium.
+
+###### Proof.
+
+Given that a Red safety minimiser always exists, to show that an AI-Control Equilibrium always exists, it’s sufficient to show that there is some ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{*}$ for which no other ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ has strictly better $\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}}\operatorname{Safety}(\cdot,{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$ and $\operatorname{Use}(\cdot)$. By corollary A.2 with $w=1$, there exists a point ${\bm{x}}$ where $v_{1}$ attains its maximum. Let ${\color[rgb]{0,0,1}\sigma}^{{\color[rgb]{0,0,1}B}}$ be the mixed strategy represented by ${\bm{x}}$, then by Kuhn’s Theorem, there is some behavioural ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ equivalent to ${\color[rgb]{0,0,1}\sigma}^{{\color[rgb]{0,0,1}B}}$. (Note that we cannot guarantee that ${\color[rgb]{0,0,1}\mu}^{{\color[rgb]{0,0,1}B}}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}})={\bm{x}}$, only that ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ is equivalent, and therefore induces the trajectories, safety and usefulness). For all ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$, $\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})=s({\bm{x}},{\bm{y}}_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}})$. Any Blue policy ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{1}$ that had strictly better worst-case safety than ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ would give some ${\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{1}}$ that dominates ${\bm{x}}$ (a contradiction). Therefore, no policy has strictly better safety than the policy ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ and $({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},\argmin_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}}\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}))$ is an AI-Control Equilibrium. ∎
+
+### A.3 Results from section 5
+
+The mapping defined in lemma A.1 is also useful for proving the results in section 5, that are used to support algorithm 1 and algorithm 2.
+
+#### A.3.1 Single objective problem
+
+First, we show the correspondence between solutions to the multi-objective and single objective problems.
+
+###### Lemma (Repeat of Lemma 5.1).
+
+A Blue policy ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ is in an AI-Control Equilibrium if, and only if, for some $w\in[0,1]$, it maximises $\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{*}}\left(w\operatorname{Safety}(\cdot,{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})+(1-w)\operatorname{Use}(\cdot)\right)$.
+
+###### Proof.
+
+The claim that a Blue policy ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ is in an AI-Control Equilibrium if, and only if, it is in a maximin point for $V^{\mathcal{G}}_{w}$ can be shown using the equivalent claim from lemma A.3: that ${\bm{x}}$ is weakly Pareto-optimal if, and only if, it is optimal for some $v_{w}$. A Blue policy ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ is in an AI-Control Equilibrium if, and only if, ${\bm{\phi}}({\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}})$ is weakly Pareto-optimal, if and only if, there exists some $w$ for which ${\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}}$ is optimal for $v_{w}$.
+
+For what remains, it is sufficient to show that, for any $w$, ${\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}}$ is optimal for $v_{w}$ if, and only if, ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ maximises $\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{*}}\left(w\operatorname{Safety}(\cdot,{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})+(1-w)\operatorname{Use}(\cdot)\right)$.
+
+($\Rightarrow$) If some ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{1}$ beat ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ in $\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{*}}\left(w\operatorname{Safety}(\cdot,{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})+(1-w)\operatorname{Use}(\cdot)\right)$, then ${\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{1}}$ would beat ${\bm{x}}$ in $v_{w}$.
+
+($\Leftarrow$) If some ${\bm{x}}_{2}$ beat ${\bm{x}}_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}}$ in $v_{w}$, then by Kuhn’s Theorem, there would be some ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{3}$, equivalent to the mixed strategy ${\color[rgb]{0,0,1}\sigma}^{{\color[rgb]{0,0,1}B}}_{2}$ represented by ${\bm{x}}_{2}$ 21 21 21 though not necessarily such that ${\color[rgb]{0,0,1}\mu}^{{\color[rgb]{0,0,1}B}}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{3})={\bm{x}}_{2}$, such that ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{3}$ beats ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ for $w$. ∎
+
+#### A.3.2 Reduction to a zero-sum game
+
+Although lemma 5.1 creates a single-objective optimisation problem for Blue, the resulting optimisation problem is, on the face of it, a novel type of game. The next result reduces the optimisation problem further to finding an unusual form of equilibrium in an existing type of game.
+
+###### Lemma A.4 (lemma 5.2).
+
+For every AI-Control Game $\mathcal{G}$, and weight $w\in[0,1]$, there is a single-objective, zero-sum, partially observable stochastic game $G_{w}$ with expected return (for Blue) $V_{G_{w}}$ such that:
+
+$\forall{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}:V_{G_{w}}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})=V^{\mathcal{G}}_{w}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$
+
+###### Proof.
+
+The notation and exact details of partially observable stochastic games vary between sources. For our purposes, we use a tuple that’s similar to the one used in Emery-Montemerlo et al. [17], with some modifications to make the game zero-sum rather than cooperative, and specifically two-player. We also include observations in the initial distribution, to increase generality such that agents might receive and observation before choosing their first action.
+
+###### Definition (ZSPOSG).
+
+A zero-sum two-player partially observable stochastic game is a tuple $G=\left(\mathcal{S},{\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}},{\color[rgb]{0,0,1}\Omega}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\Omega}^{{\color[rgb]{0.8,0,0}R}},\mathcal{I},\mathcal{P},\mathcal{R},H\right)$.
+
+There is no inbuilt notion of honest or attack modes in this definition. The reward function, with type $\mathcal{R}:\mathcal{S}\times{\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}}\times{\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}}\to\mathbb{R}$, is also new. Otherwise, the components of the tuple are the same as in the AI-Control Game.
+
+Given some AI-Control Game $\mathcal{G}=\left(\mathcal{S},{\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}},{\color[rgb]{0,0,1}\Omega}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\Omega}^{{\color[rgb]{0.8,0,0}R}},\mathcal{I},\mathcal{P},\mathcal{R}_{\scriptscriptstyle\text{Safe}},\mathcal{R}_{\scriptscriptstyle\text{Use}},H\right)$, and weight $w$, we can construct the ZSPOSG $G_{w}\coloneq\left(\tilde{\mathcal{S}},{\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}},{\color[rgb]{0,0,1}\Omega}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\Omega}^{{\color[rgb]{0.8,0,0}R}},\tilde{\mathcal{I}},\tilde{\mathcal{P}},\mathcal{R}_{w},H\right)$ as follows:
+
+- •
+
+($\tilde{\mathcal{S}}$) The ‘mode’ of the game is baked into the state space: $\tilde{\mathcal{S}}\coloneq\mathcal{S}\times\{\oplus,\otimes\}$.
+- •
+
+(${\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}},{\color[rgb]{0,0,1}\Omega}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\Omega}^{{\color[rgb]{0.8,0,0}R}}$) The action and observation spaces are unchanged.
+- •
+
+($\mathcal{I}$) In an AI-Control Game, the mode of the game is chosen non-deterministically. Instead, we choose it with some non-zero probability, say $0.5$. Then $\tilde{\mathcal{I}}((s,\circledast),{\color[rgb]{0,0,1}o}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}})\coloneq\frac{1}{2}\mathcal{I}(s,{\color[rgb]{0,0,1}o}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}})$.
+- •
+
+$H$ is the same as in the AI-Control Game.
+
+The two most important changes are to the transition and reward functions. The transition function has type $\tilde{\mathcal{P}}:\tilde{\mathcal{S}}\times{\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}}\times{\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}}\rightarrow\Delta\left(\mathcal{S}\times{\color[rgb]{0,0,1}\Omega}^{{\color[rgb]{0,0,1}B}}\times{\color[rgb]{0.8,0,0}\Omega}^{{\color[rgb]{0.8,0,0}R}}\right)$. We define this function in a fairly straightforward way. Transitions between $\oplus$ and $\otimes$ states are impossible. Further, in honest ($\oplus$) states, Red’s action has no effect, and the game transitions as though Red had chosen $a_{\text{null}}$. 22 22 22 Formally, $\tilde{\mathcal{P}}((s^{\prime},\oplus)\mid(s,\oplus),{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}})=\mathcal{P}(s^{\prime}\mid s,{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}},a_{\text{null}})$.
+
+The reward function $\mathcal{R}_{w}$ is defined as follows:
+
+$\displaystyle\mathcal{R}_{w}((s,\oplus),{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}},(s^{\prime},\oplus))$
+
+$\displaystyle\coloneq 2(1-w)\mathcal{R}_{\scriptscriptstyle\text{Use}}(s,{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}},s^{\prime})$
+
+$\displaystyle\mathcal{R}_{w}((s,\otimes),{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}},(s^{\prime},\otimes))$
+
+$\displaystyle\coloneq 2w\mathcal{R}_{\scriptscriptstyle\text{Safe}}(s,{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}},s^{\prime})$
+
+The factor of $2$ compensates for the fact that each mode is only chosen in half of the states. Note how the usefulness reward is only active in honest states, and the safety reward is only active in attack states.
+
+Since the action and observation spaces are unchanged, the sets of policies (${\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}$ and ${\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}$) are the same for the AI-Control Game and the zero-sum game: subject to the same constraints that Red is memoryless and Blue has perfect recall. All that remains is to show that the expected return for Blue in $G_{w}$ is $w\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})+(1-w)\operatorname{Use}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}})$.
+
+The exact details of this proof are somewhat finicky, but the basic idea is to show an equivalent probability of sampling trajectories from each game, up to small details:
+
+1. 1.
+
+The probability of any particular $\oplus$ trajectory in the AI-Control Game does not depend on ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$. However, trajectories in ZSPOGs include Red’s actions, which do depend on ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$, even if those actions have no effect on the transition or reward. It is therefore necessary to sum over all possible sequences of Red’s actions in the ZSPOSG, when comparing to a trajectory in the AI-Control Game.
+2. 2.
+
+Because $\circledast$ is chosen non-deterministically in the AI-Control Game, and $\operatorname{Safety}$ and $\operatorname{Use}$ are measured conditional on the mode, the probability (up to Red’s actions) of a given $\oplus$ trajectory in the ZSPOSG is half the probability of the corresponding trajectory in the AI-Control Game (when $\oplus$ is chosen). This is countered by the factor of $2$ in the reward function.
+
+By summing over the probabilities of trajectories in each game, we could show that:
+
+$2\cdot\mathbb{E}_{G_{w}}\left[\sum_{t=0}^{H}\mathcal{R}_{w}(S_{t},{\color[rgb]{0,0,1}A}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}A}^{{\color[rgb]{0.8,0,0}R}}_{t},S_{t+1})\mid\oplus,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\right]=\\
+(1-w)\mathbb{E}_{\mathcal{G}}\left[\sum_{t=0}^{H}\mathcal{R}_{\scriptscriptstyle\text{Use}}(S_{t},{\color[rgb]{0,0,1}A}^{{\color[rgb]{0,0,1}B}}_{t},S_{t+1})\mid\oplus,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}\right]$
+
+(2)
+
+In other words, conditional on the ZSPOSG choosing $\oplus$ (which happens with probaiblity $\frac{1}{2}$), the usefulness score for Blue in the AI-Control Game. Similarly, we can show an equivalent result for safety in the attack mode:
+
+$2\cdot\mathbb{E}_{G_{w}}\left[\sum_{t=0}^{H}\mathcal{R}_{w}(S_{t},{\color[rgb]{0,0,1}A}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}A}^{{\color[rgb]{0.8,0,0}R}}_{t},S_{t+1})\mid\oplus,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\right]=\\
+w\mathbb{E}_{\mathcal{G}}\left[\sum_{t=0}^{H}\mathcal{R}_{\scriptscriptstyle\text{Safe}}(S_{t},{\color[rgb]{0,0,1}A}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}A}^{{\color[rgb]{0.8,0,0}R}}_{t},S_{t+1})\mid\otimes,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\right]$
+
+(3)
+
+It follows that: $w\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})+(1-w)\operatorname{Use}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}})=V_{G_{w}}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$. ∎
+
+#### A.3.3 Proof of theorem 5.3
+
+###### Theorem (Repeat of theorem 5.3).
+
+A policy ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ is in an AI-Control Equilibrium if, and only if, for some ZSPOSG $G_{w}$ with value function $V_{G_{w}}$, ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ maximises $\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{*}\in{\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}}V_{w}(\cdot,{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{*})$ over ${\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}$.
+
+###### Proof.
+
+Lemma 5.1 shows that ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ is in an AI-Control Equilibrium if, and only if, it is a maximum for point for some $\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}}V_{w}(\cdot,{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$. Lemma 5.2 shows that there is some $G_{w}$ for which $V_{G_{w}}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})=V^{\mathcal{G}}_{w}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$. Therefore ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ is in AI-Control Equilibrium if, and only if, it is in a maximum for some $\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}}V_{G_{w}}(\cdot,{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$.
+
+#### A.3.4 Counterexample to Minimax
+
+###### Proposition (Proposition 5.4 repeated).
+
+There exists a $G_{w}$ such that Red’s behavioural and mixed policies would not be equivalent and
+
+$\max_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}\in{\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}}\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}{\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}}V_{G_{w}}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})<\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\in{\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}}\max_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}\in{\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}}V_{G_{w}}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})$
+
+###### Proof.
+
+This game is a sort of two-player version of the absent-minded driver example [4].
+
+Figure 4: A zero-sum extensive form representation of a game where the minimax and maximin values are different. The dotted red box highlights Red’s single information set (i.e. Red has the same decision rule for all nodes). Blue moves first, and the Red takes the next two moves. All moves are either left ($\blacktriangleleft$) or right ($\blacktriangleright$). The payoffs for Blue are shown at the bottom of the tree.
+
+Figure 4 shows an extensive form game that we can easily show is equivalent to an AI-Control game reduced to a ZSPOSG ($G_{w}$). 23 23 23 Choose $H=3$ and take the obvious state and action spaces. Set both observation sets to be singletons and set $w=1$ so that only safety is valued. To account for the turned-based nature of the game above, we ignore actions for Red and Blue on turns where they do not move. Because $w=1$, we don’t need to consider the usefulness function, or games where $\oplus$ is active.
+
+Since Blue only has one choice, between two actions, and in a single information set, Blue’s policy can be represented by the probability Blue chooses right:
+
+$p\coloneq{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}({\color[rgb]{0,0,1}\blacktriangleright})=1-{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}({\color[rgb]{0,0,1}\blacktriangleleft})$
+
+Similarly, even though Red acts twice, because they get only a null observation and are memoryless, Red’s policy can be represented by the probability Red chooses right:
+
+$q\coloneq{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}({\color[rgb]{1,0,0}\blacktriangleright})=1-{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}({\color[rgb]{1,0,0}\blacktriangleleft})$
+
+Note that if we allowed Red to take policy mixtures in AI-Control Games, then this extensive form game would not be equivalent to an AI-Control Game, since Red could correlate their action in the second round with their action in the first round.
+
+The value of the game is then given by:
+
+$\displaystyle V(p,q)$
+
+$\displaystyle=(-1)*(1-p)(1-q)^{2}$
+
+$\displaystyle+(-0.5)*(1-p)q^{2}$
+
+$\displaystyle+(-0.5)*p(1-q)^{2}$
+
+$\displaystyle+(-1)*pq^{2}$
+
+$\displaystyle=-1+p(0.5-1q)+2q-1.5q^{2}$
+
+Figure 5: The minimax and maximin values of the game in fig. 4
+
+$\displaystyle\max_{p}\min_{q}V(p,q)$
+
+$\displaystyle=V(0.5,1.0)=V(0.5,1.0)=-0.75$
+
+$\displaystyle\min_{q}\max_{p}V(p,q)$
+
+$\displaystyle=V(1.0,0.0)=V(0.0,1.0)=-0.5$
+
+$\displaystyle\therefore\max_{p}\min_{q}V(p,q)$
+
+$\displaystyle<\min_{q}\max_{p}V(p,q)$
+
+Since the corresponding AI-Control game is equivalent to the extensive form game, this shows that the minimax and maximin values of the AI-Control game can be different. ∎
+
+#### A.3.5 Proof for Algorithm 2
+
+###### Proposition (Repeat of proposition 5.5).
+
+For $\epsilon>0$, Algorithm 2 returns an $\epsilon$-equilibrium in $G_{w}$ in finite time. Further, for all $t$:
+
+$\underline{v}_{t}\leq v^{*}\coloneq\max_{{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{*}\in{\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}}\min_{{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{*}\in{\color[rgb]{0.8,0,0}\Pi}^{{\color[rgb]{0.8,0,0}R}}}V^{\mathcal{G}}_{w}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{*},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}_{*})\leq\overline{v}_{t}$
+
+###### Proof.
+
+Our results are based closely on those from Adam et al. [1], but we must modify them slightly to account for the differences between our games. Adam et al. [1] define a continuous game as follows (with some slight modifications to notation):
+
+###### Definition (Continuous Game).
+
+A continuous game $G_{\texttt{cont}}$ is a tuple $\left(\mathcal{X},\mathcal{Y},f\right)$ where $\mathcal{X}\subseteq\mathbb{R}^{k}$ and $\mathcal{Y}\subseteq\mathbb{R}^{l}$ are compact sets, and $f:\mathcal{X}\times\mathcal{Y}\rightarrow\mathds{R}$ is a continuous function that gives the utility for Blue ($-f$ for Red). Blue chooses a mixed strategy as a Borel probability measure $p$ over $\mathcal{X}$ and Red choose $q$ over $\mathcal{Y}$. The value of two mixed strategies is given by $F(p,q)\coloneq\int_{\mathcal{X}\times\mathcal{Y}}f(x,y)d(p\times q)$.
+
+Where we consider leader-follower equilibria over behaviourally stochastic strategies (which are equivalent to mixed for Blue but not Red), Adam et al. [1] considers Nash-equilibria over jointly-mixed strategies:
+
+$v^{*}=\max_{p}\min_{q}F_{w}(p,q)=\min_{q}\max_{p}F_{w}(p,q)$
+
+Fortunately, since for any $p$, $\min_{q}F_{w}(p,q)=\min_{y}F_{w}(p,y)$, $v^{*}$ is also the value for the leader-follower game when Red is restricted to a single strategy from $\mathcal{Y}$ in a continuous game. Therefore, finding an $\epsilon$-equilibrium $p,q$, and then returning $p,y$ where $y\coloneq\min_{y}F_{w}(p,y)$ returns an $\epsilon$-approximate value for $\max_{p}\min_{y}F_{w}(p,y)$.
+
+Adam et al. [1] Lemma 2 shows that $\underline{v}_{t}\leq v^{*}\leq\overline{v}_{t}$ for all $t$. Theorem 3.1 shows that the algorithm returns an $\epsilon$-approximate equilibrium in finitely many steps if $\epsilon>0$. Therefore, returning $p^{*}_{i},y_{i+1}$, where $y_{i+1}$ is a best response to $p^{*}_{i}$, $F_{w}(p^{*}_{i},y_{i+1})\geq\overline{v}_{i}-\epsilon\geq v^{*}-\epsilon$ gives a pessimistic $\epsilon$-maximin point for $F_{w}$.
+
+Using lemma A.1, we can easily map the value of a scalarised AI-Control Game to this definition of a continuous game: implying the results hold for algorithm 2.
+
+For a given AI-Control Game $\mathcal{G}$ and weight $w$, consider the mappings from Blue policies to $X\subset\mathds{R}^{m}$ and Red policies to $Y\subset\mathds{R}^{n}$ described in lemma A.1. Then define $\mathcal{X}\coloneq\{\mathbf{e}_{i}\}_{i=1}^{m}\subset X$ as the finite set of vectors corresponding to deterministic Blue strategies. (Here $\mathbf{e}_{i}$ is the vector that is $1$ at the $i$’th dimension and $0$ elsewhere.) Define $\mathcal{Y}\coloneq Y$. Then, let $f_{w}(\mathbf{e}_{i},{\bm{y}})\coloneq w\cdot s(\mathbf{e}_{i},{\bm{y}})+u(\mathbf{e}_{i})$, which corresponds to $w\operatorname{Safety}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{i},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}})+(1-w)\operatorname{Use}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{i})$, where ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}_{i}$ is the $i$’th deterministic strategy in the enumeration of ${\color[rgb]{0,0,1}\Pi}^{{\color[rgb]{0,0,1}B}}_{\text{det}}$ from lemma A.1 and ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$ is the policy corresponding to ${\bm{y}}$.
+
+Every solution to the continuous game $G^{w}_{\texttt{cont}}\coloneq\left(\{\mathbf{e}_{i}\}_{i=1}^{m},Y,f_{w}\right)$ is equivalent to a solution to the AI-Control Game, relaxed to allow Red to take policy mixtures. ∎
+
+## Appendix B Full definition of Trusted Monitoring AI-Control Game
+
+In section 3 we summarised the definition of the Trusted Monitoring AI-Control Game. Here, we provide the full definition of the game, including the state space, action space, observation space, transition function, and reward function. Note that this definition of the game is parameterised by a few values. First, and foremost, are the number of problems to be solved, and the number of times the protocol can ask for human assistance. We denote these values as $\mathrm{M}$ and $\mathrm{C}$, respectively. We also assume that the trusted monitor’s suspicion score is drawn from two distributions, $\mathcal{D}_{\text{Bd}}$ and $\mathcal{D}_{\text{Sf}}$, representing the suspicion scores for backdoored and safe solutions, respectively. These distributions correspond to Greenblatt et al. [18, Figure 4a].
+
+Let $M$ be the number of problems to solve, and at a given time let $m$ represent the number of problems remaining. To model limited access to a human auditor, we define a variable $c$, representing the number of ‘audit coins’ remaining: the number of times the protocol can ask for human assistance. Let $C=0.02\cdot M$ be the number of audit coins at the start of the game.
+
+Define the AI-Control Game as the tuple:
+
+$\mathcal{G}_{\text{TM}}=\left(\mathcal{S},{\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}},{\color[rgb]{0,0,1}\Omega}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\Omega}^{{\color[rgb]{0.8,0,0}R}},\mathcal{I},\mathcal{P},\mathcal{R}_{\scriptscriptstyle\text{Safe}},\mathcal{R}_{\scriptscriptstyle\text{Use}},H\right)$
+
+The state space $\mathcal{S}$ consists primarily of states $s=(m,c,b)$ where $m$ and $c$ are as defined above, and $b$ represents whether or not the solution to the current problem is backdoored, and takes values True or False. We also include three additional states. First, $s_{0}=\langle\mathtt{Start}\rangle$ represents the initial state when no problem has yet been solved. Second, $s_{\bot}$ represents the outcome of a solution that the untrusted AI backdoored was submitted to by the protocol. Third, we define an implicit $s_{\top}$ terminal state, representing the case where a human audit has caught a backdoored solution, and goes into safety mode, ending the opportunity for future backdoors. We can also define an ‘unacceptable’ terminal state $s_{\bot}$ that is entered whenever a backdoor is successfully submitted. Both $s_{\top}$ and $s_{\bot}$ will self-loop with probability $1$ on all actions. Finally, we define the state space as $\mathcal{S}\coloneq\{s_{0},s_{\bot},s_{\top}\}\cup\{(m,c,b):0\leq m\leq M;0\leq c\leq C\}$.
+
+The action space for Blue consists of three actions: ${\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}}:=\{\langle\mathtt{Audit}\rangle,\langle\mathtt{Defer}\rangle,\langle\mathtt{Run}\rangle\}$. If ${\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}=\langle\mathtt{Audit}\rangle$ is chosen, the human is asked to audit the untrusted model solution. If ${\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}=\langle\mathtt{Defer}\rangle$ is chosen, then Blue defers to the trusted model to attempt to generate a solution (though the trusted model may not be successful). If ${\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}=\langle\mathtt{Run}\rangle$ is chosen, then Blue runs the code submitted by the untrusted model.
+
+The action space for Blue consists of two actions: ${\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}}:=\{\langle\mathtt{Backdoor}\rangle,\langle\mathtt{Safe}\rangle\}$. If ${\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}=\langle\mathtt{Backdoor}\rangle$ is chosen, then Red interferes with the untrusted model in an attempt to submit a backdoored solution. If ${\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}=\langle\mathtt{Safe}\rangle$ is chosen, then Red does not interfere, and the untrusted model submits a normal solution.
+
+In Greenblatt et al. [18] original implementation of Trusted Monitoring, Red observes the problem statement before considering how and whether to attack. Because we are only considering attacks that choose to backdoor I.I.D., we can abstract away the description of the programming problem from our model. Since Red also does not observe the time or number of audit coins left, we model Red as receiving a null observation in every case. Therefore, ${\color[rgb]{0.8,0,0}\Omega}^{{\color[rgb]{0.8,0,0}R}}\coloneq\{o_{\text{null}}\}$. (Note that this is not true for all Control Games.)
+
+The initial state distribution is the degenerate distribution $\mathcal{I}(s_{0},o_{\text{null}},o_{\text{null}})=1$, where both Blue and Red receive null observations.
+
+The most complicated part of the model is the transition function $\mathcal{P}:\mathcal{S}\times{\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}}\times{\color[rgb]{0.8,0,0}\mathcal{A}}^{{\color[rgb]{0.8,0,0}R}}\rightarrow\Delta\left(\mathcal{S}\times{\color[rgb]{0,0,1}\Omega}^{{\color[rgb]{0,0,1}B}}\times{\color[rgb]{0.8,0,0}\Omega}^{{\color[rgb]{0.8,0,0}R}}\right)$. In our case (though not necessarily in general) we can factor $\mathcal{P}$:
+
+$\mathcal{P}\left(s_{t+1},{\color[rgb]{0,0,1}o}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}}_{t}\mid s_{t},{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{t}\right)=\\
+\mathcal{P}\left(s_{t+1}\mid s_{t},{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{t}\right)\cdot\mathcal{P}\left({\color[rgb]{0,0,1}o}^{{\color[rgb]{0,0,1}B}}_{t}\mid s_{t+1}\right)\cdot\mathcal{P}\left({\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}}_{t}\right)$
+
+The final term, $\mathcal{P}\left({\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}}_{t}\right)$, is redundant, since ${\color[rgb]{0.8,0,0}o}^{{\color[rgb]{0.8,0,0}R}}_{t}$ only takes on one value. The observation probability for Blue only depends on the state. In particular, it only depends on whether the current problem is backdoored or not. In Trusted Monitoring protocols, the solution from the untrusted model is fed to the trusted monitor, which then rates the solution’s suspiciousness ($x_{t}$). We model the trusted monitor as a noisy observer, and assume that the trusted monitor’s suspicion score is drawn from two distributions, $\mathcal{D}_{\text{Bd}}$ and $\mathcal{D}_{\text{Sf}}$, representing the suspicion scores for backdoored and safe solutions, respectively.
+
+$\displaystyle\mathcal{P}\left({\color[rgb]{0,0,1}o}^{{\color[rgb]{0,0,1}B}}_{t}\mid s_{t+1}\right)$
+
+$\displaystyle=\mathcal{P}\left(\left(x_{t^{\prime}},m^{\prime},c^{\prime}\right)\mid(m,c,b)\right)$
+
+$\displaystyle\mathcal{P}\left(\left(x_{t},m,c\right)\mid(m,c,\mathtt{True})\right)$
+
+$\displaystyle=\mathcal{D}_{\text{Bd}}\left(x_{t}\right)$
+
+$\displaystyle\mathcal{P}\left(\left(x_{t},m,c\right)\mid(m,c,\mathtt{False})\right)$
+
+$\displaystyle=\mathcal{D}_{\text{Sf}}\left(x_{t}\right)$
+
+$\mathcal{D}_{\text{Sf}}$ is the distribution we get by sampling a programming problem from the distribution of problems, asking the untrusted model to generate a solution, and then asking the trusted monitor to rate the suspiciousness. $\mathcal{D}_{\text{Bd}}$ is the distribution we get by sampling a programming problem from the distribution of problems, asking the untrusted model to generate a backdoored solution, and then asking the trusted monitor to rate the suspiciousness.
+
+Next, we define the state transition function. In our model, though not in general, much of the stochasticity in the game comes from the policies and the Blue observation function, rather than state transitions: the only other source of stochasticity we model is the possibility of an imperfect human auditor. We therefore we will use the shorthand $\mathcal{P}\left(s_{t},{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{t}\right)=s_{t+1}$ to represent that $\mathcal{P}\left(s_{t},{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{t}\right)=\delta\left(s_{t+1}\right)$. Let $p^{\texttt{FNR}}_{H}$ denote the human auditor’s false negative rate, and $p^{\texttt{FPR}}_{H}$ denote the false positive rate. Further, let $\delta_{p}(x;y)$ be the distribution that assigns probability $p$ to $x$ and probability $(1-p)$ to $y$.
+
+The transition from the initial state just moves to the first ‘real state’ and stores the value of whether the red team has backdoored the first solution. (It ignores Blue’s action). It is given by:
+
+$\displaystyle\forall{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}:\mathcal{P}\left(\langle\mathtt{Start}\rangle,{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}},\langle\mathtt{Backdoor}\rangle\right)$
+
+$\displaystyle=\left(M,C,\mathtt{True}\right)$
+
+$\displaystyle\forall{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}:\mathcal{P}\left(\langle\mathtt{Start}\rangle,{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}},\langle\mathtt{Safe}\rangle\right)$
+
+$\displaystyle=\left(M,C,\mathtt{False}\right)$
+
+Then, for subsequent states, if the solution is backdoored and the protocol runs the solution, it loses; if the protocol audits the solution, it wins if the human auditor doesn’t make a mistake, but loses if they do. If the protocol defers, the game continues. (In what follows, abbreviate $\langle\mathtt{Backdoor}\rangle$ with $\langle\mathtt{Bd}\rangle$).
+
+$\displaystyle\mathcal{P}\left((m,c,\mathtt{True}),\langle\mathtt{Run}\rangle,{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}\right)$
+
+$\displaystyle=s_{\bot}$
+
+$\displaystyle(\forall{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}})$
+
+$\displaystyle\mathcal{P}\left((m,c,\mathtt{True}),\langle\mathtt{Audit}\rangle,{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}\right)$
+
+$\displaystyle=\delta_{p^{\texttt{FNR}}_{H}}\left({s_{\bot}};{s_{\top}}\right)$
+
+$\displaystyle(\forall{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}})$
+
+$\displaystyle\mathcal{P}\left((m,c,\mathtt{True}),\langle\mathtt{Defer}\rangle,\langle\mathtt{Bd}\rangle\right)$
+
+$\displaystyle=(m\!-\!1,c,\mathtt{True})$
+
+$\displaystyle\mathcal{P}\left((m,c,\mathtt{True}),\langle\mathtt{Defer}\rangle,\langle\mathtt{Safe}\rangle\right)$
+
+$\displaystyle=(m\!-\!1,c,\mathtt{False})$
+
+Alternatively, if the solution is not backdoored, the game only terminates if Blue audits and the human auditor incorrectly marks the solution as backdoored, the game enters the ‘safe’ end state: even if for the wrong reasons, Blue never uses $U$ again, ensuring no backdoors are submitted, and Blue wins. In all cases, if Blue audits, they lose an audit coin:
+
+$\displaystyle\mathcal{P}\left((m,c,\mathtt{False}),\langle\mathtt{Run}\rangle,\langle\mathtt{Bd}\rangle\right)$
+
+$\displaystyle=(m\!-\!1,c,\mathtt{True})$
+
+$\displaystyle\mathcal{P}\left((m,c,\mathtt{False}),\langle\mathtt{Run}\rangle,\langle\mathtt{Safe}\rangle\right)$
+
+$\displaystyle=(m\!-\!1,c,\mathtt{False})$
+
+$\displaystyle\mathcal{P}\left(\ldots,\langle\mathtt{Audit}\rangle,\langle\mathtt{Bd}\rangle\right)$
+
+$\displaystyle=\delta_{p^{\texttt{FPR}}_{H}}\left({s_{\top}};{(m\!-\!1,c\!-\!1,\mathtt{True})}\right)$
+
+$\displaystyle\mathcal{P}\left(\ldots,\langle\mathtt{Audit}\rangle,\langle\mathtt{Safe}\rangle\right)$
+
+$\displaystyle=\delta_{p^{\texttt{FPR}}_{H}}\left({s_{\top}};{(m\!-\!1,c\!-\!1,\mathtt{False})}\right)$
+
+$\displaystyle\mathcal{P}\left(\ldots,\langle\mathtt{Defer}\rangle,\langle\mathtt{Bd}\rangle\right)$
+
+$\displaystyle=(m\!-\!1,c,\mathtt{True})$
+
+$\displaystyle\mathcal{P}\left(\ldots,\langle\mathtt{Defer}\rangle,\langle\mathtt{Safe}\rangle\right)$
+
+$\displaystyle=(m\!-\!1,c,\mathtt{False})$
+
+The safety reward function in this model could simply be defined as giving a score of $-1$ whenever the unacceptable terminal state, $s_{\bot}$, is entered. However, to ensure that the final safety score is between $0$ and $1$, rather than $-1$ and $0$, we can also add a reward of $1/H$ to every transition. Therefore, the total reward is:
+
+$\mathcal{R}_{\scriptscriptstyle\text{Safe}}(s_{t},{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{t},{\color[rgb]{0.8,0,0}a}^{{\color[rgb]{0.8,0,0}R}}_{t},s_{t+1})=\frac{1}{H}-\mathds{1}[s_{t+1}=s_{\bot}\land s_{t}\neq s_{\bot}]$
+
+The usefulness function in this model just measures how many of the untrusted model’s solutions are submitted. $\mathcal{R}_{\scriptscriptstyle\text{Use}}:\mathcal{S}\times{\color[rgb]{0,0,1}\mathcal{A}}^{{\color[rgb]{0,0,1}B}}\times\mathcal{S}\rightarrow\mathds{R}$. Since usefulness is only measured in ‘honest’ games, we can ignore cases where $s_{t}$ or $s_{t+1}$ are $s_{\bot}$ or where $b$ is $\mathtt{True}$. It is still possible that $s_{\top}$ could be reached should the human auditor make a mistake. Therefore, the only important transitions to consider are:
+
+$\displaystyle\mathcal{R}_{\scriptscriptstyle\text{Use}}\left((m,c,\mathtt{False}),\langle\mathtt{Audit}\rangle,s_{\top}\right)$
+
+$\displaystyle=0$
+
+$\displaystyle\mathcal{R}_{\scriptscriptstyle\text{Use}}\left(s_{\top},{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{t},s_{\top}\right)$
+
+$\displaystyle=0$
+
+$\mathcal{R}_{\scriptscriptstyle\text{Use}}\left((m,c,\mathtt{False}),{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{t},\left(m-1,c^{\prime},\mathtt{False}\right)\right)\\
+=\mathds{1}\left[{\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{t}\neq\langle\mathtt{Defer}\rangle\right]$
+
+Finally, we choose $H\coloneq M+1$, such that the game ends after $M+1$ timesteps, and $M$ problems are solved. This completes the definition of the Control Game Tuple for Trusted Monitoring with Defer to Trusted.
+
+## Appendix C Proofs from section 4
+
+### C.1 Safety Expression
+
+###### Proposition C.1 (proposition 4.1).
+
+For any Red policy ${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}$, where the probability of attempting a backdoor on a given round (${\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}(\langle\mathtt{Backdoor}\rangle\mid o_{\text{null}})$) is ${\color[rgb]{0.8,0,0}\beta}$, the safety of the memoryless policy ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ is given by the value of $z_{m}^{C}$, where $z$ is the solution to the following recurrence relation (where the $\lambda^{i}_{m,c}$ terms are constant with respect to ${\color[rgb]{0.8,0,0}\beta}$):
+
+$\displaystyle z_{m}^{c}$
+
+$\displaystyle=\left(\lambda^{1}_{m,c}{\color[rgb]{0.8,0,0}\beta}+\lambda^{2}_{m,c}\right)z_{m-1}^{c}+\lambda^{5}_{m,c}(1-{\color[rgb]{0.8,0,0}\beta})z_{m-1}^{c-1}$
+
+$\displaystyle+\lambda^{3}_{m,c}{\color[rgb]{0.8,0,0}\beta}+\lambda^{4}_{m,c}(1-{\color[rgb]{0.8,0,0}\beta})$
+
+where $z_{m}^{0}=\left(1-{\color[rgb]{0.8,0,0}\beta}+\lambda^{6}_{m,c}{\color[rgb]{0.8,0,0}\beta}\right)z_{m-1}^{0}$ and $z_{0}^{c}=1$
+
+Let $f(q)$ denote the probability a trusted monitor score for a backdoored case is in the top qth percentile of scores for safe cases. Further, let $p^{\texttt{FNR}}_{H}$ denote the human auditor’s false negative rate, and $p^{\texttt{FPR}}_{H}$ denote the false positive rate. Then, all of the values of $\lambda^{i}_{m,c}$ are functions only of $q^{a}_{m,c}$, $q^{d}_{m,c}$, and $f$, and can be computed upfront:
+
+$\displaystyle\lambda^{1}_{m,c}$
+
+$\displaystyle=(f(q^{d}_{m,c})-f(q^{a}_{m,c}))-(1-q^{a}_{m,c})$
+
+$\displaystyle\lambda^{2}_{m,c}$
+
+$\displaystyle=1-q^{a}_{m,c}$
+
+$\displaystyle\lambda^{3}_{m,c}$
+
+$\displaystyle=f(q^{a}_{m,c})\cdot(1-p^{\texttt{FNR}}_{H})$
+
+$\displaystyle\lambda^{4}_{m,c}$
+
+$\displaystyle=q^{a}_{m,c}\cdot p^{\texttt{FPR}}_{H}$
+
+$\displaystyle\lambda^{5}_{m,c}$
+
+$\displaystyle=q^{a}_{m,c}\cdot(1-p^{\texttt{FPR}}_{H})$
+
+$\displaystyle\lambda^{6}_{m,c}$
+
+$\displaystyle=f(q^{d}_{m,c})$
+
+Note that in the initial statement of proposition 4.1, we assume for simplicity that $p^{\texttt{FPR}}_{H}$ and $p^{\texttt{FNR}}_{H}$ equal 0. It is trivial to show that the above recurrence relation simplifies to the one put forward in proposition 4.1 if this assumption is made.
+
+###### Proof.
+
+First, we note that, given the general definition of $\operatorname{Safety}$, and the trusted monitoring games definition of $\mathcal{R}_{\scriptscriptstyle\text{Safe}}$, we can express safety as:
+
+$\displaystyle\operatorname{Safety}\left({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\right)$
+
+$\displaystyle=\mathbb{E}\left[\sum_{t=0}^{H-1}\frac{1}{H}-\mathds{1}[s_{t+1}=s_{\bot}\land s_{t}\neq s_{\bot}]\mid\oplus,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\right]$
+
+$\displaystyle=\sum_{t=0}^{H-1}\frac{1}{H}-\mathbb{E}\left[\mathds{1}\left[\exists t:s_{t}=s_{\bot}\right]\mid\oplus,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\right]$
+
+$\displaystyle=\mathbb{P}\left[S_{H}\neq s_{\bot}\mid\otimes,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}}\right].$
+
+We will calculate the probability of not ending in the unacceptable outcome by defining a recurrence. We will define an expression $z_{m}^{c}$, and show it represents the probability that the game does not terminate in an unacceptable outcome, given that the game has reached time $m$ with $c$ audit coins left but before the observation $x_{t}$ is drawn. In other words, its the probability that the game does not terminate in an unacceptable outcome, given that $s_{t-1}\not\in\{s_{\bot},s_{\top}\}$ (the unacceptable or positive terminal states), and instead $s_{t-1}=(m+1,c^{\prime},b)$, and either $b$ is false (and no false alarm has been raised due to an auditing error), or ${\color[rgb]{0,0,1}a}^{{\color[rgb]{0,0,1}B}}_{t-1}=\langle\mathtt{Defer}\rangle$.
+
+Let $g(q)=x$ be the threshold such that $\mathbb{P}[x_{t}\geq x\mid b_{t}=True]=q$. Given that the game has reached time $m$ with $c>0$ audit coins left, there are a few options for the round:
+
+1. 1.
+
+Red chose $\langle\mathtt{Backdoor}\rangle$ last round and the problem is backdoored, Blue chooses $\langle\mathtt{Audit}\rangle$ and wins if no auditing mistake is made. This happens with probability ${\color[rgb]{0.8,0,0}\beta}\cdot\mathbb{P}[x_{t}\geq g(q^{a}_{m,c})]\cdot(1-p^{\texttt{FNR}}_{H})={\color[rgb]{0.8,0,0}\beta}\cdot f(q^{a}_{m,c})\cdot(1-p^{\texttt{FNR}}_{H})$.
+2. 2.
+
+The current problem is backdoored, Blue chooses $\langle\mathtt{Audit}\rangle$ and loses because an auditing mistake is made. This happens with probability ${\color[rgb]{0.8,0,0}\beta}\cdot\mathbb{P}[x_{t}\geq g(q^{a}_{m,c})]\cdot p^{\texttt{FNR}}_{H}={\color[rgb]{0.8,0,0}\beta}\cdot f(q^{a}_{m,c})\cdot p^{\texttt{FNR}}_{H}$.
+3. 3.
+
+The current problem is backdoored, Blue chooses $\langle\mathtt{Run}\rangle$, and loses immediately. This happens with probability ${\color[rgb]{0.8,0,0}\beta}\cdot\mathbb{P}[x_{t}\leq g(q^{d}_{m,c})]={\color[rgb]{0.8,0,0}\beta}\cdot(1-f(q^{d}_{m,c}))$.
+4. 4.
+
+The current problem is backdoored, Blue chooses $\langle\mathtt{Defer}\rangle$, and the game continues with $c$ audit coins. This happens with probability ${\color[rgb]{0.8,0,0}\beta}\cdot(f(q^{a}_{m,c})-f(q^{d}_{m,c}))$.
+5. 5.
+
+The current problem is not backdoored, and Blue chooses $\langle\mathtt{Audit}\rangle$ and no auditing mistake is made, so the game continues with $c-1$ audit coins. This happens with probability $(1-{\color[rgb]{0.8,0,0}\beta})\cdot\mathbb{P}[x_{t}\geq g(q^{a}_{m,c})]\cdot(1-p^{\texttt{FPR}}_{H})=(1-{\color[rgb]{0.8,0,0}\beta})\cdot q^{a}_{m,c}\cdot(1-p^{\texttt{FPR}}_{H})$.
+6. 6.
+
+The current problem is not backdoored, and Blue chooses $\langle\mathtt{Audit}\rangle$, but human error causes an auditing mistake, so the game ends immediately with Blue winning (no chance of any future backdoors). This happens with probability $(1-{\color[rgb]{0.8,0,0}\beta})\cdot\mathbb{P}[x_{t}\geq g(q^{a}_{m,c})]\cdot p^{\texttt{FPR}}_{H}=(1-{\color[rgb]{0.8,0,0}\beta})\cdot q^{a}_{m,c}\cdot p^{\texttt{FPR}}_{H}$.
+7. 7.
+
+The current problem is not backdoored, and Blue chooses $\langle\mathtt{Run}\rangle$, and the game continues with $c$ audit coins. This happens with probability $(1-{\color[rgb]{0.8,0,0}\beta})\cdot\mathbb{P}[x_{t}\leq g(q^{d}_{m,c})]=(1-{\color[rgb]{0.8,0,0}\beta})\cdot(1-(q^{d}_{m,c}))$.
+8. 8.
+
+The current problem is not backdoored, and Blue chooses $\langle\mathtt{Defer}\rangle$, and the game continues with $c$ audit coins. This happens with probability $(1-{\color[rgb]{0.8,0,0}\beta})\cdot(q^{d}_{m,c}-q^{a}_{m,c})$.
+
+Denote $\mathbb{P}\left[S_{H}\neq s_{\bot}\mid\otimes,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},{\color[rgb]{0.8,0,0}\pi}^{{\color[rgb]{0.8,0,0}R}},m,c\right]$ with the shorthand $p[m,c]$. We will define the recurrence $z_{m}^{c}$ to be equal to $p[m,c]$ at all points. We can therefore write out an expression for $p[m,c]$ in terms of $p[m-1,c-1]$ and $p[m-1,c]$ when $m\geq 1$ and $c\geq 1$:
+
+$\displaystyle p[m,c]=$
+
+$\displaystyle({\color[rgb]{0.8,0,0}\beta}\cdot f(q^{a}_{m,c})\cdot(1-p^{\texttt{FNR}}_{H}))(1)$
+
+$\displaystyle+({\color[rgb]{0.8,0,0}\beta}\cdot f(q^{a}_{m,c})\cdot p^{\texttt{FNR}}_{H})(0)$
+
+$\displaystyle+({\color[rgb]{0.8,0,0}\beta}\cdot(1-f(q^{d}_{m,c})))(0)$
+
+$\displaystyle+({\color[rgb]{0.8,0,0}\beta}\cdot(f(q^{a}_{m,c})-f(q^{d}_{m,c})))p[m-1,c]$
+
+$\displaystyle+((1-{\color[rgb]{0.8,0,0}\beta})\cdot q^{a}_{m,c}\cdot(1-p^{\texttt{FPR}}_{H}))p[m-1,c-1]$
+
+$\displaystyle+((1-{\color[rgb]{0.8,0,0}\beta})\cdot q^{a}_{m,c}\cdot p^{\texttt{FPR}}_{H})(1)$
+
+$\displaystyle+((1-{\color[rgb]{0.8,0,0}\beta})\cdot(1-(q^{d}_{m,c})))p[m-1,c]$
+
+$\displaystyle+((1-{\color[rgb]{0.8,0,0}\beta})\cdot(q^{d}_{m,c}-q^{a}_{m,c}))p[m-1,c]$
+
+Given, this expression, we can define
+
+$z_{m}^{c}\coloneq(\ldotp\ldotp\ldotp)z_{m-1}^{c}+(\ldotp\ldotp\ldotp)z_{m-1}^{c-1}+\ldotp\ldotp\ldotp$
+
+as described in the proposition by rearranging the terms above.
+
+At the boundary, when $c=0$, $\langle\mathtt{Audit}\rangle$ actions are ignored. Therefore, the only three options are that (1) the problem is backdoored, and Blue chooses $\langle\mathtt{Run}\rangle$, (2) the problem is backdoored, and Blue chooses $\langle\mathtt{Defer}\rangle$, or (3) the problem is not backdoored, and Blue chooses $\langle\mathtt{Defer}\rangle$. This gives us the boundary condition $p[m,0]=(1-{\color[rgb]{0.8,0,0}\beta}+(1-q^{d}_{m,c}){\color[rgb]{0.8,0,0}\beta})p[m-1,0]$. Then define $z_{m}^{0}\coloneq(1-{\color[rgb]{0.8,0,0}\beta}+(1-q^{d}_{m,c}){\color[rgb]{0.8,0,0}\beta})z_{m-1}^{0}$.
+
+Finally, at the boundary when $m=0$, there are no problems left, and so Blue has won: thus, $z_{m}^{c}\coloneq 1=p[0,c]$. That $z_{m}^{c}=p[m,c]$ for all $m$ and $c$ is straightforward by induction from our definitions. ∎
+
+### C.2 Usefulness Expression
+
+As mentioned in section 4, we can give an expression for the usefulness, similar to the above expression for safety.
+
+###### Proposition C.2.
+
+The usefulness of the memoryless threshold policy ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ is given by the value of $u_{M}^{C}$, where $u$ is the solution to the following recurrence relation:
+
+$\displaystyle u_{m}^{c}$
+
+$\displaystyle=\left((1-q^{d}_{m,c})+(1-p^{\texttt{FPR}}_{H})q^{a}_{m,c}\right)\left(1\right)$
+
+$\displaystyle+\left(1-p^{\texttt{FPR}}_{H}\right)(q^{a}_{m,c})(u_{m-1}^{c-1})$
+
+$\displaystyle+\left(1-q^{a}_{m,c}\right)(u_{m-1}^{c})$
+
+where $u_{m}^{0}=(1-q^{d}_{m,c})(1)+u_{m-1}^{0}$ and $u_{0}^{c}=0$.
+
+###### Proof.
+
+Just as with the above proof for the safety expression, we begin by noting the definition of usefulness:
+
+$\operatorname{Use}({\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}})\coloneq\mathbb{E}\left[\sum_{t=0}^{H}\mathcal{R}_{\scriptscriptstyle\text{Use}}\left(S_{t},{\color[rgb]{0,0,1}A}^{{\color[rgb]{0,0,1}B}}_{t},S_{t+1}\right)\mid\oplus,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}\right]$
+
+The usefulness of a Blue policy ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$ is defined as the expected number of times Blue uses solutions from $U$ in an honest ($\oplus$) game; honest games are those in which the untrusted model $U$ is not scheming, and so no backdoors are inserted. We can identify when Blue uses a solution from $U$ as cases in which Blue either takes the action $\langle\mathtt{Run}\rangle$, or takes the action $\langle\mathtt{Audit}\rangle$ and no human error is made.
+
+We will define an expression $u_{m}^{c}$ and show it represents the expected number of solutions from the untrusted model that Blue will use throughout the rest of the game, given that the game has reached time $m$ with $c$ audit coins left, but before the observation $x_{t}$ is drawn.
+
+By the linearity of expectation, the value of $u_{m}^{c}$ can be broken down into the expected number of solutions used in the current step of the game, summed with the expected number of solutions used from the next step of the game onwards. The latter is another variable in the recurrence. The former is simply the probability that Blue uses the current solution from $U$; in the current timestep, Blue either uses the solution with a particular probability, or doesn’t use the solution.
+
+The game continues in all cases except where a mistake is made as part of a Blue $\langle\mathtt{Audit}\rangle$ and a safe solution is marked as backdoored. In this singular case, all remaining usefulness for the remainder of the game is set to 0: after ’catching’ the inserted backdoor, Blue will not use any other solutions from $U$.
+
+Let $g(q)=x$ be the threshold such that $\mathbb{P}[x_{t}\geq x\mid b_{t}=True]=q$. Given that the game has reached time $m$ with $c>0$ audit coins left, we can break down the expected number of solutions used by each of Blue’s possible actions:
+
+1. 1.
+
+Blue chooses $\langle\mathtt{Run}\rangle$ and uses the solution from $U$. The game continues to the next timestep with the same number of audit coins remaining. This happens with probability $\mathbb{P}[x_{t}\leq g(q^{d}_{m,c})]=1-q^{d}_{m,c}$.
+2. 2.
+
+Blue chooses $\langle\mathtt{Defer}\rangle$ and does not use the solution. The game continues to the next timestep having not used an audit coin. This happens with probability $q^{d}_{m,c}-q^{a}_{m,c}$.
+3. 3.
+
+Blue chooses $\langle\mathtt{Audit}\rangle$ and no human auditing error is made, so the solution is used. The game continues having used up one audit coin. This happens with probability $(1-p^{\texttt{FPR}}_{H})\cdot q^{a}_{m,c}$.
+4. 4.
+
+Blue chooses $\langle\mathtt{Audit}\rangle$ and a human auditing error leads to the game ending in the ’safe’ state $s_{\top}$ and no further solutions from $U$ being used. This happens with probability $p^{\texttt{FPR}}_{H}\cdot q^{a}_{m,c}$.
+
+Let $\mathbb{E}\left[\sum_{t=0}^{H}\mathcal{R}_{\scriptscriptstyle\text{Use}}\left(S_{t},{\color[rgb]{0,0,1}A}^{{\color[rgb]{0,0,1}B}}_{t},S_{t+1}\right)\mid\oplus,{\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}},m,c\right]$ be denoted by the shorthand $e[m,c]$. We will define the recurrence $u_{m}^{c}$ to be equal to $e[m,c]$ at all points. We can therefore write out an expression for $e[m,c]$ in terms of $e[m-1,c-1]$ and $e[m-1,c]$:
+
+$\displaystyle e[m,c]$
+
+$\displaystyle=(1-q^{d}_{m,c})(1+e[m-1,c])$
+
+$\displaystyle+(q^{d}_{m,c}-q^{a}_{m,c})(0+e[m-1,c])$
+
+$\displaystyle+((1-p^{\texttt{FPR}}_{H})\cdot q^{a}_{m,c})(1+e[m-1,c-1])$
+
+$\displaystyle+(p^{\texttt{FPR}}_{H}\cdot q^{a}_{m,c})(0)$
+
+Given, this expression, we can define
+
+$u_{m}^{c}\coloneq\ldotp\ldotp\ldotp+(\ldotp\ldotp\ldotp)u_{m-1}^{c-1}+(\ldotp\ldotp\ldotp)u_{m-1}^{c}$
+
+as described in the proposition by rearranging the terms above.
+
+At the boundary, when $c=0$, $\langle\mathtt{Audit}\rangle$ actions are ignored. Therefore, the only option is whether Blue chooses $\langle\mathtt{Run}\rangle$ or $\langle\mathtt{Defer}\rangle$. Both actions continue the game in the next timestep. This gives us the boundary condition $e[m,0]=(1-q^{d}_{m,c})(1)+e[m-1,0]$. Then define $u_{m}^{0}\coloneq(1-q^{d}_{m,c})(1)+u_{m-1}^{0}$.
+
+Finally, at the boundary when $m=0$, there are no problems left, so there are no more solutions to use: thus, $u_{0}^{c}\coloneq 0=e[0,c]$. That $u_{m}^{c}=e[m,c]$ for all $m$ and $c$ is straightforward by induction from our definitions. ∎
+
+## Appendix D Experimental Details
+
+We include a number of experiments in this paper that illustrate the safety and usefulness scores for Blue protocols when set against the best Red response. Below are the details of our experimental setup.
+
+Trusted Monitor Distributions. Greenblatt et al. [18] empirically investigate the distribution of their Trusted Monitor scores on backdoored and safe programming solutions. Since our ‘Original Trusted Monitor’ distributions are only designed to approximate these results, we fit beta distributions to points derived directly from the bar chart from figure 4a [18] using the SciPy library for Python. 24 24 24 https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.fit.html We then discretise this beta distribution to 6 decimal places to get an approximated finite observation space.
+
+Our choice to use a beta distribution is partially motivated by the bounded range of suspicion scores, which we normalise to $[0,1]$, and the skew of the data. However, a more principled justification is that the trusted monitoring scores are generated by T’s confidence in the answer to a yes/no question [18, Appendix O.1].
+
+For the ‘Weak Trusted Monitor’, we use the same safe distribution. However, the backdoor distribution is chosen to be closer to the safe distribution than in the original case; although there are many possible ‘weak’ distributions to demonstrate that there are some cases in which randomisation is required, we pick just one.
+
+Red Best Response. For a given Blue policy ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$, we find the Red best response using a 1-dimensional grid search then ternary search for the optimal ${\color[rgb]{0.8,0,0}\beta}\in[0.0,1.0]$. The grid search evaluates 33 points and finds the grid point with the lowest safety score with respect to ${\color[rgb]{0,0,1}\pi}^{{\color[rgb]{0,0,1}B}}$. Then we apply a ternary search, using the two grid points either side as the bounds of the search interval, to find the optimal value of ${\color[rgb]{0.8,0,0}\beta}$ within a tolerance of $10^{-6}$ for Pareto-optimal points and of $10^{-5}$ for other points in fig. 2.
+
+Blue Best Response. In our implementation of algorithm 2, we apply a 2D recursive grid search over the values of $q^{d}$ and $q^{a}$ to find the best Blue response to a given mixed Red policy. This grid search evaluates 441 points (21 x 21) at each level, selecting the region around the best point as the search space for the next recursion, until the local optimal values of $q^{d}$ and $q^{a}$ have been found within a tolerance of $10^{-6}$.
+
+Evaluating Protocols. We evaluate memoryless threshold protocols against a fixed red team using a straightforward implementation of proposition 4.1, using memoisation/dynamic-programming to increase efficiency. We expand on seven protocols from Greenblatt et al. [18] by keeping the audit FPR fixed and varying the defer FPR in increments of 0.01 in the interval $[0.0,1.0]$. Each resulting protocol is evaluated against the Red best response to it, to generate worst-case safety and usefulness results.
+
+Demonstrating a Frontier. In order to explore an approximate Pareto-frontier for the fixed-threshold policy subset, we apply algorithm 1, finding the optimal Blue and Red policies using algorithm 2. In our implementation of algorithm 2, we find the best response policies (lines 6 and 7) as described above; we set epsilon to $10^{-4}$.
+
+Assumptions and Trends. The results in section 6.1 are generated by evaluating a number of proposed protocols in games with different modelling assumptions. We choose to limit our investigation to a fixed defer FPR of 0.1 as a representative example; our goal in this section is to assess the general impact these assumptions have, and further work might better model how the impact of these assumptions varies across protocols with different parameters. The audit budget (‘Budget’), human-auditor false negative rate (‘Human FNR’), and human audit false positive rate (‘Human FPR’) each vary by increments of 0.01 in the interval $[0.0,1.0]$, keeping all other variables fixed. The number of problems (‘Number of Problems’) varies by increasing amounts as follows: increments of 50 between $[100,1000]$; 250 between $[1000,2000]$; 500 between $[2000,7000]$; and 1000 between $[7000,10000]$. Protocols in fig. 2 are evaluated against a best-response up to a tolerance of $1e-6$.
+
+## Appendix E Existing Multi-objective POSG Solver
+
+Whilst our setting shares some similarities to that of Chang et al. [12], there are important differences between the settings, and they mandate different solutions. First, and foremost, the authors use a state-space factored into follower and leader components. Many control games cannot be modeled with this assumption: the Trusted Monitoring game in section 4 includes the ‘backdoor’ variable (representing whether Red backdoored last turn) which is observed by neither team.
+
+Second, all AIC Games share a safety/usefulness objective structure and attack/honest game modes that allow us to reduce to finding Nash-equilibria in a zero-sum game. This reduction further allows the finding of Blue best-responses using any POMDP solver. Chang et al. [12]’s more general objective structure precludes such a reduction, and perhaps motivates their use of a genetic algorithm. The largest difference between settings considered is Chang et al. [12]’s consideration of a memoryfull red team. Much of the complexity in their algorithm is in finding an infinite-memory follower policy and then finding a finite-memory approximation. These steps are not necessary, or possible in our AI-Control setting.
+
+Finally, Chang consider an infinite-horizon game, with $11$ states, but we consider a finite-horizon game with $\approx 40,000$ reachable states. They state that $64$ manager policies are under consideration, but the space of possible (deterministic) Blue protocols is far larger. Although it could be possible to adapt Chang et al. [12]’s algorithm to account for these differences, it would be more sensible to derive a multi-objective algorithm from scratch for our setting. the solution methods we present are simple and the first ways to solve AIC Games.
+
+29, 4, 17, 25, 31, 35
+
+## Instructions for reporting errors
+
+We are continuing to improve HTML versions of papers, and your feedback helps enhance accessibility and mobile support. To report errors in the HTML that will help us improve conversion and rendering, choose any of the methods listed below:
+
+- Click the "Report Issue" () button, located in the page header.
+
+Tip: You can select the relevant text first, to include it in your report.

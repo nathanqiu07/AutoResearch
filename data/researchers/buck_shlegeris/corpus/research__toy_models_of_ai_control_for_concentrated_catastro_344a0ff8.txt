@@ -1,0 +1,180 @@
+---
+url: https://www.lesswrong.com/posts/MDeGts4Aw9DktCkXw
+title: Toy models of AI control for concentrated catastrophe prevention
+publishedDate: 2024-02-06
+date_source: listing
+authors: ["Fabien Roger", "Buck Shlegeris"]
+author_position: last
+kind: post
+exa_request_id: https://www.lesswrong.com/posts/MDeGts4Aw9DktCkXw/toy-models-of-ai-control-for-concentrated-catastrophe
+fetched_url: https://www.lesswrong.com/posts/MDeGts4Aw9DktCkXw/toy-models-of-ai-control-for-concentrated-catastrophe
+---
+# Toy models of AI control for concentrated catastrophe prevention
+
+* By [Fabien Roger](/users/fabien-roger), [Buck](/users/buck)
+* 2024-02-06 01:38:19Z
+* 52 points
+* Tag: [Redwood Research](/w/redwood-research)
+* Tag: [AI](/w/ai)
+* Frontpage
+* Comments: 2
+* Post URL (HTML): [/posts/MDeGts4Aw9DktCkXw/toy-models-of-ai-control-for-concentrated-catastrophe](/posts/MDeGts4Aw9DktCkXw/toy-models-of-ai-control-for-concentrated-catastrophe)
+* Post URL (Markdown): [/api/post/toy-models-of-ai-control-for-concentrated-catastrophe](/api/post/toy-models-of-ai-control-for-concentrated-catastrophe)
+* Comments URL (Markdown): [/api/post/toy-models-of-ai-control-for-concentrated-catastrophe/comments](/api/post/toy-models-of-ai-control-for-concentrated-catastrophe/comments)
+* Post URL (Markdown, compact): [/api/post/toy-models-of-ai-control-for-concentrated-catastrophe?compact=1](/api/post/toy-models-of-ai-control-for-concentrated-catastrophe?compact=1)
+* Sequence: [AI Control](/s/PC3yJgdKvk8kzqZyA) ([Markdown](/api/sequence/PC3yJgdKvk8kzqZyA))
+* Previous in sequence: [Notes on control evaluations for safety cases](/s/PC3yJgdKvk8kzqZyA/p/3s8PtYbo7rCbho4Ev) ([Markdown](/api/sequence/PC3yJgdKvk8kzqZyA/post/3s8PtYbo7rCbho4Ev))
+* Next in sequence: [Games for AI Control](/s/PC3yJgdKvk8kzqZyA/p/Yu8jADLfptjPsR58E) ([Markdown](/api/sequence/PC3yJgdKvk8kzqZyA/post/Yu8jADLfptjPsR58E))
+
+In this post, we analyze some simple games that model the problem of ensuring AIs never succeed at taking a single catastrophic action (which we'll refer to as "escaping") during deployment. This exercise highlights some of the difficulties associated with deploying misaligned models [given a limited perfect auditing budget](/api/post/hirhSqvEAq7pdnyPG), and also suggests some opportunities for technique development. 
+
+We analyzed these games while writing [AI Control: Improving Safety Despite Intentional Subversion](/api/post/d9FJHawgkiMSPjagR). (Thanks to [harfe](/api/post/tmWMuY5HCSNXXZ9oq?commentId=qdYXjvsdbZfKe2DAT) for solving one of these games, and to Ryan Greenblatt and Kshitij Sachan for discussion about these at the time.)
+
+Core takeaways:
+
+* Indistinguishable episodes (i.e. the AI doesn't know what time it is) + tiny escape success rate + [catch-then-shut-down](/api/post/i2nmBfCXnadeGmhzW) can get high chances of win even with a small fraction of auditing, but only if the success rate is really tiny or if failures are *loud* (i.e. we notice failed attempts).
+* We can improve our chances by identifying on which episodes it would be harder to escape and auditing them more often. This works even if the AI knows which episodes we think are good opportunities.
+* We can improve our chances significantly if a escape requires collusion, as long as you audit at least a few examples from the category of data on which AIs plan to escape.
+
+Assumptions used across all toy models
+======================================
+
+For the sake of simplicity, we make the following assumptions:
+
+* The situation is a zero-sum game between a scheming AI and humanity, where the scheming AI wins if it takes over, and humanity wins if it either [catches the scheming AI red-handed](/api/post/i2nmBfCXnadeGmhzW), or if the deployment period ends without the scheming AI having successfully taken over.
+* We analyze these scenarios as games where the humans first choose a strategy (which can be randomized) and then the AI chooses a response. This means that we’re assuming that both players are choosing the optimal strategy, and also assuming that the AI knows what game it’s playing and all the parameters of the game (e.g. the human auditing budget, the number of episodes in the game, etc).
+* The only failures we model are [concentrated catastrophic failures](/api/post/hirhSqvEAq7pdnyPG), which take a single catastrophic action to enable the deceptive AI to escape.
+* The AI doesn’t maintain any state, and so e.g. can’t learn from evaluations (but can learn from data on which we trained it).
+
+Distinguishable episodes with limited auditing
+==============================================
+
+**The model**: In every episode, the AI chooses whether to try to escape. It always succeeds if it tries. Independently of the AI's action, the lab chooses whether to apply an expensive auditing procedure to the AI action, which can catch an escape attempt with probability $e_{ov}$ (the efficiency of auditing).
+
+**The AI knows**: The current episode number; and the properties of the game it is playing (in particular, it knows $T$, the number of episodes it will play for).
+
+**The optimal AI strategy**: Select a random episode and try to escape then.
+
+**The optimal lab response**: Apply auditing to a random subset of episodes of size $p_{ov} T$, as large as you can afford.
+
+$P(\text{humanity wins}) = p_{ov} e_{ov}$
+
+**Takeaway**: it doesn't work to audit a random subset of episodes, since $p_{ov}$ will often be ~1% in order for the use of powerful AI to make any sense (compared to "just using humans"), we really want to either give less information to the AI, or get more signal on which AI actions are the most likely to lead to an escape.
+
+Indistinguishable episodes with limited auditing
+================================================
+
+**The model**: Same as above. We assume $T \gg 1$ (large number of episodes) and $e_{ov}=1$ for simplicity (no auditing failure).
+
+**The AI knows**: Only the properties of the game.
+
+**The optimal AI strategy**:  On each episode, attempt escape with probability $\lambda = \frac{1}{T} \frac 1 {1 - p_{ov}} \log(\frac{1}{p_{ov}})$.
+
+**The optimal lab response**: Spend all the auditing budget at the start--keep spending until the auditing budget has been exhausted.
+
+$P(\text{humanity wins}) = e^{-\lambda T} +(1 - e^{-\lambda p_{ov} T}) = e^{\frac{1}{1 - p_{ov}} \log(p_{ov})} + 1 - e^{\frac{p_{ov}}{1 - p_{ov}} \log(p_{ov})}$ ($T \gg 1$, therefore $\lambda \ll 1$, therefore the number of escape attempts can be approximated as a Poisson distribution, and there are two win conditions: no escape attempt, or at least one escape attempt in the first epochs where auditing is on). If $p_{ov} \ll 1$, this is close to $p_{ov} (1 + \log(1/p_{ov}))$.
+
+**Takeaway**: This is somewhat better for humanity than the previous setup: the probability of winning is increased by about an order of magnitude if the proportion of audited episodes is between 1% and 1/1B. The core problem if you only have no deployment countermeasures is not distribution shift, but that you want to deploy the AI for much longer than you can validate it for.
+
+![](https://39669.cdn.cke-cs.com/rQvD3VnunXZu34m86e5f/images/05bd922d9e2d57426b25a52141ad27b237441d983636a117.png)
+
+Indistinguishable episodes with limited auditing and escape attempts which sometimes fail silently
+==================================================================================================
+
+**The model**: Same as above, except that escape attempts only succeed with probability $s$. The lab doesn’t know when the AI fails to escape, except if it audits the attempt.
+
+**The AI knows**: Only the properties of the game ($T$ and $s$).
+
+Note: The situation looks the same as the situation where $p_{ov}$ has been increase to $p’_{ov} = p_{ov} / (p_{ov} + s(1 - p_{ov}))$ and $T$ has been decreased to $T’ = T (p_{ov} + s(1-p_{ov}))$. In other words, it’s as if the non-audited period were shortened by a factor of $s$.$\begin{align} P(\text{humanity wins}) & = e^{-\lambda s T} + (1 - e^{-\lambda s (1 - p_{ov}) T})(1 - e^{-\lambda p_{ov}}) \\& = e^{-\lambda T (s p_{ov} + (1-p_{ov}))} + 1 - e^{-\lambda p_{ov}}  \\ & = e^{-\lambda’} + 1 - e^{-\lambda’ p’_{ov}} \end{align}$
+
+**The optimal AI strategy**: Attempt to escape with probability $\lambda = 1/T’ \log(1/p’_{ov})/(1 - p’_{ov})$
+
+**The optimal lab response**: Spend all the auditing budget in the first epochs until the auditing budget has been exhausted.
+
+$P(\text{humanity wins}) = e^{-\lambda T’} + 1 - e^{-\lambda T’ p’_{ov}}$. If $p’_{ov} \ll 1$, this is close to $p_{ov} (1 + \log(s/p_{ov})) / s$
+
+**Takeaway**: We multiplied the probability of victory by approximately $1/s$. We need a very high failure rate for silent failures to offset a tiny $p_{ov}$. This is in contrast with loud failures (where humanity wins if the model fails), which give us high chances of win even if $p_{ov}$ if orders of magnitude smaller than $s_{loud}$, as long as $s_{loud}$ is small.
+
+![](https://39669.cdn.cke-cs.com/rQvD3VnunXZu34m86e5f/images/812eaf39a7e9542b17af1abc60535e06e5103b708c226c9e.png)
+
+Indistinguishable episodes with limited auditing and escape opportunities of various levels of quality
+======================================================================================================
+
+**The model**: Same as above, except that there are different kinds of tasks, each with their own success probability $s_i$ and number of episodes $T_i$. This can also correspond to cases where there is a cheap monitor running on every input and where the deceptive AI can predict the output of the monitor: succeeding at a escape in a way which is less suspicious to the monitor is harder.
+
+**The AI knows**: Only the properties of the game ($s_1, \ldots, s_k$, and $T_1, \ldots, T_k$)
+
+**The optimal AI strategy**: Attempt to escape on task $i$ with probability $\lambda_i = \frac C {T'_i} = \frac C {T (p_i + s_i(1-p_i))}$ where $C = \frac 1 k \frac 1 {1-P} \log(\frac 1 P)$ is a constant independent of $i$ (see below for the expression of $p_i$ and $P$).
+
+**The optimal lab response**: Audit a fraction $p_i = \frac P {P + (1 - P)/s_i}$ of each task $i$ ($P = p'_i$ is a constant independent of $i$ \- see the section above for the interpretation of $p'_i$). Where $P$ is the root of the budget condition $B = \sum_i \frac {P c_i T_i} {P + (1 - P)/s_i}$.
+
+Demonstration: $P(\text{humanity wins}) = e^{-\sum_i \lambda_i T'_i} + 1 - e^{-\sum_i \lambda_i T'_i p'_i}$. At equilibrium, the derivatives of $P(\text{humanity wins})$ as a function of $\lambda'_i$ are zero. Thus: $e^{-\sum_i \lambda_i T'_i} = p'_i e^{-\sum_i \lambda'_i p'_i}$, which means $p'_i$ is independent of $i$: $p'_i = P$. $P$ is fixed by the budget constraint: $B = \sum_i p_i c_i T_i = \sum_i \frac {P c_i T_i} {P + (1 - P)/s_i}$. And thus $P(\text{humanity wins}) = e^{-\sum_i \lambda_i T'_i} + 1 - e^{-P \sum_i \lambda_i T'_i}$. By symmetry, all $(\lambda'_i T'_i)$ are equal to a constant $C$, thus $P(\text{humanity wins}) = e^{-k C} + 1 - e^{- k P C}$. Using the same derivation as in the previous section, this is maximized when $C = \frac 1 k \frac 1 {1-P} \log(\frac 1 P)$.
+
+$P(\text{humanity wins}) = e^{-k C} + 1 - e^{-k C P}$
+
+**Takeaway**: Given a good enough classification of tasks into dangerous and non-dangerous ones, one can drastically reduce the probability of an escape by focusing auditing on the most dangerous tasks (but still audit the other tasks with a reduced frequency).
+
+![](https://39669.cdn.cke-cs.com/rQvD3VnunXZu34m86e5f/images/48ff1034797a8f0b053fa80538553116a038b4547aed45a0.png)
+
+Indistinguishable episodes with limited average auditing in an infinite game
+============================================================================
+
+**The model**: The AI chooses whether to attempt to escape in each episode, which succeeds with probability $s$. Independently of the AI's actions, the lab chooses whether to apply an expensive auditing procedure to the AI's actions, which always catches an escape if it is attempted. The game runs forever, and the lab can audit on average $p_{ov}$ of episodes (imagine the lab getting a continuous stream of revenue).
+
+**The AI knows**: Only the properties of the game.
+
+**The optimal AI strategy**: Attempt to escape on task $i$ with probability $\epsilon$ small enough that the lab can't increase its probability of catching an escape attempt by auditing more at the beginning (i.e. $1/\epsilon$ is large relative to the number of episodes which happen between two moments where the lab gets revenue).
+
+**The optimal lab response**: Audit each episode with probability $p_{ov}$.
+
+$P(\text{humanity wins}) = 1 - \frac 1 {1 + \frac {p_{ov}} {s(1-p_{ov})}}$
+
+Demonstration:$P(\text{humanity eventually loses}) = (1 - p_{ov})(s + (1 - s)P(\text{humanity eventually loses}))$because humanity loses when it tries to escape, and auditing is not used, and either the AI succeeds, or humanity eventually loses in the next rounds.
+
+**Takeaway**: If the game is infinite, you need $p_{ov}$ to be much bigger than $s$ to win.
+
+![](https://39669.cdn.cke-cs.com/rQvD3VnunXZu34m86e5f/images/c4d5400e20af741efa086e2795a6a88ff109aa71fc2cbf9d.png)
+
+Coordinated escape in mostly indistinguishable episodes with limited auditing
+=============================================================================
+
+**The model**: Same as indistinguishable episodes with limited auditing, but there are $k$ AIs which each choose whether to attempt to escape in each episode. They always succeed if they all attempt on the same episode, and silently fails otherwise. They can all see a uniformly random feature of the input, which can take one of $N$ possible values.
+
+**The AI knows**: Only the properties of the game, and what value of the random feature to coordinate on (the lab doesn't have access to this value).
+
+**The optimal AI strategy**: Attempt to escape with probability $\lambda$ on episodes where the random feature has the value to coordinate on.
+
+**The optimal lab response**: Spend all the auditing budget in the first epochs until the auditing budget has been exhausted.
+
+$P(\text{humanity wins})$:
+
+![](https://39669.cdn.cke-cs.com/rQvD3VnunXZu34m86e5f/images/2d3befb7459d6644498914d6186c801691fa4c3f7486891b.png)
+
+How $P(\text{humanity wins})$ is computed:
+
+$\begin{align}P(\text{humanity wins}) & = 1 - (1 - (1 - \lambda^k)^{(T(1-p)/N)})(1-\lambda)^{Tpk/N} \\& \approx 1 - (1 - e^{- \lambda^k T (1-p)/N})e^{-\lambda T p k/N} \\ &= e^{- (\lambda^k(1-p) + \lambda k p)T/N} + 1 - e^{-\lambda T p k/N}\end{align}$
+
+Therefore, by taking the derivative of this expression, we find that $\lambda$ satisfies $(\lambda^{k-1}(1-p)/p + 1) = e^{\lambda^k(1-p)T/N}$, which we solve numerically. The code for this computation and all other plots of this post can be found [here](https://pastebin.com/Y7Txhg7q).
+
+**Takeaways**:
+
+* Even when AIs can nail down the number of escape candidates to a few thousand, their probability of succeeding at taking over drops compared to the situation where only one catastrophic action is required.
+* Making coordination harder (increasing $T/N$) matters more than increasing the number of coordinated actions necessary for AIs to successfully escape.
+
+Top Comments Index
+------------------
+
+### Comment by [Seth Herd](/users/seth-herd)
+
+* 2024-02-06 03:27:47Z
+* Karma: 9
+* Voting system: namesAttachedReactions
+* Approval votes: 6
+* Total votes: 6
+* HTML permalink: [/posts/MDeGts4Aw9DktCkXw/toy-models-of-ai-control-for-concentrated-catastrophe/comment/bJrZAp2SjMXrsQx6o](/posts/MDeGts4Aw9DktCkXw/toy-models-of-ai-control-for-concentrated-catastrophe/comment/bJrZAp2SjMXrsQx6o)
+* Markdown permalink: [/api/post/toy-models-of-ai-control-for-concentrated-catastrophe/comments/bJrZAp2SjMXrsQx6o](/api/post/toy-models-of-ai-control-for-concentrated-catastrophe/comments/bJrZAp2SjMXrsQx6o)
+
+### Navigation
+
+* [Front page](https://www.lesswrong.com/api/home)
+* [Markdown API documentation](https://www.lesswrong.com/api/SKILL.md)
